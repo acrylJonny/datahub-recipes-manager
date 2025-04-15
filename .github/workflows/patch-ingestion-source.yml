@@ -1,0 +1,65 @@
+name: Patch DataHub Ingestion Source
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run against'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      source_id:
+        description: 'Ingestion source ID to patch'
+        required: true
+        type: string
+      recipe_file:
+        description: 'Recipe file path (optional)'
+        required: false
+        type: string
+      schedule:
+        description: 'New schedule cron expression (optional)'
+        required: false
+        type: string
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Patch ingestion source
+        run: |
+          COMMAND="python scripts/patch_recipe.py --id ${{ github.event.inputs.source_id }}"
+          
+          if [ -n "${{ github.event.inputs.recipe_file }}" ]; then
+            COMMAND="$COMMAND --recipe ${{ github.event.inputs.recipe_file }}"
+          fi
+          
+          if [ -n "${{ github.event.inputs.schedule }}" ]; then
+            COMMAND="$COMMAND --schedule '${{ github.event.inputs.schedule }}'"
+          fi
+          
+          echo "Running: $COMMAND"
+          eval $COMMAND
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          PYTHONPATH: ${{ github.workspace }} 

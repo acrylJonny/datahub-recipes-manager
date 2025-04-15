@@ -1,0 +1,115 @@
+name: Manage DataHub Ingestion Sources
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - list
+          - run-now
+          - patch
+      environment:
+        description: 'Environment to target (e.g., dev, qa, prod)'
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+      source_id:
+        description: 'DataHub ingestion source ID (required for patch and run-now)'
+        required: false
+        type: string
+      recipe_file:
+        description: 'Path to recipe file (optional for patch)'
+        required: false
+        type: string
+      schedule:
+        description: 'Schedule cron expression (optional for patch, e.g. "0 2 * * *")'
+        required: false
+        type: string
+
+jobs:
+  manage-ingestion:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: List ingestion sources
+        if: ${{ github.event.inputs.action == 'list' }}
+        run: |
+          python scripts/list_ingestion_sources.py
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+      
+      - name: Run ingestion source now
+        if: ${{ github.event.inputs.action == 'run-now' && github.event.inputs.source_id != '' }}
+        run: |
+          python scripts/run_ingestion_source.py --source-id ${{ github.event.inputs.source_id }}
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+      
+      - name: Patch ingestion source (recipe only)
+        if: ${{ github.event.inputs.action == 'patch' && github.event.inputs.source_id != '' && github.event.inputs.recipe_file != '' && github.event.inputs.schedule == '' }}
+        run: |
+          python scripts/patch_ingestion_source.py --source-id ${{ github.event.inputs.source_id }} --recipe-file ${{ github.event.inputs.recipe_file }}
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SCHEMA: ${{ secrets.DB_SCHEMA }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      
+      - name: Patch ingestion source (schedule only)
+        if: ${{ github.event.inputs.action == 'patch' && github.event.inputs.source_id != '' && github.event.inputs.recipe_file == '' && github.event.inputs.schedule != '' }}
+        run: |
+          python scripts/patch_ingestion_source.py --source-id ${{ github.event.inputs.source_id }} --schedule "${{ github.event.inputs.schedule }}"
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+      
+      - name: Patch ingestion source (recipe and schedule)
+        if: ${{ github.event.inputs.action == 'patch' && github.event.inputs.source_id != '' && github.event.inputs.recipe_file != '' && github.event.inputs.schedule != '' }}
+        run: |
+          python scripts/patch_ingestion_source.py --source-id ${{ github.event.inputs.source_id }} --recipe-file ${{ github.event.inputs.recipe_file }} --schedule "${{ github.event.inputs.schedule }}"
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SCHEMA: ${{ secrets.DB_SCHEMA }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }} 

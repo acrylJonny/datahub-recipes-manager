@@ -1,0 +1,47 @@
+# Instance-specific parameters for the Analytics Databricks Warehouse
+recipe_id: analytics-databricks-prod
+recipe_type: databricks
+description: "Production Databricks Analytics Warehouse ingestion"
+
+parameters:
+  # Connection parameters
+  DBX_WORKSPACE_URL: "https://your-workspace.cloud.databricks.com"
+  DBX_WAREHOUSE_ID: "warehouse_id_value"
+  DBX_PLATFORM_INSTANCE: "analytics-prod"
+
+  # Feature flags
+  INCLUDE_TABLE_LINEAGE: true
+  INCLUDE_COLUMN_LINEAGE: true
+  INCLUDE_HIVE_METASTORE: true
+  INCLUDE_READ_OPERATIONAL_STATS: true
+  ENABLE_STATEFUL_PROFILING: true
+  FORMAT_SQL_QUERIES: true
+  INCLUDE_OWNERSHIP: true
+  INCREMENTAL_LINEAGE: true
+
+  # Stateful ingestion
+  STATEFUL_INGESTION_ENABLED: true
+  STATEFUL_INGESTION_THRESHOLD: 100
+  REMOVE_STALE_METADATA: true
+
+  # Profiling configuration
+  ENABLE_PROFILING: true
+  PROFILE_TABLE_LEVEL_ONLY: false
+  INCLUDE_FIELD_SAMPLE_VALUES: false
+  CATCH_PROFILING_EXCEPTIONS: false
+  MAX_PROFILING_WAIT_SECS: 6000
+  PROFILING_METHOD: "ge"
+  LOWER_FREQ_PROFILE_ENABLED: true
+  PROFILE_DAY_OF_WEEK: 6
+
+  # Execution configuration
+  EXECUTOR_ID: "remote"
+  SCHEDULE_CRON: "0 1 * * *"  # Run daily at 1 AM
+  SCHEDULE_TIMEZONE: "America/Chicago"
+
+# Secrets are referenced but not stored here
+# They will be injected from CI/CD secrets or environment variables
+secret_references:
+  - DBX_TOKEN
+  - DATAHUB_GMS_URL
+  - DATAHUB_TOKEN

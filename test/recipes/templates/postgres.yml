@@ -1,0 +1,32 @@
+source:
+  type: postgres
+  config:
+    # Connection configuration
+    username: ${PG_USER}
+    password: ${PG_PASSWORD}
+    host: ${PG_HOST}
+    port: ${PG_PORT}
+    database: ${PG_DATABASE}
+    
+    # Content configuration
+    include_tables: ${INCLUDE_TABLES}
+    include_views: ${INCLUDE_VIEWS}
+    
+    # Profiling settings
+    profiling:
+      enabled: ${ENABLE_PROFILING}
+      profile_table_level_only: ${PROFILE_TABLE_LEVEL_ONLY}
+      
+    # Stateful ingestion for change detection
+    stateful_ingestion:
+      enabled: ${STATEFUL_INGESTION_ENABLED}
+      remove_stale_metadata: ${REMOVE_STALE_METADATA}
+      state_provider:
+        type: datahub
+        config: {}
+
+# Executor and scheduling configuration
+executor_id: ${EXECUTOR_ID}
+schedule:
+  cron: ${SCHEDULE_CRON}
+  timezone: ${SCHEDULE_TIMEZONE}

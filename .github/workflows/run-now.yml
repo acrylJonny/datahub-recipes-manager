@@ -1,0 +1,46 @@
+name: Run DataHub Ingestion Source Immediately
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run against'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      source_id:
+        description: 'Ingestion source ID to run'
+        required: true
+        type: string
+
+jobs:
+  run-now:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run ingestion source
+        run: |
+          python scripts/run_ingestion_source.py --source-id ${{ github.event.inputs.source_id }}
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          PYTHONPATH: ${{ github.workspace }} 

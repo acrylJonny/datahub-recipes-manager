@@ -1,0 +1,60 @@
+# Instance-specific parameters for the Customer Database
+recipe_id: customer-database-prod
+recipe_type: mssql
+description: "Production Customer Database ingestion"
+
+parameters:
+  # Connection parameters
+  MSSQL_USERNAME: "datahub_reader"
+  MSSQL_HOST_PORT: "customer-db-prod.example.com:1433"
+  MSSQL_DATABASE: "CustomerDB"
+  MSSQL_DRIVER: "ODBC Driver 18 for SQL Server"
+  MSSQL_PLATFORM_INSTANCE: "customer-prod"
+
+  # Content configuration
+  INCLUDE_TABLES: true
+  INCLUDE_VIEWS: true
+  INCLUDE_JOBS: false
+  CONVERT_URNS_TO_LOWERCASE: true
+
+  MSSQL_TABLE_PATTERN:
+    - "customer.*"
+    - "sales.*"
+    - "product.*"
+  MSSQL_SCHEMA_PATTERN:
+    - "dbo"
+    - "reporting"
+
+  # Stateful ingestion
+  STATEFUL_INGESTION_ENABLED: true
+  STATEFUL_INGESTION_THRESHOLD: 100
+  REMOVE_STALE_METADATA: true
+
+  # Profiling configuration
+  ENABLE_PROFILING: true
+  PROFILE_TABLE_LEVEL_ONLY: false
+  INCLUDE_FIELD_SAMPLE_VALUES: false
+  CATCH_PROFILING_EXCEPTIONS: false
+  INCLUDE_FIELD_NULL_COUNT: true
+  INCLUDE_FIELD_MIN_VALUE: true
+  INCLUDE_FIELD_MAX_VALUE: true
+  INCLUDE_FIELD_MEAN_VALUE: true
+  INCLUDE_FIELD_MEDIAN_VALUE: true
+  INCLUDE_FIELD_STD_DEV: true
+  INCLUDE_FIELD_QUANTILES: true
+  INCLUDE_FIELD_DISTINCT_VALUE_FREQUENCIES: true
+  INCLUDE_FIELD_HISTOGRAM: true
+  LOWER_FREQ_PROFILE_ENABLED: true
+  PROFILE_DAY_OF_WEEK: 6
+
+  # Execution configuration
+  EXECUTOR_ID: "remote"
+  SCHEDULE_CRON: "0 2 * * *"  # Run daily at 2 AM
+  SCHEDULE_TIMEZONE: "America/Chicago"
+
+# Secrets are referenced but not stored here
+# They will be injected from CI/CD secrets or environment variables
+secret_references:
+  - MSSQL_PASSWORD
+  - DATAHUB_GMS_URL
+  - DATAHUB_TOKEN

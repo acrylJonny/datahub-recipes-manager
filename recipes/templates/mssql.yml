@@ -1,0 +1,65 @@
+source:
+  type: mssql-odbc
+  config:
+    # Connection configuration
+    username: ${MSSQL_USERNAME}
+    password: ${MSSQL_PASSWORD}
+    host_port: ${MSSQL_HOST_PORT}
+    database: ${MSSQL_DATABASE}
+    platform_instance: ${MSSQL_PLATFORM_INSTANCE}
+    use_odbc: 'True'
+
+    # ODBC connection arguments
+    uri_args:
+      TrustServerCertificate: "Yes"
+      driver: "${MSSQL_DRIVER}"
+      ssl: "True"
+      Encrypt: "yes"
+
+    # Content configuration
+    include_tables: ${INCLUDE_TABLES}
+    include_views: ${INCLUDE_VIEWS}
+    include_jobs: ${INCLUDE_JOBS}
+    convert_urns_to_lowercase: ${CONVERT_URNS_TO_LOWERCASE}
+
+    # Tables to include (optional)
+    table_pattern:
+      allow: ${MSSQL_TABLE_PATTERN}
+
+    # Schema pattern (optional)
+    schema_pattern:
+      allow: ${MSSQL_SCHEMA_PATTERN}
+
+    # Profiling settings
+    profiling:
+      enabled: ${ENABLE_PROFILING}
+      profile_table_level_only: ${PROFILE_TABLE_LEVEL_ONLY}
+      include_field_sample_values: ${INCLUDE_FIELD_SAMPLE_VALUES}
+      catch_exceptions: ${CATCH_PROFILING_EXCEPTIONS}
+      include_field_null_count: ${INCLUDE_FIELD_NULL_COUNT}
+      include_field_min_value: ${INCLUDE_FIELD_MIN_VALUE}
+      include_field_max_value: ${INCLUDE_FIELD_MAX_VALUE}
+      include_field_mean_value: ${INCLUDE_FIELD_MEAN_VALUE}
+      include_field_median_value: ${INCLUDE_FIELD_MEDIAN_VALUE}
+      include_field_std_dev: ${INCLUDE_FIELD_STD_DEV}
+      include_field_quantiles: ${INCLUDE_FIELD_QUANTILES}
+      include_field_distinct_value_frequencies: ${INCLUDE_FIELD_DISTINCT_VALUE_FREQUENCIES}
+      include_field_histogram: ${INCLUDE_FIELD_HISTOGRAM}
+      operation_config:
+        lower_freq_profile_enabled: ${LOWER_FREQ_PROFILE_ENABLED}
+        profile_day_of_week: ${PROFILE_DAY_OF_WEEK}
+
+    # Stateful ingestion for change detection
+    stateful_ingestion:
+      enabled: ${STATEFUL_INGESTION_ENABLED}
+      remove_stale_metadata: ${REMOVE_STALE_METADATA}
+      fail_safe_threshold: ${STATEFUL_INGESTION_THRESHOLD}
+      state_provider:
+        type: datahub
+        config: {}
+
+# Executor and scheduling configuration
+executor_id: ${EXECUTOR_ID}
+schedule:
+  cron: ${SCHEDULE_CRON}
+  timezone: ${SCHEDULE_TIMEZONE}

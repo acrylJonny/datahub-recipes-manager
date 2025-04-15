@@ -1,0 +1,163 @@
+name: Deploy Recipes
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'recipes/instances/**/*.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      specific_recipe:
+        description: 'Specific recipe to deploy (leave empty for all)'
+        required: false
+        type: string
+      create_secrets:
+        description: 'Create secrets in DataHub'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Test DataHub Connection
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+        run: |
+          echo "Testing connection to DataHub..."
+          python -c "
+          import os, sys
+          from dotenv import load_dotenv
+          sys.path.append('utils')
+          from datahub_rest_client import DataHubRestClient
+          
+          # Set environment variables
+          os.environ['DATAHUB_GMS_URL'] = '${{ secrets.DATAHUB_GMS_URL }}'
+          os.environ['DATAHUB_TOKEN'] = '${{ secrets.DATAHUB_TOKEN }}'
+          
+          try:
+              # Create client
+              client = DataHubRestClient(
+                  server_url=os.environ['DATAHUB_GMS_URL'],
+                  token=os.environ['DATAHUB_TOKEN']
+              )
+              
+              # Test connection
+              if client.test_connection():
+                  print('✅ Successfully connected to DataHub!')
+              else:
+                  print('❌ Failed to connect to DataHub')
+                  sys.exit(1)
+          except Exception as e:
+              print(f'❌ Error connecting to DataHub: {str(e)}')
+              sys.exit(1)
+          "
+
+      - name: Deploy recipes to DataHub
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          # Databricks secrets
+          DBX_TOKEN: ${{ secrets.DBX_TOKEN }}
+          # SQL Server secrets
+          MSSQL_PASSWORD: ${{ secrets.MSSQL_PASSWORD }}
+          # Additional database secrets
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          BIGQUERY_KEYFILE: ${{ secrets.BIGQUERY_KEYFILE }}
+        run: |
+          ENV=${{ github.event.inputs.environment || 'dev' }}
+          SPECIFIC_RECIPE="${{ github.event.inputs.specific_recipe }}"
+          CREATE_SECRETS="${{ github.event.inputs.create_secrets || 'false' }}"
+          
+          echo "Deploying recipes to $ENV environment"
+          
+          # Add create-secrets parameter if enabled
+          SECRETS_PARAM=""
+          if [ "$CREATE_SECRETS" = "true" ]; then
+            SECRETS_PARAM="--create-secrets"
+            echo "Creating secrets in DataHub is enabled"
+          fi
+          
+          # If a specific recipe was specified, deploy only that recipe
+          if [ -n "$SPECIFIC_RECIPE" ]; then
+            echo "Deploying specific recipe: $SPECIFIC_RECIPE"
+            if [ -f "recipes/instances/$ENV/$SPECIFIC_RECIPE.yml" ]; then
+              python scripts/push_recipe.py --instance "recipes/instances/$ENV/$SPECIFIC_RECIPE.yml" --run-ingestion $SECRETS_PARAM
+            else
+              echo "Recipe not found: recipes/instances/$ENV/$SPECIFIC_RECIPE.yml"
+              exit 1
+            fi
+          else
+            # Deploy all recipes for the specified environment
+            echo "Deploying all recipes for $ENV environment"
+            for recipe in recipes/instances/$ENV/*.yml; do
+              if [ -f "$recipe" ]; then
+                echo "Deploying recipe: $recipe"
+                python scripts/push_recipe.py --instance "$recipe" $SECRETS_PARAM
+              fi
+            done
+          fi
+
+      - name: Generate deployment report
+        run: |
+          ENV=${{ github.event.inputs.environment || 'dev' }}
+          REPORT_FILE="deployment_report_${ENV}_$(date +%Y%m%d_%H%M%S).txt"
+          
+          echo "DataHub Recipe Deployment Report" > $REPORT_FILE
+          echo "Environment: $ENV" >> $REPORT_FILE
+          echo "Date: $(date)" >> $REPORT_FILE
+          echo "Deployed by: ${{ github.actor }}" >> $REPORT_FILE
+          echo "Created secrets in DataHub: ${{ github.event.inputs.create_secrets || 'false' }}" >> $REPORT_FILE
+          echo "" >> $REPORT_FILE
+          echo "Deployed Recipes:" >> $REPORT_FILE
+          
+          for recipe in recipes/instances/$ENV/*.yml; do
+            if [ -f "$recipe" ]; then
+              recipe_name=$(basename "$recipe" .yml)
+              recipe_type=$(grep "recipe_type" "$recipe" | cut -d ":" -f2 | tr -d ' ')
+              echo "- $recipe_name (Type: $recipe_type)" >> $REPORT_FILE
+            fi
+          done
+          
+          echo "" >> $REPORT_FILE
+          echo "Deployment Status: Success" >> $REPORT_FILE
+          
+          # Upload report as artifact
+          mkdir -p deployment_reports
+          mv $REPORT_FILE deployment_reports/
+
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-reports
+          path: deployment_reports/
+          retention-days: 30

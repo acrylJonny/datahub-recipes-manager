@@ -1,0 +1,53 @@
+# Instance-specific parameters for the Analytics Database
+recipe_id: analytics-database-prod
+recipe_type: postgres
+description: "Production Analytics Database ingestion"
+
+parameters:
+  # Connection parameters
+  name: Analytics Database
+  host: postgres  # This will be resolved to the correct host based on environment
+  port: 5432
+  database: postgres
+  username: postgres
+  password: postgres
+  
+  # Content configuration
+  include_tables:
+    - "test_schema.*"
+    - "public.*"
+  exclude_tables:
+    - "pg_*"
+  include_views: true
+  
+  # Stateful ingestion
+  STATEFUL_INGESTION_ENABLED: true
+  REMOVE_STALE_METADATA: true
+
+  # Profiling configuration
+  profiling:
+    enabled: false
+  
+  # Pipeline information
+  PIPELINE_NAME: "postgres_analytics_ingestion"
+  PIPELINE_DESCRIPTION: "Production Analytics Database metadata ingestion"
+
+  # Execution configuration
+  EXECUTOR_ID: "default"
+  SCHEDULE_CRON: "0 2 * * *"  # Run daily at 2 AM
+  SCHEDULE_TIMEZONE: "UTC"
+
+  # Additional configuration
+  options:
+    check_connectivity: true
+    # Setting ingest_tags allows capturing metadata tags
+    ingest_tags: true
+    # This schema determines the Data Quality metrics to collect
+    include_table_lineage: true
+
+# Secrets are referenced but not stored here
+# They will be injected from environment variables
+secret_references:
+  - PG_PASSWORD
+  - DATAHUB_GMS_URL
+  - DATAHUB_TOKEN

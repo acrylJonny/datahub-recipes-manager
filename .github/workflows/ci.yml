@@ -1,0 +1,101 @@
+name: Validate Recipes
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'recipes/**/*.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'recipes/**/*.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate recipe templates
+        run: |
+          python scripts/validate_recipe.py --templates recipes/templates/*.yml
+
+      - name: Validate recipe instances
+        run: |
+          python scripts/validate_recipe.py --instances recipes/instances/**/*.yml
+
+  test-render:
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Test rendering recipe instances
+        run: |
+          # Test rendering each instance with its template
+          for instance in recipes/instances/**/*.yml; do
+            echo "Testing render for $instance"
+            python -c "
+import sys, yaml, os
+sys.path.append('utils')
+from template_renderer import render_template
+
+# Load instance config
+with open('$instance', 'r') as f:
+    instance_config = yaml.safe_load(f)
+
+# Get template path
+template_type = instance_config.get('recipe_type')
+if not template_type:
+    print(f'Error: Recipe type not specified in instance configuration: {instance_config}')
+    sys.exit(1)
+
+template_path = f'recipes/templates/{template_type}.yml'
+if not os.path.exists(template_path):
+    print(f'Error: Template file not found: {template_path}')
+    sys.exit(1)
+
+# Render template with parameters
+parameters = instance_config.get('parameters', {})
+try:
+    rendered = render_template(template_path, parameters)
+    print(f'Successfully rendered template for {os.path.basename(instance)}')
+    # Validate essential keys in the rendered template
+    if 'source' not in rendered or not isinstance(rendered['source'], dict):
+        print(f'Error: Rendered template missing source configuration')
+        sys.exit(1)
+    if 'type' not in rendered['source']:
+        print(f'Error: Rendered template missing source type')
+        sys.exit(1)
+except Exception as e:
+    print(f'Error rendering template: {str(e)}')
+    sys.exit(1)
+"
+          done
