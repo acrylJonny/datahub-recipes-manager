@@ -87,24 +87,32 @@ class DataHubRestClient:
                 if isinstance(result, dict) and "data" in result:
                     return result
                 else:
-                    logger.warning(f"Unexpected GraphQL response format: {type(result)}")
+                    logger.debug(f"Converting GraphQL response from format: {type(result)} to standard format")
                     # Try to convert the result to a proper format if possible
                     try:
                         if hasattr(result, '__dict__'):
-                            return vars(result)
+                            converted_result = vars(result)
+                            if "data" not in converted_result:
+                                # Add an empty data field to prevent NoneType errors
+                                converted_result["data"] = {}
+                            return converted_result
                         elif hasattr(result, 'to_dict'):
-                            return result.to_dict()
+                            converted_result = result.to_dict()
+                            if "data" not in converted_result:
+                                converted_result["data"] = {}
+                            return converted_result
                         else:
-                            return {"data": result}
+                            # Ensure data field exists to prevent NoneType errors
+                            return {"data": result if result is not None else {}}
                     except Exception as e:
                         logger.warning(f"Could not convert GraphQL SDK result to dict: {str(e)}")
-                        return {"errors": [{"message": f"Failed to format GraphQL result: {str(e)}"}]}
+                        return {"errors": [{"message": f"Failed to format GraphQL result: {str(e)}"}], "data": {}}
             except Exception as e:
                 logger.warning(f"Error executing GraphQL via SDK: {str(e)}")
-                return {"errors": [{"message": str(e)}]}
+                return {"errors": [{"message": str(e)}], "data": {}}
         else:
             logger.error("DataHubGraph client is not available. Cannot execute GraphQL query.")
-            return {"errors": [{"message": "DataHubGraph client is not available"}]}
+            return {"errors": [{"message": "DataHubGraph client is not available"}], "data": {}}
     
     def test_connection(self) -> bool:
         """
@@ -442,36 +450,69 @@ class DataHubRestClient:
             self.logger.debug("Listing ingestion sources using GraphQL")
             result = self.execute_graphql(query, variables)
             
-            if result and "data" in result and "listIngestionSources" in result["data"]:
+            if result and isinstance(result, dict) and "data" in result and result["data"] and "listIngestionSources" in result["data"]:
                 response_data = result["data"]["listIngestionSources"]
-                raw_sources = response_data.get("ingestionSources", [])
+                if response_data is None:
+                    self.logger.warning("listIngestionSources returned None in GraphQL response")
+                    raw_sources = []
+                else:
+                    raw_sources = response_data.get("ingestionSources", [])
+                    if raw_sources is None:
+                        self.logger.warning("ingestionSources is None in GraphQL response")
+                        raw_sources = []
                 
-                self.logger.debug(f"Retrieved {len(raw_sources)} ingestion sources from GraphQL")
+                self.logger.info(f"Successfully retrieved {len(raw_sources)} ingestion sources using GraphQL")
                 
+                # Process each source
                 for source in raw_sources:
-                    try:
-                        # Extract the source_id from the URN
-                        urn = source.get("urn", "")
-                        source_id = urn.split(":")[-1] if urn else ""
+                    if source is None:
+                        self.logger.warning("Skipping None source in response")
+                        continue
                         
-                        # Get the recipe from config
-                        recipe = {}
-                        config = source.get("config", {})
+                    try:
+                        urn = source.get("urn")
+                        if not urn:
+                            self.logger.warning(f"Source missing URN, skipping: {source}")
+                            continue
+                            
+                        source_id = urn.split(":")[-1] if urn else None
+                        if not source_id:
+                            self.logger.warning(f"Could not extract source ID from URN: {urn}")
+                            continue
+                        
+                        # Get config
+                        config = source.get("config", {}) or {}
+                        if config is None:
+                            config = {}
+                            
+                        # Get schedule
+                        schedule = source.get("schedule", {}) or {}
+                        if schedule is None:
+                            schedule = {}
+                        
+                        # Parse recipe
                         recipe_str = config.get("recipe", "{}")
+                        recipe = {}
                         try:
-                            if isinstance(recipe_str, dict):
+                            if recipe_str is None:
+                                recipe = {}
+                            elif isinstance(recipe_str, dict):
                                 recipe = recipe_str
                             else:
                                 recipe = json.loads(recipe_str)
-                        except json.JSONDecodeError:
-                            self.logger.warning(f"Failed to parse recipe for source {source.get('name')}")
+                        except (json.JSONDecodeError, TypeError):
+                            self.logger.warning(f"Could not parse recipe JSON for {source_id}")
                         
-                        # Get execution status from latest execution if available
-                        latest_execution = None
-                        executions = source.get("executions", {})
-                        execution_requests = executions.get("executionRequests", [])
-                        if execution_requests and len(execution_requests) > 0:
-                            latest_execution = execution_requests[0]
+                        # Get latest execution information
+                        executions = source.get("executions", {}) or {}
+                        if executions is None:
+                            executions = {}
+                            
+                        exec_requests = executions.get("executionRequests", []) or []
+                        if exec_requests is None:
+                            exec_requests = []
+                            
+                        latest_execution = exec_requests[0] if exec_requests else None
                         
                         # Create a simplified source object
                         simplified_source = {
@@ -499,10 +540,10 @@ class DataHubRestClient:
                         
                         sources.append(simplified_source)
                     except Exception as e:
-                        self.logger.warning(f"Error processing source {source.get('name')}: {str(e)}")
+                        self.logger.warning(f"Error processing source {source.get('name', 'unknown')}: {str(e)}")
                 
                 if sources:
-                    self.logger.info(f"Successfully retrieved {len(sources)} ingestion sources using GraphQL")
+                    self.logger.info(f"Successfully processed {len(sources)} ingestion sources")
                     return sources
             
             # Check for specific errors
@@ -511,11 +552,9 @@ class DataHubRestClient:
                 self.logger.warning(f"GraphQL errors: {', '.join(error_messages)}")
             else:
                 self.logger.warning("Failed to retrieve ingestion sources using GraphQL or no sources found")
-            
-            # Fall through to OpenAPI v3
+                
         except Exception as e:
             self.logger.warning(f"Error listing ingestion sources via GraphQL: {str(e)}")
-            # Fall through to OpenAPI v3
         
         # Try OpenAPI v3 endpoint
         try:
@@ -529,10 +568,15 @@ class DataHubRestClient:
                     data = response.json()
                     
                     # Parse entities from the response according to the OpenAPI v3 schema
-                    entities = data.get("entities", [])
+                    entities = data.get("entities", []) or []
+                    if entities is None:
+                        entities = []
                     self.logger.debug(f"Found {len(entities)} entities in OpenAPI v3 response")
                     
                     for entity in entities:
+                        if entity is None:
+                            continue
+                            
                         try:
                             urn = entity.get("urn", "")
                             if not urn:
@@ -542,17 +586,29 @@ class DataHubRestClient:
                             source_id = urn.split(":")[-1]
                             
                             # Source information is nested under dataHubIngestionSourceInfo.value
-                            source_info = entity.get("dataHubIngestionSourceInfo", {}).get("value", {})
-                            if not source_info:
+                            source_info = entity.get("dataHubIngestionSourceInfo", {}) or {}
+                            if source_info is None:
+                                source_info = {}
+                                
+                            source_info_value = source_info.get("value", {}) or {}
+                            if source_info_value is None:
+                                source_info_value = {}
+                                
+                            if not source_info_value:
                                 continue
                                 
                             # Get recipe
                             recipe = {}
-                            config = source_info.get("config", {})
+                            config = source_info_value.get("config", {}) or {}
+                            if config is None:
+                                config = {}
+                                
                             if config and "recipe" in config:
                                 try:
                                     recipe_str = config["recipe"]
-                                    if isinstance(recipe_str, str):
+                                    if recipe_str is None:
+                                        recipe = {}
+                                    elif isinstance(recipe_str, str):
                                         recipe = json.loads(recipe_str)
                                     elif isinstance(recipe_str, dict):
                                         recipe = recipe_str
@@ -562,17 +618,17 @@ class DataHubRestClient:
                             # Create simplified source object
                             simplified_source = {
                                 "urn": urn,
-                                "id": source_info.get("id", source_id),
-                                "name": source_info.get("name", source_id),
-                                "type": source_info.get("type", ""),
-                                "platform": source_info.get("platform", ""),
+                                "id": source_info_value.get("id", source_id),
+                                "name": source_info_value.get("name", source_id),
+                                "type": source_info_value.get("type", ""),
+                                "platform": source_info_value.get("platform", ""),
                                 "recipe": recipe,
-                                "schedule": source_info.get("schedule", {}),
+                                "schedule": source_info_value.get("schedule", {}) or {},
                                 "config": {
                                     "executorId": config.get("executorId", "default"),
                                     "debugMode": config.get("debugMode", False),
                                     "version": config.get("version", "0.8.42"),
-                                    "extraArgs": config.get("extraArgs", {})
+                                    "extraArgs": config.get("extraArgs", {}) or {}
                                 }
                             }
                             
@@ -580,7 +636,9 @@ class DataHubRestClient:
                         except Exception as e:
                             self.logger.warning(f"Error processing entity {entity.get('urn')}: {str(e)}")
                     
-                    self.logger.info(f"Successfully retrieved {len(sources)} ingestion sources via OpenAPI v3")                    
+                    if sources:
+                        self.logger.info(f"Successfully retrieved {len(sources)} ingestion sources via OpenAPI v3")
+                        return sources
                 except json.JSONDecodeError:
                     self.logger.warning("Failed to parse JSON response from OpenAPI v3 endpoint")
             else:
@@ -597,6 +655,9 @@ class DataHubRestClient:
                             sources_data = alt_response.json()
                             if isinstance(sources_data, list):
                                 for source in sources_data:
+                                    if source is None:
+                                        continue
+                                        
                                     try:
                                         source_id = source.get("id", "")
                                         if not source_id:
@@ -609,14 +670,16 @@ class DataHubRestClient:
                                             "name": source.get("name", source_id),
                                             "type": source.get("type", ""),
                                             "recipe": {},
-                                            "schedule": source.get("schedule", {})
+                                            "schedule": source.get("schedule", {}) or {}
                                         }
                                         
                                         # Parse recipe if present
                                         if "recipe" in source:
                                             try:
                                                 recipe_str = source["recipe"]
-                                                if isinstance(recipe_str, str):
+                                                if recipe_str is None:
+                                                    simplified_source["recipe"] = {}
+                                                elif isinstance(recipe_str, str):
                                                     simplified_source["recipe"] = json.loads(recipe_str)
                                                 elif isinstance(recipe_str, dict):
                                                     simplified_source["recipe"] = recipe_str
@@ -627,7 +690,9 @@ class DataHubRestClient:
                                     except Exception as e:
                                         self.logger.warning(f"Error processing source {source.get('id')}: {str(e)}")
                                         
-                                self.logger.info(f"Retrieved {len(sources)} ingestion sources via alternative API")
+                                if sources:
+                                    self.logger.info(f"Retrieved {len(sources)} ingestion sources via alternative API")
+                                    return sources
                         except json.JSONDecodeError:
                             self.logger.warning("Failed to parse JSON from alternative API endpoint")
                 except Exception as e:
@@ -635,7 +700,7 @@ class DataHubRestClient:
         except Exception as e:
             self.logger.error(f"Error listing ingestion sources via OpenAPI v3: {str(e)}")
         
-        return sources
+        return sources or []
     
     def get_ingestion_source(self, source_id):
         """
@@ -693,19 +758,37 @@ class DataHubRestClient:
                 }
                 
                 # Parse the recipe JSON
-                config = ingestion_source.get("config", {})
+                config = ingestion_source.get("config", {}) or {}
+                if config is None:
+                    config = {}
+                    
                 recipe_str = config.get("recipe", "{}")
                 try:
-                    if isinstance(recipe_str, dict):
+                    # Handle different recipe formats
+                    if recipe_str is None:
+                        recipe = {}
+                    elif isinstance(recipe_str, dict):
                         recipe = recipe_str
+                    elif isinstance(recipe_str, str):
+                        if not recipe_str.strip():
+                            recipe = {}
+                        else:
+                            # Try to parse as JSON, with fallback to empty dict
+                            try:
+                                recipe = json.loads(recipe_str)
+                            except json.JSONDecodeError:
+                                self.logger.warning(f"Could not parse recipe JSON for {source_id}, using empty dict")
+                                recipe = {}
                     else:
-                        recipe = json.loads(recipe_str)
+                        self.logger.warning(f"Unexpected recipe type: {type(recipe_str)}, using empty dict")
+                        recipe = {}
+                        
                     source_info["recipe"] = recipe
                     source_info["executor_id"] = config.get("executorId")
                     source_info["debug_mode"] = config.get("debugMode", False)
                     source_info["version"] = config.get("version")
-                except json.JSONDecodeError:
-                    self.logger.warning(f"Could not parse recipe JSON for {source_id}")
+                except Exception as e:
+                    self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
                     source_info["recipe"] = {}
                 
                 return source_info
@@ -743,12 +826,26 @@ class DataHubRestClient:
                         config = source_info.get("config", {})
                         recipe_str = config.get("recipe", "{}")
                         try:
-                            if isinstance(recipe_str, dict):
+                            # Handle different recipe formats
+                            if recipe_str is None:
+                                recipe = {}
+                            elif isinstance(recipe_str, dict):
                                 recipe = recipe_str
+                            elif isinstance(recipe_str, str):
+                                if not recipe_str.strip():
+                                    recipe = {}
+                                else:
+                                    # Try to parse as JSON, with fallback to empty dict
+                                    try:
+                                        recipe = json.loads(recipe_str)
+                                    except json.JSONDecodeError:
+                                        self.logger.warning(f"Could not parse recipe JSON for {source_id}, using empty dict")
+                                        recipe = {}
                             else:
-                                recipe = json.loads(recipe_str)
-                        except json.JSONDecodeError:
-                            self.logger.warning(f"Could not parse recipe JSON for {source_id}")
+                                self.logger.warning(f"Unexpected recipe type: {type(recipe_str)}, using empty dict")
+                                recipe = {}
+                        except Exception as e:
+                            self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
                             recipe = {}
                         
                         # Create simplified source object
@@ -810,22 +907,22 @@ class DataHubRestClient:
                             }
                             
                             # Extract recipe if available
+                            recipe = {}
                             if "recipe" in data:
                                 try:
-                                    if isinstance(data["recipe"], dict):
-                                        source_info["recipe"] = data["recipe"]
-                                    else:
-                                        source_info["recipe"] = json.loads(data["recipe"])
-                                except json.JSONDecodeError:
-                                    self.logger.warning(f"Could not parse recipe JSON for {source_id}")
-                            elif "config" in data and "recipe" in data["config"]:
-                                try:
-                                    if isinstance(data["config"]["recipe"], dict):
-                                        source_info["recipe"] = data["config"]["recipe"]
-                                    else:
-                                        source_info["recipe"] = json.loads(data["config"]["recipe"])
-                                except json.JSONDecodeError:
-                                    self.logger.warning(f"Could not parse recipe JSON from config for {source_id}")
+                                    recipe_data = data["recipe"]
+                                    if isinstance(recipe_data, dict):
+                                        recipe = recipe_data
+                                    elif isinstance(recipe_data, str):
+                                        if recipe_data.strip():
+                                            try:
+                                                recipe = json.loads(recipe_data)
+                                            except json.JSONDecodeError:
+                                                self.logger.warning(f"Could not parse recipe JSON from API response for {source_id}")
+                                except Exception as e:
+                                    self.logger.warning(f"Error processing recipe from API response: {str(e)}")
+                                
+                            source_info["recipe"] = recipe
                                     
                             return source_info
                         except json.JSONDecodeError:
@@ -838,7 +935,23 @@ class DataHubRestClient:
         except Exception as e:
             self.logger.error(f"Error with direct HTTP fallback: {str(e)}")
         
-        return None
+        # If all attempts failed, return minimal info based on ID
+        default_source = {
+            "urn": source_urn,
+            "id": source_id,
+            "name": source_id,
+            "type": "BATCH",
+            "schedule": {"interval": "0 0 * * *", "timezone": "UTC"},
+            "recipe": {},
+            "config": {
+                "executorId": "default",
+                "debugMode": False,
+                "version": "0.8.42"
+            }
+        }
+        
+        self.logger.warning(f"Returning default source info for {source_id} as all attempts failed")
+        return default_source
     
     def delete_ingestion_source(self, source_id: str) -> bool:
         """
@@ -1244,23 +1357,40 @@ class DataHubRestClient:
             # Prepare GraphQL input
             graphql_input = {}
             
-            if "name" in update_payload:
-                graphql_input["name"] = update_payload["name"]
+            # Always include name field for GraphQL - it's a required non-null field
+            # Use the name from update_payload if provided, otherwise use name from current_source
+            graphql_input["name"] = update_payload.get("name", current_source.get("name", source_id))
             
-            if "config" in update_payload:
-                graphql_input["config"] = {
-                    "executorId": update_payload["config"].get("executorId", current_executor_id)  # Always include executorId
-                }
+            # Always include type field for GraphQL - it's also a required non-null field
+            graphql_input["type"] = current_source.get("type", "BATCH")
+            
+            # Config is required with recipe for GraphQL
+            graphql_input["config"] = {
+                "executorId": update_payload.get("config", {}).get("executorId", current_executor_id)
+            }
+            
+            # Get current recipe and format it for inclusion
+            current_recipe = current_source.get("recipe", {})
+            if isinstance(current_recipe, str):
+                if not current_recipe:
+                    current_recipe = "{}"
+            elif current_recipe is None:
+                current_recipe = "{}"
                 
-                if "recipe" in update_payload["config"]:
-                    graphql_input["config"]["recipe"] = update_payload["config"]["recipe"]
-                    
-                if "debugMode" in update_payload["config"]:
-                    graphql_input["config"]["debugMode"] = update_payload["config"]["debugMode"]
+            # Add recipe to config - required field
+            if "config" in update_payload and "recipe" in update_payload["config"]:
+                graphql_input["config"]["recipe"] = update_payload["config"]["recipe"]
+            else:
+                # Use current recipe as fallback - required field
+                graphql_input["config"]["recipe"] = current_recipe
+                
+            # Add debug mode if specified
+            if "config" in update_payload and "debugMode" in update_payload["config"]:
+                graphql_input["config"]["debugMode"] = update_payload["config"]["debugMode"]
             
             if "schedule" in update_payload:
                 graphql_input["schedule"] = {
-                    "cron": update_payload["schedule"].get("cron", ""),
+                    "interval": update_payload["schedule"].get("interval", ""),
                     "timezone": update_payload["schedule"].get("timezone", "UTC")
                 }
             

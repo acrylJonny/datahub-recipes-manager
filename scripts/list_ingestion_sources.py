@@ -51,13 +51,18 @@ def list_sources(client: DataHubRestClient, output_format: str = "text") -> List
             # Text format
             print(f"\n{'ID':<30} | {'NAME':<30} | {'TYPE':<15} | {'SCHEDULE':<20}")
             print("-" * 100)
+            
+            if sources is None:
+                logger.warning("Sources data is None, cannot display table")
+                return []
+                
             for source in sources:
-                source_id = source.get("source_id", "")
+                source_id = source.get("id", source.get("source_id", ""))
                 name = source.get("name", "")
                 type_info = source.get("type", "")
                 
                 schedule_info = "None"
-                if "schedule" in source and "interval" in source["schedule"]:
+                if "schedule" in source and source["schedule"] and "interval" in source["schedule"]:
                     schedule_info = source["schedule"]["interval"]
                 
                 print(f"{source_id:<30} | {name:<30} | {type_info:<15} | {schedule_info:<20}")
@@ -105,11 +110,15 @@ def main():
         logger.error("Failed to connect to DataHub")
         sys.exit(1)
     
-    # List ingestion sources
-    sources = list_sources(client, args.format)
-    
-    if not sources and not args.format == "json":
-        logger.warning("No ingestion sources were found. This could be normal if none have been created yet.")
+    try:
+        # List ingestion sources
+        sources = list_sources(client, args.format)
+        
+        if not sources and not args.format == "json":
+            logger.warning("No ingestion sources were found. This could be normal if none have been created yet.")
+    except Exception as e:
+        logger.error(f"Error in main function: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 
