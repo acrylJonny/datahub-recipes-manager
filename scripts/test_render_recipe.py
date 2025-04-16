@@ -2,18 +2,27 @@
 """
 Script to test rendering a recipe instance with its template.
 Takes a recipe instance path as input and validates the rendered result.
+This file can be run directly or via pytest.
 """
 
 import sys
 import yaml
 import os
+import glob
 import argparse
+from pathlib import Path
+
+# Attempt to import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
 # Add utils to path for importing template_renderer
 sys.path.append('utils')
 from template_renderer import render_template
 
-def test_render_instance(instance_path):
+def render_instance(instance_path):
     """
     Test rendering a recipe instance with its template.
     
@@ -64,15 +73,33 @@ def test_render_instance(instance_path):
         print(f'Error processing instance {instance_path}: {str(e)}')
         return False
 
+# For standalone script usage
 def main():
-    """Main function"""
+    """Main function for direct script execution"""
     parser = argparse.ArgumentParser(description='Test rendering recipe instances')
     parser.add_argument('instance_path', help='Path to the recipe instance file')
     
     args = parser.parse_args()
     
-    success = test_render_instance(args.instance_path)
+    success = render_instance(args.instance_path)
     sys.exit(0 if success else 1)
+
+# For pytest usage - collect all instance files for testing
+def get_instance_files():
+    """Get all recipe instance files for testing"""
+    instance_files = []
+    # Use glob to find all yml files in the instances directory
+    for file_path in glob.glob('recipes/instances/**/*.yml', recursive=True):
+        instance_files.append(file_path)
+    return instance_files
+
+# Pytest function - only define if pytest is available
+if pytest:
+    # Parametrize the test to run for each instance file
+    @pytest.mark.parametrize('instance_file', get_instance_files())
+    def test_render_instance(instance_file):
+        """Pytest version of the render test function"""
+        assert render_instance(instance_file), f"Failed to render template for {instance_file}"
 
 if __name__ == "__main__":
     main() 

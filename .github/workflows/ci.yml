@@ -56,21 +56,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-cov
 
-      - name: Test rendering recipe instances
+      - name: Test rendering recipe instances with pytest
         run: |
-          # Make test script executable
-          chmod +x scripts/test_render_recipe.py
-          
-          # Test rendering each instance with its template
-          for instance in recipes/instances/**/*.yml; do
-            echo "Testing render for $instance"
-            python scripts/test_render_recipe.py "$instance"
-            if [ $? -ne 0 ]; then
-              echo "Failed to render template for $instance"
-              exit 1
-            fi
-          done
+          python -m pytest scripts/test_render_recipe.py -v
 
   test:
     runs-on: ubuntu-latest
