@@ -59,43 +59,51 @@ jobs:
 
       - name: Test rendering recipe instances
         run: |
+          # Make test script executable
+          chmod +x scripts/test_render_recipe.py
+          
           # Test rendering each instance with its template
           for instance in recipes/instances/**/*.yml; do
             echo "Testing render for $instance"
-            python -c "
-import sys, yaml, os
-sys.path.append('utils')
-from template_renderer import render_template
-
-# Load instance config
-with open('$instance', 'r') as f:
-    instance_config = yaml.safe_load(f)
-
-# Get template path
-template_type = instance_config.get('recipe_type')
-if not template_type:
-    print(f'Error: Recipe type not specified in instance configuration: {instance_config}')
-    sys.exit(1)
-
-template_path = f'recipes/templates/{template_type}.yml'
-if not os.path.exists(template_path):
-    print(f'Error: Template file not found: {template_path}')
-    sys.exit(1)
-
-# Render template with parameters
-parameters = instance_config.get('parameters', {})
-try:
-    rendered = render_template(template_path, parameters)
-    print(f'Successfully rendered template for {os.path.basename(instance)}')
-    # Validate essential keys in the rendered template
-    if 'source' not in rendered or not isinstance(rendered['source'], dict):
-        print(f'Error: Rendered template missing source configuration')
-        sys.exit(1)
-    if 'type' not in rendered['source']:
-        print(f'Error: Rendered template missing source type')
-        sys.exit(1)
-except Exception as e:
-    print(f'Error rendering template: {str(e)}')
-    sys.exit(1)
-"
+            python scripts/test_render_recipe.py "$instance"
+            if [ $? -ne 0 ]; then
+              echo "Failed to render template for $instance"
+              exit 1
+            fi
           done
+
+  test:
+    runs-on: ubuntu-latest
+    
+    env:
+      DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL || 'http://localhost:8080' }}
+      DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN || '' }}
+      TEST_SOURCE_ID: ${{ secrets.TEST_SOURCE_ID || 'analytics-database-prod' }}
+      PYTEST_SKIP_NETWORK: ${{ secrets.PYTEST_SKIP_NETWORK || 'true' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          echo "Running Python unit tests..."
+          python -m pytest -v test_recipe.py
+
+      - name: Run integration tests (skipped in CI unless configured)
+        if: env.PYTEST_SKIP_NETWORK != 'true'
+        run: |
+          echo "Running integration tests..."
+          python -m pytest -v scripts/test_graph.py

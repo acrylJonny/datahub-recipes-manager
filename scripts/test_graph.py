@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Test script to demonstrate how to use the DataHubGraph client directly.
+This file can be run directly or via pytest.
 """
 
 import os
@@ -9,6 +10,11 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Any
+
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
 from dotenv import load_dotenv
 
@@ -20,6 +26,13 @@ from utils.datahub_rest_client import DataHubRestClient
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Apply pytest marks if pytest is available
+network_test = pytest.mark.skipif(
+    os.environ.get("PYTEST_SKIP_NETWORK", "false").lower() == "true",
+    reason="Network tests are disabled"
+) if pytest else lambda f: f
+
+@network_test
 def test_list_secrets(client: DataHubRestClient):
     """Test listing secrets using GraphQL"""
     logger.info("Testing list_secrets method...")
@@ -31,6 +44,7 @@ def test_list_secrets(client: DataHubRestClient):
     else:
         logger.info("No secrets found.")
 
+@network_test
 def test_update_ingestion_source(client: DataHubRestClient, source_id: str = "analytics-database-prod"):
     """
     Test updating an ingestion source using the GraphQL mutation.
@@ -97,6 +111,7 @@ def test_update_ingestion_source(client: DataHubRestClient, source_id: str = "an
         logger.error(f"Error updating ingestion source: {str(e)}")
         return False
 
+@network_test
 def test_graph_query(client: DataHubRestClient):
     """Test direct GraphQL query execution"""
     logger.info("Testing direct GraphQL query...")

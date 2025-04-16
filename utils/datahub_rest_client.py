@@ -238,24 +238,31 @@ class DataHubRestClient:
             }
             """
             
-            variables = {
-                "input": {
-                    "type": source_type,
-                    "name": name,
-                    "schedule": {
-                        "interval": schedule_interval,
-                        "timezone": timezone
-                    },
-                    "config": {
-                        "recipe": recipe_str,
-                        "executorId": executor_id,
-                        "debugMode": debug_mode
-                    }
+            # Build input object with all required fields
+            graphql_input = {
+                "type": source_type,
+                "name": name,
+                "schedule": {
+                    "interval": schedule_interval,
+                    "timezone": timezone
+                },
+                "config": {
+                    "executorId": executor_id,
+                    "debugMode": debug_mode
                 }
             }
             
+            # Only add recipe if provided
+            if recipe_str is not None:
+                graphql_input["config"]["recipe"] = recipe_str
+                
+            # Add extra args if provided
             if extra_args:
-                variables["input"]["config"]["extraArgs"] = extra_args
+                graphql_input["config"]["extraArgs"] = extra_args
+                
+            variables = {
+                "input": graphql_input
+            }
                 
             self.logger.debug(f"GraphQL variables: {json.dumps(variables)}")
             result = self.execute_graphql(mutation, variables)
@@ -274,7 +281,13 @@ class DataHubRestClient:
                         "id": source_id,
                         "name": name,
                         "type": source_type,
-                        "status": "created"
+                        "status": "created",
+                        "config": {
+                            "recipe": recipe_str,
+                            "executorId": executor_id,
+                            "debugMode": debug_mode,
+                            "extraArgs": extra_args
+                        }
                     }
                 else:
                     self.logger.warning("GraphQL mutation returned success but no URN")
@@ -284,7 +297,13 @@ class DataHubRestClient:
                         "id": source_id,
                         "name": name, 
                         "type": source_type,
-                        "status": "created"
+                        "status": "created",
+                        "config": {
+                            "recipe": recipe_str,
+                            "executorId": executor_id,
+                            "debugMode": debug_mode,
+                            "extraArgs": extra_args
+                        }
                     }
         except Exception as e:
             self.logger.warning(f"Error creating ingestion source via GraphQL: {str(e)}")
@@ -306,9 +325,7 @@ class DataHubRestClient:
                         createIngestionSource(input: $input)
                     }
                 """,
-                "variables": {
-                    "input": variables["input"]
-                }
+                "variables": variables
             }
             
             direct_response = requests.post(
@@ -327,7 +344,13 @@ class DataHubRestClient:
                         "id": source_id,
                         "name": name,
                         "type": source_type,
-                        "status": "created"
+                        "status": "created",
+                        "config": {
+                            "recipe": recipe_str,
+                            "executorId": executor_id,
+                            "debugMode": debug_mode,
+                            "extraArgs": extra_args
+                        }
                     }
                 else:
                     self.logger.warning(f"GraphQL errors with direct endpoint: {direct_result.get('errors')}")
@@ -359,12 +382,15 @@ class DataHubRestClient:
                         "config": {
                             "recipe": recipe_str,
                             "executorId": executor_id,
-                            "debugMode": debug_mode,
-                            "extraArgs": extra_args or {}
+                            "debugMode": debug_mode
                         }
                     }
                 }
             }]
+            
+            # Add extra args only if provided
+            if extra_args:
+                payload[0]["dataHubIngestionSourceInfo"]["value"]["config"]["extraArgs"] = extra_args
             
             self.logger.debug(f"REST API payload: {json.dumps(payload)}")
             
@@ -384,7 +410,13 @@ class DataHubRestClient:
                         "id": source_id,
                         "name": name,
                         "type": source_type,
-                        "status": "created"
+                        "status": "created",
+                        "config": {
+                            "recipe": recipe_str,
+                            "executorId": executor_id,
+                            "debugMode": debug_mode,
+                            "extraArgs": extra_args
+                        }
                     }
                 except Exception as e:
                     self.logger.warning(f"Error parsing REST API response: {str(e)}")
@@ -394,7 +426,13 @@ class DataHubRestClient:
                         "id": source_id,
                         "name": name,
                         "type": source_type,
-                        "status": "created"
+                        "status": "created",
+                        "config": {
+                            "recipe": recipe_str,
+                            "executorId": executor_id,
+                            "debugMode": debug_mode,
+                            "extraArgs": extra_args
+                        }
                     }
             else:
                 self.logger.error(f"Failed to create ingestion source via REST API: {response.status_code} - {response.text}")
@@ -921,6 +959,7 @@ class DataHubRestClient:
                     "name": ingestion_source["name"],
                     "type": ingestion_source["type"],
                     "schedule": ingestion_source["schedule"],
+                    "config": {}  # Initialize config to ensure it's never None
                 }
                 
                 # Parse the recipe JSON
@@ -928,7 +967,7 @@ class DataHubRestClient:
                 if config is None:
                     config = {}
                     
-                recipe_str = config.get("recipe", "{}")
+                recipe_str = config.get("recipe")
                 self.logger.debug(f"Raw recipe string from GraphQL: {recipe_str}")
                 
                 try:
@@ -957,16 +996,17 @@ class DataHubRestClient:
                     else:
                         self.logger.warning(f"Unexpected recipe type: {type(recipe_str)}, using empty dict")
                         recipe = {}
-                        
-                    source_info["recipe"] = recipe
+                    
+                    # Build config object with all relevant fields    
                     source_info["config"] = {
+                        "recipe": recipe_str,  # Store original recipe string to avoid double-parsing
                         "executorId": config.get("executorId", "default"),
                         "debugMode": config.get("debugMode", False),
                         "version": config.get("version")
                     }
                 except Exception as e:
                     self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
-                    source_info["recipe"] = {}
+                    source_info["config"]["recipe"] = recipe_str or {}  # Use empty object as fallback
                 
                 return source_info
             
@@ -1012,47 +1052,24 @@ class DataHubRestClient:
                             "type": source_info.get("type", ""),
                             "platform": source_info.get("platform", ""),
                             "schedule": source_info.get("schedule", {}),
+                            "config": {}  # Initialize config to ensure it's never None
                         }
                         
                         # Parse the recipe JSON if it exists
-                        config = source_info.get("config", {})
-                        recipe_str = config.get("recipe", "{}")
+                        config = source_info.get("config", {}) or {}
+                        if config is None:
+                            config = {}
+                            
+                        recipe_str = config.get("recipe")
                         self.logger.debug(f"Raw recipe string from OpenAPI: {recipe_str}")
                         
-                        try:
-                            # Handle different recipe formats
-                            if recipe_str is None:
-                                recipe = {}
-                            elif isinstance(recipe_str, dict):
-                                recipe = recipe_str
-                            elif isinstance(recipe_str, str):
-                                if not recipe_str.strip():
-                                    recipe = {}
-                                # Check if it's a template reference (starting with @)
-                                elif recipe_str.strip().startswith("@"):
-                                    self.logger.debug(f"Found template reference in recipe: {recipe_str}")
-                                    recipe = recipe_str.strip()
-                                else:
-                                    # Try to parse as JSON, with fallback to raw string
-                                    try:
-                                        recipe = json.loads(recipe_str)
-                                        self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)[:100]}...")
-                                    except json.JSONDecodeError:
-                                        self.logger.warning(f"Could not parse recipe JSON for {source_id}, treating as raw string")
-                                        recipe = recipe_str
-                            else:
-                                self.logger.warning(f"Unexpected recipe type: {type(recipe_str)}, using empty dict")
-                                recipe = {}
-                                
-                            result["recipe"] = recipe
-                            result["config"] = {
-                                "executorId": config.get("executorId", "default"),
-                                "debugMode": config.get("debugMode", False),
-                                "version": config.get("version")
-                            }
-                        except Exception as e:
-                            self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
-                            result["recipe"] = {}
+                        # Build config object with all relevant fields
+                        result["config"] = {
+                            "recipe": recipe_str,  # Store original recipe string to avoid double-parsing
+                            "executorId": config.get("executorId", "default"),
+                            "debugMode": config.get("debugMode", False),
+                            "version": config.get("version")
+                        }
                         
                         return result
                     else:
@@ -1090,8 +1107,8 @@ class DataHubRestClient:
                 "name": source_id,  # Use ID as name
                 "type": "",  # Unknown type
                 "schedule": {"interval": "0 0 * * *", "timezone": "UTC"},  # Default schedule
-                "recipe": {},  # Empty recipe
                 "config": {
+                    "recipe": {},  # Empty recipe
                     "executorId": "default",
                     "debugMode": False,
                     "version": None
@@ -1499,32 +1516,37 @@ class DataHubRestClient:
                 # Always include the current name - required for the mutation
                 graphql_input["name"] = current_source.get("name")
             
-            # Build config object
+            # Build config object - always initialize it
             config = {}
+            
+            # Get current config values to avoid nulls
+            current_config = current_source.get("config", {}) or {}
+            
+            # Add recipe if provided or keep existing
             if recipe_str is not None:
                 config["recipe"] = recipe_str
+            elif "recipe" in current_config and current_config["recipe"] is not None:
+                config["recipe"] = current_config["recipe"]
             
             # Always include executorId - it's required by the GraphQL schema
             if executor_id is not None:
                 config["executorId"] = executor_id
-            elif current_source.get("config", {}).get("executorId"):
-                config["executorId"] = current_source.get("config", {}).get("executorId")
+            elif current_config.get("executorId"):
+                config["executorId"] = current_config.get("executorId")
             else:
                 config["executorId"] = "default"  # Fallback to default executor
                 
             if debug_mode is not None:
                 config["debugMode"] = debug_mode
-            elif current_source.get("config", {}).get("debugMode") is not None:
-                config["debugMode"] = current_source.get("config", {}).get("debugMode")
+            elif current_config.get("debugMode") is not None:
+                config["debugMode"] = current_config.get("debugMode")
                 
             if extra_args is not None:
                 config["extraArgs"] = extra_args
-                
-            # If we don't have recipe in config but need to update other config fields,
-            # get the current recipe from the source
-            if "recipe" not in config and current_source.get("config", {}).get("recipe") and config:
-                config["recipe"] = current_source.get("config", {}).get("recipe")
+            elif current_config.get("extraArgs") is not None:
+                config["extraArgs"] = current_config.get("extraArgs")
             
+            # Only add config if we have something to update
             if config:
                 graphql_input["config"] = config
             
@@ -1533,7 +1555,7 @@ class DataHubRestClient:
                 schedule_obj = {}
                 
                 # Use current values as defaults if available
-                current_schedule = current_source.get("schedule", {})
+                current_schedule = current_source.get("schedule", {}) or {}
                 
                 # Update with new values if provided
                 if schedule_interval is not None:
@@ -1553,7 +1575,7 @@ class DataHubRestClient:
                 graphql_input["schedule"] = current_source.get("schedule")
             
             # Only proceed if we have something to update
-            if not graphql_input:
+            if not graphql_input or (len(graphql_input) == 2 and "type" in graphql_input and "name" in graphql_input):
                 self.logger.warning("No updates to apply to ingestion source")
                 return current_source
                 
@@ -1590,6 +1612,9 @@ class DataHubRestClient:
                 if not current_source:
                     self.logger.error(f"Could not fetch source info for REST API patching: {urn}")
                     return None
+            
+            # Get current configuration to avoid nulls
+            current_config = current_source.get("config", {}) or {}
                     
             # Prepare payload
             payload = {}
@@ -1597,25 +1622,39 @@ class DataHubRestClient:
                 payload["name"] = name
             if source_type is not None:
                 payload["type"] = source_type
+                
+            # Ensure config exists in the payload
+            payload["config"] = payload.get("config", {})
+                
             if recipe_str is not None:
-                payload["config"] = payload.get("config", {})
                 payload["config"]["recipe"] = recipe_str
+            elif "recipe" in current_config:
+                payload["config"]["recipe"] = current_config["recipe"]
+                
             if executor_id is not None:
-                payload["config"] = payload.get("config", {})
                 payload["config"]["executorId"] = executor_id
+            elif "executorId" in current_config:
+                payload["config"]["executorId"] = current_config["executorId"]
+                
             if debug_mode is not None:
-                payload["config"] = payload.get("config", {})
                 payload["config"]["debugMode"] = debug_mode
+            elif "debugMode" in current_config:
+                payload["config"]["debugMode"] = current_config["debugMode"]
+                
             if extra_args is not None:
-                payload["config"] = payload.get("config", {})
                 payload["config"]["extraArgs"] = extra_args
+            elif "extraArgs" in current_config:
+                payload["config"]["extraArgs"] = current_config["extraArgs"]
+                
             if schedule_interval is not None or timezone is not None:
                 payload["schedule"] = payload.get("schedule", {})
-                current_schedule = current_source.get("schedule", {})
+                current_schedule = current_source.get("schedule", {}) or {}
+                
                 if schedule_interval is not None:
                     payload["schedule"]["interval"] = schedule_interval
                 elif current_schedule and "interval" in current_schedule:
                     payload["schedule"]["interval"] = current_schedule["interval"]
+                    
                 if timezone is not None:
                     payload["schedule"]["timezone"] = timezone
                 elif current_schedule and "timezone" in current_schedule:
