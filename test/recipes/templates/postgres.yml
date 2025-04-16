@@ -4,8 +4,7 @@ source:
     # Connection configuration
     username: ${PG_USER}
     password: ${PG_PASSWORD}
-    host: ${PG_HOST}
-    port: ${PG_PORT}
+    host_port: ${PG_HOST_PORT}
     database: ${PG_DATABASE}
     
     # Content configuration

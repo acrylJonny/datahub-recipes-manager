@@ -132,120 +132,276 @@ class DataHubRestClient:
             logger.error(f"Error testing connection: {str(e)}")
             return False
             
-    def create_ingestion_source(self, ingestion_source: dict) -> dict:
+    def create_ingestion_source(
+        self,
+        recipe: Union[Dict[str, Any], str],
+        name: Optional[str] = None,
+        source_type: Optional[str] = None,
+        schedule_interval: str = "0 0 * * *",
+        timezone: str = "UTC",
+        executor_id: str = "default",
+        source_id: Optional[str] = None,
+        debug_mode: bool = False,
+        extra_args: Optional[Dict[str, Any]] = None,
+        type: Optional[str] = None,  # Added to handle type parameter instead of source_type
+        schedule: Optional[Union[Dict[str, str], str]] = None,  # Added to handle schedule as dict
+        **kwargs  # Add **kwargs to handle any additional parameters
+    ) -> Optional[Dict[str, Any]]:
         """
-        Create a new ingestion source in DataHub.
-        
-        This method attempts to create the ingestion source using GraphQL first and falls back to REST API if needed.
+        Create a DataHub ingestion source.
         
         Args:
-            ingestion_source: Dictionary with ingestion source details
+            recipe: Recipe configuration (dict) or template reference (string starting with @)
+               OR a complete dictionary of ingestion source parameters
+            name: Human-readable name for the ingestion source
+            source_type: Type of source (e.g., postgres, snowflake, bigquery)
+            type: Alternative parameter for source_type (deprecated, use source_type instead)
+            schedule_interval: Cron expression for the schedule
+            timezone: Timezone for the schedule
+            schedule: Alternative schedule param as dict with 'interval' and 'timezone' keys
+            executor_id: Executor ID to use
+            source_id: Optional custom ID for the source
+            debug_mode: Enable debug mode
+            extra_args: Extra arguments for the ingestion
+            **kwargs: Additional parameters
             
         Returns:
-            Dictionary with created ingestion source details or None if creation failed
+            dict: Created source information including URN
         """
-        source_id = ingestion_source.get("id") or ingestion_source.get("name", "unknown")
-        self.logger.info(f"Creating ingestion source: {source_id}")
+        # Check if the first parameter is a complete config dict
+        if isinstance(recipe, dict) and ("name" in recipe or "recipe" in recipe):
+            # Extract parameters from the dict
+            config_dict = recipe
+            
+            # Now extract individual parameters from the config dict
+            source_id = config_dict.get("source_id", config_dict.get("id", source_id))
+            name = config_dict.get("name", name)
+            source_type = config_dict.get("source_type", config_dict.get("type", source_type))
+            schedule_dict = config_dict.get("schedule", schedule)
+            executor_id = config_dict.get("executor_id", config_dict.get("config", {}).get("executorId", executor_id))
+            debug_mode = config_dict.get("debug_mode", config_dict.get("config", {}).get("debugMode", debug_mode))
+            extra_args = config_dict.get("extra_args", config_dict.get("config", {}).get("extraArgs", extra_args))
+            
+            if "recipe" in config_dict:
+                recipe = config_dict["recipe"]
+            elif "config" in config_dict and "recipe" in config_dict["config"]:
+                recipe = config_dict["config"]["recipe"]
         
-        # Clean up payload to remove fields that shouldn't be sent to DataHub
-        payload = ingestion_source.copy()
+        self.logger.info(f"Creating ingestion source with name: {name}")
         
-        # Make sure executor_id is available but don't set to default in overall payload
-        executor_id = payload.get("executor_id", "default")
+        if name is None:
+            raise ValueError("'name' parameter is required")
+            
+        # Handle type parameter compatibility
+        if not source_type and type:
+            source_type = type
         
-        # Remove schedule if not explicitly specified
-        if "schedule" in payload and not (payload["schedule"].get("cron") or payload["schedule"].get("interval")):
-            self.logger.debug("Removing empty schedule from payload")
-            payload.pop("schedule", None)
+        if not source_type:
+            raise ValueError("Either 'source_type' or 'type' parameter must be provided")
         
-        # First, try with GraphQL
+        # Handle schedule parameter compatibility
+        if schedule:
+            if isinstance(schedule, dict):
+                schedule_interval = schedule.get("interval", schedule_interval)
+                timezone = schedule.get("timezone", timezone)
+            elif isinstance(schedule, str):
+                schedule_interval = schedule
+        
+        # Generate source_id if not provided
+        if not source_id:
+            source_id = str(uuid.uuid4())
+            
+        # Generate URN for the ingestion source
+        source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
+        
+        # Process recipe based on type
+        recipe_str = None
+        if isinstance(recipe, dict):
+            self.logger.debug(f"Converting recipe dict to JSON string")
+            recipe_str = json.dumps(recipe)
+        elif isinstance(recipe, str) and recipe.strip().startswith("@"):
+            # Handle template reference as-is - don't try to parse it as JSON
+            self.logger.debug(f"Found template reference in recipe: {recipe}")
+            recipe_str = recipe.strip()
+        else:
+            # For other formats, use as-is
+            recipe_str = recipe
+            
+        # Try GraphQL approach first
         try:
-            # DataHub doesn't have a CreateIngestionSourceInput type, but does use a similar structure to UpdateIngestionSourceInput
-            graphql_mutation = """
-            mutation createIngestionSource($input: UpdateIngestionSourceInput!) {
-              createIngestionSource(input: $input)
+            self.logger.info(f"Creating ingestion source via GraphQL")
+            
+            # Fixed mutation without subselections, just returns a string
+            mutation = """
+            mutation createIngestionSource($input: CreateIngestionSourceInput!) {
+                createIngestionSource(input: $input)
             }
             """
             
-            # Prepare the GraphQL input
-            graphql_input = {
-                "name": payload.get("name", source_id),
-                "type": payload.get("type", "metadata"),
-                "config": {
-                    "recipe": payload.get("recipe", payload.get("config", {}).get("recipe", "{}")),
-                    "executorId": executor_id  # Always include executorId as it's required by the GraphQL schema
+            variables = {
+                "input": {
+                    "type": source_type,
+                    "name": name,
+                    "schedule": {
+                        "interval": schedule_interval,
+                        "timezone": timezone
+                    },
+                    "config": {
+                        "recipe": recipe_str,
+                        "executorId": executor_id,
+                        "debugMode": debug_mode
+                    }
                 }
             }
             
-            # Add optional fields if they exist
-            if "description" in payload:
-                graphql_input["description"] = payload["description"]
+            if extra_args:
+                variables["input"]["config"]["extraArgs"] = extra_args
                 
-            if "schedule" in payload and payload["schedule"].get("cron"):
-                graphql_input["schedule"] = {
-                    "cron": payload["schedule"]["cron"],
-                    "timezone": payload["schedule"].get("timezone", "UTC")
-                }
+            self.logger.debug(f"GraphQL variables: {json.dumps(variables)}")
+            result = self.execute_graphql(mutation, variables)
             
-            # Add debug_mode if present
-            if "debug_mode" in payload:
-                graphql_input["config"]["debugMode"] = payload["debug_mode"]
-                
-            self.logger.debug(f"Creating ingestion source with GraphQL: {graphql_input}")
-            
-            result = self.execute_graphql(graphql_mutation, {"input": graphql_input})
-            if result and "errors" not in result:
-                source_urn = result.get("data", {}).get("createIngestionSource")
-                if source_urn:
-                    self.logger.info(f"Successfully created ingestion source via GraphQL: {source_id}")
-                    # Get the full details of the created source
-                    return self.get_ingestion_source(source_id)
+            if "errors" in result:
+                error_msgs = [e.get("message", "") for e in result.get("errors", [])]
+                self.logger.warning(f"GraphQL errors when creating ingestion source: {', '.join(error_msgs)}")
+                # Continue to REST API fallback
             else:
-                error_msg = "GraphQL errors when creating ingestion source: "
-                if result and "errors" in result:
-                    error_msg += str(result["errors"])
-                self.logger.warning(f"{error_msg}, falling back to REST API")
+                # Success - createIngestionSource returns the URN
+                created_urn = result.get("data", {}).get("createIngestionSource")
+                if created_urn:
+                    self.logger.info(f"Successfully created ingestion source via GraphQL: {source_id}")
+                    return {
+                        "urn": created_urn,
+                        "id": source_id,
+                        "name": name,
+                        "type": source_type,
+                        "status": "created"
+                    }
+                else:
+                    self.logger.warning("GraphQL mutation returned success but no URN")
+                    # We'll still return base info since the mutation didn't report errors
+                    return {
+                        "urn": source_urn,
+                        "id": source_id,
+                        "name": name, 
+                        "type": source_type,
+                        "status": "created"
+                    }
         except Exception as e:
-            self.logger.warning(f"Error executing GraphQL via SDK: {e}")
-            self.logger.warning("Falling back to REST API")
-        
-        # Fall back to REST API (try multiple endpoint patterns)
+            self.logger.warning(f"Error creating ingestion source via GraphQL: {str(e)}")
+            # Continue to direct GraphQL endpoint
+            
+        # Try direct GraphQL endpoint
         try:
+            self.logger.info(f"Trying direct GraphQL endpoint for creation")
+            
             # Set up headers
             headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
             
-            # Try multiple possible endpoints paths
-            endpoints = [
-                f"{self.server_url}/ingestion",
-                f"{self.server_url}/sources",
-                f"{self.server_url}/ingestionsources",
-                f"{self.server_url}/api/v2/ingestionsource"
-            ]
+            # Simple GraphQL mutation with variables
+            direct_mutation = {
+                "query": """
+                    mutation createIngestionSource($input: CreateIngestionSourceInput!) {
+                        createIngestionSource(input: $input)
+                    }
+                """,
+                "variables": {
+                    "input": variables["input"]
+                }
+            }
             
-            # Add executor_id to payload for REST API if not present
-            if "executor_id" not in payload:
-                payload["executor_id"] = executor_id
-                
-            # Try each endpoint
-            for url in endpoints:
-                self.logger.info(f"Attempting to create ingestion source via REST API: {url}")
-                
-                response = requests.post(url, headers=headers, json=payload)
-                
-                if response.status_code in (200, 201):
-                    self.logger.info(f"Successfully created ingestion source via endpoint {url}: {source_id}")
-                    return self.get_ingestion_source(source_id)
+            direct_response = requests.post(
+                f"{self.server_url}/api/graphql",
+                headers=headers,
+                json=direct_mutation
+            )
+            
+            if direct_response.status_code == 200:
+                direct_result = direct_response.json()
+                if "errors" not in direct_result:
+                    created_urn = direct_result.get("data", {}).get("createIngestionSource")
+                    self.logger.info(f"Successfully created ingestion source via direct GraphQL: {source_id}")
+                    return {
+                        "urn": created_urn or source_urn,
+                        "id": source_id,
+                        "name": name,
+                        "type": source_type,
+                        "status": "created"
+                    }
                 else:
-                    self.logger.warning(f"Failed to create ingestion source at {url}: {response.status_code} - {response.text}")
-            
-            # If we've tried all endpoints and still failed
-            self.logger.error("All REST API endpoints failed for creating ingestion source")
+                    self.logger.warning(f"GraphQL errors with direct endpoint: {direct_result.get('errors')}")
+            else:
+                self.logger.warning(f"Failed with direct GraphQL endpoint: {direct_response.status_code}")
         except Exception as e:
-            self.logger.error(f"Error creating ingestion source: {str(e)}")
-        
-        return None
+            self.logger.warning(f"Error with direct GraphQL endpoint: {str(e)}")
+            
+        # Fall back to REST API
+        try:
+            self.logger.info(f"Creating ingestion source via REST API: {name}")
+            
+            # Prepare payload for OpenAPI v3
+            payload = [{
+                "urn": source_urn,
+                "dataHubIngestionSourceKey": {
+                    "value": {
+                        "id": source_id
+                    }
+                },
+                "dataHubIngestionSourceInfo": {
+                    "value": {
+                        "name": name,
+                        "type": source_type,
+                        "schedule": {
+                            "interval": schedule_interval,
+                            "timezone": timezone
+                        },
+                        "config": {
+                            "recipe": recipe_str,
+                            "executorId": executor_id,
+                            "debugMode": debug_mode,
+                            "extraArgs": extra_args or {}
+                        }
+                    }
+                }
+            }]
+            
+            self.logger.debug(f"REST API payload: {json.dumps(payload)}")
+            
+            response = requests.post(
+                f"{self.server_url}/openapi/v3/entity/datahubingestionsource",
+                headers=self.headers,
+                json=payload
+            )
+            
+            if response.status_code in (200, 201, 202):
+                self.logger.info(f"Successfully created ingestion source via REST API: {source_id}")
+                try:
+                    response_data = response.json()
+                    created_urn = response_data[0].get("urn", source_urn)
+                    return {
+                        "urn": created_urn,
+                        "id": source_id,
+                        "name": name,
+                        "type": source_type,
+                        "status": "created"
+                    }
+                except Exception as e:
+                    self.logger.warning(f"Error parsing REST API response: {str(e)}")
+                    # Still return success with known data
+                    return {
+                        "urn": source_urn,
+                        "id": source_id,
+                        "name": name,
+                        "type": source_type,
+                        "status": "created"
+                    }
+            else:
+                self.logger.error(f"Failed to create ingestion source via REST API: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error creating ingestion source via REST API: {str(e)}")
+            return None
     
     def trigger_ingestion(self, ingestion_source_id: str) -> bool:
         """
@@ -708,13 +864,23 @@ class DataHubRestClient:
         First tries GraphQL, then falls back to OpenAPI v3 endpoint.
         
         Args:
-            source_id: ID of the ingestion source to retrieve
+            source_id: ID or URN of the ingestion source to retrieve
             
         Returns:
-            dict: Source information if found, None otherwise
+            dict: Source information if found, None otherwise. Returns a minimal
+                  default source object if all retrieval attempts fail but the source_id is provided.
         """
+        # If source_id is already a URN, use it as is
+        if source_id.startswith("urn:li:dataHubIngestionSource:"):
+            self.logger.debug(f"Using provided URN: {source_id}")
+            source_urn = source_id
+            # Extract just the ID part for logging
+            source_id = source_id.replace("urn:li:dataHubIngestionSource:", "")
+        else:
+            self.logger.debug(f"Converting source ID to URN: {source_id}")
+            source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
+            
         self.logger.info(f"Fetching ingestion source: {source_id}")
-        source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
         
         # Try GraphQL approach first - preferred method
         query = """
@@ -763,6 +929,8 @@ class DataHubRestClient:
                     config = {}
                     
                 recipe_str = config.get("recipe", "{}")
+                self.logger.debug(f"Raw recipe string from GraphQL: {recipe_str}")
+                
                 try:
                     # Handle different recipe formats
                     if recipe_str is None:
@@ -772,21 +940,30 @@ class DataHubRestClient:
                     elif isinstance(recipe_str, str):
                         if not recipe_str.strip():
                             recipe = {}
+                        # Check if it's a template reference (starting with @)
+                        elif recipe_str.strip().startswith("@"):
+                            self.logger.debug(f"Found template reference in recipe: {recipe_str}")
+                            recipe = recipe_str.strip()
                         else:
-                            # Try to parse as JSON, with fallback to empty dict
+                            # Try to parse as JSON, with fallback to raw string
                             try:
                                 recipe = json.loads(recipe_str)
+                                self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)[:100]}...")
                             except json.JSONDecodeError:
-                                self.logger.warning(f"Could not parse recipe JSON for {source_id}, using empty dict")
-                                recipe = {}
+                                self.logger.warning(f"Could not parse recipe JSON for {source_id}, treating as raw string")
+                                # If it's not valid JSON, treat it as a raw string
+                                # This could be a template or other format
+                                recipe = recipe_str
                     else:
                         self.logger.warning(f"Unexpected recipe type: {type(recipe_str)}, using empty dict")
                         recipe = {}
                         
                     source_info["recipe"] = recipe
-                    source_info["executor_id"] = config.get("executorId")
-                    source_info["debug_mode"] = config.get("debugMode", False)
-                    source_info["version"] = config.get("version")
+                    source_info["config"] = {
+                        "executorId": config.get("executorId", "default"),
+                        "debugMode": config.get("debugMode", False),
+                        "version": config.get("version")
+                    }
                 except Exception as e:
                     self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
                     source_info["recipe"] = {}
@@ -805,7 +982,7 @@ class DataHubRestClient:
             self.logger.warning(f"Error getting ingestion source via GraphQL: {str(e)}")
             # Fall through to OpenAPI v3
         
-        # Try OpenAPI v3 endpoint with the new format
+        # Try OpenAPI v3 endpoint with the exact schema format
         try:
             openapi_url = f"{self.server_url}/openapi/v3/entity/datahubingestionsource/{source_urn}"
             self.logger.debug(f"Fetching ingestion source via OpenAPI v3: GET {openapi_url}")
@@ -816,15 +993,32 @@ class DataHubRestClient:
                 self.logger.debug(f"Successfully retrieved ingestion source via OpenAPI v3: {source_id}")
                 try:
                     data = response.json()
+                    self.logger.debug(f"OpenAPI v3 response: {json.dumps(data)[:200]}...")
                     
                     # Extract source info from the OpenAPI v3 format
                     # The structure has nested dataHubIngestionSourceInfo.value
-                    source_info = data.get("dataHubIngestionSourceInfo", {}).get("value", {})
+                    source_info_wrapper = data.get("dataHubIngestionSourceInfo", {})
+                    if not source_info_wrapper:
+                        self.logger.warning(f"No dataHubIngestionSourceInfo in response for {source_id}")
+                        
+                    source_info = source_info_wrapper.get("value", {}) if source_info_wrapper else {}
                     
                     if source_info:
+                        # Create the result object
+                        result = {
+                            "urn": source_urn,
+                            "id": source_id,
+                            "name": source_info.get("name", source_id),
+                            "type": source_info.get("type", ""),
+                            "platform": source_info.get("platform", ""),
+                            "schedule": source_info.get("schedule", {}),
+                        }
+                        
                         # Parse the recipe JSON if it exists
                         config = source_info.get("config", {})
                         recipe_str = config.get("recipe", "{}")
+                        self.logger.debug(f"Raw recipe string from OpenAPI: {recipe_str}")
+                        
                         try:
                             # Handle different recipe formats
                             if recipe_str is None:
@@ -834,124 +1028,77 @@ class DataHubRestClient:
                             elif isinstance(recipe_str, str):
                                 if not recipe_str.strip():
                                     recipe = {}
+                                # Check if it's a template reference (starting with @)
+                                elif recipe_str.strip().startswith("@"):
+                                    self.logger.debug(f"Found template reference in recipe: {recipe_str}")
+                                    recipe = recipe_str.strip()
                                 else:
-                                    # Try to parse as JSON, with fallback to empty dict
+                                    # Try to parse as JSON, with fallback to raw string
                                     try:
                                         recipe = json.loads(recipe_str)
+                                        self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)[:100]}...")
                                     except json.JSONDecodeError:
-                                        self.logger.warning(f"Could not parse recipe JSON for {source_id}, using empty dict")
-                                        recipe = {}
+                                        self.logger.warning(f"Could not parse recipe JSON for {source_id}, treating as raw string")
+                                        recipe = recipe_str
                             else:
                                 self.logger.warning(f"Unexpected recipe type: {type(recipe_str)}, using empty dict")
                                 recipe = {}
-                        except Exception as e:
-                            self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
-                            recipe = {}
-                        
-                        # Create simplified source object
-                        result = {
-                            "urn": source_urn,
-                            "id": source_id,
-                            "name": source_info.get("name", source_id),
-                            "type": source_info.get("type", ""),
-                            "platform": source_info.get("platform", ""),
-                            "recipe": recipe,
-                            "schedule": source_info.get("schedule", {}),
-                            "config": {
+                                
+                            result["recipe"] = recipe
+                            result["config"] = {
                                 "executorId": config.get("executorId", "default"),
                                 "debugMode": config.get("debugMode", False),
-                                "version": config.get("version", "0.8.42"),
-                                "extraArgs": config.get("extraArgs", {})
+                                "version": config.get("version")
                             }
-                        }
+                        except Exception as e:
+                            self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
+                            result["recipe"] = {}
                         
                         return result
                     else:
                         self.logger.warning(f"No source info found in OpenAPI v3 response for {source_id}")
                 except json.JSONDecodeError:
-                    self.logger.warning(f"Failed to parse JSON from OpenAPI v3 response for {source_id}")
-            elif response.status_code == 404:
-                self.logger.warning(f"Ingestion source not found (404): {source_id}")
-            else:
-                self.logger.warning(f"Failed to get ingestion source via OpenAPI v3: {response.status_code} - {response.text}")
-        except Exception as e:
-            self.logger.error(f"Error getting ingestion source via OpenAPI v3: {str(e)}")
-        
-        # Last resort: Try direct HTTP GET to different formats of the API
-        try:
-            self.logger.debug(f"Trying direct HTTP GET for source: {source_id}")
-            alternate_urls = [
-                f"{self.server_url}/api/v2/ingestion/sources/{source_id}",
-                f"{self.server_url}/ingestion-sources/{source_id}",
-                f"{self.server_url}/api/v2/ingestion-sources/{source_id}"
-            ]
-            
-            for url in alternate_urls:
-                try:
-                    self.logger.debug(f"Trying URL: {url}")
-                    response = requests.get(url, headers=self.headers)
-                    
-                    if response.status_code == 200:
-                        self.logger.info(f"Successfully retrieved ingestion source via direct HTTP GET: {url}")
-                        try:
-                            data = response.json()
-                            
-                            # Create minimal source info
-                            source_info = {
-                                "urn": source_urn,
-                                "id": source_id,
-                                "name": data.get("name", source_id),
-                                "type": data.get("type", "BATCH"),
-                                "schedule": data.get("schedule", {"interval": "0 0 * * *", "timezone": "UTC"}),
-                                "recipe": {}
-                            }
-                            
-                            # Extract recipe if available
-                            recipe = {}
-                            if "recipe" in data:
-                                try:
-                                    recipe_data = data["recipe"]
-                                    if isinstance(recipe_data, dict):
-                                        recipe = recipe_data
-                                    elif isinstance(recipe_data, str):
-                                        if recipe_data.strip():
-                                            try:
-                                                recipe = json.loads(recipe_data)
-                                            except json.JSONDecodeError:
-                                                self.logger.warning(f"Could not parse recipe JSON from API response for {source_id}")
-                                except Exception as e:
-                                    self.logger.warning(f"Error processing recipe from API response: {str(e)}")
-                                
-                            source_info["recipe"] = recipe
-                                    
-                            return source_info
-                        except json.JSONDecodeError:
-                            self.logger.warning(f"Could not parse JSON response from {url}")
+                    self.logger.warning(f"Could not parse JSON response from OpenAPI v3 for {source_id}")
                 except Exception as e:
-                    self.logger.debug(f"Error with URL {url}: {str(e)}")
-                    
-            # If we got here, we've tried all URLs and failed
-            self.logger.warning(f"All attempts to retrieve ingestion source {source_id} failed")
+                    self.logger.warning(f"Error processing OpenAPI v3 response for {source_id}: {str(e)}")
+            else:
+                self.logger.warning(f"OpenAPI v3 GET failed: {response.status_code} - {response.text[:100]}")
+                
+            # Try all available sources endpoint as last resort
+            try:
+                sources = self.list_ingestion_sources()
+                for source in sources:
+                    if source.get("id") == source_id or source.get("urn") == source_urn:
+                        self.logger.info(f"Found ingestion source {source_id} in list of all sources")
+                        return source
+                self.logger.warning(f"Ingestion source {source_id} not found in list of all sources")
+            except Exception as e:
+                self.logger.warning(f"Error trying to find source {source_id} in list of all sources: {str(e)}")
         except Exception as e:
-            self.logger.error(f"Error with direct HTTP fallback: {str(e)}")
+            self.logger.warning(f"Error getting ingestion source via OpenAPI v3: {str(e)}")
+            
+        # All attempts to retrieve the source have failed
+        self.logger.warning(f"All attempts to retrieve ingestion source {source_id} failed")
         
-        # If all attempts failed, return minimal info based on ID
-        default_source = {
-            "urn": source_urn,
-            "id": source_id,
-            "name": source_id,
-            "type": "BATCH",
-            "schedule": {"interval": "0 0 * * *", "timezone": "UTC"},
-            "recipe": {},
-            "config": {
-                "executorId": "default",
-                "debugMode": False,
-                "version": "0.8.42"
+        # Return a minimal default source object if we have at least the ID
+        # This allows the call site to have some information to work with
+        if source_id:
+            self.logger.warning(f"Returning default source info for {source_id} as all attempts failed")
+            return {
+                "urn": source_urn,
+                "id": source_id,
+                "name": source_id,  # Use ID as name
+                "type": "",  # Unknown type
+                "schedule": {"interval": "0 0 * * *", "timezone": "UTC"},  # Default schedule
+                "recipe": {},  # Empty recipe
+                "config": {
+                    "executorId": "default",
+                    "debugMode": False,
+                    "version": None
+                }
             }
-        }
-        
-        self.logger.warning(f"Returning default source info for {source_id} as all attempts failed")
-        return default_source
+            
+        return None
     
     def delete_ingestion_source(self, source_id: str) -> bool:
         """
@@ -1262,248 +1409,304 @@ class DataHubRestClient:
             return None
     
     def patch_ingestion_source(
-        self, 
-        source_id: str, 
-        recipe_config: Optional[Dict] = None,
-        schedule: Optional[Dict] = None,
+        self,
+        urn: str,
+        recipe: Optional[Union[Dict[str, Any], str]] = None,
         name: Optional[str] = None,
+        schedule_interval: Optional[str] = None,
+        timezone: Optional[str] = None,
+        source_type: Optional[str] = None,
         executor_id: Optional[str] = None,
-        debug_mode: Optional[bool] = None
-    ) -> bool:
+        debug_mode: Optional[bool] = None,
+        extra_args: Optional[Dict[str, Any]] = None,
+        schedule: Optional[Dict[str, str]] = None
+    ) -> Optional[Dict[str, Any]]:
         """
-        Patch an existing ingestion source with partial updates.
-        
-        This method uses a JSON Patch approach to update only the specified fields.
+        Update an existing ingestion source.
         
         Args:
-            source_id: ID of the ingestion source to patch
-            recipe_config: Optional updated recipe configuration
-            schedule: Optional updated schedule (dict with cron and timezone)
-            name: Optional new name for the source
-            executor_id: Optional executor ID
-            debug_mode: Optional debug mode flag
+            urn: URN of the ingestion source to update or plain source ID
+            recipe: New recipe configuration (dict) or template reference (string starting with @)
+            name: New name for the ingestion source
+            schedule_interval: New cron expression for the schedule
+            timezone: New timezone for the schedule
+            schedule: Alternative schedule param as dict with 'interval' and 'timezone' keys
+            source_type: New type of source
+            executor_id: New executor ID
+            debug_mode: New debug mode setting
+            extra_args: New extra arguments for the ingestion
             
         Returns:
-            True if successful, False otherwise
+            dict: Updated source information
         """
-        self.logger.info(f"Patching ingestion source: {source_id}")
-        
-        # First, get the current source to determine what needs to be updated
-        current_source = self.get_ingestion_source(source_id)
-        if not current_source:
-            self.logger.error(f"Failed to get current source: {source_id}")
-            return False
-        
-        # Prepare the update payload with only fields that need to be updated
-        update_payload = {}
-        
-        if name is not None:
-            update_payload["name"] = name
-        
-        if recipe_config is not None:
-            # Get current recipe
-            current_recipe_str = current_source.get("config", {}).get("recipe", "{}")
-            try:
-                current_recipe = json.loads(current_recipe_str) if isinstance(current_recipe_str, str) else current_recipe_str
-                self.logger.debug(f"Current recipe: {json.dumps(current_recipe)}")
-            except json.JSONDecodeError:
-                self.logger.warning(f"Failed to parse current recipe JSON, treating as empty: {current_recipe_str}")
-                current_recipe = {}
+        # Convert source ID to URN if needed
+        if not urn.startswith("urn:li:dataHubIngestionSource:"):
+            self.logger.debug(f"Converting source ID '{urn}' to URN")
+            urn = f"urn:li:dataHubIngestionSource:{urn}"
             
-            # Merge with new recipe config
-            updated_recipe = {**current_recipe, **recipe_config}
-            self.logger.debug(f"Updated recipe: {json.dumps(updated_recipe)}")
-            
-            # Add to update payload
-            update_payload["config"] = {
-                "recipe": json.dumps(updated_recipe) if isinstance(updated_recipe, dict) else updated_recipe
-            }
-        else:
-            update_payload["config"] = {}
+        self.logger.info(f"Patching ingestion source with URN: {urn}")
         
-        # Get current executor_id if available
-        current_executor_id = current_source.get("config", {}).get("executorId", "default")
+        # Prepare recipe value if provided
+        recipe_str = None
+        if recipe is not None:
+            if isinstance(recipe, dict):
+                self.logger.debug(f"Converting recipe dict to JSON string")
+                recipe_str = json.dumps(recipe)
+            elif isinstance(recipe, str) and recipe.strip().startswith("@"):
+                # Handle template reference as-is - don't try to parse it as JSON
+                self.logger.debug(f"Found template reference in recipe: {recipe}")
+                recipe_str = recipe.strip()
+            else:
+                # For other string formats, use as-is
+                recipe_str = recipe
         
-        # Add executor_id to the config
-        if executor_id is not None:
-            update_payload["config"]["executorId"] = executor_id
-        else:
-            # Always include executorId in GraphQL as it's required
-            update_payload["config"]["executorId"] = current_executor_id
+        # Handle schedule parameter compatibility
+        if schedule:
+            if isinstance(schedule, dict):
+                schedule_interval = schedule.get("interval", schedule_interval)
+                timezone = schedule.get("timezone", timezone)
         
-        if schedule is not None:
-            update_payload["schedule"] = schedule
-            
-        if debug_mode is not None:
-            update_payload["config"]["debugMode"] = debug_mode
-        
-        # If no updates were specified (except for executorId), return early
-        if (len(update_payload) == 1 and "config" in update_payload and 
-            len(update_payload["config"]) == 1 and "executorId" in update_payload["config"] and 
-            update_payload["config"]["executorId"] == current_executor_id):
-            self.logger.info(f"No meaningful updates specified for source: {source_id}")
-            return True
-        
-        # Try GraphQL first
+        # Try GraphQL approach first
         try:
-            graphql_mutation = """
+            self.logger.info(f"Patching ingestion source via GraphQL")
+            
+            # First get the current source to ensure we have all the data
+            current_source = self.get_ingestion_source(urn)
+            if not current_source:
+                self.logger.error(f"Could not fetch source with URN {urn} for patching")
+                return None
+                
+            # Prepare the update mutation
+            mutation = """
             mutation updateIngestionSource($urn: String!, $input: UpdateIngestionSourceInput!) {
-              updateIngestionSource(urn: $urn, input: $input)
+                updateIngestionSource(urn: $urn, input: $input)
             }
             """
             
-            source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
-            
-            # Prepare GraphQL input
+            # Start with current values and update with provided values
             graphql_input = {}
             
-            # Always include name field for GraphQL - it's a required non-null field
-            # Use the name from update_payload if provided, otherwise use name from current_source
-            graphql_input["name"] = update_payload.get("name", current_source.get("name", source_id))
-            
-            # Always include type field for GraphQL - it's also a required non-null field
-            graphql_input["type"] = current_source.get("type", "BATCH")
-            
-            # Config is required with recipe for GraphQL
-            graphql_input["config"] = {
-                "executorId": update_payload.get("config", {}).get("executorId", current_executor_id)
-            }
-            
-            # Get current recipe and format it for inclusion
-            current_recipe = current_source.get("recipe", {})
-            if isinstance(current_recipe, str):
-                if not current_recipe:
-                    current_recipe = "{}"
-            elif current_recipe is None:
-                current_recipe = "{}"
+            # Always include the type from the current source - this is required for the mutation
+            graphql_input["type"] = source_type or current_source.get("type")
+            if not graphql_input["type"]:
+                self.logger.error("Source type is required but not available from current source or parameters")
+                return None
                 
-            # Add recipe to config - required field
-            if "config" in update_payload and "recipe" in update_payload["config"]:
-                graphql_input["config"]["recipe"] = update_payload["config"]["recipe"]
+            # Only add name if provided
+            if name is not None:
+                graphql_input["name"] = name
             else:
-                # Use current recipe as fallback - required field
-                graphql_input["config"]["recipe"] = current_recipe
+                # Always include the current name - required for the mutation
+                graphql_input["name"] = current_source.get("name")
+            
+            # Build config object
+            config = {}
+            if recipe_str is not None:
+                config["recipe"] = recipe_str
+            
+            # Always include executorId - it's required by the GraphQL schema
+            if executor_id is not None:
+                config["executorId"] = executor_id
+            elif current_source.get("config", {}).get("executorId"):
+                config["executorId"] = current_source.get("config", {}).get("executorId")
+            else:
+                config["executorId"] = "default"  # Fallback to default executor
                 
-            # Add debug mode if specified
-            if "config" in update_payload and "debugMode" in update_payload["config"]:
-                graphql_input["config"]["debugMode"] = update_payload["config"]["debugMode"]
+            if debug_mode is not None:
+                config["debugMode"] = debug_mode
+            elif current_source.get("config", {}).get("debugMode") is not None:
+                config["debugMode"] = current_source.get("config", {}).get("debugMode")
+                
+            if extra_args is not None:
+                config["extraArgs"] = extra_args
+                
+            # If we don't have recipe in config but need to update other config fields,
+            # get the current recipe from the source
+            if "recipe" not in config and current_source.get("config", {}).get("recipe") and config:
+                config["recipe"] = current_source.get("config", {}).get("recipe")
             
-            if "schedule" in update_payload:
-                graphql_input["schedule"] = {
-                    "interval": update_payload["schedule"].get("interval", ""),
-                    "timezone": update_payload["schedule"].get("timezone", "UTC")
-                }
+            if config:
+                graphql_input["config"] = config
             
+            # Build schedule object only if we have something to update
+            if schedule_interval is not None or timezone is not None:
+                schedule_obj = {}
+                
+                # Use current values as defaults if available
+                current_schedule = current_source.get("schedule", {})
+                
+                # Update with new values if provided
+                if schedule_interval is not None:
+                    schedule_obj["interval"] = schedule_interval
+                elif current_schedule and "interval" in current_schedule:
+                    schedule_obj["interval"] = current_schedule["interval"]
+                    
+                if timezone is not None:
+                    schedule_obj["timezone"] = timezone
+                elif current_schedule and "timezone" in current_schedule:
+                    schedule_obj["timezone"] = current_schedule["timezone"]
+                    
+                if schedule_obj:
+                    graphql_input["schedule"] = schedule_obj
+            elif current_source.get("schedule"):
+                # Include the current schedule in the update
+                graphql_input["schedule"] = current_source.get("schedule")
+            
+            # Only proceed if we have something to update
+            if not graphql_input:
+                self.logger.warning("No updates to apply to ingestion source")
+                return current_source
+                
             variables = {
-                "urn": source_urn,
+                "urn": urn,
                 "input": graphql_input
             }
             
-            self.logger.debug(f"Patching source via GraphQL: {json.dumps(variables)}")
+            self.logger.debug(f"GraphQL variables: {json.dumps(variables)}")
+            result = self.execute_graphql(mutation, variables)
             
-            result = self.execute_graphql(graphql_mutation, variables)
-            if result and "errors" not in result:
-                if result.get("data", {}).get("updateIngestionSource") is True:
-                    self.logger.info(f"Successfully patched source via GraphQL: {source_id}")
-                    return True
-            else:
-                error_msg = "GraphQL errors when patching source: "
-                if result and "errors" in result:
-                    error_msg += str(result["errors"])
-                self.logger.warning(f"{error_msg}, falling back to REST API")
+            # Check for errors in the GraphQL response
+            if result and "errors" in result and result["errors"]:
+                error_messages = [error.get("message", "Unknown error") for error in result["errors"]]
+                self.logger.warning(f"GraphQL errors when patching ingestion source: {', '.join(error_messages)}")
+                # Continue to REST API fallback
+            # GraphQL operation succeeded
+            elif result:
+                self.logger.info(f"Successfully patched ingestion source via GraphQL")
+                # Get the updated source to return
+                return self.get_ingestion_source(urn)
+                
         except Exception as e:
-            self.logger.warning(f"Error patching source via GraphQL: {str(e)}")
-            self.logger.warning("Falling back to REST API")
-        
-        # Fall back to REST API using JSON Patch format
+            self.logger.warning(f"GraphQL patch failed: {str(e)}")
+            self.logger.info("Falling back to REST API for patching")
+            
+        # Fallback to REST API
         try:
-            # Try multiple possible endpoints paths
-            endpoints = [
-                f"{self.server_url}/ingestion/{source_id}",
-                f"{self.server_url}/sources/{source_id}",
-                f"{self.server_url}/ingestionsources/{source_id}",
-                f"{self.server_url}/api/v2/ingestionsource/{source_id}"
-            ]
+            self.logger.info(f"Patching ingestion source via REST API: {urn}")
             
-            # Convert to JSON Patch format
-            patch_operations = []
+            # If we don't have current_source from above, get it now
+            if not current_source:
+                current_source = self.get_ingestion_source(urn)
+                if not current_source:
+                    self.logger.error(f"Could not fetch source info for REST API patching: {urn}")
+                    return None
+                    
+            # Prepare payload
+            payload = {}
+            if name is not None:
+                payload["name"] = name
+            if source_type is not None:
+                payload["type"] = source_type
+            if recipe_str is not None:
+                payload["config"] = payload.get("config", {})
+                payload["config"]["recipe"] = recipe_str
+            if executor_id is not None:
+                payload["config"] = payload.get("config", {})
+                payload["config"]["executorId"] = executor_id
+            if debug_mode is not None:
+                payload["config"] = payload.get("config", {})
+                payload["config"]["debugMode"] = debug_mode
+            if extra_args is not None:
+                payload["config"] = payload.get("config", {})
+                payload["config"]["extraArgs"] = extra_args
+            if schedule_interval is not None or timezone is not None:
+                payload["schedule"] = payload.get("schedule", {})
+                current_schedule = current_source.get("schedule", {})
+                if schedule_interval is not None:
+                    payload["schedule"]["interval"] = schedule_interval
+                elif current_schedule and "interval" in current_schedule:
+                    payload["schedule"]["interval"] = current_schedule["interval"]
+                if timezone is not None:
+                    payload["schedule"]["timezone"] = timezone
+                elif current_schedule and "timezone" in current_schedule:
+                    payload["schedule"]["timezone"] = current_schedule["timezone"]
             
-            if "name" in update_payload:
-                patch_operations.append({
-                    "op": "replace",
-                    "path": "/name",
-                    "value": update_payload["name"]
-                })
+            self.logger.debug(f"REST API payload: {json.dumps(payload)}")
             
-            if "config" in update_payload:
-                if "recipe" in update_payload["config"]:
-                    patch_operations.append({
-                        "op": "replace",
-                        "path": "/config/recipe",
-                        "value": update_payload["config"]["recipe"]
-                    })
-                
-                if "executorId" in update_payload["config"]:
-                    patch_operations.append({
-                        "op": "replace",
-                        "path": "/config/executorId",
-                        "value": update_payload["config"]["executorId"]
-                    })
-                
-                if "debugMode" in update_payload["config"]:
-                    patch_operations.append({
-                        "op": "replace",
-                        "path": "/config/debugMode",
-                        "value": update_payload["config"]["debugMode"]
-                    })
+            response = requests.patch(
+                f"{self.server_url}/openapi/v3/entity/datahubingestionsource/{urn}",
+                headers=self.headers,
+                json=payload
+            )
             
-            if "schedule" in update_payload:
-                patch_operations.append({
-                    "op": "replace",
-                    "path": "/schedule",
-                    "value": update_payload["schedule"]
-                })
-            
-            self.logger.debug(f"JSON Patch operations: {json.dumps(patch_operations)}")
-            
-            # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
-            
-            # Try each endpoint with PATCH
-            for url in endpoints:
-                self.logger.info(f"Attempting to patch source via REST API: {url}")
-                
-                # Use PATCH method with JSON Patch payload
-                response = requests.patch(url, headers=headers, json=patch_operations)
-                
-                if response.status_code in (200, 204):
-                    self.logger.info(f"Successfully patched source via REST API at {url}: {source_id}")
-                    return True
-                else:
-                    self.logger.warning(f"Failed to patch source at {url}: {response.status_code} - {response.text}")
-            
-            # If PATCH fails, try PUT with complete updated payload
-            merged_payload = current_source.copy()
-            self._deep_update(merged_payload, update_payload)
-            
-            for url in endpoints:
-                self.logger.info(f"Attempting to update source via PUT at REST API: {url}")
-                legacy_response = requests.put(url, headers=headers, json=merged_payload)
-                
-                if legacy_response.status_code in (200, 204):
-                    self.logger.info(f"Successfully updated source via PUT at {url}: {source_id}")
-                    return True
-                else:
-                    self.logger.warning(f"Failed to update source via PUT at {url}: {legacy_response.status_code} - {legacy_response.text}")
-            
-            self.logger.error("All REST API endpoints failed for patching source")
-            
+            if response.status_code == 200:
+                self.logger.info(f"Successfully patched ingestion source via REST API: {urn}")
+                return self.get_ingestion_source(urn)
+            else:
+                self.logger.warning(f"PATCH endpoint failed: {response.status_code} - {response.text}")
+                # Try the PUT endpoint with OpenAPI v3 if PATCH fails
+                try:
+                    self.logger.info(f"Trying OpenAPI v3 PUT endpoint for patching")
+                    
+                    # For PUT, we need to construct a full entity with all data
+                    entity = {
+                        "urn": urn,
+                        "dataHubIngestionSourceInfo": {
+                            "value": {}
+                        }
+                    }
+                    
+                    info = entity["dataHubIngestionSourceInfo"]["value"]
+                    
+                    # Add fields from the current source
+                    if current_source:
+                        if "type" in current_source:
+                            info["type"] = current_source["type"]
+                        if "name" in current_source:
+                            info["name"] = current_source["name"]
+                        if "config" in current_source:
+                            info["config"] = current_source["config"]
+                        if "schedule" in current_source:
+                            info["schedule"] = current_source["schedule"]
+                    
+                    # Update with new values
+                    if name is not None:
+                        info["name"] = name
+                    if source_type is not None:
+                        info["type"] = source_type
+                    
+                    # Update config
+                    if "config" not in info:
+                        info["config"] = {}
+                        
+                    if recipe_str is not None:
+                        info["config"]["recipe"] = recipe_str
+                    if executor_id is not None:
+                        info["config"]["executorId"] = executor_id
+                    if debug_mode is not None:
+                        info["config"]["debugMode"] = debug_mode
+                    if extra_args is not None:
+                        info["config"]["extraArgs"] = extra_args
+                    
+                    # Update schedule
+                    if schedule_interval is not None or timezone is not None:
+                        if "schedule" not in info:
+                            info["schedule"] = {}
+                        
+                        if schedule_interval is not None:
+                            info["schedule"]["interval"] = schedule_interval
+                        if timezone is not None:
+                            info["schedule"]["timezone"] = timezone
+                    
+                    self.logger.debug(f"OpenAPI PUT payload: {json.dumps([entity])}")
+                    response = requests.put(
+                        f"{self.server_url}/openapi/v3/entity/datahubingestionsource",
+                        headers=self.headers,
+                        json=[entity]
+                    )
+                    
+                    if response.status_code in (200, 201):
+                        self.logger.info(f"Successfully patched ingestion source via OpenAPI PUT: {urn}")
+                        return self.get_ingestion_source(urn)
+                    else:
+                        self.logger.error(f"OpenAPI PUT failed: {response.status_code} - {response.text}")
+                        return None
+                except Exception as e:
+                    self.logger.error(f"Exception with OpenAPI PUT endpoint: {str(e)}")
+                    return None
         except Exception as e:
-            self.logger.error(f"Error patching source: {str(e)}")
-        
-        return False
+            self.logger.error(f"Error patching ingestion source via REST API: {str(e)}")
+            return None
 
     def _deep_update(self, d, u):
         """Helper method to recursively update nested dictionaries."""
@@ -1513,11 +1716,34 @@ class DataHubRestClient:
             else:
                 d[k] = v
 
+    def _deep_merge_dicts(self, d1, d2):
+        """
+        Deep merge two dictionaries recursively.
+        d1 is updated with values from d2.
+        
+        Args:
+            d1: First dictionary (base)
+            d2: Second dictionary (to merge on top)
+            
+        Returns:
+            Merged dictionary
+        """
+        result = d1.copy()
+        
+        for k, v in d2.items():
+            if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+                # If both values are dicts, recursively merge them
+                result[k] = self._deep_merge_dicts(result[k], v)
+            else:
+                # Otherwise just overwrite with the value from d2
+                result[k] = v
+                
+        return result
+
     def run_ingestion_source(self, source_id: str) -> bool:
         """
         Trigger an ingestion source to run immediately.
-        First tries GraphQL mutation, then falls back to REST API endpoints
-        if GraphQL fails.
+        First tries direct GraphQL, then falls back to other methods if it fails.
         
         Args:
             source_id (str): The ID of the ingestion source to run
@@ -1528,25 +1754,71 @@ class DataHubRestClient:
         self.logger.info(f"Triggering immediate run for ingestion source: {source_id}")
         source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
         
-        # Primary approach: Use GraphQL with createIngestionExecutionRequest mutation
-        self.logger.debug(f"Attempting to trigger ingestion via GraphQL: {source_id}")
-        mutation = """
-        mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
-          createIngestionExecutionRequest(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "ingestionSourceUrn": source_urn
-            }
-        }
-        
+        # Primary approach: Use direct GraphQL endpoint
         try:
+            graphql_query = {
+                "operationName": "createIngestionExecutionRequest",
+                "variables": {
+                    "input": {
+                        "ingestionSourceUrn": source_urn
+                    }
+                },
+                "query": """
+                    mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
+                        createIngestionExecutionRequest(input: $input)
+                    }
+                """
+            }
+            
+            # Set up headers
+            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
+            if hasattr(self, 'token') and self.token:
+                headers['Authorization'] = f'Bearer {self.token}'
+                
+            self.logger.debug(f"Attempting to trigger ingestion via direct GraphQL: {source_id}")
+            
+            response = requests.post(
+                f"{self.server_url}/api/v2/graphql",
+                headers=headers,
+                json=graphql_query
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "errors" not in result:
+                    self.logger.info(f"Successfully triggered ingestion source via direct GraphQL: {source_id}")
+                    return True
+                else:
+                    error_msg = f"GraphQL errors when triggering ingestion: {result.get('errors')}"
+                    self.logger.warning(error_msg)
+            else:
+                self.logger.warning(f"Failed to trigger ingestion via direct GraphQL: {response.status_code} - {response.text}")
+                
+            # Fall through to other methods
+        except Exception as e:
+            self.logger.warning(f"Error triggering ingestion via direct GraphQL: {str(e)}")
+            # Fall through to other methods
+            
+        # Fallback: Try with DataHubGraph client if available
+        try:
+            self.logger.debug(f"Attempting to trigger ingestion via DataHubGraph client: {source_id}")
+            
+            mutation = """
+            mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
+              createIngestionExecutionRequest(input: $input)
+            }
+            """
+            
+            variables = {
+                "input": {
+                    "ingestionSourceUrn": source_urn
+                }
+            }
+            
             result = self.execute_graphql(mutation, variables)
             
             if result and "data" in result and "createIngestionExecutionRequest" in result["data"]:
-                self.logger.info(f"Successfully triggered ingestion source via GraphQL: {source_id}")
+                self.logger.info(f"Successfully triggered ingestion source via DataHubGraph client: {source_id}")
                 return True
             
             # Check for specific errors
@@ -1554,14 +1826,9 @@ class DataHubRestClient:
                 error_messages = [e.get("message", "") for e in result.get("errors", [])]
                 self.logger.warning(f"GraphQL errors: {', '.join(error_messages)}")
                 
-                # If there are specific errors that indicate we should try a different approach,
-                # we'll continue to the fallback methods
-            else:
-                self.logger.warning("GraphQL response format unexpected")
-                
             # Fall through to REST API approaches
         except Exception as e:
-            self.logger.warning(f"Error using GraphQL to trigger ingestion: {e}")
+            self.logger.warning(f"Error using DataHubGraph client to trigger ingestion: {e}")
             # Fall through to REST API approaches
             
         # Fallback approaches: Try various REST API endpoints

@@ -137,8 +137,7 @@ DATAHUB_GMS_URL=http://localhost:8080
 DATAHUB_TOKEN=your_datahub_pat_token_here
 
 # PostgreSQL Connection
-PG_HOST=localhost
-PG_PORT=5432
+PG_HOST_PORT=localhost:5432
 PG_DATABASE=$DATABASE_NAME
 PG_USER=postgres
 PG_PASSWORD=$PG_PASSWORD
