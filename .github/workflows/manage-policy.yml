@@ -1,0 +1,168 @@
+name: Manage DataHub Policies
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - list
+          - get
+          - create
+          - update
+          - delete
+      environment:
+        description: 'Environment to target'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      policy_id:
+        description: 'Policy ID or URN (required for get, update, delete)'
+        required: false
+        type: string
+      policy_name:
+        description: 'Policy name (required for create, optional for update)'
+        required: false
+        type: string
+      policy_description:
+        description: 'Policy description'
+        required: false
+        type: string
+      policy_type:
+        description: 'Policy type'
+        required: false
+        type: choice
+        options:
+          - METADATA_POLICY
+          - PLATFORM_POLICY
+        default: 'METADATA_POLICY'
+      policy_state:
+        description: 'Policy state'
+        required: false
+        type: choice
+        options:
+          - ACTIVE
+          - INACTIVE
+        default: 'ACTIVE'
+      policy_resources:
+        description: 'JSON list of resources (e.g., [{"type":"dataset","resource":"*"}])'
+        required: false
+        type: string
+      policy_privileges:
+        description: 'JSON list of privileges (e.g., ["VIEW_ENTITY_PAGE"])'
+        required: false
+        type: string
+      policy_actors:
+        description: 'JSON object of actors (e.g., {"allUsers":true})'
+        required: false
+        type: string
+
+jobs:
+  manage-policy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: List policies
+        if: ${{ github.event.inputs.action == 'list' }}
+        env:
+          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+        run: |
+          python scripts/manage_policy.py list
+      
+      - name: Get policy
+        if: ${{ github.event.inputs.action == 'get' && github.event.inputs.policy_id != '' }}
+        env:
+          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+        run: |
+          python scripts/manage_policy.py get "${{ github.event.inputs.policy_id }}"
+      
+      - name: Create policy
+        if: ${{ github.event.inputs.action == 'create' && github.event.inputs.policy_name != '' }}
+        env:
+          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+        run: |
+          ARGS="--name '${{ github.event.inputs.policy_name }}'"
+          
+          if [ -n "${{ github.event.inputs.policy_description }}" ]; then
+            ARGS="$ARGS --description '${{ github.event.inputs.policy_description }}'"
+          fi
+          
+          ARGS="$ARGS --type ${{ github.event.inputs.policy_type }} --state ${{ github.event.inputs.policy_state }}"
+          
+          if [ -n "${{ github.event.inputs.policy_resources }}" ]; then
+            ARGS="$ARGS --resources '${{ github.event.inputs.policy_resources }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_privileges }}" ]; then
+            ARGS="$ARGS --privileges '${{ github.event.inputs.policy_privileges }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_actors }}" ]; then
+            ARGS="$ARGS --actors '${{ github.event.inputs.policy_actors }}'"
+          fi
+          
+          python scripts/manage_policy.py create $ARGS
+      
+      - name: Update policy
+        if: ${{ github.event.inputs.action == 'update' && github.event.inputs.policy_id != '' }}
+        env:
+          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+        run: |
+          ARGS="${{ github.event.inputs.policy_id }}"
+          
+          if [ -n "${{ github.event.inputs.policy_name }}" ]; then
+            ARGS="$ARGS --name '${{ github.event.inputs.policy_name }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_description }}" ]; then
+            ARGS="$ARGS --description '${{ github.event.inputs.policy_description }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_state }}" ]; then
+            ARGS="$ARGS --state ${{ github.event.inputs.policy_state }}"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_resources }}" ]; then
+            ARGS="$ARGS --resources '${{ github.event.inputs.policy_resources }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_privileges }}" ]; then
+            ARGS="$ARGS --privileges '${{ github.event.inputs.policy_privileges }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_actors }}" ]; then
+            ARGS="$ARGS --actors '${{ github.event.inputs.policy_actors }}'"
+          fi
+          
+          python scripts/manage_policy.py update $ARGS
+      
+      - name: Delete policy
+        if: ${{ github.event.inputs.action == 'delete' && github.event.inputs.policy_id != '' }}
+        env:
+          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+        run: |
+          python scripts/manage_policy.py delete "${{ github.event.inputs.policy_id }}" 

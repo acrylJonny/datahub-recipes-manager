@@ -10,17 +10,16 @@ on:
       environment:
         description: 'Environment to run in'
         required: true
-        default: 'development'
+        default: 'dev'
         type: choice
         options:
-          - development
-          - staging
-          - production
+          - dev
+          - test
+          - prod
 
 jobs:
   run-recipe:
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
     
     steps:
       - name: Check out code
@@ -37,7 +36,7 @@ jobs:
           pip install -r requirements.txt
           
       - name: Run ingestion recipe
-        run: python scripts/run_recipe.py --recipe-id ${{ github.event.inputs.recipe_id }}
+        run: python scripts/run_now.py --source-id ${{ github.event.inputs.recipe_id }}
         env:
           DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }} 

@@ -80,7 +80,7 @@ fi
 echo -e "${GREEN}✅ Recipe pull successful - Retrieved $RECIPE_COUNT recipes${NC}"
 
 echo -e "${BLUE}===== TESTING RUN RECIPE =====${NC}"
-python ../scripts/run_recipe.py --id analytics-database-prod
+python ../scripts/run_now.py --source-id analytics-database-prod
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Run recipe failed${NC}"
     exit 1

@@ -64,7 +64,7 @@ bash test/test_patch_ingestion_source.sh
 
 # Run ingestion source test
 echo "=== Running run ingestion source test ==="
-bash test/test_run_ingestion.sh
+bash test/test_run_now.sh
 
 # Run list ingestion sources test
 echo "=== Running list ingestion sources test ==="

@@ -4,62 +4,77 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to run against'
+        description: 'Environment to use'
         required: true
-        default: 'development'
+        default: 'dev'
         type: choice
         options:
-          - development
-          - staging
-          - production
+          - dev
+          - test
+          - prod
       source_id:
-        description: 'Ingestion source ID to patch'
+        description: 'ID of the ingestion source to patch'
         required: true
         type: string
       recipe_file:
-        description: 'Recipe file path (optional)'
+        description: 'Path to recipe file (leave empty to keep existing recipe)'
         required: false
         type: string
       schedule:
-        description: 'New schedule cron expression (optional)'
+        description: 'New schedule cron expression (leave empty to keep existing schedule)'
         required: false
         type: string
+      timezone:
+        description: 'New schedule timezone (leave empty to keep existing timezone)'
+        required: false
+        type: string
+        default: 'UTC'
 
 jobs:
-  patch-source:
+  patch-ingestion-source:
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v3
+        
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pip'
-
+          
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
+          
       - name: Patch ingestion source
         run: |
-          COMMAND="python scripts/patch_recipe.py --id ${{ github.event.inputs.source_id }}"
+          ARGS="--source-id ${{ inputs.source_id }}"
           
-          if [ -n "${{ github.event.inputs.recipe_file }}" ]; then
-            COMMAND="$COMMAND --recipe ${{ github.event.inputs.recipe_file }}"
+          if [ -n "${{ inputs.recipe_file }}" ]; then
+            ARGS="$ARGS --recipe-file ${{ inputs.recipe_file }}"
           fi
           
-          if [ -n "${{ github.event.inputs.schedule }}" ]; then
-            COMMAND="$COMMAND --schedule '${{ github.event.inputs.schedule }}'"
+          if [ -n "${{ inputs.schedule }}" ]; then
+            ARGS="$ARGS --schedule ${{ inputs.schedule }}"
           fi
           
-          echo "Running: $COMMAND"
-          eval $COMMAND
+          if [ -n "${{ inputs.timezone }}" ]; then
+            ARGS="$ARGS --timezone ${{ inputs.timezone }}"
+          fi
+          
+          python scripts/patch_recipe.py $ARGS
         env:
           DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
-          PYTHONPATH: ${{ github.workspace }} 
+          PG_HOST: ${{ secrets.PG_HOST }}
+          PG_PORT: ${{ secrets.PG_PORT }}
+          PG_DATABASE: ${{ secrets.PG_DATABASE }}
+          PG_USER: ${{ secrets.PG_USER }}
+          PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }} 

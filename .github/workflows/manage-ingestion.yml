@@ -63,7 +63,7 @@ jobs:
       - name: Run ingestion source now
         if: ${{ github.event.inputs.action == 'run-now' && github.event.inputs.source_id != '' }}
         run: |
-          python scripts/run_ingestion_source.py --source-id ${{ github.event.inputs.source_id }}
+          python scripts/run_now.py --source-id ${{ github.event.inputs.source_id }}
         env:
           DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}

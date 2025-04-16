@@ -137,19 +137,37 @@ def create_datahub_recipe(
                 print("The recipe will still be pushed using environment variables.\n")
 
         # Create the ingestion source
-        result = client.create_ingestion_source(
-            recipe=recipe,
-            name=pipeline_name,
-            source_type=source_type,
-            schedule_interval=schedule_interval,
-            timezone=timezone,
-            executor_id=executor_id,
-            source_id=source_id,
-            debug_mode=debug_mode,
-            extra_args=extra_args
-        )
-
-        source_urn = result["urn"]
+        ingestion_source = {
+            "id": source_id,
+            "name": pipeline_name,
+            "type": source_type,
+            "config": recipe,
+            "schedule": {
+                "interval": schedule_interval,
+                "timezone": timezone
+            },
+            "executor_id": executor_id,
+            "debug_mode": debug_mode,
+            "version": "0.8.42"
+        }
+        
+        if extra_args:
+            ingestion_source["extra_args"] = extra_args
+            
+        result = client.create_ingestion_source(ingestion_source)
+        
+        if not result:
+            raise Exception("Failed to create ingestion source. Check logs for details.")
+            
+        # Handle different possible response formats
+        source_urn = None
+        if isinstance(result, dict):
+            source_urn = result.get("urn")
+        elif isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
+            source_urn = result[0].get("urn")
+            
+        if not source_urn:
+            source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
 
         print(f"Recipe created/updated successfully.")
         print(f"Source URN: {source_urn}")

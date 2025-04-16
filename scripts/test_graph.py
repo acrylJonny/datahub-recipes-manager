@@ -31,6 +31,72 @@ def test_list_secrets(client: DataHubRestClient):
     else:
         logger.info("No secrets found.")
 
+def test_update_ingestion_source(client: DataHubRestClient, source_id: str = "analytics-database-prod"):
+    """
+    Test updating an ingestion source using the GraphQL mutation.
+    Uses the exact format provided in the documentation.
+    """
+    logger.info(f"Testing updateIngestionSource GraphQL mutation for source: {source_id}")
+    
+    # Get the current source to ensure it exists
+    current_source = client.get_ingestion_source(source_id)
+    if not current_source:
+        logger.error(f"Source not found: {source_id}")
+        return
+    
+    # Use the exact GraphQL mutation format
+    mutation = """
+    mutation updateIngestionSource($urn: String!, $input: UpdateIngestionSourceInput!) {
+      updateIngestionSource(urn: $urn, input: $input)
+    }
+    """
+    
+    # Prepare variables for the mutation
+    source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
+    
+    # Prepare the recipe content - use the existing recipe if available
+    recipe_content = current_source.get("recipe", {})
+    if isinstance(recipe_content, dict):
+        recipe_json = json.dumps(recipe_content)
+    else:
+        recipe_json = recipe_content
+    
+    # Prepare the input variables following the exact format
+    variables = {
+        "urn": source_urn,
+        "input": {
+            "type": current_source.get("type", "postgres"),
+            "name": current_source.get("name", "DataHub Postgres Ingestion"),
+            "config": {
+                "recipe": recipe_json,
+                "executorId": "default",
+                "debugMode": False,
+                "extraArgs": []
+            },
+            "schedule": {
+                "interval": "0 0 * * *",
+                "timezone": "UTC"
+            }
+        }
+    }
+    
+    # Log the variables for debugging
+    logger.debug(f"GraphQL variables: {json.dumps(variables)}")
+    
+    # Execute the GraphQL mutation
+    try:
+        result = client.execute_graphql(mutation, variables)
+        
+        if "errors" in result:
+            logger.error(f"GraphQL errors: {result['errors']}")
+            return False
+        else:
+            logger.info(f"Successfully updated ingestion source: {source_id}")
+            return True
+    except Exception as e:
+        logger.error(f"Error updating ingestion source: {str(e)}")
+        return False
+
 def test_graph_query(client: DataHubRestClient):
     """Test direct GraphQL query execution"""
     logger.info("Testing direct GraphQL query...")
@@ -104,6 +170,10 @@ def main():
     # Run tests
     test_list_secrets(client)
     test_graph_query(client)
+    
+    # Test update ingestion source if source_id is provided
+    source_id = os.environ.get("TEST_SOURCE_ID", "analytics-database-prod")
+    test_update_ingestion_source(client, source_id)
     
     return 0
 
