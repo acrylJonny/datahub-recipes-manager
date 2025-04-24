@@ -48,4 +48,14 @@ Thumbs.db
 docker-compose.override.yml
 
 # Test database container volume
-test-db-data/ 
+test-db-data/
+
+# Django
+*.log
+web_ui/db.sqlite3
+web_ui/staticfiles/
+web_ui/media/
+web_ui/logs/
+
+# Local policy files
+policies/*.json 

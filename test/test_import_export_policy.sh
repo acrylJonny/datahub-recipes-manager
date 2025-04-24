@@ -93,7 +93,8 @@ echo -e "\n6. Importing the policy back"
 python3 -c "
 import os
 import sys
-sys.path.append('.')
+# Add parent directory to Python path
+sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 from utils.env_loader import load_env_file
 load_env_file('.env')
 " || { echo "Failed to import utils.env_loader, continuing anyway"; }
@@ -161,7 +162,8 @@ python3 scripts/manage_policy.py update "$POLICY_ID" --description "Modified pol
 python3 -c "
 import os
 import sys
-sys.path.append('.')
+# Add parent directory to Python path
+sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 from utils.env_loader import load_env_file
 load_env_file('.env')
 " || { echo "Failed to import utils.env_loader, continuing anyway"; }
