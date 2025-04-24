@@ -5,6 +5,15 @@ set -e
 PG_PASSWORD="YourStrongPassw0rd"
 DATABASE_NAME="SimpleAdventureWorks"
 CONTAINER_NAME="datahub_test_postgres"
+NETWORK_NAME="datahub_network"
+
+# Check if datahub_network exists
+if ! docker network ls | grep -q $NETWORK_NAME; then
+  echo "=== Creating DataHub network ==="
+  docker network create $NETWORK_NAME
+else
+  echo "=== DataHub network already exists ==="
+fi
 
 # Remove existing container if it exists
 if docker ps -a | grep -q $CONTAINER_NAME; then
@@ -15,6 +24,7 @@ fi
 
 echo "=== Starting PostgreSQL container (ARM64 compatible) ==="
 docker run --name $CONTAINER_NAME \
+  --network $NETWORK_NAME \
   -e POSTGRES_PASSWORD=$PG_PASSWORD \
   -p 5432:5432 \
   -d postgres:latest
@@ -137,10 +147,14 @@ DATAHUB_GMS_URL=http://localhost:8080
 DATAHUB_TOKEN=your_datahub_pat_token_here
 
 # PostgreSQL Connection
-PG_HOST_PORT=localhost:5432
+PG_HOST_PORT=datahub_test_postgres:5432
 PG_DATABASE=$DATABASE_NAME
 PG_USER=postgres
 PG_PASSWORD=$PG_PASSWORD
+
+# Docker networking for tests
+DATAHUB_TEST_ENV=true
+DOCKER_COMPOSE_MODE=true
 
 # Additional settings for DataHub
 CONVERT_URNS_TO_LOWERCASE=true
@@ -182,16 +196,6 @@ source:
     # Stateful ingestion for change detection
     stateful_ingestion:
       enabled: \${STATEFUL_INGESTION_ENABLED}
-      remove_stale_metadata: \${REMOVE_STALE_METADATA}
-      state_provider:
-        type: datahub
-        config: {}
-
-# Executor and scheduling configuration
-executor_id: \${EXECUTOR_ID}
-schedule:
-  cron: \${SCHEDULE_CRON}
-  timezone: \${SCHEDULE_TIMEZONE}
 EOL
 
 echo "=== Creating PostgreSQL recipe instance ==="
@@ -205,7 +209,7 @@ description: "Production Analytics Database ingestion"
 parameters:
   # Connection parameters
   PG_USER: "postgres"
-  PG_HOST_PORT: "localhost:5432"
+  PG_HOST_PORT: "datahub_test_postgres:5432"
   PG_DATABASE: "$DATABASE_NAME"
   
   # Content configuration
@@ -214,20 +218,11 @@ parameters:
   
   # Stateful ingestion
   STATEFUL_INGESTION_ENABLED: true
-  REMOVE_STALE_METADATA: true
 
   # Profiling configuration
   ENABLE_PROFILING: true
   PROFILE_TABLE_LEVEL_ONLY: false
-  
-  # Pipeline information
-  PIPELINE_NAME: "postgres_analytics_ingestion"
-  PIPELINE_DESCRIPTION: "Production Analytics Database metadata ingestion"
 
-  # Execution configuration
-  EXECUTOR_ID: "default"
-  SCHEDULE_CRON: "0 2 * * *"  # Run daily at 2 AM
-  SCHEDULE_TIMEZONE: "UTC"
 
 # Secrets are referenced but not stored here
 # They will be injected from environment variables

@@ -1,72 +1,81 @@
 #!/bin/bash
-# Test pulling recipes from DataHub
-cd "$(dirname "$0")/.." || exit  # Move to project root
+# Test to verify recipe pull functionality
+# This test will:
+# 1. Check for an existing test recipe in DataHub - create one if needed
+# 2. Pull the recipe from DataHub using both individual pull and batch pull
+# 3. Verify the pulled recipes are accessible
 
-echo "=== Testing Recipe Pull from DataHub ==="
-echo "Checking if .env file exists and has required variables..."
+# Get directory where this script is located
+SCRIPT_DIR=$(dirname "$0")
+cd "$SCRIPT_DIR/.." || exit
 
-if [ ! -f .env ]; then
-  echo "Error: .env file not found. Run setup_test_env.sh first."
-  exit 1
+# Output directory for pulled recipes
+PULL_DIR="test/recipes/pulled"
+mkdir -p "$PULL_DIR"
+
+# Source ID to use for testing
+SOURCE_ID="analytics-database-prod"
+
+echo "=== Testing Recipe Pull Functionality ==="
+
+# Verify environment variables are set
+if [ -z "$DATAHUB_GMS_URL" ] && [ -z "$DATAHUB_SERVER" ]; then
+    # Try loading from .env file
+    if [ -f .env ]; then
+        source .env
+        echo "Loaded .env file"
+    else
+        echo "⚠️ DATAHUB_GMS_URL or DATAHUB_SERVER is not set, and no .env file found"
+        echo "Set these variables to connect to your DataHub instance"
+        exit 1
+    fi
 fi
 
-# Load environment variables
-source .env
-
-# Check for required environment variables
-if [ -z "$DATAHUB_GMS_URL" ]; then
-  echo "Error: DATAHUB_GMS_URL must be set in .env file"
-  echo "Update your .env file with valid DataHub server URL"
-  exit 1
+# Use DATAHUB_GMS_URL if available, otherwise DATAHUB_SERVER
+SERVER_URL="${DATAHUB_GMS_URL:-$DATAHUB_SERVER}"
+if [ -z "$SERVER_URL" ]; then
+    echo "❌ DataHub server URL not configured. Please set DATAHUB_GMS_URL or DATAHUB_SERVER."
+    exit 1
 fi
 
-# Test connecting to DataHub
-echo "Testing DataHub connection..."
-python -c "
-import os, sys
-from dotenv import load_dotenv
-sys.path.append('utils')
-from datahub_rest_client import DataHubRestClient
+echo "Testing connection to DataHub at $SERVER_URL"
 
-load_dotenv()
-server = os.environ.get('DATAHUB_GMS_URL')
+# Check connection to DataHub
+CONNECTION_STATUS=$(python3 -c "
+import os
+import sys
+sys.path.append('.')
+from utils.datahub_rest_client import DataHubRestClient
+
+server = os.environ.get('DATAHUB_GMS_URL') or os.environ.get('DATAHUB_SERVER')
 token = os.environ.get('DATAHUB_TOKEN')
 
-try:
-    # Create client with or without token
-    if token and token != 'your_datahub_pat_token_here':
-        client = DataHubRestClient(server_url=server, token=token)
-    else:
-        client = DataHubRestClient(server_url=server)
-    
-    # Test connection
-    if client.test_connection():
-        print('✅ Successfully connected to DataHub!')
-    else:
-        print('❌ Failed to connect to DataHub')
-        sys.exit(1)
-except Exception as e:
-    print(f'❌ Error connecting to DataHub: {str(e)}')
-    sys.exit(1)
-"
+# Create client
+client = DataHubRestClient(server, token)
 
-# Create a temporary output directory for pulled recipes
-PULL_DIR="recipes/pulled"
-mkdir -p "$PULL_DIR"
-# Clear any existing files
-rm -f "$PULL_DIR"/*.yml
+# Test connection
+if client.test_connection():
+    print('connected')
+else:
+    print('failed')
+")
 
-# Check if the test recipe exists in DataHub
-echo "Checking if test recipe exists in DataHub..."
-SOURCE_ID="analytics-database-prod"
-SOURCE_EXISTS=$(python -c "
-import os, sys
-from dotenv import load_dotenv
-sys.path.append('utils')
-from datahub_rest_client import DataHubRestClient
+if [ "$CONNECTION_STATUS" != "connected" ]; then
+    echo "❌ Failed to connect to DataHub at $SERVER_URL"
+    exit 1
+fi
 
-load_dotenv()
-server = os.environ.get('DATAHUB_GMS_URL')
+echo "✅ Successfully connected to DataHub"
+
+# Check if our test source exists
+echo "Checking if test source $SOURCE_ID exists..."
+SOURCE_EXISTS=$(python3 -c "
+import os
+import sys
+sys.path.append('.')
+from utils.datahub_rest_client import DataHubRestClient
+
+server = os.environ.get('DATAHUB_GMS_URL') or os.environ.get('DATAHUB_SERVER')
 token = os.environ.get('DATAHUB_TOKEN')
 
 try:
@@ -110,34 +119,24 @@ if [ -f "$PULL_DIR/BATCH-$SOURCE_ID.yml" ] || [ -f "$PULL_DIR/batch-$SOURCE_ID.y
   ls -la "$PULL_DIR"
   echo "=== Recipe Pull test complete ==="
   exit 0
-elif [ $PULL_STATUS -ne 0 ]; then
-  # If the direct pull failed with error, try fallback
-  echo "⚠️ Failed to pull recipe by direct ID. Trying general pull as fallback..."
-  
-  # Try general pull method
-  python scripts/pull_recipe.py --output-dir "$PULL_DIR" || {
-    echo "⚠️ Recipe pull failed. This could be due to SDK compatibility issues."
-    echo "The pull functionality requires a specific DataHub SDK version."
-    echo "This doesn't necessarily mean your setup is broken - you may need"
-    echo "to adjust the DataHub API client to match your specific SDK version."
-  }
-  
-  # Check if any recipes were pulled
-  if [ "$(ls -A "$PULL_DIR")" ]; then
-    echo "✅ Successfully pulled recipes using general method!"
-    echo "Pulled recipes:"
-    ls -la "$PULL_DIR"
-    echo "=== Recipe Pull test complete ==="
-    exit 0
-  else
-    echo "⚠️ No recipes were pulled. This may be normal if you haven't pushed any recipes yet"
-    echo "or if there are SDK compatibility issues with your DataHub version."
-    echo "=== Recipe Pull test complete ==="
-    exit 1
-  fi
-else
-  # We got success return code but no expected file
-  echo "⚠️ Pull process completed but no recipe files were found."
+fi
+
+# Pull all recipes and check if our test recipe is included
+echo "Pulling all recipes from DataHub..."
+python scripts/pull_recipe.py --output-dir "$PULL_DIR"
+
+# Check all possible recipe file locations
+if [ -f "$PULL_DIR/BATCH-$SOURCE_ID.yml" ] || [ -f "$PULL_DIR/batch-$SOURCE_ID.yml" ] || \
+   [ -f "$PULL_DIR/postgres-$SOURCE_ID.yml" ] || [ -f "$PULL_DIR/$SOURCE_ID.yml" ]; then
+  echo "✅ Successfully pulled recipe while pulling all recipes from DataHub!"
+  echo "Pulled recipe files:"
+  ls -la "$PULL_DIR"
   echo "=== Recipe Pull test complete ==="
+  exit 0
+else
+  echo "❌ Failed to find pulled recipe in output directory after multiple attempts"
+  echo "Files in pull directory:"
+  ls -la "$PULL_DIR"
+  echo "=== Recipe Pull test failed ==="
   exit 1
 fi 

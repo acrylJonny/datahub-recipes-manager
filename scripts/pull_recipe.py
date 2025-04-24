@@ -23,19 +23,45 @@ from utils.datahub_rest_client import DataHubRestClient
 
 def get_ingestion_sources(client: DataHubRestClient, repo_home: str, ids: List[str] = None) -> Tuple[int, int]:
     """
-    Get ingestion sources from DataHub.
+    Get ingestion sources from DataHub
+
+    Args:
+        client: DataHub REST client
+        repo_home: Path to repository home directory
+        ids: List of specific ingestion source IDs to get
+
+    Returns:
+        Tuple of (success_count, total_sources)
     """
-    
-    # First get a list of ingestion sources if no specific ids are provided
     if not ids:
-        logging.info("Fetching list of ingestion sources from DataHub...")
+        # Try to list all sources
         try:
             sources = client.list_ingestion_sources()
             if not sources:
-                logging.warning("No ingestion sources found on DataHub server.")
+                logging.warning("No ingestion sources found in DataHub")
                 return 0, 0
+            
             logging.info(f"Found {len(sources)} ingestion sources")
-            ids = [source.get("name") for source in sources]
+            
+            # Process sources
+            success_count = 0
+            for source in sources:
+                source_id = source.get("id", "unknown")
+                
+                # Convert source to YAML and save
+                try:
+                    logging.info(f"Converting source '{source_id}' to YAML format...")
+                    yaml_data = convert_source_to_yaml(source, repo_home)
+                    
+                    # Save to file
+                    yaml_path = os.path.join(repo_home, f"{source_id}.yml")
+                    save_yaml_file(yaml_data, yaml_path)
+                    success_count += 1
+                except Exception as e:
+                    logging.error(f"Error processing source '{source_id}': {str(e)}")
+            
+            return success_count, len(sources)
+            
         except Exception as e:
             logging.error(f"Failed to list ingestion sources: {str(e)}")
             logging.warning("Will attempt to use fallback method if specific IDs are provided")
@@ -44,8 +70,14 @@ def get_ingestion_sources(client: DataHubRestClient, repo_home: str, ids: List[s
 
     # If we have specific IDs, try to get them directly
     if ids:
-        logging.info(f"Will attempt to pull {len(ids)} specific ingestion source(s): {', '.join(ids)}")
-    
+        # Filter out None values from the ids list
+        ids = [id for id in ids if id is not None]
+        if ids:
+            logging.info(f"Will attempt to pull {len(ids)} specific ingestion source(s): {', '.join(ids)}")
+        else:
+            logging.info("No valid source IDs provided")
+            return 0, 0
+
     success_count = 0
     failed_ids = []
     
@@ -67,8 +99,8 @@ def get_ingestion_sources(client: DataHubRestClient, repo_home: str, ids: List[s
             logging.info(f"Converting source '{source_id}' to YAML format...")
             yaml_data = convert_source_to_yaml(source, repo_home)
             
-            # Save to file
-            yaml_path = os.path.join(repo_home, "recipes", "instances", f"{source_id}.yml")
+            # Save to file - use output directory directly
+            yaml_path = os.path.join(repo_home, f"{source_id}.yml")
             save_yaml_file(yaml_data, yaml_path)
             logging.info(f"✅ Successfully saved recipe to {yaml_path}")
             success_count += 1
@@ -237,18 +269,30 @@ def main():
     
     # Empty or default token is treated as not provided
     if not datahub_config["token"] or datahub_config["token"] == "your_datahub_pat_token_here":
-        print("Warning: DATAHUB_TOKEN is not set. Will attempt to connect without authentication.")
-        print("This will only work if your DataHub instance doesn't require authentication.")
         datahub_config["token"] = None
-
-    # Get ingestion sources
-    client = DataHubRestClient(datahub_config["server"], datahub_config["token"])
-    success_count, total_sources = get_ingestion_sources(client, args.output_dir, [args.source_id])
-
-    if success_count == 0:
-        print("⚠️ Pull process completed but no recipe files were found.")
+        logging.warning("DATAHUB_TOKEN is not set. Will attempt to connect without authentication.")
+        logging.warning("This will only work if your DataHub instance doesn't require authentication.")
     
-    return 0
+    # Create DataHub client
+    client = DataHubRestClient(server_url=datahub_config["server"], token=datahub_config["token"])
+    
+    # Get source IDs based on arguments
+    source_ids = None
+    if args.source_id:
+        source_ids = [args.source_id]
+    
+    # Pull sources
+    success_count, total_sources = get_ingestion_sources(client, args.output_dir, source_ids)
+    
+    if success_count > 0:
+        logging.info(f"Successfully pulled {success_count} of {total_sources} ingestion sources.")
+        return 0
+    elif total_sources > 0:
+        logging.error(f"Failed to pull any of the {total_sources} ingestion sources.")
+        return 1
+    else:
+        logging.warning("No ingestion sources were pulled. This may be normal if no sources exist.")
+        return 0
 
 
 if __name__ == "__main__":

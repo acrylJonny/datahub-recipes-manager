@@ -34,18 +34,17 @@ def is_testing_environment():
 
 def is_in_docker():
     """Check if we're running inside a Docker container"""
-    # Check for Docker environment indicators
-    cgroup_file = '/proc/1/cgroup'
-    if os.path.exists(cgroup_file):
-        with open(cgroup_file, 'r') as f:
+    # Method 1: Check for /.dockerenv file
+    if os.path.exists('/.dockerenv'):
+        return True
+        
+    # Method 2: Check for cgroup info
+    try:
+        with open('/proc/1/cgroup', 'r') as f:
             return 'docker' in f.read()
-    
-    # Check for Docker environment variables
-    for env_var in ['DOCKER_CONTAINER', 'IS_DOCKER_CONTAINER', 'DOCKER', 'DOCKER_COMPOSE_MODE']:
-        if os.environ.get(env_var, '').lower() in ['true', '1', 'yes']:
-            return True
-    
-    return False
+    except (IOError, FileNotFoundError):
+        # Method 3: Check for environment variable
+        return os.environ.get('RUNNING_IN_DOCKER', '').lower() in ['true', '1', 'yes']
 
 def should_apply_docker_networking():
     """
@@ -90,6 +89,7 @@ def resolve_docker_host(host: str, default_port: Optional[int] = None) -> Dict[s
     
     # Handle common database host names in Docker Compose
     docker_service_map = {
+        # Database services
         'postgres': {'host': 'postgres', 'port': 5432},
         'postgresql': {'host': 'postgres', 'port': 5432},
         'mysql': {'host': 'mysql', 'port': 3306},
@@ -101,7 +101,17 @@ def resolve_docker_host(host: str, default_port: Optional[int] = None) -> Dict[s
         'mongo': {'host': 'mongodb', 'port': 27017},
         'redis': {'host': 'redis', 'port': 6379},
         'elasticsearch': {'host': 'elasticsearch', 'port': 9200},
-        'elastic': {'host': 'elasticsearch', 'port': 9200}
+        'elastic': {'host': 'elasticsearch', 'port': 9200},
+        
+        # DataHub services
+        'datahub-gms': {'host': 'datahub-gms', 'port': 8080},
+        'datahub-frontend': {'host': 'datahub-frontend', 'port': 9002},
+        'datahub-actions': {'host': 'datahub-actions', 'port': 8081},
+        'datahub-mae-consumer': {'host': 'datahub-mae-consumer', 'port': None},
+        'datahub-mce-consumer': {'host': 'datahub-mce-consumer', 'port': None},
+        
+        # Our test container
+        'datahub_test_postgres': {'host': 'datahub_test_postgres', 'port': 5432}
     }
     
     # If we're in Docker mode and the host is a known service name

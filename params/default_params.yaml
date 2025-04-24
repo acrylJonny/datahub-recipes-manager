@@ -1,0 +1,58 @@
+# Default Parameters for DataHub Recipes
+# This file serves as a template for recipe parameters
+
+# Recipe Execution Parameters
+execution:
+  # Unique identifier for this execution
+  id: "default-execution-id"
+  # Pipeline details
+  pipeline_name: "sample-pipeline"
+  pipeline_description: "Sample data pipeline for DataHub ingestion"
+  # Run details
+  run_id: "default-run-id"
+
+# Source Configuration
+source:
+  type: "mysql"  # Example source type
+  config:
+    host: "localhost"
+    port: 3306
+    database: "example_db"
+    username: "${MYSQL_USERNAME}"  # Will be replaced from environment or vault
+    password: "${MYSQL_PASSWORD}"  # Will be replaced from environment or vault
+
+# Sink Configuration
+sink:
+  type: "datahub-rest"  # DataHub REST sink
+  config:
+    server: "${DATAHUB_GMS_URL}"  # Will be replaced based on environment
+    token: "${DATAHUB_TOKEN}"     # Will be replaced from environment or vault
+
+# Recipe-specific Configuration
+recipe:
+  # Include/exclude patterns
+  include_tables:
+    - ".*"
+  exclude_tables:
+    - "temp_.*"
+    - "staging_.*"
+  
+  # Schema metadata handling
+  ingest_owner: true
+  ingest_descriptions: true
+  
+  # Stateful ingestion settings
+  stateful_ingestion:
+    enabled: true
+    state_provider:
+      type: "file"
+      config:
+        filename: "./state/mysql_state.json"
+
+# Optional Advanced Configuration
+advanced:
+  max_threads: 4
+  profiling:
+    enabled: false
+    sample_size: 100
+  timeout_sec: 300 

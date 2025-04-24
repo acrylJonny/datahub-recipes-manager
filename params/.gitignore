@@ -1,0 +1,9 @@
+# Ignore all environment-specific parameter files
+*.env.yaml
+*.prod.yaml
+*.dev.yaml
+*.local.yaml
+*.secret.yaml
+
+# Keep the default parameters file
+!default_params.yaml 

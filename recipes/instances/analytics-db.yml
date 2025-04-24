@@ -6,7 +6,7 @@ description: "Production Analytics Database ingestion"
 parameters:
   # Connection parameters
   PG_USER: "postgres"
-  PG_HOST_PORT: "localhost:5432"
+  PG_HOST_PORT: "datahub_test_postgres:5432"
   PG_DATABASE: "SimpleAdventureWorks"
   
   # Content configuration
@@ -15,20 +15,11 @@ parameters:
   
   # Stateful ingestion
   STATEFUL_INGESTION_ENABLED: true
-  REMOVE_STALE_METADATA: true
 
   # Profiling configuration
   ENABLE_PROFILING: true
   PROFILE_TABLE_LEVEL_ONLY: false
-  
-  # Pipeline information
-  PIPELINE_NAME: "postgres_analytics_ingestion"
-  PIPELINE_DESCRIPTION: "Production Analytics Database metadata ingestion"
 
-  # Execution configuration
-  EXECUTOR_ID: "default"
-  SCHEDULE_CRON: "0 2 * * *"  # Run daily at 2 AM
-  SCHEDULE_TIMEZONE: "UTC"
 
 # Secrets are referenced but not stored here
 # They will be injected from environment variables

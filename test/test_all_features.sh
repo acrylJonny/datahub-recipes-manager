@@ -65,7 +65,7 @@ fi
 echo -e "${GREEN}✅ Recipe push successful${NC}"
 
 echo -e "${BLUE}===== TESTING PULL RECIPES =====${NC}"
-python ../scripts/pull_recipes.py --output-dir ./pulled_recipes
+python ../scripts/pull_recipe.py --output-dir ./pulled_recipes
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Recipe pull failed${NC}"
     exit 1
@@ -95,7 +95,7 @@ cp recipes/instances/analytics-db.yml recipes/instances/analytics-db.yml.bak
 sed -i '' 's/cron: "0 2 \* \* \*"/cron: "0 3 \* \* \*"/' recipes/instances/analytics-db.yml || sed -i 's/cron: "0 2 \* \* \*"/cron: "0 3 \* \* \*"/' recipes/instances/analytics-db.yml
 
 # Push the modified recipe
-python ../scripts/push_recipe.py --instance recipes/instances/analytics-db.yml --mode patch
+python ../scripts/patch_recipe.py --id analytics-database-prod --schedule "0 3 * * *"
 PATCH_STATUS=$?
 # Restore original file
 mv recipes/instances/analytics-db.yml.bak recipes/instances/analytics-db.yml

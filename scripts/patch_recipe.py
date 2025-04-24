@@ -55,35 +55,33 @@ def main():
     
     logger.info(f"Found ingestion source: {args.id}")
     
-    # Create updated configuration
-    updated_config = source.get("config", {})
+    # Prepare parameters for patch operation
+    patch_params = {}
+    
+    # Get source URN
+    source_urn = source.get("urn")
+    if not source_urn:
+        source_urn = f"urn:li:dataHubIngestionSource:{args.id}"
     
     # Update with instance file if provided
     if args.instance:
         try:
-            recipe = load_recipe_instance(args.instance)
-            logger.info(f"Loaded recipe instance from {args.instance}")
-            
-            # Merge recipe config with existing config
-            if "recipe" in recipe and "config" in recipe["recipe"]:
-                # Update only the recipe config portion
-                updated_config["recipe"]["config"] = recipe["recipe"]["config"]
-                logger.info("Updated recipe configuration")
+            recipe_instance = load_recipe_instance(args.instance)
+            if recipe_instance:
+                patch_params["recipe"] = recipe_instance
+                logger.info(f"Loaded recipe instance from {args.instance}")
         except Exception as e:
             logger.error(f"Failed to load recipe instance: {str(e)}")
             sys.exit(1)
     
     # Update schedule if provided
     if args.schedule:
-        if "schedule" not in updated_config:
-            updated_config["schedule"] = {}
-        
-        updated_config["schedule"]["interval"] = args.schedule
+        patch_params["schedule_interval"] = args.schedule
         logger.info(f"Updated schedule to: {args.schedule}")
     
     # Patch the ingestion source
-    success = client.update_ingestion_source(args.id, updated_config)
-    if not success:
+    updated_source = client.patch_ingestion_source(source_urn, **patch_params)
+    if not updated_source:
         logger.error("Failed to patch ingestion source")
         sys.exit(1)
     

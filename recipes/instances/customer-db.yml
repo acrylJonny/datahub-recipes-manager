@@ -27,8 +27,6 @@ parameters:
 
   # Stateful ingestion
   STATEFUL_INGESTION_ENABLED: true
-  STATEFUL_INGESTION_THRESHOLD: 100
-  REMOVE_STALE_METADATA: true
 
   # Profiling configuration
   ENABLE_PROFILING: true

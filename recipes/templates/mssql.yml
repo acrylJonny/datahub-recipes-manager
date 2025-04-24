@@ -52,11 +52,7 @@ source:
     # Stateful ingestion for change detection
     stateful_ingestion:
       enabled: ${STATEFUL_INGESTION_ENABLED}
-      remove_stale_metadata: ${REMOVE_STALE_METADATA}
-      fail_safe_threshold: ${STATEFUL_INGESTION_THRESHOLD}
-      state_provider:
-        type: datahub
-        config: {}
+
 
 # Executor and scheduling configuration
 executor_id: ${EXECUTOR_ID}

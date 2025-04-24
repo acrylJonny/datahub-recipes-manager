@@ -9,6 +9,7 @@ import json
 import logging
 import uuid
 import requests
+import time
 from typing import Dict, Any, List, Optional, Union
 
 # Add DataHubGraph client imports if available, with fallback
@@ -43,6 +44,10 @@ class DataHubRestClient:
         
         # Add logger attribute
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize schema validation flag to True by default
+        # This will be set to False if GraphQL schema validation fails
+        self._schema_validated = True
         
         if token:
             self.headers["Authorization"] = f"Bearer {token}"
@@ -108,8 +113,16 @@ class DataHubRestClient:
                         logger.warning(f"Could not convert GraphQL SDK result to dict: {str(e)}")
                         return {"errors": [{"message": f"Failed to format GraphQL result: {str(e)}"}], "data": {}}
             except Exception as e:
-                logger.warning(f"Error executing GraphQL via SDK: {str(e)}")
-                return {"errors": [{"message": str(e)}], "data": {}}
+                # Check if this is a schema validation error
+                error_msg = str(e)
+                if "Unknown type" in error_msg or "Validation error" in error_msg:
+                    logger.debug(f"GraphQL schema validation error (expected during version mismatch): {error_msg}")
+                    # Set the flag to indicate schema validation has failed
+                    if hasattr(self, '_schema_validated'):
+                        self._schema_validated = False
+                else:
+                    logger.warning(f"Error executing GraphQL via SDK: {error_msg}")
+                return {"errors": [{"message": error_msg}], "data": {}}
         else:
             logger.error("DataHubGraph client is not available. Cannot execute GraphQL query.")
             return {"errors": [{"message": "DataHubGraph client is not available"}], "data": {}}
@@ -231,6 +244,11 @@ class DataHubRestClient:
         try:
             self.logger.info(f"Creating ingestion source via GraphQL")
             
+            # Check if the GraphQL schema has been validated before
+            if hasattr(self, '_schema_validated') and not self._schema_validated:
+                self.logger.info(f"Skipping GraphQL approach due to previous schema validation failures")
+                raise Exception("Schema validation previously failed, falling back to REST API")
+            
             # Fixed mutation without subselections, just returns a string
             mutation = """
             mutation createIngestionSource($input: CreateIngestionSourceInput!) {
@@ -252,10 +270,15 @@ class DataHubRestClient:
                 }
             }
             
+            # Handle recipe differently based on its type
+            if isinstance(recipe, dict) and "source" in recipe:
+                # Direct dictionary recipe with source - convert to string
+                recipe_str = json.dumps(recipe)
+                
             # Only add recipe if provided
             if recipe_str is not None:
                 graphql_input["config"]["recipe"] = recipe_str
-                
+            
             # Add extra args if provided
             if extra_args:
                 graphql_input["config"]["extraArgs"] = extra_args
@@ -268,14 +291,31 @@ class DataHubRestClient:
             result = self.execute_graphql(mutation, variables)
             
             if "errors" in result:
-                error_msgs = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.warning(f"GraphQL errors when creating ingestion source: {', '.join(error_msgs)}")
-                # Continue to REST API fallback
+                # Check for schema validation errors which indicate incompatible API versions
+                schema_errors = [e for e in result.get("errors", []) 
+                               if e.get("message", "").find("Validation error (UnknownType)") >= 0 
+                               or e.get("message", "").find("Unknown type") >= 0]
+                
+                if schema_errors:
+                    # This is a GraphQL schema mismatch, likely due to API version differences
+                    self.logger.info("Detected GraphQL schema mismatch. Your client is likely connecting to a different DataHub API version than expected.")
+                    self.logger.info("This is normal when using this client with different DataHub versions. Falling back to REST API.")
+                    # Mark schema as invalid to avoid trying GraphQL in future calls
+                    self._schema_validated = False
+                    # Skip the direct GraphQL endpoint which would also fail
+                    raise Exception("Schema validation failed, falling back to REST API")
+                else:
+                    # Other types of GraphQL errors
+                    error_msgs = [e.get("message", "") for e in result.get("errors", [])]
+                    self.logger.warning(f"GraphQL errors when creating ingestion source: {', '.join(error_msgs)}")
+                    # Continue to REST API fallback
             else:
                 # Success - createIngestionSource returns the URN
                 created_urn = result.get("data", {}).get("createIngestionSource")
                 if created_urn:
                     self.logger.info(f"Successfully created ingestion source via GraphQL: {source_id}")
+                    # Mark schema as valid since we succeeded
+                    self._schema_validated = True
                     return {
                         "urn": created_urn,
                         "id": source_id,
@@ -292,6 +332,8 @@ class DataHubRestClient:
                 else:
                     self.logger.warning("GraphQL mutation returned success but no URN")
                     # We'll still return base info since the mutation didn't report errors
+                    # Mark schema as valid since we succeeded
+                    self._schema_validated = True
                     return {
                         "urn": source_urn,
                         "id": source_id,
@@ -306,58 +348,73 @@ class DataHubRestClient:
                         }
                     }
         except Exception as e:
-            self.logger.warning(f"Error creating ingestion source via GraphQL: {str(e)}")
-            # Continue to direct GraphQL endpoint
+            is_schema_error = str(e).find("Schema validation") >= 0 or str(e).find("Unknown type") >= 0
             
-        # Try direct GraphQL endpoint
-        try:
-            self.logger.info(f"Trying direct GraphQL endpoint for creation")
-            
-            # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
-            
-            # Simple GraphQL mutation with variables
-            direct_mutation = {
-                "query": """
-                    mutation createIngestionSource($input: CreateIngestionSourceInput!) {
-                        createIngestionSource(input: $input)
-                    }
-                """,
-                "variables": variables
-            }
-            
-            direct_response = requests.post(
-                f"{self.server_url}/api/graphql",
-                headers=headers,
-                json=direct_mutation
-            )
-            
-            if direct_response.status_code == 200:
-                direct_result = direct_response.json()
-                if "errors" not in direct_result:
-                    created_urn = direct_result.get("data", {}).get("createIngestionSource")
-                    self.logger.info(f"Successfully created ingestion source via direct GraphQL: {source_id}")
-                    return {
-                        "urn": created_urn or source_urn,
-                        "id": source_id,
-                        "name": name,
-                        "type": source_type,
-                        "status": "created",
-                        "config": {
-                            "recipe": recipe_str,
-                            "executorId": executor_id,
-                            "debugMode": debug_mode,
-                            "extraArgs": extra_args
-                        }
-                    }
-                else:
-                    self.logger.warning(f"GraphQL errors with direct endpoint: {direct_result.get('errors')}")
+            if is_schema_error:
+                # Skip direct GraphQL endpoint if schema errors detected
+                self.logger.info("Detected schema validation error: Schema validation failed or Unknown type found")
+                self.logger.info("This is normal when using this client with different DataHub versions. Falling back to REST API")
             else:
-                self.logger.warning(f"Failed with direct GraphQL endpoint: {direct_response.status_code}")
-        except Exception as e:
-            self.logger.warning(f"Error with direct GraphQL endpoint: {str(e)}")
+                self.logger.warning(f"Error creating ingestion source via GraphQL: {str(e)}")
+                
+                # Continue to direct GraphQL endpoint only if not a schema error
+                try:
+                    self.logger.info(f"Trying direct GraphQL endpoint for creation")
+                    
+                    # Set up headers
+                    headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
+                    if hasattr(self, 'token') and self.token:
+                        headers['Authorization'] = f'Bearer {self.token}'
+                    
+                    # Simple GraphQL mutation with variables
+                    direct_mutation = {
+                        "query": """
+                            mutation createIngestionSource($input: CreateIngestionSourceInput!) {
+                                createIngestionSource(input: $input)
+                            }
+                        """,
+                        "variables": variables
+                    }
+                    
+                    direct_response = requests.post(
+                        f"{self.server_url}/api/graphql",
+                        headers=headers,
+                        json=direct_mutation
+                    )
+                    
+                    if direct_response.status_code == 200:
+                        direct_result = direct_response.json()
+                        if "errors" not in direct_result:
+                            created_urn = direct_result.get("data", {}).get("createIngestionSource")
+                            self.logger.info(f"Successfully created ingestion source via direct GraphQL: {source_id}")
+                            return {
+                                "urn": created_urn or source_urn,
+                                "id": source_id,
+                                "name": name,
+                                "type": source_type,
+                                "status": "created",
+                                "config": {
+                                    "recipe": recipe_str,
+                                    "executorId": executor_id,
+                                    "debugMode": debug_mode,
+                                    "extraArgs": extra_args
+                                }
+                            }
+                        else:
+                            # Check for schema validation errors in the direct endpoint too
+                            direct_schema_errors = [e for e in direct_result.get("errors", []) 
+                                                 if isinstance(e, dict) and 
+                                                 e.get("message", "").find("Validation error (UnknownType)") >= 0]
+                            
+                            if direct_schema_errors:
+                                self.logger.info("GraphQL schema mismatch with direct endpoint. Falling back to REST API.")
+                                self._schema_validated = False
+                            else:
+                                self.logger.warning(f"GraphQL errors with direct endpoint: {direct_result.get('errors')}")
+                    else:
+                        self.logger.warning(f"Failed with direct GraphQL endpoint: {direct_response.status_code}")
+                except Exception as direct_e:
+                    self.logger.warning(f"Error with direct GraphQL endpoint: {str(direct_e)}")
             
         # Fall back to REST API
         try:
@@ -380,13 +437,21 @@ class DataHubRestClient:
                             "timezone": timezone
                         },
                         "config": {
-                            "recipe": recipe_str,
                             "executorId": executor_id,
                             "debugMode": debug_mode
                         }
                     }
                 }
             }]
+            
+            # Handle recipe differently based on type
+            if isinstance(recipe, dict) and "source" in recipe:
+                # If recipe has a source field, convert to string
+                recipe_str = json.dumps(recipe)
+            
+            # Add recipe to config if provided
+            if recipe_str is not None:
+                payload[0]["dataHubIngestionSourceInfo"]["value"]["config"]["recipe"] = recipe_str
             
             # Add extra args only if provided
             if extra_args:
@@ -600,14 +665,12 @@ class DataHubRestClient:
                   input {
                     requestedAt
                     actorUrn
-                    executorId
                     __typename
                   }
                   result {
                     status
                     startTimeMs
                     durationMs
-                    executorInstanceId
                     structuredReport {
                       type
                       serializedValue
@@ -1241,7 +1304,7 @@ class DataHubRestClient:
             endpoints = [
                 f"{self.server_url}/secrets",
                 f"{self.server_url}/openapi/secrets",
-                f"{self.server_url}/api/v2/secretes"
+                f"{self.server_url}/api/v2/secrets"
             ]
             
             # Prepare payload
@@ -1501,20 +1564,20 @@ class DataHubRestClient:
             """
             
             # Start with current values and update with provided values
-            graphql_input = {}
+            input_obj = {}
             
             # Always include the type from the current source - this is required for the mutation
-            graphql_input["type"] = source_type or current_source.get("type")
-            if not graphql_input["type"]:
+            input_obj["type"] = source_type or current_source.get("type")
+            if not input_obj["type"]:
                 self.logger.error("Source type is required but not available from current source or parameters")
                 return None
                 
             # Only add name if provided
             if name is not None:
-                graphql_input["name"] = name
+                input_obj["name"] = name
             else:
                 # Always include the current name - required for the mutation
-                graphql_input["name"] = current_source.get("name")
+                input_obj["name"] = current_source.get("name")
             
             # Build config object - always initialize it
             config = {}
@@ -1523,7 +1586,8 @@ class DataHubRestClient:
             current_config = current_source.get("config", {}) or {}
             
             # Add recipe if provided or keep existing
-            if recipe_str is not None:
+            if recipe is not None:
+                # Convert any recipe dict to string
                 config["recipe"] = recipe_str
             elif "recipe" in current_config and current_config["recipe"] is not None:
                 config["recipe"] = current_config["recipe"]
@@ -1548,7 +1612,7 @@ class DataHubRestClient:
             
             # Only add config if we have something to update
             if config:
-                graphql_input["config"] = config
+                input_obj["config"] = config
             
             # Build schedule object only if we have something to update
             if schedule_interval is not None or timezone is not None:
@@ -1569,19 +1633,19 @@ class DataHubRestClient:
                     schedule_obj["timezone"] = current_schedule["timezone"]
                     
                 if schedule_obj:
-                    graphql_input["schedule"] = schedule_obj
+                    input_obj["schedule"] = schedule_obj
             elif current_source.get("schedule"):
                 # Include the current schedule in the update
-                graphql_input["schedule"] = current_source.get("schedule")
+                input_obj["schedule"] = current_source.get("schedule")
             
             # Only proceed if we have something to update
-            if not graphql_input or (len(graphql_input) == 2 and "type" in graphql_input and "name" in graphql_input):
+            if not input_obj or (len(input_obj) == 2 and "type" in input_obj and "name" in input_obj):
                 self.logger.warning("No updates to apply to ingestion source")
                 return current_source
                 
             variables = {
                 "urn": urn,
-                "input": graphql_input
+                "input": input_obj
             }
             
             self.logger.debug(f"GraphQL variables: {json.dumps(variables)}")
@@ -1984,21 +2048,19 @@ class DataHubRestClient:
 
     def list_policies(self, limit=100, start=0):
         """
-        List policies from DataHub.
-        
-        This method attempts to list policies using GraphQL first and falls back to REST API if needed.
+        List all policies in DataHub.
         
         Args:
             limit (int): Maximum number of policies to return
             start (int): Starting offset for pagination
-                
+            
         Returns:
-            list: List of policy dictionaries or empty list if none found
+            list: List of policy objects
         """
-        self.logger.info(f"Listing policies (limit={limit}, start={start})")
+        self.logger.info(f"Listing policies with limit={limit}, start={start}")
         
-        # Try GraphQL first
-        graphql_query = """
+        # GraphQL query with correct structure
+        query = """
         query listPolicies($input: ListPoliciesInput!) {
           listPolicies(input: $input) {
             start
@@ -2007,30 +2069,41 @@ class DataHubRestClient:
             policies {
               urn
               type
-              id
               name
               description
               state
-              privileges
               resources {
                 type
-                resource
+                allResources
+                resources
+                filter {
+                  criteria {
+                    field
+                    values {
+                      value
+                      __typename
+                    }
+                    condition
+                    __typename
+                  }
+                  __typename
+                }
+                __typename
               }
+              privileges
               actors {
                 users
                 groups
                 allUsers
                 allGroups
                 resourceOwners
+                resourceOwnersTypes
+                __typename
               }
               editable
-              createdAt
-              createdBy
-              lastModified {
-                time
-                actor
-              }
+              __typename
             }
+            __typename
           }
         }
         """
@@ -2038,58 +2111,115 @@ class DataHubRestClient:
         variables = {
             "input": {
                 "start": start,
-                "count": limit
+                "count": limit,
+                "orFilters": [
+                    {
+                        "and": [
+                            {
+                                "field": "state",
+                                "values": ["ACTIVE"],
+                                "condition": "EQUAL"
+                            }
+                        ]
+                    }
+                ]
             }
         }
         
         try:
-            result = self.execute_graphql(graphql_query, variables)
-            if result and "errors" not in result:
-                policy_list = result.get("data", {}).get("listPolicies", {}).get("policies", [])
-                if policy_list:
-                    self.logger.info(f"Successfully retrieved {len(policy_list)} policies via GraphQL")
-                    return policy_list
+            result = self.execute_graphql(query, variables)
+            
+            if result and "data" in result and result["data"] and "listPolicies" in result["data"]:
+                policies_data = result["data"]["listPolicies"]
+                if policies_data is None:
+                    self.logger.warning("listPolicies returned None in GraphQL response")
+                    return []
+                
+                policies = policies_data.get("policies", [])
+                if policies is None:
+                    policies = []
+                
+                self.logger.info(f"Successfully retrieved {len(policies)} policies")
+                return policies
+            
+            # Check for errors
+            if result and "errors" in result:
+                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                
+                # Check for schema validation errors specifically
+                schema_validation_errors = [
+                    e for e in error_messages 
+                    if "Unknown type 'ListPoliciesInput'" in e or "Validation error" in e
+                ]
+                
+                if schema_validation_errors:
+                    # Log schema validation errors at info level since they're normal with different DataHub versions
+                    self.logger.info(f"GraphQL schema validation errors: {schema_validation_errors}")
+                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                else:
+                    self.logger.warning(f"GraphQL errors when listing policies: {', '.join(error_messages)}")
             else:
-                error_msg = result.get("errors", [])[0].get("message") if result and "errors" in result else "Unknown error"
-                self.logger.warning(f"GraphQL policy listing failed: {error_msg}, falling back to REST API")
+                self.logger.warning("Failed to retrieve policies using GraphQL")
         except Exception as e:
             self.logger.warning(f"Error listing policies via GraphQL: {str(e)}")
-        
+            
         # Fall back to OpenAPI v3 endpoint
         try:
-            url = f"{self.server_url}/openapi/policies"
-            params = {"start": start, "count": limit}
+            url = f"{self.server_url}/openapi/v3/entity/datahubpolicy"
+            self.logger.debug(f"Listing policies via OpenAPI v3: GET {url}")
             
             # Set up headers
             headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
             
-            self.logger.info(f"Attempting to list policies via REST API: {url}")
-            response = requests.get(url, headers=headers, params=params)
-            
+            response = requests.get(url, headers=headers, params={"start": start, "count": limit})
             if response.status_code == 200:
-                result = response.json()
-                policies = result.get("policies", [])
-                self.logger.info(f"Successfully retrieved {len(policies)} policies via REST API")
+                data = response.json()
+                entities = data.get("entities", [])
+                policies = []
+                
+                for entity in entities:
+                    try:
+                        policy_urn = entity.get("urn")
+                        policy_id = policy_urn.split(":")[-1] if policy_urn else None
+                        
+                        if not policy_id:
+                            continue
+                            
+                        # Extract policy info
+                        policy_info = entity.get("dataHubPolicyInfo", {})
+                        if not policy_info:
+                            continue
+                            
+                        policy_value = policy_info.get("value", {})
+                        if not policy_value:
+                            continue
+                            
+                        # Create simplified policy object
+                        policy = {
+                            "urn": policy_urn,
+                            "id": policy_id,
+                            "name": policy_value.get("displayName", ""),
+                            "description": policy_value.get("description", ""),
+                            "type": policy_value.get("type", ""),
+                            "state": policy_value.get("state", ""),
+                            "privileges": policy_value.get("privileges", []),
+                            "resources": policy_value.get("resources", {}),
+                            "actors": policy_value.get("actors", {})
+                        }
+                        
+                        policies.append(policy)
+                    except Exception as e:
+                        self.logger.warning(f"Error processing policy: {str(e)}")
+                
+                self.logger.info(f"Successfully retrieved {len(policies)} policies via OpenAPI v3")
                 return policies
             else:
-                self.logger.error(f"Failed to list policies via REST API: {response.status_code} - {response.text}")
-                
-                # Try the legacy endpoint format if available
-                legacy_url = f"{self.server_url}/policies"
-                legacy_response = requests.get(legacy_url, headers=headers, params=params)
-                
-                if legacy_response.status_code == 200:
-                    legacy_result = legacy_response.json()
-                    legacy_policies = legacy_result.get("policies", [])
-                    self.logger.info(f"Successfully retrieved {len(legacy_policies)} policies via legacy REST API")
-                    return legacy_policies
-                else:
-                    self.logger.error(f"Failed to list policies via legacy REST API: {legacy_response.status_code}")
+                self.logger.warning(f"Failed to list policies via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
-            self.logger.error(f"Error listing policies via REST API: {str(e)}")
-        
+            self.logger.warning(f"Error listing policies via OpenAPI v3: {str(e)}")
+            
         return []
 
     def get_policy(self, policy_id):
@@ -2128,7 +2258,17 @@ class DataHubRestClient:
             privileges
             resources {
               type
-              resource
+              allResources
+              resources
+              filter {
+                criteria {
+                  field
+                  values {
+                    value
+                  }
+                  condition
+                }
+              }
             }
             actors {
               users
@@ -2136,14 +2276,9 @@ class DataHubRestClient:
               allUsers
               allGroups
               resourceOwners
+              resourceOwnersTypes
             }
             editable
-            createdAt
-            createdBy
-            lastModified {
-              time
-              actor
-            }
           }
         }
         """
@@ -2152,57 +2287,75 @@ class DataHubRestClient:
         
         try:
             result = self.execute_graphql(graphql_query, variables)
-            if result and "errors" not in result:
-                policy_data = result.get("data", {}).get("policy")
+            if result and "data" in result and result["data"] and "policy" in result["data"]:
+                policy_data = result["data"]["policy"]
                 if policy_data:
                     self.logger.info(f"Successfully retrieved policy {policy_id} via GraphQL")
                     return policy_data
+            
+            # Check for errors
+            if result and "errors" in result:
+                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                
+                # Check for schema validation errors specifically
+                schema_validation_errors = [
+                    e for e in error_messages 
+                    if "Unknown type" in e or "Validation error" in e
+                ]
+                
+                if schema_validation_errors:
+                    # Log schema validation errors at info level since they're normal with different DataHub versions
+                    self.logger.info(f"GraphQL schema validation errors when getting policy: {schema_validation_errors}")
+                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                else:
+                    # Log other errors as warnings
+                    self.logger.warning(f"GraphQL policy retrieval failed: {', '.join(error_messages)}, falling back to REST API")
             else:
-                error_msg = result.get("errors", [])[0].get("message") if result and "errors" in result else "Unknown error"
-                self.logger.warning(f"GraphQL policy retrieval failed: {error_msg}, falling back to REST API")
+                self.logger.warning("GraphQL policy retrieval failed with unknown error, falling back to REST API")
         except Exception as e:
             self.logger.warning(f"Error retrieving policy via GraphQL: {str(e)}")
         
-        # Fall back to REST API
+        # Fall back to OpenAPI v3 endpoint
         try:
+            url = f"{self.server_url}/openapi/v3/entity/datahubpolicy/{policy_urn}"
+            self.logger.info(f"Attempting to get policy via OpenAPI v3: GET {url}")
+            
             # Set up headers
             headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
             
-            # Try with both ID and URN
-            urls = [
-                f"{self.server_url}/openapi/policies/{policy_id}",
-                f"{self.server_url}/openapi/policies/{policy_urn}"
-            ]
+            response = requests.get(url, headers=headers)
             
-            for url in urls:
-                self.logger.info(f"Attempting to get policy via REST API: {url}")
-                response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                entity_data = response.json()
                 
-                if response.status_code == 200:
-                    policy_data = response.json()
-                    self.logger.info(f"Successfully retrieved policy {policy_id} via REST API")
+                # Extract the policy information
+                if "dataHubPolicyInfo" in entity_data and entity_data["dataHubPolicyInfo"]:
+                    policy_info = entity_data["dataHubPolicyInfo"]
+                    policy_value = policy_info.get("value", {})
+                    
+                    # Create a simplified policy object
+                    policy_data = {
+                        "urn": entity_data.get("urn", ""),
+                        "id": entity_data.get("urn", "").split(":")[-1],
+                        "name": policy_value.get("displayName", ""),
+                        "description": policy_value.get("description", ""),
+                        "type": policy_value.get("type", ""),
+                        "state": policy_value.get("state", ""),
+                        "privileges": policy_value.get("privileges", []),
+                        "resources": policy_value.get("resources", {}),
+                        "actors": policy_value.get("actors", {})
+                    }
+                    
+                    self.logger.info(f"Successfully retrieved policy {policy_id} via OpenAPI v3")
                     return policy_data
-                elif response.status_code == 404:
-                    self.logger.warning(f"Policy not found at {url}, trying next endpoint")
                 else:
-                    self.logger.warning(f"Failed to get policy at {url}: {response.status_code} - {response.text}")
-            
-            # Try legacy endpoint
-            legacy_url = f"{self.server_url}/policies/{policy_id}"
-            self.logger.info(f"Attempting to get policy via legacy API: {legacy_url}")
-            legacy_response = requests.get(legacy_url, headers=headers)
-            
-            if legacy_response.status_code == 200:
-                legacy_data = legacy_response.json()
-                self.logger.info(f"Successfully retrieved policy {policy_id} via legacy API")
-                return legacy_data
+                    self.logger.warning(f"Policy response missing dataHubPolicyInfo: {entity_data}")
             else:
-                self.logger.warning(f"Failed to get policy via legacy API: {legacy_response.status_code}")
-                
+                self.logger.warning(f"Failed to get policy via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
-            self.logger.error(f"Error retrieving policy via REST API: {str(e)}")
+            self.logger.error(f"Error retrieving policy via OpenAPI v3: {str(e)}")
         
         self.logger.error(f"Policy not found: {policy_id}")
         return None
@@ -2217,9 +2370,9 @@ class DataHubRestClient:
             policy_data (dict): Policy details including:
                 - name: Name of the policy (required)
                 - description: Description of the policy
-                - type: Policy type (e.g., METADATA_POLICY)
+                - type: Policy type (e.g., METADATA)
                 - state: Policy state (e.g., ACTIVE, INACTIVE)
-                - resources: List of resources the policy applies to
+                - resources: Dict containing resources the policy applies to
                 - privileges: List of privileges granted by the policy
                 - actors: Dict containing users/groups the policy applies to
                 
@@ -2232,78 +2385,177 @@ class DataHubRestClient:
             self.logger.error("Policy name is required")
             return None
         
+        # Prepare input for GraphQL
+        graphql_input = policy_data.copy()
+        
+        # Ensure resources is properly formatted as a dict with filter if it's a list
+        if "resources" in graphql_input and isinstance(graphql_input["resources"], list):
+            # Convert list format to the expected structure with filter.criteria
+            resources_data = {
+                "filter": {
+                    "criteria": []
+                }
+            }
+            
+            # Add resource type information if available 
+            if graphql_input["resources"] and "type" in graphql_input["resources"][0]:
+                resources_data["type"] = graphql_input["resources"][0].get("type")
+            
+            # Add allResources if applicable
+            if not graphql_input["resources"] or graphql_input["resources"][0].get("resource") == "*":
+                resources_data["allResources"] = True
+            elif "resource" in graphql_input["resources"][0]:
+                resources_data["resources"] = [r.get("resource") for r in graphql_input["resources"] if "resource" in r]
+            
+            graphql_input["resources"] = resources_data
+        
+        # Ensure actors object has all required fields
+        if "actors" in graphql_input:
+            default_actors = {
+                "users": [],
+                "groups": [],
+                "allUsers": False,
+                "allGroups": False,
+                "resourceOwners": False,
+                "resourceOwnersTypes": None
+            }
+            
+            if isinstance(graphql_input["actors"], dict):
+                # Update with provided values
+                actors_data = {**default_actors, **graphql_input["actors"]}
+                graphql_input["actors"] = actors_data
+        else:
+            # Set default actors if not provided
+            graphql_input["actors"] = {
+                "users": [],
+                "groups": [],
+                "allUsers": True,
+                "allGroups": False,
+                "resourceOwners": False,
+                "resourceOwnersTypes": None
+            }
+        
         # Try GraphQL first
         graphql_mutation = """
-        mutation createPolicy($input: CreatePolicyInput!) {
-          createPolicy(input: $input) {
-            urn
-            type
-            id
-            name
-            description
-            state
-            privileges
-            resources {
-              type
-              resource
-            }
-            actors {
-              users
-              groups
-              allUsers
-              allGroups
-              resourceOwners
-            }
-            editable
-            createdAt
-            createdBy
-          }
+        mutation createPolicy($input: PolicyUpdateInput!) {
+          createPolicy(input: $input)
         }
         """
         
-        # Prepare input variable
-        create_input = {
-            "type": policy_data.get("type", "METADATA_POLICY"),
-            "name": policy_data.get("name"),
-            "description": policy_data.get("description", ""),
-            "state": policy_data.get("state", "ACTIVE"),
-            "privileges": policy_data.get("privileges", []),
-            "resources": policy_data.get("resources", []),
-            "actors": policy_data.get("actors", {})
-        }
-        
-        variables = {"input": create_input}
+        variables = {"input": graphql_input}
         
         try:
             result = self.execute_graphql(graphql_mutation, variables)
-            if result and "errors" not in result:
-                created_policy = result.get("data", {}).get("createPolicy")
-                if created_policy:
+            if result and "data" in result and result["data"] and "createPolicy" in result["data"]:
+                created_policy_urn = result["data"]["createPolicy"]
+                if created_policy_urn:
                     self.logger.info(f"Successfully created policy {policy_data.get('name')} via GraphQL")
-                    return created_policy
+                    
+                    # Return policy data with URN
+                    policy_with_urn = {**policy_data, "urn": created_policy_urn}
+                    return policy_with_urn
+            
+            # Check for errors
+            if result and "errors" in result:
+                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                
+                # Check for schema validation errors specifically
+                schema_validation_errors = [
+                    e for e in error_messages 
+                    if "Unknown type 'PolicyUpdateInput'" in e or "Validation error" in e
+                ]
+                
+                if schema_validation_errors:
+                    # Log schema validation errors at info level since they're normal with different DataHub versions
+                    self.logger.info(f"GraphQL schema validation errors when creating policy: {schema_validation_errors}")
+                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                else:
+                    # Log other errors as warnings
+                    self.logger.warning(f"GraphQL policy creation failed: {', '.join(error_messages)}, falling back to REST API")
             else:
-                error_msg = result.get("errors", [])[0].get("message") if result and "errors" in result else "Unknown error"
-                self.logger.warning(f"GraphQL policy creation failed: {error_msg}, falling back to REST API")
+                self.logger.warning("GraphQL policy creation failed with unknown error, falling back to REST API")
         except Exception as e:
             self.logger.warning(f"Error creating policy via GraphQL: {str(e)}")
         
         # Fall back to OpenAPI v3 endpoint
         try:
-            url = f"{self.server_url}/openapi/policies"
-            self.logger.info(f"Attempting to create policy via REST API: {url}")
+            url = f"{self.server_url}/openapi/v3/entity/datahubpolicy"
+            self.logger.info(f"Attempting to create policy via OpenAPI v3: {url}")
             
             # Set up headers
             headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
             
-            response = requests.post(url, headers=headers, json=policy_data)
+            # Format the request according to the OpenAPI v3 specification
+            policy_id = policy_data.get("name", "").lower().replace(" ", "-")
+            if not policy_id:
+                policy_id = str(uuid.uuid4())
+            
+            # Create the nested structure required by OpenAPI v3
+            request_body = [{
+                "urn": f"urn:li:dataHubPolicy:{policy_id}",
+                "dataHubPolicyKey": {
+                    "value": {
+                        "id": policy_id
+                    },
+                    "systemMetadata": {
+                        "runId": "manual-creation",
+                        "lastObserved": int(time.time() * 1000)
+                    }
+                },
+                "dataHubPolicyInfo": {
+                    "value": {
+                        "displayName": policy_data.get("name", ""),
+                        "description": policy_data.get("description", ""),
+                        "type": policy_data.get("type", "METADATA"),
+                        "state": policy_data.get("state", "ACTIVE"),
+                        "privileges": policy_data.get("privileges", []),
+                        "editable": True
+                    },
+                    "systemMetadata": {
+                        "runId": "manual-creation",
+                        "lastObserved": int(time.time() * 1000)
+                    }
+                }
+            }]
+            
+            # Add resources if available
+            if "resources" in policy_data:
+                resources_data = {}
+                
+                if isinstance(policy_data["resources"], dict):
+                    # Already in the correct format
+                    resources_data = policy_data["resources"]
+                elif isinstance(policy_data["resources"], list):
+                    # Convert list to the expected format
+                    if policy_data["resources"] and "type" in policy_data["resources"][0]:
+                        resources_data["type"] = policy_data["resources"][0].get("type")
+                    
+                    if not policy_data["resources"] or policy_data["resources"][0].get("resource") == "*":
+                        resources_data["allResources"] = True
+                    elif "resource" in policy_data["resources"][0]:
+                        resources_data["resources"] = [r.get("resource") for r in policy_data["resources"] if "resource" in r]
+                
+                request_body[0]["dataHubPolicyInfo"]["value"]["resources"] = resources_data
+            
+            # Add actors if available
+            if "actors" in policy_data:
+                request_body[0]["dataHubPolicyInfo"]["value"]["actors"] = policy_data["actors"]
+            
+            response = requests.post(url, headers=headers, json=request_body)
             if response.status_code in (200, 201):
-                created_policy = response.json()
-                self.logger.info(f"Successfully created policy {policy_data.get('name')} via REST API")
+                self.logger.info(f"Successfully created policy {policy_data.get('name')} via OpenAPI v3")
+                
+                # Return a simplified policy object that matches the GraphQL response format
+                created_policy = {
+                    **policy_data,
+                    "urn": f"urn:li:dataHubPolicy:{policy_id}",
+                    "id": policy_id
+                }
                 return created_policy
             else:
-                self.logger.error(f"Failed to create policy via REST API: {response.status_code} - {response.text}")
+                self.logger.error(f"Failed to create policy via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
             self.logger.error(f"Error creating policy via REST API: {str(e)}")
         
@@ -2333,90 +2585,169 @@ class DataHubRestClient:
         if not policy_id.startswith("urn:"):
             policy_urn = f"urn:li:dataHubPolicy:{policy_id}"
         
+        # Prepare input for GraphQL
+        graphql_input = policy_data.copy()
+        
+        # Ensure resources is properly formatted as a dict with filter if it's a list
+        if "resources" in graphql_input and isinstance(graphql_input["resources"], list):
+            # Convert list format to the expected structure with filter.criteria
+            resources_data = {
+                "filter": {
+                    "criteria": []
+                }
+            }
+            
+            # Add resource type information if available 
+            if graphql_input["resources"] and "type" in graphql_input["resources"][0]:
+                resources_data["type"] = graphql_input["resources"][0].get("type")
+            
+            # Add allResources if applicable
+            if not graphql_input["resources"] or graphql_input["resources"][0].get("resource") == "*":
+                resources_data["allResources"] = True
+            elif "resource" in graphql_input["resources"][0]:
+                resources_data["resources"] = [r.get("resource") for r in graphql_input["resources"] if "resource" in r]
+            
+            graphql_input["resources"] = resources_data
+        
+        # Ensure actors object has all required fields
+        if "actors" in graphql_input:
+            default_actors = {
+                "users": [],
+                "groups": [],
+                "allUsers": False,
+                "allGroups": False,
+                "resourceOwners": False,
+                "resourceOwnersTypes": None
+            }
+            
+            if isinstance(graphql_input["actors"], dict):
+                # Update with provided values
+                actors_data = {**default_actors, **graphql_input["actors"]}
+                graphql_input["actors"] = actors_data
+        else:
+            # Set default actors if not provided
+            graphql_input["actors"] = {
+                "users": [],
+                "groups": [],
+                "allUsers": True,
+                "allGroups": False,
+                "resourceOwners": False,
+                "resourceOwnersTypes": None
+            }
+        
         # Try GraphQL first
         graphql_mutation = """
-        mutation updatePolicy($urn: String!, $input: UpdatePolicyInput!) {
-          updatePolicy(urn: $urn, input: $input) {
-            urn
-            type
-            id
-            name
-            description
-            state
-            privileges
-            resources {
-              type
-              resource
-            }
-            actors {
-              users
-              groups
-              allUsers
-              allGroups
-              resourceOwners
-            }
-            editable
-            lastModified {
-              time
-              actor
-            }
-          }
+        mutation updatePolicy($urn: String!, $input: PolicyUpdateInput!) {
+          updatePolicy(urn: $urn, input: $input)
         }
         """
         
-        # Prepare input variable
-        update_input = {}
-        for field in ["name", "description", "type", "state", "privileges", "resources", "actors"]:
-            if field in policy_data:
-                update_input[field] = policy_data[field]
-        
         variables = {
             "urn": policy_urn,
-            "input": update_input
+            "input": graphql_input
         }
         
         try:
             result = self.execute_graphql(graphql_mutation, variables)
-            if result and "errors" not in result:
-                updated_policy = result.get("data", {}).get("updatePolicy")
-                if updated_policy:
+            if result and "data" in result and result["data"] and "updatePolicy" in result["data"]:
+                updated_policy_urn = result["data"]["updatePolicy"]
+                if updated_policy_urn:
                     self.logger.info(f"Successfully updated policy {policy_id} via GraphQL")
-                    return updated_policy
+                    
+                    # Return policy data with URN
+                    policy_with_urn = {**policy_data, "urn": updated_policy_urn}
+                    return policy_with_urn
+            
+            # Check for errors
+            if result and "errors" in result:
+                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                
+                # Check for schema validation errors specifically
+                schema_validation_errors = [
+                    e for e in error_messages 
+                    if "Unknown type 'PolicyUpdateInput'" in e or "Validation error" in e
+                ]
+                
+                if schema_validation_errors:
+                    # Log schema validation errors at info level since they're normal with different DataHub versions
+                    self.logger.info(f"GraphQL schema validation errors when updating policy: {schema_validation_errors}")
+                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                else:
+                    # Log other errors as warnings
+                    self.logger.warning(f"GraphQL policy update failed: {', '.join(error_messages)}, falling back to REST API")
             else:
-                error_msg = result.get("errors", [])[0].get("message") if result and "errors" in result else "Unknown error"
-                self.logger.warning(f"GraphQL policy update failed: {error_msg}, falling back to REST API")
+                self.logger.warning("GraphQL policy update failed with unknown error, falling back to REST API")
         except Exception as e:
             self.logger.warning(f"Error updating policy via GraphQL: {str(e)}")
         
         # Fall back to OpenAPI v3 endpoint
         try:
+            url = f"{self.server_url}/openapi/v3/entity/datahubpolicy"
+            self.logger.debug(f"Updating policy via OpenAPI v3: PATCH {url}")
+            
             # Set up headers
             headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
-                
-            # Try with ID first
-            urls = [
-                f"{self.server_url}/openapi/policies/{policy_id}",
-                f"{self.server_url}/openapi/policies/{policy_urn}"
-            ]
             
-            for url in urls:
-                self.logger.info(f"Attempting to update policy via REST API: {url}")
-                response = requests.put(url, headers=headers, json=policy_data)
-                
-                if response.status_code == 200:
-                    updated_policy = response.json()
-                    self.logger.info(f"Successfully updated policy {policy_id} via REST API")
-                    return updated_policy
-                elif response.status_code == 404:
-                    self.logger.warning(f"Policy not found at {url}, trying next endpoint")
-                else:
-                    self.logger.warning(f"Failed to update policy at {url}: {response.status_code} - {response.text}")
+            # Extract policy ID from URN if needed
+            policy_id = policy_urn.split(":")[-1] if policy_urn else policy_id
             
-            self.logger.error("Failed to update policy via any endpoint")
+            # Create the patch operations
+            patch_operations = []
+            
+            # Add operations for each field in policy_data
+            for field, value in policy_data.items():
+                if field == "name":
+                    patch_operations.append({
+                        "op": "replace",
+                        "path": "/displayName",
+                        "value": value
+                    })
+                elif field == "description":
+                    patch_operations.append({
+                        "op": "replace",
+                        "path": "/description",
+                        "value": value
+                    })
+                elif field in ["type", "state", "privileges", "actors", "resources"]:
+                    patch_operations.append({
+                        "op": "replace",
+                        "path": f"/{field}",
+                        "value": value
+                    })
+            
+            # Create the nested structure required by OpenAPI v3 for patching
+            request_body = [{
+                "urn": policy_urn,
+                "dataHubPolicyInfo": {
+                    "value": {
+                        "patch": patch_operations,
+                        "forceGenericPatch": True
+                    },
+                    "systemMetadata": {
+                        "runId": "manual-update",
+                        "lastObserved": int(time.time() * 1000)
+                    }
+                }
+            }]
+            
+            response = requests.patch(url, headers=headers, json=request_body)
+            
+            if response.status_code in (200, 201, 204):
+                self.logger.info(f"Successfully updated policy {policy_id} via OpenAPI v3")
+                
+                # Return the updated policy data
+                updated_policy = {
+                    **policy_data,
+                    "urn": policy_urn,
+                    "id": policy_id
+                }
+                return updated_policy
+                
+            self.logger.error(f"Failed to update policy via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
-            self.logger.error(f"Error updating policy via REST API: {str(e)}")
+            self.logger.error(f"Error updating policy via OpenAPI v3: {str(e)}")
         
         return None
 
@@ -2454,43 +2785,51 @@ class DataHubRestClient:
         
         try:
             result = self.execute_graphql(graphql_mutation, variables)
-            if result and "errors" not in result:
-                if result.get("data", {}).get("deletePolicy") == True:
+            if result and "data" in result and result["data"] and "deletePolicy" in result["data"]:
+                if result["data"]["deletePolicy"] == True:
                     self.logger.info(f"Successfully deleted policy {policy_id} via GraphQL")
                     return True
+            
+            # Check for errors
+            if result and "errors" in result:
+                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                
+                # Check for schema validation errors specifically
+                schema_validation_errors = [
+                    e for e in error_messages 
+                    if "Unknown type" in e or "Validation error" in e
+                ]
+                
+                if schema_validation_errors:
+                    # Log schema validation errors at info level since they're normal with different DataHub versions
+                    self.logger.info(f"GraphQL schema validation errors when deleting policy: {schema_validation_errors}")
+                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                else:
+                    # Log other errors as warnings
+                    self.logger.warning(f"GraphQL policy deletion failed: {', '.join(error_messages)}, falling back to REST API")
             else:
-                error_msg = result.get("errors", [])[0].get("message") if result and "errors" in result else "Unknown error"
-                self.logger.warning(f"GraphQL policy deletion failed: {error_msg}, falling back to REST API")
+                self.logger.warning("GraphQL policy deletion failed with unknown error, falling back to REST API")
         except Exception as e:
             self.logger.warning(f"Error deleting policy via GraphQL: {str(e)}")
         
         # Fall back to OpenAPI v3 endpoint
         try:
+            url = f"{self.server_url}/openapi/v3/entity/datahubpolicy/{policy_urn}"
+            self.logger.info(f"Attempting to delete policy via OpenAPI v3: DELETE {url}")
+            
             # Set up headers
             headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
                 
-            # Try with both ID and URN
-            urls = [
-                f"{self.server_url}/openapi/policies/{policy_id}",
-                f"{self.server_url}/openapi/policies/{policy_urn}"
-            ]
+            response = requests.delete(url, headers=headers)
             
-            for url in urls:
-                self.logger.info(f"Attempting to delete policy via REST API: {url}")
-                response = requests.delete(url, headers=headers)
-                
-                if response.status_code in (200, 204):
-                    self.logger.info(f"Successfully deleted policy {policy_id} via REST API")
-                    return True
-                elif response.status_code == 404:
-                    self.logger.warning(f"Policy not found at {url}, trying next endpoint")
-                else:
-                    self.logger.warning(f"Failed to delete policy at {url}: {response.status_code} - {response.text}")
-            
-            self.logger.error("Failed to delete policy via any endpoint")
+            if response.status_code in (200, 204):
+                self.logger.info(f"Successfully deleted policy {policy_id} via OpenAPI v3")
+                return True
+            else:
+                self.logger.error(f"Failed to delete policy via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
-            self.logger.error(f"Error deleting policy via REST API: {str(e)}")
+            self.logger.error(f"Error deleting policy via OpenAPI v3: {str(e)}")
         
-        return False 
+        return False

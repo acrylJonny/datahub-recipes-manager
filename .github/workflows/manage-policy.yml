@@ -6,6 +6,7 @@ on:
       action:
         description: 'Action to perform'
         required: true
+        default: 'list'
         type: choice
         options:
           - list
@@ -13,54 +14,77 @@ on:
           - create
           - update
           - delete
+          - export
+          - import
       environment:
         description: 'Environment to target'
         required: true
+        default: 'dev'
         type: choice
         options:
           - dev
           - staging
           - prod
       policy_id:
-        description: 'Policy ID or URN (required for get, update, delete)'
+        description: 'Policy ID (for get, update, delete actions)'
         required: false
         type: string
       policy_name:
-        description: 'Policy name (required for create, optional for update)'
+        description: 'Policy name (for create, update actions)'
         required: false
         type: string
       policy_description:
-        description: 'Policy description'
+        description: 'Policy description (for create, update actions)'
         required: false
         type: string
       policy_type:
-        description: 'Policy type'
+        description: 'Policy type (for create, update actions)'
         required: false
+        default: 'METADATA_POLICY'
         type: choice
         options:
           - METADATA_POLICY
           - PLATFORM_POLICY
-        default: 'METADATA_POLICY'
       policy_state:
-        description: 'Policy state'
+        description: 'Policy state (for create, update actions)'
         required: false
+        default: 'ACTIVE'
         type: choice
         options:
           - ACTIVE
           - INACTIVE
-        default: 'ACTIVE'
       policy_resources:
-        description: 'JSON list of resources (e.g., [{"type":"dataset","resource":"*"}])'
+        description: 'Policy resources as JSON list (for create, update actions)'
         required: false
         type: string
       policy_privileges:
-        description: 'JSON list of privileges (e.g., ["VIEW_ENTITY_PAGE"])'
+        description: 'Policy privileges as JSON list (for create, update actions)'
         required: false
         type: string
       policy_actors:
-        description: 'JSON object of actors (e.g., {"allUsers":true})'
+        description: 'Policy actors as JSON object (for create, update actions)'
         required: false
         type: string
+      export_dir:
+        description: 'Directory to export policies to (for export action)'
+        required: false
+        default: 'policies'
+        type: string
+      import_dir:
+        description: 'Directory to import policies from (for import action)'
+        required: false
+        default: 'policies'
+        type: string
+      skip_existing:
+        description: 'Skip existing policies during import (for import action)'
+        required: false
+        default: false
+        type: boolean
+      force_update:
+        description: 'Force update existing policies during import (for import action)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   manage-policy:
@@ -69,100 +93,144 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-      
+        uses: actions/checkout@v2
+        
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v2
         with:
-          python-version: '3.10'
-      
+          python-version: '3.9'
+          
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
+          
+      - name: Create .env file
+        env:
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
+        run: |
+          echo "DATAHUB_TOKEN=$DATAHUB_TOKEN" > .env
+          echo "DATAHUB_SERVER=$DATAHUB_SERVER" >> .env
+          
       - name: List policies
-        if: ${{ github.event.inputs.action == 'list' }}
-        env:
-          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
-          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
-        run: |
-          python scripts/manage_policy.py list
-      
+        if: github.event.inputs.action == 'list'
+        run: python scripts/manage_policy.py list
+          
       - name: Get policy
-        if: ${{ github.event.inputs.action == 'get' && github.event.inputs.policy_id != '' }}
-        env:
-          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
-          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
-        run: |
-          python scripts/manage_policy.py get "${{ github.event.inputs.policy_id }}"
-      
+        if: github.event.inputs.action == 'get'
+        run: python scripts/manage_policy.py get ${{ github.event.inputs.policy_id }}
+        
       - name: Create policy
-        if: ${{ github.event.inputs.action == 'create' && github.event.inputs.policy_name != '' }}
-        env:
-          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
-          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+        if: github.event.inputs.action == 'create'
         run: |
-          ARGS="--name '${{ github.event.inputs.policy_name }}'"
+          CMD="python scripts/manage_policy.py create --name '${{ github.event.inputs.policy_name }}'"
           
           if [ -n "${{ github.event.inputs.policy_description }}" ]; then
-            ARGS="$ARGS --description '${{ github.event.inputs.policy_description }}'"
+            CMD="$CMD --description '${{ github.event.inputs.policy_description }}'"
           fi
           
-          ARGS="$ARGS --type ${{ github.event.inputs.policy_type }} --state ${{ github.event.inputs.policy_state }}"
-          
-          if [ -n "${{ github.event.inputs.policy_resources }}" ]; then
-            ARGS="$ARGS --resources '${{ github.event.inputs.policy_resources }}'"
-          fi
-          
-          if [ -n "${{ github.event.inputs.policy_privileges }}" ]; then
-            ARGS="$ARGS --privileges '${{ github.event.inputs.policy_privileges }}'"
-          fi
-          
-          if [ -n "${{ github.event.inputs.policy_actors }}" ]; then
-            ARGS="$ARGS --actors '${{ github.event.inputs.policy_actors }}'"
-          fi
-          
-          python scripts/manage_policy.py create $ARGS
-      
-      - name: Update policy
-        if: ${{ github.event.inputs.action == 'update' && github.event.inputs.policy_id != '' }}
-        env:
-          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
-          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
-        run: |
-          ARGS="${{ github.event.inputs.policy_id }}"
-          
-          if [ -n "${{ github.event.inputs.policy_name }}" ]; then
-            ARGS="$ARGS --name '${{ github.event.inputs.policy_name }}'"
-          fi
-          
-          if [ -n "${{ github.event.inputs.policy_description }}" ]; then
-            ARGS="$ARGS --description '${{ github.event.inputs.policy_description }}'"
+          if [ -n "${{ github.event.inputs.policy_type }}" ]; then
+            CMD="$CMD --type '${{ github.event.inputs.policy_type }}'"
           fi
           
           if [ -n "${{ github.event.inputs.policy_state }}" ]; then
-            ARGS="$ARGS --state ${{ github.event.inputs.policy_state }}"
+            CMD="$CMD --state '${{ github.event.inputs.policy_state }}'"
           fi
           
           if [ -n "${{ github.event.inputs.policy_resources }}" ]; then
-            ARGS="$ARGS --resources '${{ github.event.inputs.policy_resources }}'"
+            CMD="$CMD --resources '${{ github.event.inputs.policy_resources }}'"
           fi
           
           if [ -n "${{ github.event.inputs.policy_privileges }}" ]; then
-            ARGS="$ARGS --privileges '${{ github.event.inputs.policy_privileges }}'"
+            CMD="$CMD --privileges '${{ github.event.inputs.policy_privileges }}'"
           fi
           
           if [ -n "${{ github.event.inputs.policy_actors }}" ]; then
-            ARGS="$ARGS --actors '${{ github.event.inputs.policy_actors }}'"
+            CMD="$CMD --actors '${{ github.event.inputs.policy_actors }}'"
           fi
           
-          python scripts/manage_policy.py update $ARGS
-      
-      - name: Delete policy
-        if: ${{ github.event.inputs.action == 'delete' && github.event.inputs.policy_id != '' }}
-        env:
-          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
-          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          echo "Executing: $CMD"
+          eval "$CMD"
+        
+      - name: Update policy
+        if: github.event.inputs.action == 'update'
         run: |
-          python scripts/manage_policy.py delete "${{ github.event.inputs.policy_id }}" 
+          CMD="python scripts/manage_policy.py update ${{ github.event.inputs.policy_id }}"
+          
+          if [ -n "${{ github.event.inputs.policy_name }}" ]; then
+            CMD="$CMD --name '${{ github.event.inputs.policy_name }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_description }}" ]; then
+            CMD="$CMD --description '${{ github.event.inputs.policy_description }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_state }}" ]; then
+            CMD="$CMD --state '${{ github.event.inputs.policy_state }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_resources }}" ]; then
+            CMD="$CMD --resources '${{ github.event.inputs.policy_resources }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_privileges }}" ]; then
+            CMD="$CMD --privileges '${{ github.event.inputs.policy_privileges }}'"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_actors }}" ]; then
+            CMD="$CMD --actors '${{ github.event.inputs.policy_actors }}'"
+          fi
+          
+          echo "Executing: $CMD"
+          eval "$CMD"
+        
+      - name: Delete policy
+        if: github.event.inputs.action == 'delete'
+        run: python scripts/manage_policy.py delete ${{ github.event.inputs.policy_id }}
+        
+      - name: Export policies
+        if: github.event.inputs.action == 'export'
+        run: |
+          mkdir -p ${{ github.event.inputs.export_dir }}
+          
+          if [ -n "${{ github.event.inputs.policy_id }}" ]; then
+            python scripts/export_policy.py --policy-id "${{ github.event.inputs.policy_id }}" --output-dir ${{ github.event.inputs.export_dir }}
+          else
+            python scripts/export_policy.py --output-dir ${{ github.event.inputs.export_dir }}
+          fi
+          
+          echo "Exported policies:"
+          ls -la ${{ github.event.inputs.export_dir }}
+        
+      - name: Archive exported policies
+        if: github.event.inputs.action == 'export'
+        uses: actions/upload-artifact@v2
+        with:
+          name: exported-policies
+          path: ${{ github.event.inputs.export_dir }}
+          
+      - name: Download policies for import
+        if: github.event.inputs.action == 'import'
+        uses: actions/download-artifact@v2
+        with:
+          name: exported-policies
+          path: ${{ github.event.inputs.import_dir }}
+          
+      - name: Import policies
+        if: github.event.inputs.action == 'import'
+        run: |
+          ls -la ${{ github.event.inputs.import_dir }}
+          
+          CMD="python scripts/import_policy.py --input-dir ${{ github.event.inputs.import_dir }}"
+          
+          if [ "${{ github.event.inputs.skip_existing }}" == "true" ]; then
+            CMD="$CMD --skip-existing"
+          fi
+          
+          if [ "${{ github.event.inputs.force_update }}" == "true" ]; then
+            CMD="$CMD --force-update"
+          fi
+          
+          echo "Executing: $CMD"
+          eval "$CMD" 

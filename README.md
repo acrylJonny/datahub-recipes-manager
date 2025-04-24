@@ -17,6 +17,8 @@ datahub-recipes-manager/
 ├── recipes/                 # Recipe templates and instances
 │   ├── templates/           # Parameterized YAML templates
 │   └── instances/           # Concrete recipe instances by environment
+├── params/                  # Parameter templates and defaults
+│   └── default_params.yaml  # Default parameters template 
 ├── scripts/                 # Python scripts for SDK interaction
 ├── utils/                   # Utility modules
 │   ├── template_renderer.py # Template rendering utilities
@@ -55,6 +57,18 @@ datahub-recipes-manager/
    ```
 
 ## Usage
+
+### Parameter Templates
+
+The repository includes a default parameters template (`params/default_params.yaml`) that provides a starting point for creating new recipe configurations. This template includes:
+
+- Common execution parameters
+- Source configurations
+- Sink configurations
+- Recipe-specific settings
+- Advanced configuration options
+
+You can use this template as a reference when creating new recipe instances, or inherit from it in your environment-specific parameter files.
 
 ### Creating a New Recipe
 
@@ -199,6 +213,34 @@ The policy management functionality provides:
 - Support for defining policy resources, privileges, and actors
 - JSON input for complex policy configurations
 - GraphQL-first approach with REST API fallbacks for compatibility with various DataHub versions
+
+### Importing and Exporting Policies
+
+You can export DataHub policies to files for backup or version control, and import them to another DataHub instance:
+
+```bash
+# Export all policies to a directory
+python scripts/export_policy.py --output-dir policies/
+
+# Export a specific policy
+python scripts/export_policy.py --policy-id my-policy-id --output-dir policies/
+
+# Import all policies from a directory
+python scripts/import_policy.py --input-dir policies/
+
+# Import a specific policy file
+python scripts/import_policy.py --input-file policies/my_policy_123.json
+
+# Skip existing policies or force update during import
+python scripts/import_policy.py --input-dir policies/ --skip-existing
+python scripts/import_policy.py --input-dir policies/ --force-update
+```
+
+These tools are useful for:
+- Migrating policies between environments (dev → staging → prod)
+- Backing up policies for disaster recovery
+- Version controlling policies in Git
+- Standardizing policies across multiple DataHub instances
 
 ## Features
 

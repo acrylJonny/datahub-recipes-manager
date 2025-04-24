@@ -73,6 +73,19 @@ bash test/test_list_ingestion_sources.sh
 # Run update secret test
 echo "=== Running update secret test ==="
 bash test/test_update_secret.sh
+
+# Run policy management test
+echo "=== Running policy management test ==="
+bash test/test_policy_management.sh
+
+# Run import/export policy test
+echo "=== Running import/export policy test ==="
+bash test/test_import_export_policy.sh
+
+# Run all features test
+echo "=== Running all features test ==="
+bash test/test_all_features.sh
+
 set -e  # Restore exit on error behavior
 
 echo "=== All tests completed! ==="

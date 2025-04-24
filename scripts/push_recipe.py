@@ -141,18 +141,20 @@ def create_datahub_recipe(
             "id": source_id,
             "name": pipeline_name,
             "type": source_type,
-            "config": recipe,
+            "config": {
+                "recipe": json.dumps(recipe),
+                "executorId": executor_id,
+                "debugMode": debug_mode,
+                "version": "0.8.42"
+            },
             "schedule": {
                 "interval": schedule_interval,
                 "timezone": timezone
-            },
-            "executor_id": executor_id,
-            "debug_mode": debug_mode,
-            "version": "0.8.42"
+            }
         }
         
         if extra_args:
-            ingestion_source["extra_args"] = extra_args
+            ingestion_source["config"]["extraArgs"] = extra_args
             
         result = client.create_ingestion_source(ingestion_source)
         
