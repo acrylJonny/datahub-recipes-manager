@@ -329,7 +329,7 @@ class DataHubRestClient:
                             "extraArgs": extra_args
                         }
                     }
-            else:
+                else:
                     self.logger.warning("GraphQL mutation returned success but no URN")
                     # We'll still return base info since the mutation didn't report errors
                     # Mark schema as valid since we succeeded
@@ -504,7 +504,7 @@ class DataHubRestClient:
                 return None
         except Exception as e:
             self.logger.error(f"Error creating ingestion source via REST API: {str(e)}")
-        return None
+            return None
     
     def trigger_ingestion(self, ingestion_source_id: str) -> bool:
         """
@@ -713,7 +713,7 @@ class DataHubRestClient:
                     self.logger.warning("listIngestionSources returned None in GraphQL response")
                     raw_sources = []
                 else:
-                raw_sources = response_data.get("ingestionSources", [])
+                    raw_sources = response_data.get("ingestionSources", [])
                     if raw_sources is None:
                         self.logger.warning("ingestionSources is None in GraphQL response")
                         raw_sources = []
@@ -894,7 +894,7 @@ class DataHubRestClient:
                             self.logger.warning(f"Error processing entity {entity.get('urn')}: {str(e)}")
                     
                     if sources:
-                    self.logger.info(f"Successfully retrieved {len(sources)} ingestion sources via OpenAPI v3")                    
+                        self.logger.info(f"Successfully retrieved {len(sources)} ingestion sources via OpenAPI v3")                    
                         return sources
                 except json.JSONDecodeError:
                     self.logger.warning("Failed to parse JSON response from OpenAPI v3 endpoint")
@@ -948,7 +948,7 @@ class DataHubRestClient:
                                         self.logger.warning(f"Error processing source {source.get('id')}: {str(e)}")
                                         
                                 if sources:
-                                self.logger.info(f"Retrieved {len(sources)} ingestion sources via alternative API")
+                                    self.logger.info(f"Retrieved {len(sources)} ingestion sources via alternative API")
                                     return sources
                         except json.JSONDecodeError:
                             self.logger.warning("Failed to parse JSON from alternative API endpoint")
@@ -979,7 +979,7 @@ class DataHubRestClient:
             source_id = source_id.replace("urn:li:dataHubIngestionSource:", "")
         else:
             self.logger.debug(f"Converting source ID to URN: {source_id}")
-        source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
+            source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
             
         self.logger.info(f"Fetching ingestion source: {source_id}")
         
@@ -1046,12 +1046,12 @@ class DataHubRestClient:
                         elif recipe_str.strip().startswith("@"):
                             self.logger.debug(f"Found template reference in recipe: {recipe_str}")
                             recipe = recipe_str.strip()
-                    else:
+                        else:
                             # Try to parse as JSON, with fallback to raw string
                             try:
-                        recipe = json.loads(recipe_str)
+                                recipe = json.loads(recipe_str)
                                 self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)[:100]}...")
-                except json.JSONDecodeError:
+                            except json.JSONDecodeError:
                                 self.logger.warning(f"Could not parse recipe JSON for {source_id}, treating as raw string")
                                 # If it's not valid JSON, treat it as a raw string
                                 # This could be a template or other format
@@ -1129,8 +1129,8 @@ class DataHubRestClient:
                         # Build config object with all relevant fields
                         result["config"] = {
                             "recipe": recipe_str,  # Store original recipe string to avoid double-parsing
-                                "executorId": config.get("executorId", "default"),
-                                "debugMode": config.get("debugMode", False),
+                            "executorId": config.get("executorId", "default"),
+                            "debugMode": config.get("debugMode", False),
                             "version": config.get("version")
                         }
                         
@@ -1139,7 +1139,7 @@ class DataHubRestClient:
                         self.logger.warning(f"No source info found in OpenAPI v3 response for {source_id}")
                 except json.JSONDecodeError:
                     self.logger.warning(f"Could not parse JSON response from OpenAPI v3 for {source_id}")
-        except Exception as e:
+                except Exception as e:
                     self.logger.warning(f"Error processing OpenAPI v3 response for {source_id}: {str(e)}")
             else:
                 self.logger.warning(f"OpenAPI v3 GET failed: {response.status_code} - {response.text[:100]}")
@@ -1165,8 +1165,8 @@ class DataHubRestClient:
         if source_id:
             self.logger.warning(f"Returning default source info for {source_id} as all attempts failed")
             return {
-                                "urn": source_urn,
-                                "id": source_id,
+                "urn": source_urn,
+                "id": source_id,
                 "name": source_id,  # Use ID as name
                 "type": "",  # Unknown type
                 "schedule": {"interval": "0 0 * * *", "timezone": "UTC"},  # Default schedule
@@ -1489,7 +1489,7 @@ class DataHubRestClient:
             return None
     
     def patch_ingestion_source(
-        self, 
+        self,
         urn: str,
         recipe: Optional[Union[Dict[str, Any], str]] = None,
         name: Optional[str] = None,
@@ -1575,7 +1575,7 @@ class DataHubRestClient:
             # Only add name if provided
             if name is not None:
                 input_obj["name"] = name
-        else:
+            else:
                 # Always include the current name - required for the mutation
                 input_obj["name"] = current_source.get("name")
             
@@ -1593,14 +1593,14 @@ class DataHubRestClient:
                 config["recipe"] = current_config["recipe"]
             
             # Always include executorId - it's required by the GraphQL schema
-        if executor_id is not None:
+            if executor_id is not None:
                 config["executorId"] = executor_id
             elif current_config.get("executorId"):
                 config["executorId"] = current_config.get("executorId")
-        else:
+            else:
                 config["executorId"] = "default"  # Fallback to default executor
             
-        if debug_mode is not None:
+            if debug_mode is not None:
                 config["debugMode"] = debug_mode
             elif current_config.get("debugMode") is not None:
                 config["debugMode"] = current_config.get("debugMode")
@@ -1735,7 +1735,7 @@ class DataHubRestClient:
             if response.status_code == 200:
                 self.logger.info(f"Successfully patched ingestion source via REST API: {urn}")
                 return self.get_ingestion_source(urn)
-                else:
+            else:
                 self.logger.warning(f"PATCH endpoint failed: {response.status_code} - {response.text}")
                 # Try the PUT endpoint with OpenAPI v3 if PATCH fails
                 try:
@@ -1906,17 +1906,17 @@ class DataHubRestClient:
         try:
             self.logger.debug(f"Attempting to trigger ingestion via DataHubGraph client: {source_id}")
             
-        mutation = """
-        mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
-          createIngestionExecutionRequest(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "ingestionSourceUrn": source_urn
+            mutation = """
+            mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
+            createIngestionExecutionRequest(input: $input)
             }
-        }
+            """
+            
+            variables = {
+                "input": {
+                    "ingestionSourceUrn": source_urn
+                }
+            }
         
             result = self.execute_graphql(mutation, variables)
             
@@ -2156,7 +2156,7 @@ class DataHubRestClient:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
                     self.logger.info(f"GraphQL schema validation errors: {schema_validation_errors}")
                     self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
-            else:
+                else:
                     self.logger.warning(f"GraphQL errors when listing policies: {', '.join(error_messages)}")
             else:
                 self.logger.warning("Failed to retrieve policies using GraphQL")
@@ -2215,7 +2215,7 @@ class DataHubRestClient:
                 
                 self.logger.info(f"Successfully retrieved {len(policies)} policies via OpenAPI v3")
                 return policies
-                else:
+            else:
                 self.logger.warning(f"Failed to list policies via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
             self.logger.warning(f"Error listing policies via OpenAPI v3: {str(e)}")
@@ -2307,7 +2307,7 @@ class DataHubRestClient:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
                     self.logger.info(f"GraphQL schema validation errors when getting policy: {schema_validation_errors}")
                     self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
-            else:
+                else:
                     # Log other errors as warnings
                     self.logger.warning(f"GraphQL policy retrieval failed: {', '.join(error_messages)}, falling back to REST API")
             else:
@@ -2325,9 +2325,9 @@ class DataHubRestClient:
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
             
-                response = requests.get(url, headers=headers)
-                
-                if response.status_code == 200:
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
                 entity_data = response.json()
                 
                 # Extract the policy information
@@ -2469,7 +2469,7 @@ class DataHubRestClient:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
                     self.logger.info(f"GraphQL schema validation errors when creating policy: {schema_validation_errors}")
                     self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
-            else:
+                else:
                     # Log other errors as warnings
                     self.logger.warning(f"GraphQL policy creation failed: {', '.join(error_messages)}, falling back to REST API")
             else:
@@ -2672,7 +2672,7 @@ class DataHubRestClient:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
                     self.logger.info(f"GraphQL schema validation errors when updating policy: {schema_validation_errors}")
                     self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
-            else:
+                else:
                     # Log other errors as warnings
                     self.logger.warning(f"GraphQL policy update failed: {', '.join(error_messages)}, falling back to REST API")
             else:
@@ -2743,7 +2743,7 @@ class DataHubRestClient:
                     "urn": policy_urn,
                     "id": policy_id
                 }
-                    return updated_policy
+                return updated_policy
             
             self.logger.error(f"Failed to update policy via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
@@ -2804,7 +2804,7 @@ class DataHubRestClient:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
                     self.logger.info(f"GraphQL schema validation errors when deleting policy: {schema_validation_errors}")
                     self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
-            else:
+                else:
                     # Log other errors as warnings
                     self.logger.warning(f"GraphQL policy deletion failed: {', '.join(error_messages)}, falling back to REST API")
             else:
@@ -2822,12 +2822,12 @@ class DataHubRestClient:
             if hasattr(self, 'token') and self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
                 
-                response = requests.delete(url, headers=headers)
-                
-                if response.status_code in (200, 204):
+            response = requests.delete(url, headers=headers)
+            
+            if response.status_code in (200, 204):
                 self.logger.info(f"Successfully deleted policy {policy_id} via OpenAPI v3")
-                    return True
-                else:
+                return True
+            else:
                 self.logger.error(f"Failed to delete policy via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
             self.logger.error(f"Error deleting policy via OpenAPI v3: {str(e)}")
