@@ -87,13 +87,15 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov
 
-      - name: Run unit tests
-        run: |
-          echo "Running Python unit tests..."
-          python -m pytest -v test_recipe.py
+      - name: Test environment setup
+        run: test/setup_test_env.sh
 
-      - name: Run integration tests (skipped in CI unless configured)
-        if: env.PYTEST_SKIP_NETWORK != 'true'
+      - name: Run Python unit tests
+        run: |
+          python -m pytest -v scripts/test_push_and_patch_recipe.py
+
+      - name: Validate recipes
+        if: ${{ !contains(github.event.pull_request.title, '[skip validation]') }}
         run: |
           echo "Running integration tests..."
           python -m pytest -v scripts/test_graph.py
