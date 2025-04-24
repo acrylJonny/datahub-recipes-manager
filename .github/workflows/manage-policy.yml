@@ -29,12 +29,8 @@ on:
         description: 'Policy ID (for get, update, delete actions)'
         required: false
         type: string
-      policy_name:
-        description: 'Policy name (for create, update actions)'
-        required: false
-        type: string
-      policy_description:
-        description: 'Policy description (for create, update actions)'
+      policy_config:
+        description: 'Policy JSON config (name, description, type, state, resources, privileges, actors for create/update)'
         required: false
         type: string
       policy_type:
@@ -53,38 +49,16 @@ on:
         options:
           - ACTIVE
           - INACTIVE
-      policy_resources:
-        description: 'Policy resources as JSON list (for create, update actions)'
-        required: false
-        type: string
-      policy_privileges:
-        description: 'Policy privileges as JSON list (for create, update actions)'
-        required: false
-        type: string
-      policy_actors:
-        description: 'Policy actors as JSON object (for create, update actions)'
-        required: false
-        type: string
       export_dir:
-        description: 'Directory to export policies to (for export action)'
+        description: 'Directory for export/import policies'
         required: false
         default: 'policies'
         type: string
-      import_dir:
-        description: 'Directory to import policies from (for import action)'
+      import_options:
+        description: 'Import options as JSON (skip_existing, force_update)'
         required: false
-        default: 'policies'
+        default: '{"skip_existing": false, "force_update": false}'
         type: string
-      skip_existing:
-        description: 'Skip existing policies during import (for import action)'
-        required: false
-        default: false
-        type: boolean
-      force_update:
-        description: 'Force update existing policies during import (for import action)'
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   manage-policy:
@@ -93,10 +67,10 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
           
@@ -113,6 +87,12 @@ jobs:
           echo "DATAHUB_TOKEN=$DATAHUB_TOKEN" > .env
           echo "DATAHUB_SERVER=$DATAHUB_SERVER" >> .env
           
+      - name: Extract policy config
+        if: github.event.inputs.action == 'create' || github.event.inputs.action == 'update'
+        id: extract_config
+        run: |
+          echo "POLICY_CONFIG='${{ github.event.inputs.policy_config }}'" >> $GITHUB_ENV
+          
       - name: List policies
         if: github.event.inputs.action == 'list'
         run: python scripts/manage_policy.py list
@@ -124,10 +104,25 @@ jobs:
       - name: Create policy
         if: github.event.inputs.action == 'create'
         run: |
-          CMD="python scripts/manage_policy.py create --name '${{ github.event.inputs.policy_name }}'"
+          CONFIG='${{ github.event.inputs.policy_config }}'
           
-          if [ -n "${{ github.event.inputs.policy_description }}" ]; then
-            CMD="$CMD --description '${{ github.event.inputs.policy_description }}'"
+          # Extract values from JSON config
+          if [ -n "$CONFIG" ]; then
+            POLICY_NAME=$(echo $CONFIG | jq -r '.name // ""')
+            POLICY_DESC=$(echo $CONFIG | jq -r '.description // ""')
+            POLICY_RESOURCES=$(echo $CONFIG | jq -r '.resources // ""')
+            POLICY_PRIVILEGES=$(echo $CONFIG | jq -r '.privileges // ""')
+            POLICY_ACTORS=$(echo $CONFIG | jq -r '.actors // ""')
+          fi
+          
+          CMD="python scripts/manage_policy.py create"
+          
+          if [ -n "$POLICY_NAME" ]; then
+            CMD="$CMD --name '$POLICY_NAME'"
+          fi
+          
+          if [ -n "$POLICY_DESC" ]; then
+            CMD="$CMD --description '$POLICY_DESC'"
           fi
           
           if [ -n "${{ github.event.inputs.policy_type }}" ]; then
@@ -138,16 +133,16 @@ jobs:
             CMD="$CMD --state '${{ github.event.inputs.policy_state }}'"
           fi
           
-          if [ -n "${{ github.event.inputs.policy_resources }}" ]; then
-            CMD="$CMD --resources '${{ github.event.inputs.policy_resources }}'"
+          if [ -n "$POLICY_RESOURCES" ]; then
+            CMD="$CMD --resources '$POLICY_RESOURCES'"
           fi
           
-          if [ -n "${{ github.event.inputs.policy_privileges }}" ]; then
-            CMD="$CMD --privileges '${{ github.event.inputs.policy_privileges }}'"
+          if [ -n "$POLICY_PRIVILEGES" ]; then
+            CMD="$CMD --privileges '$POLICY_PRIVILEGES'"
           fi
           
-          if [ -n "${{ github.event.inputs.policy_actors }}" ]; then
-            CMD="$CMD --actors '${{ github.event.inputs.policy_actors }}'"
+          if [ -n "$POLICY_ACTORS" ]; then
+            CMD="$CMD --actors '$POLICY_ACTORS'"
           fi
           
           echo "Executing: $CMD"
@@ -156,30 +151,41 @@ jobs:
       - name: Update policy
         if: github.event.inputs.action == 'update'
         run: |
-          CMD="python scripts/manage_policy.py update ${{ github.event.inputs.policy_id }}"
+          CONFIG='${{ github.event.inputs.policy_config }}'
           
-          if [ -n "${{ github.event.inputs.policy_name }}" ]; then
-            CMD="$CMD --name '${{ github.event.inputs.policy_name }}'"
+          # Extract values from JSON config
+          if [ -n "$CONFIG" ]; then
+            POLICY_NAME=$(echo $CONFIG | jq -r '.name // ""')
+            POLICY_DESC=$(echo $CONFIG | jq -r '.description // ""')
+            POLICY_RESOURCES=$(echo $CONFIG | jq -r '.resources // ""')
+            POLICY_PRIVILEGES=$(echo $CONFIG | jq -r '.privileges // ""')
+            POLICY_ACTORS=$(echo $CONFIG | jq -r '.actors // ""')
           fi
           
-          if [ -n "${{ github.event.inputs.policy_description }}" ]; then
-            CMD="$CMD --description '${{ github.event.inputs.policy_description }}'"
+          CMD="python scripts/manage_policy.py update ${{ github.event.inputs.policy_id }}"
+          
+          if [ -n "$POLICY_NAME" ]; then
+            CMD="$CMD --name '$POLICY_NAME'"
+          fi
+          
+          if [ -n "$POLICY_DESC" ]; then
+            CMD="$CMD --description '$POLICY_DESC'"
           fi
           
           if [ -n "${{ github.event.inputs.policy_state }}" ]; then
             CMD="$CMD --state '${{ github.event.inputs.policy_state }}'"
           fi
           
-          if [ -n "${{ github.event.inputs.policy_resources }}" ]; then
-            CMD="$CMD --resources '${{ github.event.inputs.policy_resources }}'"
+          if [ -n "$POLICY_RESOURCES" ]; then
+            CMD="$CMD --resources '$POLICY_RESOURCES'"
           fi
           
-          if [ -n "${{ github.event.inputs.policy_privileges }}" ]; then
-            CMD="$CMD --privileges '${{ github.event.inputs.policy_privileges }}'"
+          if [ -n "$POLICY_PRIVILEGES" ]; then
+            CMD="$CMD --privileges '$POLICY_PRIVILEGES'"
           fi
           
-          if [ -n "${{ github.event.inputs.policy_actors }}" ]; then
-            CMD="$CMD --actors '${{ github.event.inputs.policy_actors }}'"
+          if [ -n "$POLICY_ACTORS" ]; then
+            CMD="$CMD --actors '$POLICY_ACTORS'"
           fi
           
           echo "Executing: $CMD"
@@ -205,30 +211,35 @@ jobs:
         
       - name: Archive exported policies
         if: github.event.inputs.action == 'export'
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: exported-policies
           path: ${{ github.event.inputs.export_dir }}
           
       - name: Download policies for import
         if: github.event.inputs.action == 'import'
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: exported-policies
-          path: ${{ github.event.inputs.import_dir }}
+          path: ${{ github.event.inputs.export_dir }}
           
       - name: Import policies
         if: github.event.inputs.action == 'import'
         run: |
-          ls -la ${{ github.event.inputs.import_dir }}
+          ls -la ${{ github.event.inputs.export_dir }}
           
-          CMD="python scripts/import_policy.py --input-dir ${{ github.event.inputs.import_dir }}"
+          # Parse import options
+          OPTIONS='${{ github.event.inputs.import_options }}'
+          SKIP_EXISTING=$(echo $OPTIONS | jq -r '.skip_existing // false')
+          FORCE_UPDATE=$(echo $OPTIONS | jq -r '.force_update // false')
           
-          if [ "${{ github.event.inputs.skip_existing }}" == "true" ]; then
+          CMD="python scripts/import_policy.py --input-dir ${{ github.event.inputs.export_dir }}"
+          
+          if [ "$SKIP_EXISTING" == "true" ]; then
             CMD="$CMD --skip-existing"
           fi
           
-          if [ "${{ github.event.inputs.force_update }}" == "true" ]; then
+          if [ "$FORCE_UPDATE" == "true" ]; then
             CMD="$CMD --force-update"
           fi
           

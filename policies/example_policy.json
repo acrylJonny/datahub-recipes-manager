@@ -1,0 +1,42 @@
+{
+  "policy": {
+    "name": "Example Metadata Access Policy",
+    "description": "This policy grants view access to all users for datasets with the 'public' tag",
+    "type": "METADATA",
+    "state": "ACTIVE",
+    "privileges": [
+      "VIEW_ENTITY_PAGE", 
+      "VIEW_ENTITY_USAGE", 
+      "VIEW_ENTITY_LINEAGE"
+    ],
+    "resources": {
+      "type": "DATASET",
+      "allResources": false,
+      "resources": [],
+      "filter": {
+        "criteria": [
+          {
+            "field": "tags",
+            "values": [
+              {"value": "public"}
+            ],
+            "condition": "EQUALS"
+          }
+        ]
+      }
+    },
+    "actors": {
+      "users": [],
+      "groups": [],
+      "allUsers": true,
+      "allGroups": false,
+      "resourceOwners": false,
+      "resourceOwnersTypes": []
+    }
+  },
+  "metadata": {
+    "exported_at": "2023-12-15T12:00:00.000Z",
+    "exported_by": "example_user",
+    "source_server": "http://localhost:8080"
+  }
+} 

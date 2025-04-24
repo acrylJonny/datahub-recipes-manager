@@ -1,0 +1,37 @@
+{
+  "policy": {
+    "name": "Platform Admin Access",
+    "description": "Grants administrative access to platform-level features for the admin team",
+    "type": "PLATFORM",
+    "state": "ACTIVE",
+    "privileges": [
+      "MANAGE_POLICIES",
+      "MANAGE_USERS_AND_GROUPS",
+      "MANAGE_INGESTION",
+      "MANAGE_SECRETS"
+    ],
+    "resources": {
+      "type": "PLATFORM",
+      "allResources": true,
+      "resources": []
+    },
+    "actors": {
+      "users": [
+        "admin1",
+        "admin2"
+      ],
+      "groups": [
+        "platform-admins"
+      ],
+      "allUsers": false,
+      "allGroups": false,
+      "resourceOwners": false,
+      "resourceOwnersTypes": []
+    }
+  },
+  "metadata": {
+    "exported_at": "2023-12-15T15:00:00.000Z",
+    "exported_by": "system",
+    "source_server": "https://datahub.example.com"
+  }
+} 

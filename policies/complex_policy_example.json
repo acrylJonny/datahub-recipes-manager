@@ -1,0 +1,60 @@
+{
+  "policy": {
+    "name": "Data Analytics Team Dashboard Access",
+    "description": "Grants dashboard access and edit permissions to the data analytics team for dashboards and charts in the analytics domain",
+    "type": "METADATA",
+    "state": "ACTIVE",
+    "privileges": [
+      "VIEW_ENTITY_PAGE",
+      "EDIT_ENTITY_OWNERS",
+      "EDIT_ENTITY_DOCS",
+      "EDIT_ENTITY_TAGS"
+    ],
+    "resources": {
+      "type": "DASHBOARD",
+      "allResources": false,
+      "resources": [],
+      "filter": {
+        "criteria": [
+          {
+            "field": "origin",
+            "values": [
+              {"value": "superset"},
+              {"value": "looker"},
+              {"value": "tableau"}
+            ],
+            "condition": "EQUALS"
+          },
+          {
+            "field": "domain",
+            "values": [
+              {"value": "analytics"}
+            ],
+            "condition": "EQUALS"
+          }
+        ]
+      }
+    },
+    "actors": {
+      "users": [
+        "alice",
+        "bob"
+      ],
+      "groups": [
+        "data-analytics-team",
+        "data-science-team"
+      ],
+      "allUsers": false,
+      "allGroups": false,
+      "resourceOwners": true,
+      "resourceOwnersTypes": [
+        "TECHNICAL_OWNER"
+      ]
+    }
+  },
+  "metadata": {
+    "exported_at": "2023-12-15T14:30:00.000Z",
+    "exported_by": "admin",
+    "source_server": "https://datahub.example.com"
+  }
+} 

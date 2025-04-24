@@ -1,0 +1,90 @@
+{
+  "policy": {
+    "name": "Data Governance Team Full Access",
+    "description": "Grants comprehensive access to data governance team members for managing data assets and metadata",
+    "type": "METADATA",
+    "state": "ACTIVE",
+    "privileges": [
+      "VIEW_ENTITY_PAGE",
+      "EDIT_ENTITY_TAGS",
+      "EDIT_ENTITY_OWNERSHIP",
+      "EDIT_ENTITY_DOCS",
+      "EDIT_ENTITY_STATUS",
+      "EDIT_ENTITY_DOMAIN",
+      "EDIT_ENTITY_DEPRECATION",
+      "EDIT_ENTITY_OWNERS",
+      "EDIT_ENTITY_PROPERTIES",
+      "EDIT_GLOSSARY_TERMS",
+      "GENERATE_ENTITY_LINEAGE",
+      "VIEW_ENTITY_USAGE",
+      "VIEW_ENTITY_LINEAGE",
+      "VIEW_OPERATION_REPORT",
+      "MANAGE_ACCESS_TOKENS",
+      "MANAGE_ASSERTIONS",
+      "MANAGE_ENTITY_DEPRECATION",
+      "MANAGE_ENTITY_DOMAINS"
+    ],
+    "resources": {
+      "type": "ALL",
+      "allResources": true,
+      "resources": [],
+      "filter": {
+        "criteria": [
+          {
+            "field": "origin",
+            "values": [
+              {"value": "snowflake"},
+              {"value": "bigquery"},
+              {"value": "postgres"},
+              {"value": "mysql"},
+              {"value": "redshift"}
+            ],
+            "condition": "EQUALS"
+          },
+          {
+            "field": "domain",
+            "values": [
+              {"value": "data-warehouse"},
+              {"value": "data-lake"},
+              {"value": "business-intelligence"}
+            ],
+            "condition": "EQUALS"
+          },
+          {
+            "field": "container",
+            "values": [
+              {"value": "data-engineering"},
+              {"value": "data-science"}
+            ],
+            "condition": "EQUALS"
+          }
+        ]
+      }
+    },
+    "actors": {
+      "users": [
+        "data.governor",
+        "chief.data.officer",
+        "data.steward"
+      ],
+      "groups": [
+        "data-governance-team",
+        "data-quality-team",
+        "data-catalog-admins"
+      ],
+      "allUsers": false,
+      "allGroups": false,
+      "resourceOwners": true,
+      "resourceOwnersTypes": [
+        "TECHNICAL_OWNER",
+        "BUSINESS_OWNER",
+        "DATA_STEWARD"
+      ]
+    }
+  },
+  "metadata": {
+    "exported_at": "2023-12-15T16:00:00.000Z",
+    "exported_by": "admin",
+    "source_server": "https://datahub.example.com"
+  }
+} 
