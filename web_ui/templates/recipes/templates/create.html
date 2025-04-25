@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Recipe Template - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipes' %}">Recipes</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipe_templates' %}">Templates</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Create Template</li>
+            </ol>
+        </nav>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">{% if imported %}Import{% else %}Create{% endif %} Recipe Template</h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Templates
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Template Information</h5>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_name" class="form-label">Template Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="id_name" name="name" value="{{ form.name.value|default:'' }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="id_recipe_type" class="form-label">Recipe Type <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="id_recipe_type" name="recipe_type" value="{{ form.recipe_type.value|default:'' }}" required>
+                        <div class="form-text">E.g., 'mysql', 'snowflake', 'bigquery', 'file'</div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="id_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="id_description" name="description" rows="3">{{ form.description.value|default:'' }}</textarea>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="id_tags" class="form-label">Tags</label>
+                        <input type="text" class="form-control" id="id_tags" name="tags" value="{{ form.tags.value|default:'' }}">
+                        <div class="form-text">Enter comma-separated tags (e.g., database,extraction,warehouse)</div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="id_content" class="form-label">Recipe Content (YAML/JSON) <span class="text-danger">*</span></label>
+                        <div class="input-group mb-2">
+                            <span class="input-group-text">Format</span>
+                            <select class="form-select" id="format-selector" style="max-width: 120px;">
+                                <option value="yaml" {% if form.content.value and not form.content.value|slice:":1" == '{' %}selected{% endif %}>YAML</option>
+                                <option value="json" {% if form.content.value and form.content.value|slice:":1" == '{' %}selected{% endif %}>JSON</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-secondary" id="format-button">
+                                Format
+                            </button>
+                        </div>
+                        <textarea class="form-control code-editor" id="id_content" name="content" rows="20" required>{{ form.content.value|default:'' }}</textarea>
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Save Template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/eclipse.min.css">
+<style>
+    .CodeMirror {
+        height: 400px;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/yaml/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize CodeMirror
+        const contentArea = document.getElementById('id_content');
+        const initialContent = contentArea.value.trim();
+        const initialMode = initialContent.startsWith('{') ? 'application/json' : 'text/x-yaml';
+        
+        const editor = CodeMirror.fromTextArea(contentArea, {
+            mode: initialMode,
+            theme: 'eclipse',
+            lineNumbers: true,
+            indentUnit: 2,
+            tabSize: 2,
+            lineWrapping: true,
+            foldGutter: true,
+            gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"]
+        });
+        
+        // Format selector
+        const formatSelector = document.getElementById('format-selector');
+        formatSelector.addEventListener('change', function() {
+            const mode = this.value === 'json' ? 'application/json' : 'text/x-yaml';
+            editor.setOption('mode', mode);
+        });
+        
+        // Format button
+        const formatButton = document.getElementById('format-button');
+        formatButton.addEventListener('click', function() {
+            try {
+                const content = editor.getValue();
+                const format = formatSelector.value;
+                
+                if (format === 'json') {
+                    // Convert to JSON if it's YAML
+                    if (!content.trim().startsWith('{')) {
+                        const obj = jsyaml.load(content);
+                        editor.setValue(JSON.stringify(obj, null, 2));
+                    } else {
+                        // Just reformat JSON
+                        const obj = JSON.parse(content);
+                        editor.setValue(JSON.stringify(obj, null, 2));
+                    }
+                } else {
+                    // Convert to YAML if it's JSON
+                    if (content.trim().startsWith('{')) {
+                        const obj = JSON.parse(content);
+                        editor.setValue(jsyaml.dump(obj));
+                    } else {
+                        // Just reformat YAML
+                        const obj = jsyaml.load(content);
+                        editor.setValue(jsyaml.dump(obj));
+                    }
+                }
+                
+                editor.setOption('mode', format === 'json' ? 'application/json' : 'text/x-yaml');
+            } catch (e) {
+                alert('Error formatting: ' + e.message);
+            }
+        });
+        
+        // Form submission - update textarea with editor content
+        document.querySelector('form').addEventListener('submit', function() {
+            editor.save();
+        });
+    });
+</script>
+{% endblock %} 

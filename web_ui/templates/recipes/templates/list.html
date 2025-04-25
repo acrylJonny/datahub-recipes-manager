@@ -1,0 +1,219 @@
+{% extends 'base.html' %}
+
+{% block title %}Recipe Templates - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Recipe Templates</h1>
+            <p class="text-muted">Reusable recipe templates for DataHub ingestion</p>
+        </div>
+        <div>
+            <a href="{% url 'recipes' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left me-1"></i> Back to Recipes
+            </a>
+            <a href="{% url 'recipe_template_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> Create Template
+            </a>
+            <a href="{% url 'recipe_template_import' %}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-file-import me-1"></i> Import Template
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Filters</h5>
+        </div>
+        <div class="card-body">
+            <form action="{% url 'recipe_templates' %}" method="get" class="row">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                        <input type="text" class="form-control" name="search" placeholder="Search templates..." value="{{ search_query|default:'' }}">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <select class="form-select" name="tag">
+                        <option value="">All Tags</option>
+                        {% for tag in all_tags %}
+                            <option value="{{ tag }}" {% if tag_filter == tag %}selected{% endif %}>{{ tag }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Apply</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Template/Instance Tabs -->
+    <ul class="nav nav-tabs mb-4" id="recipeTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates-panel" 
+                    type="button" role="tab" aria-controls="templates-panel" aria-selected="true">
+                <i class="fas fa-folder me-1"></i> Templates
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="instances-tab" data-bs-toggle="tab" data-bs-target="#instances-panel" 
+                    type="button" role="tab" aria-controls="instances-panel" aria-selected="false">
+                <i class="fas fa-file-code me-1"></i> Instances
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content">
+        <!-- Templates Tab Panel -->
+        <div class="tab-pane fade show active" id="templates-panel" role="tabpanel" aria-labelledby="templates-tab">
+            <!-- Templates List -->
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Recipe Templates</h5>
+                    {% if templates %}
+                        <span class="badge bg-secondary">{{ templates|length }} templates</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if templates %}
+                        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+                            {% for template in templates %}
+                                <div class="col">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                            <h6 class="card-subtitle mb-0 text-truncate">{{ template.name }}</h6>
+                                            <div class="dropdown">
+                                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
+                                                    <i class="fas fa-ellipsis-v"></i>
+                                                </button>
+                                                <ul class="dropdown-menu dropdown-menu-end">
+                                                    <li>
+                                                        <a class="dropdown-item" href="{% url 'recipe_template_edit' template_id=template.id %}">
+                                                            <i class="fas fa-edit me-2 text-primary"></i> Edit
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a class="dropdown-item" href="{% url 'recipe_template_deploy' template_id=template.id %}">
+                                                            <i class="fas fa-rocket me-2 text-success"></i> Deploy
+                                                        </a>
+                                                    </li>
+                                                    <li>
+                                                        <a class="dropdown-item" href="{% url 'recipe_template_export' template_id=template.id %}">
+                                                            <i class="fas fa-file-export me-2 text-info"></i> Export
+                                                        </a>
+                                                    </li>
+                                                    <li><hr class="dropdown-divider"></li>
+                                                    <li>
+                                                        <a class="dropdown-item text-danger" href="{% url 'recipe_template_delete' template_id=template.id %}">
+                                                            <i class="fas fa-trash-alt me-2"></i> Delete
+                                                        </a>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="mb-2">
+                                                <span class="badge bg-primary">{{ template.recipe_type }}</span>
+                                                {% if template.is_favorite %}
+                                                    <span class="badge bg-warning"><i class="fas fa-star"></i> Favorite</span>
+                                                {% endif %}
+                                            </div>
+                                            <p class="card-text text-muted small">
+                                                {{ template.description|truncatechars:100|default:"No description" }}
+                                            </p>
+                                            <div class="mt-auto">
+                                                {% if template.tags %}
+                                                    <div class="mt-2">
+                                                        {% for tag in template.get_tags_list %}
+                                                            <a href="{% url 'recipe_templates' %}?tag={{ tag }}" class="badge bg-light text-dark text-decoration-none">
+                                                                #{{ tag }}
+                                                            </a>
+                                                        {% endfor %}
+                                                    </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="card-footer bg-white text-end">
+                                            <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-sm btn-outline-primary">
+                                                View Details
+                                            </a>
+                                            <a href="{% url 'recipe_template_deploy' template_id=template.id %}" class="btn btn-sm btn-outline-success">
+                                                Deploy
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-5">
+                            <div class="mb-4">
+                                <i class="fas fa-folder-open fa-4x text-muted"></i>
+                            </div>
+                            <h4 class="text-muted">No templates found</h4>
+                            <p class="text-muted mb-4">
+                                {% if search_query or tag_filter %}
+                                    No templates match your filter criteria.
+                                    <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary mt-2">
+                                        <i class="fas fa-times me-1"></i> Clear Filters
+                                    </a>
+                                {% else %}
+                                    Get started by creating your first recipe template.
+                                {% endif %}
+                            </p>
+                            {% if not search_query and not tag_filter %}
+                                <a href="{% url 'recipe_template_create' %}" class="btn btn-primary">
+                                    <i class="fas fa-plus me-1"></i> Create Template
+                                </a>
+                                <a href="{% url 'recipe_template_import' %}" class="btn btn-outline-secondary ms-2">
+                                    <i class="fas fa-file-import me-1"></i> Import Template
+                                </a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Instances Tab Panel -->
+        <div class="tab-pane fade" id="instances-panel" role="tabpanel" aria-labelledby="instances-tab">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Recipe Instances</h5>
+                    <a href="{% url 'recipes' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-external-link-alt me-1"></i> View All Recipes
+                    </a>
+                </div>
+                <div class="card-body">
+                    <p>Recipe instances are the actual deployed recipes in your DataHub environment.</p>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        To manage your recipe instances, create a new instance by deploying a template, or go to the <a href="{% url 'recipes' %}" class="alert-link">Recipes page</a>.
+                    </div>
+                    
+                    <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
+                        <a href="{% url 'recipes' %}" class="btn btn-primary">
+                            <i class="fas fa-file-code me-1"></i> View Recipe Instances
+                        </a>
+                        <a href="{% url 'recipe_template_create' %}" class="btn btn-outline-success">
+                            <i class="fas fa-plus me-1"></i> Create New Template
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

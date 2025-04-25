@@ -1,0 +1,118 @@
+/* DataHub Recipes Manager - Custom Styles */
+
+:root {
+    --datahub-primary: #0072b1;
+    --datahub-secondary: #6c757d;
+    --datahub-success: #28a745;
+    --datahub-warning: #ffc107;
+    --datahub-danger: #dc3545;
+}
+
+/* Sticky Footer */
+html, body {
+    height: 100%;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+main {
+    flex: 1 0 auto;
+}
+
+.footer {
+    flex-shrink: 0;
+}
+
+/* Card Styles */
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background-color: rgba(0, 0, 0, 0.03);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+/* JSON Content */
+.json-content {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.875rem;
+    white-space: pre-wrap;
+}
+
+pre.json-content {
+    margin-bottom: 0;
+}
+
+/* Form Styles */
+.form-control:focus {
+    border-color: var(--datahub-primary);
+    box-shadow: 0 0 0 0.25rem rgba(0, 114, 177, 0.25);
+}
+
+/* Button Styles */
+.btn-primary {
+    background-color: var(--datahub-primary);
+    border-color: var(--datahub-primary);
+}
+
+.btn-primary:hover, 
+.btn-primary:focus {
+    background-color: #005d91;
+    border-color: #005d91;
+}
+
+/* Table Styles */
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 114, 177, 0.075);
+}
+
+/* Breadcrumb Styles */
+.breadcrumb {
+    padding: 0.5rem 1rem;
+    background-color: #f8f9fa;
+    border-radius: 0.25rem;
+}
+
+/* CodeMirror Editor Styles */
+#editor-container {
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+    height: 400px;
+    position: relative;
+}
+
+.CodeMirror {
+    height: 100% !important;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* Fix row numbers positioning */
+.CodeMirror-gutters {
+    border-right: 1px solid #ddd;
+    background-color: #f7f7f7;
+    position: absolute;
+    left: 0;
+    top: 0;
+    min-height: 100%;
+    height: 100% !important;
+}
+
+/* Hide original textarea */
+#original-textarea {
+    display: none;
+} 

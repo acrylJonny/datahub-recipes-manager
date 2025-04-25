@@ -1,0 +1,303 @@
+{% extends 'base.html' %}
+
+{% block title %}Settings - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="h2 mb-4">Settings</h1>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">DataHub Connection</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'settings' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="connection">
+                        <div class="mb-3">
+                            <label for="datahub_url" class="form-label">DataHub URL <span class="text-danger">*</span></label>
+                            <input type="url" class="form-control" id="datahub_url" name="datahub_url" 
+                                   value="{{ config.datahub_url }}" placeholder="https://your-datahub-instance.com" required>
+                            <div class="form-text">The base URL of your DataHub instance (e.g., https://datahub.example.com).</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="datahub_token" class="form-label">Personal Access Token</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="datahub_token" name="datahub_token" 
+                                       placeholder="Enter your DataHub token">
+                                <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                            <div class="form-text">Personal access token for authentication. Leave empty to use unauthenticated access or keep existing token.</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="verify_ssl" name="verify_ssl" 
+                                   {% if config.verify_ssl %}checked{% endif %}>
+                            <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label>
+                            <div class="form-text">Uncheck only for testing with self-signed certificates.</div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Save Settings
+                            </button>
+                            <button type="submit" name="test_connection" value="1" class="btn btn-outline-success">
+                                <i class="fas fa-plug me-1"></i> Test Connection
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer bg-light">
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">Connection Status:</span>
+                        {% if connected %}
+                            <span class="badge bg-success">Connected</span>
+                        {% else %}
+                            <span class="badge bg-danger">Not Connected</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">GitHub Integration</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'settings' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="github_settings">
+                        <div class="mb-3">
+                            <label for="github_username" class="form-label">GitHub Username</label>
+                            <input type="text" class="form-control" id="github_username" name="github_username"
+                                   value="{{ config.github_username }}" placeholder="Your GitHub username">
+                            <div class="form-text">Your GitHub username.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="github_repository" class="form-label">Repository</label>
+                            <input type="text" class="form-control" id="github_repository" name="github_repository"
+                                   value="{{ config.github_repository }}" placeholder="username/repository">
+                            <div class="form-text">The repository where your GitHub Actions are defined (e.g., username/repository).</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="github_token" class="form-label">GitHub Personal Access Token</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="github_token" name="github_token"
+                                       placeholder="Enter your GitHub token">
+                                <button class="btn btn-outline-secondary" type="button" id="toggleGitHubToken">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                            <div class="form-text">
+                                Personal access token with 'repo' and 'workflow' permissions. 
+                                <a href="https://github.com/settings/tokens" target="_blank">Create one here</a>.
+                                Leave empty to keep existing token.
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Save GitHub Settings
+                            </button>
+                            <button type="submit" name="test_github_connection" value="1" class="btn btn-outline-success">
+                                <i class="fas fa-plug me-1"></i> Test GitHub Connection
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer bg-light">
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">GitHub Status:</span>
+                        {% if github_configured %}
+                            <span class="badge bg-success">Configured</span>
+                        {% else %}
+                            <span class="badge bg-warning">Not Configured</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Policy Management Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'settings' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="policy_settings">
+                        <div class="mb-3">
+                            <label for="policy_export_dir" class="form-label">Policy Export Directory</label>
+                            <input type="text" class="form-control" id="policy_export_dir" name="policy_export_dir"
+                                   value="{{ config.policy_export_dir }}" placeholder="/path/to/policy/exports">
+                            <div class="form-text">Directory where exported policies will be saved. Leave empty to use the default location.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="default_policy_type" class="form-label">Default Policy Type</label>
+                            <select class="form-select" id="default_policy_type" name="default_policy_type">
+                                <option value="METADATA" {% if config.default_policy_type == 'METADATA' %}selected{% endif %}>Metadata</option>
+                                <option value="PLATFORM" {% if config.default_policy_type == 'PLATFORM' %}selected{% endif %}>Platform</option>
+                            </select>
+                            <div class="form-text">The default policy type when creating new policies.</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="validate_on_import" name="validate_on_import"
+                                   {% if config.validate_on_import %}checked{% endif %}>
+                            <label class="form-check-label" for="validate_on_import">Validate Policies on Import</label>
+                            <div class="form-text">When checked, policies will be validated before importing them into DataHub.</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="auto_backup_policies" name="auto_backup_policies"
+                                   {% if config.auto_backup_policies %}checked{% endif %}>
+                            <label class="form-check-label" for="auto_backup_policies">Auto-Backup Policies</label>
+                            <div class="form-text">Automatically backup policies before updating or deleting them.</div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i> Save Policy Settings
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Recipe Management Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'settings' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="recipe_settings">
+                        <div class="mb-3">
+                            <label for="recipe_dir" class="form-label">Recipe Directory</label>
+                            <input type="text" class="form-control" id="recipe_dir" name="recipe_dir"
+                                   value="{{ config.recipe_dir }}" placeholder="/path/to/recipes">
+                            <div class="form-text">Directory where recipes are stored. Leave empty to use the default location.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="default_schedule" class="form-label">Default Schedule</label>
+                            <input type="text" class="form-control" id="default_schedule" name="default_schedule"
+                                   value="{{ config.default_schedule }}" placeholder="0 0 * * *">
+                            <div class="form-text">Default cron schedule for new recipes (e.g., "0 0 * * *" for daily at midnight).</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="auto_enable_recipes" name="auto_enable_recipes"
+                                   {% if config.auto_enable_recipes %}checked{% endif %}>
+                            <label class="form-check-label" for="auto_enable_recipes">Auto-Enable New Recipes</label>
+                            <div class="form-text">Automatically enable new recipes when created.</div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i> Save Recipe Settings
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Advanced Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'settings' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="section" value="advanced_settings">
+                        <div class="mb-3">
+                            <label for="log_level" class="form-label">Log Level</label>
+                            <select class="form-select" id="log_level" name="log_level">
+                                <option value="DEBUG" {% if config.log_level == 'DEBUG' %}selected{% endif %}>Debug</option>
+                                <option value="INFO" {% if config.log_level == 'INFO' %}selected{% endif %}>Info</option>
+                                <option value="WARNING" {% if config.log_level == 'WARNING' %}selected{% endif %}>Warning</option>
+                                <option value="ERROR" {% if config.log_level == 'ERROR' %}selected{% endif %}>Error</option>
+                            </select>
+                            <div class="form-text">Level of detail for application logs.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="timeout" class="form-label">API Timeout (seconds)</label>
+                            <input type="number" class="form-control" id="timeout" name="timeout"
+                                   value="{{ config.timeout }}" min="5" max="300">
+                            <div class="form-text">Timeout for API requests to DataHub (in seconds).</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="debug_mode" name="debug_mode"
+                                   {% if config.debug_mode %}checked{% endif %}>
+                            <label class="form-check-label" for="debug_mode">Debug Mode</label>
+                            <div class="form-text">Enable additional debugging information.</div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i> Save Advanced Settings
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Toggle DataHub token visibility
+        const togglePassword = document.getElementById('togglePassword');
+        const password = document.getElementById('datahub_token');
+        
+        if (togglePassword && password) {
+            togglePassword.addEventListener('click', function() {
+                const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+                password.setAttribute('type', type);
+                this.querySelector('i').classList.toggle('fa-eye');
+                this.querySelector('i').classList.toggle('fa-eye-slash');
+            });
+        }
+        
+        // Toggle GitHub token visibility
+        const toggleGitHubToken = document.getElementById('toggleGitHubToken');
+        const githubToken = document.getElementById('github_token');
+        
+        if (toggleGitHubToken && githubToken) {
+            toggleGitHubToken.addEventListener('click', function() {
+                const type = githubToken.getAttribute('type') === 'password' ? 'text' : 'password';
+                githubToken.setAttribute('type', type);
+                this.querySelector('i').classList.toggle('fa-eye');
+                this.querySelector('i').classList.toggle('fa-eye-slash');
+            });
+        }
+    });
+</script>
+{% endblock %} 

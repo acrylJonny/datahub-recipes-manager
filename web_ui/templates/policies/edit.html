@@ -1,0 +1,221 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Policy - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Edit Policy</h1>
+        <div>
+            <a href="{% url 'policy_view' policy.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Policy Details
+            </a>
+        </div>
+    </div>
+
+    {% if not request.session.datahub_connected %}
+        <div class="alert alert-warning" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Not connected to DataHub. Please check your connection settings.
+            <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+        </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Edit Policy: {{ policy.name }}</h5>
+        </div>
+        <div class="card-body">
+            <form id="policy-edit-form" method="POST" action="{% url 'policy_edit' policy.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="policy_id" value="{{ policy.id }}">
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="policy-name" class="form-label">Policy Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="policy-name" name="name" value="{{ policy.name }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="policy-type" class="form-label">Policy Type <span class="text-danger">*</span></label>
+                        <select class="form-select" id="policy-type" name="type" required>
+                            <option value="METADATA" {% if policy.type == 'METADATA' %}selected{% endif %}>Metadata</option>
+                            <option value="PLATFORM" {% if policy.type == 'PLATFORM' %}selected{% endif %}>Platform</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="policy-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="policy-description" name="description" rows="3">{{ policy.description }}</textarea>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="policy-state" class="form-label">Policy State <span class="text-danger">*</span></label>
+                        <select class="form-select" id="policy-state" name="state" required>
+                            <option value="ACTIVE" {% if policy.state == 'ACTIVE' %}selected{% endif %}>Active</option>
+                            <option value="INACTIVE" {% if policy.state == 'INACTIVE' %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="policy-resources-editor" class="form-label">
+                            Resources <span class="text-danger">*</span>
+                            <i class="fas fa-info-circle" data-bs-toggle="tooltip" title="JSON array of resource specifications"></i>
+                        </label>
+                        <div id="policy-resources-editor" class="json-editor mb-2"></div>
+                        <textarea id="policy-resources" name="resources" class="d-none" required>{{ policy.resources_json }}</textarea>
+                        <div id="resources-validation-message" class="invalid-feedback"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="policy-privileges-editor" class="form-label">
+                            Privileges <span class="text-danger">*</span>
+                            <i class="fas fa-info-circle" data-bs-toggle="tooltip" title="JSON array of privilege specifications"></i>
+                        </label>
+                        <div id="policy-privileges-editor" class="json-editor mb-2"></div>
+                        <textarea id="policy-privileges" name="privileges" class="d-none" required>{{ policy.privileges_json }}</textarea>
+                        <div id="privileges-validation-message" class="invalid-feedback"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="policy-actors-editor" class="form-label">
+                            Actors <span class="text-danger">*</span>
+                            <i class="fas fa-info-circle" data-bs-toggle="tooltip" title="JSON array of actor specifications"></i>
+                        </label>
+                        <div id="policy-actors-editor" class="json-editor mb-2"></div>
+                        <textarea id="policy-actors" name="actors" class="d-none" required>{{ policy.actors_json }}</textarea>
+                        <div id="actors-validation-message" class="invalid-feedback"></div>
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'policy_view' policy.id %}" class="btn btn-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/9.10.0/jsoneditor.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/9.10.0/jsoneditor.min.css">
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        // Initialize JSON editors
+        function createJsonEditor(containerId, textareaId) {
+            const container = document.getElementById(containerId);
+            const options = {
+                mode: 'tree',
+                modes: ['tree', 'code'],
+                onChange: function() {
+                    try {
+                        const json = editor.get();
+                        document.getElementById(textareaId).value = JSON.stringify(json);
+                        document.getElementById(textareaId).classList.remove('is-invalid');
+                        document.getElementById(containerId.replace('-editor', '-validation-message')).textContent = '';
+                    } catch (err) {
+                        document.getElementById(textareaId).classList.add('is-invalid');
+                        document.getElementById(containerId.replace('-editor', '-validation-message')).textContent = 'Invalid JSON format';
+                    }
+                }
+            };
+            
+            const editor = new JSONEditor(container, options);
+            
+            // Load initial data
+            try {
+                const initialJson = JSON.parse(document.getElementById(textareaId).value);
+                editor.set(initialJson);
+            } catch (err) {
+                console.error(`Error loading initial JSON for ${containerId}:`, err);
+                // Set default empty array if parsing fails
+                editor.set([]);
+            }
+            
+            return editor;
+        }
+        
+        const resourcesEditor = createJsonEditor('policy-resources-editor', 'policy-resources');
+        const privilegesEditor = createJsonEditor('policy-privileges-editor', 'policy-privileges');
+        const actorsEditor = createJsonEditor('policy-actors-editor', 'policy-actors');
+        
+        // Form validation
+        document.getElementById('policy-edit-form').addEventListener('submit', function(e) {
+            let isValid = true;
+            
+            // Validate JSON fields
+            const jsonFields = [
+                { editor: resourcesEditor, fieldId: 'policy-resources', messageId: 'resources-validation-message' },
+                { editor: privilegesEditor, fieldId: 'policy-privileges', messageId: 'privileges-validation-message' },
+                { editor: actorsEditor, fieldId: 'policy-actors', messageId: 'actors-validation-message' }
+            ];
+            
+            jsonFields.forEach(({ editor, fieldId, messageId }) => {
+                try {
+                    const json = editor.get();
+                    // Resources and privileges should be arrays, actors can be an object
+                    if (fieldId === 'policy-resources' || fieldId === 'policy-privileges') {
+                        if (!Array.isArray(json) && json !== null && json !== undefined) {
+                            throw new Error('Must be an array');
+                        }
+                    }
+                    
+                    // Convert to proper format for submission (empty arrays/objects if needed)
+                    let validatedJson;
+                    if (fieldId === 'policy-resources' || fieldId === 'policy-privileges') {
+                        validatedJson = Array.isArray(json) ? json : [];
+                    } else {
+                        validatedJson = (json !== null && json !== undefined) ? json : {};
+                    }
+                    
+                    document.getElementById(fieldId).value = JSON.stringify(validatedJson);
+                    document.getElementById(fieldId).classList.remove('is-invalid');
+                    document.getElementById(messageId).textContent = '';
+                } catch (err) {
+                    isValid = false;
+                    document.getElementById(fieldId).classList.add('is-invalid');
+                    document.getElementById(messageId).textContent = err.message || 'Invalid JSON format';
+                }
+            });
+            
+            if (!isValid) {
+                e.preventDefault();
+            }
+        });
+    });
+</script>
+
+<style>
+    .json-editor {
+        height: 250px;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+    }
+    .invalid-feedback {
+        display: block;
+    }
+</style>
+{% endblock %} 

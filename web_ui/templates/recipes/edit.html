@@ -1,0 +1,603 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Recipe - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Edit Recipe: {{ form.recipe_name.value }}</h1>
+        <a href="{% url 'recipes' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Recipes
+        </a>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <ul class="nav nav-tabs mb-4" id="editTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="details-tab" data-bs-toggle="tab" data-bs-target="#details" type="button" role="tab" aria-controls="details" aria-selected="true">
+                <i class="fas fa-info-circle me-2"></i> Recipe Details
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="env-vars-tab" data-bs-toggle="tab" data-bs-target="#env-vars" type="button" role="tab" aria-controls="env-vars" aria-selected="false">
+                <i class="fas fa-cogs me-2"></i> Environment Variables
+                {% if env_vars %}
+                <span class="badge bg-primary ms-1">{{ env_vars|length }}</span>
+                {% endif %}
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content" id="editTabsContent">
+        <!-- Recipe Details Tab -->
+        <div class="tab-pane fade show active" id="details" role="tabpanel" aria-labelledby="details-tab">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Recipe Details</h5>
+                </div>
+                <div class="card-body">
+                    {% if not request.session.datahub_connected %}
+                        <div class="alert alert-warning" role="alert">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Not connected to DataHub. Please check your connection settings.
+                            <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                                <i class="fas fa-cog"></i> Settings
+                            </a>
+                        </div>
+                    {% endif %}
+                    
+                    <form method="post" class="needs-validation" novalidate id="recipeForm">
+                        {% csrf_token %}
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.recipe_id.id_for_label }}" class="form-label">Recipe ID</label>
+                                {{ form.recipe_id }}
+                                <div class="form-text">A unique identifier for this recipe (read-only in edit mode)</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.recipe_type.id_for_label }}" class="form-label">Recipe Type</label>
+                                {{ form.recipe_type }}
+                                <div class="form-text">The type of source (e.g., postgres, mysql, snowflake)</div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.recipe_name.id_for_label }}" class="form-label">Recipe Name</label>
+                            {{ form.recipe_name }}
+                            <div class="form-text">A friendly name for this recipe</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                            {{ form.description }}
+                            <div class="form-text">A brief description of what this recipe does</div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.schedule_cron.id_for_label }}" class="form-label">Schedule (Cron Expression)</label>
+                                {{ form.schedule_cron }}
+                                <div class="form-text">When to run this recipe (e.g., "0 0 * * *" for daily at midnight)</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.schedule_timezone.id_for_label }}" class="form-label">Timezone</label>
+                                {{ form.schedule_timezone }}
+                                <div class="form-text">The timezone for the schedule (default: UTC)</div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.recipe_content.id_for_label }}" class="form-label">Recipe Content (YAML/JSON)</label>
+                            <div class="d-flex align-items-center mb-2">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <input type="radio" class="btn-check" name="format" id="yamlFormat" value="yaml" checked>
+                                    <label class="btn btn-outline-secondary" for="yamlFormat">YAML</label>
+                                    
+                                    <input type="radio" class="btn-check" name="format" id="jsonFormat" value="json">
+                                    <label class="btn btn-outline-secondary" for="jsonFormat">JSON</label>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="formatButton">
+                                    <i class="fas fa-code me-1"></i> Format
+                                </button>
+                            </div>
+                            {{ form.recipe_content }}
+                            <div class="form-text">
+                                The recipe configuration in YAML or JSON format. 
+                                Edit carefully as this will update the recipe in DataHub.
+                            </div>
+                        </div>
+                        
+                        <!-- Hidden field for environment variables -->
+                        <input type="hidden" name="environment_variables" id="environment_variables" value="{{ env_vars_json|default:'{}' }}">
+                        
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i> Update Recipe
+                                </button>
+                                <a href="{% url 'recipes' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-outline-success run-recipe" data-recipe-id="{{ recipe_id }}">
+                                    <i class="fas fa-play me-1"></i> Run Now
+                                </button>
+                                <a href="{% url 'recipe_save_as_template' recipe_id %}" class="btn btn-outline-info ms-2">
+                                    <i class="fas fa-save me-1"></i> Save as Template
+                                </a>
+                                <button type="button" class="btn btn-outline-danger ms-2 delete-recipe" data-recipe-id="{{ recipe_id }}" data-recipe-name="{{ form.recipe_name.value }}">
+                                    <i class="fas fa-trash me-1"></i> Delete
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Environment Variables Tab -->
+        <div class="tab-pane fade" id="env-vars" role="tabpanel" aria-labelledby="env-vars-tab">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Environment Variables</h5>
+                    <span class="badge bg-info">{{ form.recipe_type.value }}</span>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Manage environment variables for this recipe. Variables marked as "Secret" will be stored securely and masked in the UI.
+                    </div>
+                    
+                    <form method="post" id="envVarsForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="save_env_vars" value="1">
+                        <input type="hidden" name="environment_variables" id="env_vars_json" value="{{ env_vars_json|default:'{}' }}">
+                        
+                        {% if env_vars %}
+                            <div class="table-responsive mb-3">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Variable Name</th>
+                                            <th>Value</th>
+                                            <th>Secret</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="env-vars-table-body">
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="d-flex justify-content-end">
+                                <button type="submit" class="btn btn-primary" id="saveEnvVarsBtn">
+                                    <i class="fas fa-save me-1"></i> Save Environment Variables
+                                </button>
+                            </div>
+                        {% else %}
+                            <div class="text-center py-4">
+                                <p class="text-muted">No environment variables found in this recipe.</p>
+                                <p>To use environment variables, update your recipe to use <code>${VARIABLE_NAME}</code> syntax.</p>
+                            </div>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Recipe Modal -->
+<div class="modal fade" id="deleteRecipeModal" tabindex="-1" aria-labelledby="deleteRecipeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteRecipeModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete the recipe <strong id="deleteRecipeName"></strong>?
+                This action cannot be undone.
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteButton">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/yaml/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get the original textarea
+        const originalTextarea = document.getElementById('{{ form.recipe_content.id_for_label }}');
+        if (!originalTextarea) return;
+        
+        // Create and add ID to improve CSS targeting
+        originalTextarea.id = 'original-textarea';
+        
+        // Extract the initial content
+        let initialContent = originalTextarea.value || '';
+        const isJson = initialContent.trim().startsWith('{');
+        const initialMode = isJson ? 'application/json' : 'text/x-yaml';
+        
+        // Format JSON for better readability if needed
+        if (isJson) {
+            try {
+                const jsonObj = JSON.parse(initialContent);
+                initialContent = JSON.stringify(jsonObj, null, 2);
+            } catch (e) {
+                console.error('Error formatting initial JSON content:', e);
+            }
+        }
+        
+        // Update format radio buttons
+        if (isJson) {
+            document.getElementById('jsonFormat').checked = true;
+        } else {
+            document.getElementById('yamlFormat').checked = true;
+        }
+        
+        // Create a new container for the editor
+        const editorContainer = document.createElement('div');
+        editorContainer.id = 'editor-container';
+        originalTextarea.parentNode.insertBefore(editorContainer, originalTextarea);
+        
+        // Create a new textarea for CodeMirror
+        const newTextarea = document.createElement('textarea');
+        newTextarea.id = 'code-editor';
+        newTextarea.value = initialContent;
+        editorContainer.appendChild(newTextarea);
+        
+        // Initialize CodeMirror
+        let editor = null;
+        
+        // Initialize after a slight delay to ensure DOM is ready
+        setTimeout(() => {
+            editor = CodeMirror.fromTextArea(newTextarea, {
+                mode: initialMode,
+                lineNumbers: true,
+                theme: 'default',
+                indentUnit: 2,
+                tabSize: 2,
+                lineWrapping: true,
+                matchBrackets: true,
+                autoCloseBrackets: true,
+                viewportMargin: Infinity
+            });
+            
+            // Update original textarea when content changes
+            editor.on('change', function() {
+                originalTextarea.value = editor.getValue();
+            });
+            
+            // Handle form submission
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                form.addEventListener('submit', function() {
+                    originalTextarea.value = editor.getValue();
+                });
+            });
+            
+            // Handle format toggle
+            const formatRadios = document.querySelectorAll('input[name="format"]');
+            formatRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const format = this.value;
+                    
+                    try {
+                        const content = editor.getValue();
+                        let newContent = content;
+                        
+                        if (format === 'json' && !content.trim().startsWith('{')) {
+                            // Convert YAML to JSON
+                            try {
+                                const obj = jsyaml.load(content);
+                                newContent = JSON.stringify(obj, null, 2);
+                            } catch (e) {
+                                console.error('Error converting YAML to JSON:', e);
+                                alert('Error converting YAML to JSON. Please check your syntax.');
+                                return;
+                            }
+                        } else if (format === 'yaml' && content.trim().startsWith('{')) {
+                            // Convert JSON to YAML
+                            try {
+                                const obj = JSON.parse(content);
+                                newContent = jsyaml.dump(obj);
+                            } catch (e) {
+                                console.error('Error converting JSON to YAML:', e);
+                                alert('Error converting JSON to YAML. Please check your syntax.');
+                                return;
+                            }
+                        }
+                        
+                        // Update editor content and mode
+                        editor.setValue(newContent);
+                        editor.setOption('mode', format === 'json' ? 'application/json' : 'text/x-yaml');
+                    } catch (e) {
+                        console.error('Error changing format:', e);
+                        alert('Error changing format. Please check your syntax.');
+                    }
+                });
+            });
+            
+            // Format button handler
+            const formatButton = document.getElementById('formatButton');
+            if (formatButton) {
+                formatButton.addEventListener('click', function() {
+                    const currentFormat = document.querySelector('input[name="format"]:checked').value;
+                    
+                    try {
+                        const content = editor.getValue();
+                        let formattedContent = content;
+                        
+                        if (currentFormat === 'json') {
+                            const obj = JSON.parse(content);
+                            formattedContent = JSON.stringify(obj, null, 2);
+                        } else {
+                            const obj = jsyaml.load(content);
+                            formattedContent = jsyaml.dump(obj);
+                        }
+                        
+                        editor.setValue(formattedContent);
+                        
+                        // Refresh the editor to ensure proper rendering
+                        setTimeout(() => editor.refresh(), 10);
+                    } catch (e) {
+                        console.error('Error formatting:', e);
+                        alert('Error formatting code. Please check your syntax.');
+                    }
+                });
+            }
+            
+            // Refresh the editor to ensure proper rendering
+            setTimeout(() => editor.refresh(), 10);
+        }, 100);
+        
+        // Environment Variables Handling
+        const envVarsData = JSON.parse('{{ env_vars_json|default:"{}" | escapejs }}');
+        const envVarsTableBody = document.getElementById('env-vars-table-body');
+        const envVarsJsonInput = document.getElementById('env_vars_json');
+        
+        // Populate environment variables table
+        function renderEnvironmentVariables() {
+            if (!envVarsTableBody) return;
+            
+            let html = '';
+            let index = 0;
+            
+            for (const [varName, varData] of Object.entries(envVarsData)) {
+                html += `<tr data-var="${varName}">`;
+                html += `<td><code>${varName}</code></td>`;
+                
+                // Input field with appropriate type based on secret status
+                const inputType = varData.isSecret ? 'password' : 'text';
+                html += `<td><input type="${inputType}" class="form-control env-var-value" 
+                               data-var="${varName}" value="${varData.value || ''}" 
+                               placeholder="Enter value"></td>`;
+                
+                // Secret toggle switch
+                html += `<td>
+                         <div class="form-check form-switch">
+                             <input class="form-check-input secret-toggle" type="checkbox" 
+                                    role="switch" id="secret_${index}" data-var="${varName}"
+                                    ${varData.isSecret ? 'checked' : ''}>
+                             <label class="form-check-label" for="secret_${index}">
+                                 <i class="fas fa-lock ${varData.isSecret ? 'text-danger' : 'text-muted'}"></i>
+                             </label>
+                         </div>
+                         </td>`;
+                
+                html += '</tr>';
+                index++;
+            }
+            
+            envVarsTableBody.innerHTML = html;
+            
+            // Add event listeners to new elements
+            document.querySelectorAll('.env-var-value').forEach(input => {
+                input.addEventListener('input', updateEnvironmentVariables);
+            });
+            
+            document.querySelectorAll('.secret-toggle').forEach(toggle => {
+                toggle.addEventListener('change', function() {
+                    const varName = this.getAttribute('data-var');
+                    envVarsData[varName].isSecret = this.checked;
+                    
+                    // Update icon color
+                    const icon = this.nextElementSibling.querySelector('i');
+                    if (this.checked) {
+                        icon.classList.remove('text-muted');
+                        icon.classList.add('text-danger');
+                    } else {
+                        icon.classList.remove('text-danger');
+                        icon.classList.add('text-muted');
+                    }
+                    
+                    // Update input field type
+                    const inputField = document.querySelector(`.env-var-value[data-var="${varName}"]`);
+                    if (this.checked) {
+                        inputField.setAttribute('type', 'password');
+                    } else {
+                        inputField.setAttribute('type', 'text');
+                    }
+                    
+                    updateEnvironmentVariables();
+                });
+            });
+        }
+        
+        // Update environment variables data
+        function updateEnvironmentVariables() {
+            document.querySelectorAll('.env-var-value').forEach(input => {
+                const varName = input.getAttribute('data-var');
+                if (envVarsData[varName]) {
+                    envVarsData[varName].value = input.value;
+                }
+            });
+            
+            // Update hidden inputs
+            const jsonValue = JSON.stringify(envVarsData);
+            if (document.getElementById('environment_variables')) {
+                document.getElementById('environment_variables').value = jsonValue;
+            }
+            if (document.getElementById('env_vars_json')) {
+                document.getElementById('env_vars_json').value = jsonValue;
+            }
+        }
+        
+        // Initialize environment variables table
+        renderEnvironmentVariables();
+        
+        // Environment variables form submission
+        const envVarsForm = document.getElementById('envVarsForm');
+        if (envVarsForm) {
+            envVarsForm.addEventListener('submit', function(event) {
+                // Make sure environment variables are updated
+                updateEnvironmentVariables();
+            });
+        }
+        
+        // Delete recipe functionality
+        const deleteRecipeModal = document.getElementById('deleteRecipeModal');
+        if (deleteRecipeModal) {
+            const deleteModal = new bootstrap.Modal(deleteRecipeModal);
+            const deleteButton = document.querySelector('.delete-recipe');
+            const confirmDeleteButton = document.getElementById('confirmDeleteButton');
+            
+            if (deleteButton) {
+                deleteButton.addEventListener('click', function() {
+                    document.getElementById('deleteRecipeName').textContent = this.dataset.recipeName;
+                    deleteModal.show();
+                });
+            }
+            
+            if (confirmDeleteButton) {
+                confirmDeleteButton.addEventListener('click', function() {
+                    const recipeId = document.querySelector('.delete-recipe').dataset.recipeId;
+                    
+                    // Send DELETE request
+                    fetch(`/recipes/delete/${recipeId}/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': getCsrfToken(),
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.href = "{% url 'recipes' %}";
+                        } else {
+                            alert('Error deleting recipe: ' + (data.message || 'Unknown error'));
+                        }
+                        deleteModal.hide();
+                    })
+                    .catch(error => {
+                        alert('Error: ' + error);
+                        deleteModal.hide();
+                    });
+                });
+            }
+        }
+        
+        // Run recipe functionality
+        const runButton = document.querySelector('.run-recipe');
+        
+        if (runButton) {
+            runButton.addEventListener('click', function() {
+                const recipeId = this.dataset.recipeId;
+                
+                // Show loading state
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running...';
+                this.disabled = true;
+                
+                // Send request to run recipe
+                fetch(`/recipes/run/${recipeId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCsrfToken(),
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Reset button
+                    this.innerHTML = '<i class="fas fa-play me-1"></i> Run Now';
+                    this.disabled = false;
+                    
+                    if (data.success) {
+                        alert('Recipe execution started successfully!');
+                    } else {
+                        alert('Error running recipe: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    // Reset button
+                    this.innerHTML = '<i class="fas fa-play me-1"></i> Run Now';
+                    this.disabled = false;
+                    
+                    alert('Error: ' + error);
+                });
+            });
+        }
+        
+        // Helper function to get CSRF token
+        function getCsrfToken() {
+            return document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+        }
+    });
+</script>
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<style>
+    /* Create a fixed-size container for the editor */
+    #editor-container {
+        width: 100%;
+        height: 400px;
+        border: 1px solid #dee2e6;
+        border-radius: 0.25rem;
+        margin-bottom: 1rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* Force CodeMirror to fill the container */
+    .CodeMirror {
+        height: 100% !important;
+        width: 100% !important;
+        font-family: monospace;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    
+    /* Hide the original textarea */
+    #original-textarea {
+        display: none;
+    }
+    
+    .env-var-value[type="password"] {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    
+    .card {
+        margin-bottom: 1.5rem;
+    }
+</style>
+{% endblock %} 

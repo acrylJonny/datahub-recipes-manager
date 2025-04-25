@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Import Recipe Template - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipes' %}">Recipes</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipe_templates' %}">Templates</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Import Template</li>
+            </ol>
+        </nav>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Import Recipe Template</h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Templates
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Import from File</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="id_template_file" class="form-label">Recipe Template File (YAML/JSON) <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="id_template_file" name="template_file" accept=".json,.yaml,.yml" required>
+                        <div class="form-text">Select a valid recipe file in YAML or JSON format</div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="id_tags" class="form-label">Tags</label>
+                        <input type="text" class="form-control" id="id_tags" name="tags" value="{{ form.tags.value|default:'' }}">
+                        <div class="form-text">Enter comma-separated tags (e.g., database,extraction,warehouse)</div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    The template will be parsed from the file and you'll have an opportunity to edit the details before saving.
+                </div>
+                
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-upload me-1"></i> Upload and Continue
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %} 
