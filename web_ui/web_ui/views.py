@@ -66,7 +66,7 @@ def index(request):
             
             if connected:
                 # Get recipes
-                recipes = client.list_ingestion_sources(limit=100)
+                recipes = client.list_ingestion_sources()
                 if recipes:
                     recipes_count = len(recipes)
                     active_schedules_count = sum(1 for r in recipes if r.get('schedule'))
@@ -124,7 +124,7 @@ def recipes(request):
     
     if client and client.test_connection():
         try:
-            recipes_list = client.list_ingestion_sources(limit=100)
+            recipes_list = client.list_ingestion_sources()
         except Exception as e:
             messages.error(request, f"Error fetching recipes: {str(e)}")
     
