@@ -1,0 +1,154 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}DataHub Recipes Manager{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Custom Styles -->
+    <style>
+        :root {
+            --datahub-primary: #0072b1;
+            --datahub-secondary: #6c757d;
+            --datahub-success: #28a745;
+            --datahub-warning: #ffc107;
+            --datahub-danger: #dc3545;
+        }
+        
+        .sidebar {
+            min-height: calc(100vh - 56px);
+            background-color: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+        }
+        
+        .sidebar .nav-link {
+            color: #333;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .sidebar .nav-link:hover {
+            background-color: #e9ecef;
+        }
+        
+        .sidebar .nav-link.active {
+            background-color: var(--datahub-primary);
+            color: white;
+        }
+        
+        .navbar-brand img {
+            height: 30px;
+            margin-right: 0.5rem;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        
+        .status-connected {
+            background-color: var(--datahub-success);
+        }
+        
+        .status-disconnected {
+            background-color: var(--datahub-danger);
+        }
+    </style>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="{% url 'dashboard' %}">
+                    <i class="fas fa-database me-2"></i>DataHub Recipes Manager
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                        aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/dashboard/' %} active{% endif %}" href="{% url 'dashboard' %}">
+                                <i class="fas fa-tachometer-alt fa-fw me-2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path|slice:':9' == '/recipes/' %} active{% endif %}" href="{% url 'recipes' %}">
+                                <i class="fas fa-file-code fa-fw me-2"></i> Recipes
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path|slice:':10' == '/policies/' %} active{% endif %}" href="{% url 'policies' %}">
+                                <i class="fas fa-shield-alt fa-fw me-2"></i> Policies
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/logs/' %} active{% endif %}" href="{% url 'logs' %}">
+                                <i class="fas fa-clipboard-list fa-fw me-2"></i> Logs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/settings/' %} active{% endif %}" href="{% url 'settings' %}">
+                                <i class="fas fa-cog fa-fw me-2"></i> Settings
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="d-flex">
+                        <span class="navbar-text me-3">
+                            {% if request.session.datahub_connected %}
+                                <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i> Connected</span>
+                            {% else %}
+                                <span class="badge bg-danger"><i class="fas fa-exclamation-circle me-1"></i> Not Connected</span>
+                            {% endif %}
+                        </span>
+                        <a href="{% url 'settings' %}" class="btn btn-outline-light btn-sm">
+                            <i class="fas fa-cog me-1"></i> Configure
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+    
+    <main class="py-4">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer class="footer mt-auto py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">DataHub Recipes Manager &copy; {% now "Y" %}</span>
+            <div class="mt-2">
+                <a href="https://datahubproject.io/" target="_blank" class="text-muted text-decoration-none me-3">
+                    <i class="fas fa-globe me-1"></i> DataHub Project
+                </a>
+                <a href="https://github.com/linkedin/datahub" target="_blank" class="text-muted text-decoration-none">
+                    <i class="fab fa-github me-1"></i> GitHub
+                </a>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Custom JS -->
+    <script src="{% static 'js/scripts.js' %}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html> 

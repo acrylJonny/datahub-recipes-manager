@@ -1,0 +1,22 @@
+recipe_id: analytics-database-prod
+recipe_type: postgres
+description: 'Pulled from DataHub: DataHub Postgres Ingestion'
+source:
+  type: postgres
+  config:
+    username: postgres
+    password: ${PG_PASSWORD}
+    host_port: datahub_test_postgres:5432
+    database: SimpleAdventureWorks
+    include_tables: true
+    include_views: true
+    profiling:
+      enabled: true
+      profile_table_level_only: false
+    stateful_ingestion:
+      enabled: true
+executor_id: default
+schedule:
+  cron: 0 0 * * *
+  timezone: UTC
+debug_mode: false

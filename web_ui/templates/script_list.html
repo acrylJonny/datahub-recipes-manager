@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block title %}Scripts - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Scripts</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="display-5 mb-0">Scripts</h1>
+        </div>
+        
+        <p class="lead text-muted">
+            Run DataHub management scripts with a web interface
+        </p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Filters</h5>
+            </div>
+            <div class="card-body">
+                <form id="filterForm" method="get">
+                    <div class="mb-3">
+                        <label for="category" class="form-label">Category</label>
+                        <select class="form-select" id="category" name="category" onchange="this.form.submit()">
+                            <option value="" {% if not selected_category %}selected{% endif %}>All Categories</option>
+                            {% for category in categories %}
+                            <option value="{{ category }}" {% if selected_category == category %}selected{% endif %}>
+                                {{ category|title }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="search" class="form-label">Search</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="search" name="search" 
+                                   placeholder="Search scripts..." value="{{ search_query }}">
+                            <button class="btn btn-outline-secondary" type="submit">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {% if search_query or selected_category %}
+                    <div class="d-grid">
+                        <a href="{% url 'script_list' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times"></i> Clear Filters
+                        </a>
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm mt-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Stats</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Total Scripts
+                        <span class="badge bg-primary rounded-pill">{{ scripts|length }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Recent Runs
+                        <span class="badge bg-info rounded-pill">{{ recent_runs_count }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Successful
+                        <span class="badge bg-success rounded-pill">{{ successful_runs_count }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Failed
+                        <span class="badge bg-danger rounded-pill">{{ failed_runs_count }}</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
+        {% if scripts %}
+            <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
+                {% for script in scripts %}
+                <div class="col">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header bg-light d-flex justify-content-between">
+                            <h5 class="card-title mb-0 text-truncate" title="{{ script.name }}">
+                                {{ script.name }}
+                            </h5>
+                            <span class="badge bg-secondary">{{ script.category }}</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">
+                                {% if script.description %}
+                                {{ script.description|truncatechars:100 }}
+                                {% else %}
+                                <span class="text-muted">No description available</span>
+                                {% endif %}
+                            </p>
+                            
+                            {% if script.last_run %}
+                            <div class="mb-2 small">
+                                <i class="fas fa-clock text-muted"></i> Last run: 
+                                <span title="{{ script.last_run.timestamp }}">
+                                    {{ script.last_run.timestamp|timesince }} ago
+                                </span>
+                                <span class="badge 
+                                    {% if script.last_run.status == 'success' %}
+                                        bg-success
+                                    {% elif script.last_run.status == 'failed' %}
+                                        bg-danger
+                                    {% else %}
+                                        bg-secondary
+                                    {% endif %}
+                                ">
+                                    {{ script.last_run.status }}
+                                </span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="card-footer bg-white">
+                            <div class="d-grid">
+                                <a href="{% url 'run_script' script_name=script.name %}" class="btn btn-primary">
+                                    <i class="fas fa-play"></i> Run Script
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                {% if search_query or selected_category %}
+                    No scripts found matching your criteria. <a href="{% url 'script_list' %}">Clear filters</a> to see all available scripts.
+                {% else %}
+                    No scripts available.
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %} 

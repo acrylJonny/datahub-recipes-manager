@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+
+{% block title %}Script Results - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'script_list' %}">Scripts</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'run_script' script_name=result.script.name %}">Run {{ result.script.name }}</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Results</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="display-5 mb-0">
+                Script Results
+                <span class="badge 
+                    {% if result.status == 'success' %}
+                        bg-success
+                    {% elif result.status == 'failed' %}
+                        bg-danger
+                    {% else %}
+                        bg-secondary
+                    {% endif %}
+                ">
+                    {{ result.status }}
+                </span>
+            </h1>
+            <a href="{% url 'run_script' script_name=result.script.name %}" class="btn btn-primary">
+                <i class="fas fa-redo me-2"></i>Run Again
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Output</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="p-3 bg-dark text-light rounded-bottom" style="max-height: 500px; overflow-y: auto; font-family: monospace;">
+                    {% if result.output %}
+                    <pre class="mb-0" style="white-space: pre-wrap;">{{ result.output }}</pre>
+                    {% else %}
+                    <p class="text-muted mb-0">No output available</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        {% if result.artifacts %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Generated Artifacts</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for artifact in result.artifacts %}
+                            <tr>
+                                <td>{{ artifact.name }}</td>
+                                <td>
+                                    <span class="badge 
+                                        {% if artifact.type == 'json' %}
+                                            bg-primary
+                                        {% elif artifact.type == 'csv' %}
+                                            bg-success
+                                        {% elif artifact.type == 'yaml' %}
+                                            bg-warning text-dark
+                                        {% elif artifact.type == 'txt' %}
+                                            bg-info text-dark
+                                        {% else %}
+                                            bg-secondary
+                                        {% endif %}
+                                    ">
+                                        {{ artifact.type }}
+                                    </span>
+                                </td>
+                                <td>{{ artifact.size }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'download_artifact' artifact_id=artifact.id %}" class="btn btn-outline-primary">
+                                            <i class="fas fa-download me-1"></i> Download
+                                        </a>
+                                        <a href="{% url 'view_artifact' artifact_id=artifact.id %}" class="btn btn-outline-secondary">
+                                            <i class="fas fa-eye me-1"></i> View
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Run Information</h5>
+            </div>
+            <div class="card-body">
+                <dl>
+                    <dt>Script</dt>
+                    <dd>{{ result.script.name }}</dd>
+                    
+                    <dt>Category</dt>
+                    <dd>
+                        <span class="badge bg-secondary">{{ result.script.category|title }}</span>
+                    </dd>
+                    
+                    <dt>Status</dt>
+                    <dd>
+                        <span class="badge 
+                            {% if result.status == 'success' %}
+                                bg-success
+                            {% elif result.status == 'failed' %}
+                                bg-danger
+                            {% else %}
+                                bg-secondary
+                            {% endif %}
+                        ">
+                            {{ result.status }}
+                        </span>
+                    </dd>
+                    
+                    <dt>Started</dt>
+                    <dd>{{ result.start_time }}</dd>
+                    
+                    <dt>Finished</dt>
+                    <dd>{{ result.end_time }}</dd>
+                    
+                    <dt>Duration</dt>
+                    <dd>{{ result.duration }}</dd>
+                    
+                    {% if result.exit_code is not None %}
+                    <dt>Exit Code</dt>
+                    <dd>
+                        <span class="badge {% if result.exit_code == 0 %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ result.exit_code }}
+                        </span>
+                    </dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+        
+        {% if result.parameters %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Parameters Used</h5>
+            </div>
+            <div class="card-body">
+                <dl>
+                    {% for key, value in result.parameters.items %}
+                    <dt>{{ key }}</dt>
+                    <dd>
+                        {% if value %}
+                        {{ value }}
+                        {% else %}
+                        <span class="text-muted">None</span>
+                        {% endif %}
+                    </dd>
+                    {% endfor %}
+                </dl>
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{% url 'run_script' script_name=result.script.name %}" class="btn btn-primary">
+                        <i class="fas fa-redo me-2"></i>Run Again
+                    </a>
+                    <a href="{% url 'script_list' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-list me-2"></i>All Scripts
+                    </a>
+                    {% if result.can_export %}
+                    <a href="{% url 'export_result' result_id=result.id %}" class="btn btn-outline-success">
+                        <i class="fas fa-file-export me-2"></i>Export Results
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

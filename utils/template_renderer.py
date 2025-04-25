@@ -22,7 +22,7 @@ def render_template(template_path: str, parameters: Dict[str, Any]) -> Dict[str,
         Rendered template as a dictionary
     """
     # Read template file
-    with open(template_path, 'r') as f:
+    with open(template_path, "r") as f:
         template_content = f.read()
 
     # First pass: Substitute parameters in the YAML string
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     template_path = sys.argv[1]
     parameters_path = sys.argv[2]
 
-    with open(parameters_path, 'r') as f:
+    with open(parameters_path, "r") as f:
         parameters = yaml.safe_load(f)
 
     rendered = render_template_to_string(template_path, parameters)

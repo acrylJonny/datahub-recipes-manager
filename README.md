@@ -548,3 +548,130 @@ If you encounter API compatibility issues:
 1. Check your DataHub version with `curl http://your-datahub-host/config`
 2. Ensure you have proper authentication if your DataHub instance requires it
 3. For older DataHub instances, set `DATAHUB_LEGACY_MODE=true` in your environment
+
+## Web UI Interface
+
+The DataHub Recipes Manager now includes a powerful web-based user interface for managing your recipes, policies, and DataHub configurations through an intuitive dashboard.
+
+### Web UI Features
+
+- **Dashboard**: Get a quick overview of your recipes, policies, and connection status
+- **Recipe Management**: Create, edit, list, import, and export recipes through a web form
+- **Policy Management**: Manage DataHub access policies with a user-friendly interface
+- **Connection Settings**: Configure and test your DataHub connections
+- **Secrets Management**: Securely manage your DataHub secrets
+
+### Setting Up the Web UI
+
+We've included a setup script to help you quickly set up the Web UI:
+
+```bash
+# Run the setup script
+python setup_web_ui.py
+
+# Start the web server
+cd web_ui && python manage.py runserver
+```
+
+The setup script will:
+1. Verify your Python installation
+2. Install required dependencies
+3. Create necessary directories
+4. Initialize the Django project structure
+5. Apply database migrations
+
+After running the setup script, you can access the web interface at http://localhost:8000.
+
+### Web UI Screenshots
+
+#### Dashboard
+The dashboard provides a quick overview of your DataHub connection status, recipes, and policies.
+
+#### Recipe Management
+Create, edit, and manage your DataHub ingestion recipes with a user-friendly interface.
+
+#### Policy Management
+Manage DataHub access policies with easy-to-use forms for resources, privileges, and actors.
+
+## Testing
+
+The repository includes comprehensive tests for the Python scripts and utilities. To run the tests:
+
+```bash
+# Run all tests
+bash test/run_all_tests.sh
+
+# Run specific test
+python -m pytest scripts/test_render_recipe.py
+```
+
+Note: Integration tests that require a live DataHub instance are automatically skipped in CI environments. To run these tests locally, you need a running DataHub instance accessible at the URL specified in your `.env` file.
+
+### Test Coverage
+
+The test suite includes:
+- Unit tests for utility functions
+- Integration tests for DataHub API interactions
+- Template rendering tests
+- Policy management tests
+- Recipe validation tests
+
+## Troubleshooting
+
+### Connection Issues
+
+If you're having trouble connecting to DataHub:
+
+1. Verify your DataHub instance is running and accessible
+2. Check your connection URL and token in the `.env` file
+3. Test the connection using:
+   ```bash
+   python scripts/test_connection.py
+   ```
+4. Use the Web UI's connection settings page to validate and troubleshoot
+
+### Tests Failing in CI
+
+Some tests require a live DataHub connection and are automatically skipped in CI environments. These tests include:
+
+- `test_push_and_patch_recipe.py`
+- Integration tests that require creating or updating DataHub resources
+
+If you're running these tests locally, ensure you have a DataHub instance running and your credentials are correctly configured in the `.env` file.
+
+### GraphQL Schema Validation Errors
+
+If you see GraphQL schema validation errors, it's likely because your DataHub version has a different GraphQL schema than what the client is expecting. The client has built-in fallback mechanisms to handle these cases:
+
+1. First, it attempts to use GraphQL for better performance and functionality
+2. If a schema validation error occurs, it logs an informational message and falls back to the REST API
+3. This ensures compatibility across different DataHub versions
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Development Setup
+
+1. Clone the repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Install development dependencies: `pip install -r requirements-dev.txt`
+4. Run tests to verify your setup: `bash test/run_all_tests.sh`
+
+### Adding New Features
+
+When adding new features:
+1. Add appropriate tests
+2. Update documentation
+3. Follow the existing code style and patterns
+4. Consider backwards compatibility with different DataHub versions
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- [DataHub Project](https://datahubproject.io/) - The open-source metadata platform this manager integrates with
+- [Acryl Data](https://www.acryldata.io/) - Maintainers of the DataHub SDK
+- All contributors who have helped improve this project

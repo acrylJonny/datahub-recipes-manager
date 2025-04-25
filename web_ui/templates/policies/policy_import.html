@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+
+{% block title %}Import Policy - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- Header -->
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'policy_list' %}">Policies</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Import Policy</li>
+            </ol>
+        </nav>
+        <h1 class="h2 mb-0">Import Policy</h1>
+        <p class="text-muted">Import policies from JSON files</p>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <!-- File Upload Form -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Upload Policy File</h5>
+                </div>
+                <div class="card-body">
+                    {% if messages %}
+                    <div class="mb-3">
+                        {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }}">
+                            {{ message }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="policy_file" class="form-label">Policy JSON File</label>
+                            <input type="file" class="form-control" id="policy_file" name="policy_file" accept=".json">
+                            <small class="form-text text-muted">Select a policy JSON file exported from DataHub or created manually.</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="validate_only" name="validate_only">
+                                <label class="form-check-label" for="validate_only">
+                                    Validate only (don't import)
+                                </label>
+                                <small class="form-text text-muted d-block mt-1">Check this to validate the policy file without importing it.</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="overwrite" name="overwrite">
+                                <label class="form-check-label" for="overwrite">
+                                    Overwrite if exists
+                                </label>
+                                <small class="form-text text-muted d-block mt-1">Check this to update an existing policy with the same ID. If unchecked, the import will fail if a policy with the same ID already exists.</small>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-file-import me-1"></i> Import Policy
+                            </button>
+                            <a href="{% url 'policy_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Instructions -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Policy JSON Format</h5>
+                </div>
+                <div class="card-body">
+                    <p>The policy JSON file should follow this format:</p>
+                    <pre class="bg-light p-3 rounded"><code>{
+  "policy": {
+    "type": "metadata",
+    "name": "Example Policy",
+    "description": "Example policy description",
+    "state": "active",
+    "resources": [
+      {
+        "type": "dataset",
+        "name": "my-dataset"
+      }
+    ],
+    "privileges": [
+      {
+        "type": "view",
+        "name": "view_entity"
+      }
+    ],
+    "actors": [
+      {
+        "type": "user",
+        "name": "username"
+      }
+    ]
+  },
+  "metadata": {
+    "exported_at": "2023-06-15T12:00:00Z",
+    "exported_by": "user"
+  }
+}</code></pre>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <!-- Preview Panel (shown after validation) -->
+            {% if preview_data %}
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-check-circle me-2"></i>Validation Successful
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <h5>{{ preview_data.name }}</h5>
+                    <p class="text-muted">{{ preview_data.description }}</p>
+                    
+                    <div class="mb-3">
+                        <strong>Type:</strong> <span class="badge bg-primary">{{ preview_data.type }}</span>
+                        <strong class="ms-3">State:</strong> <span class="badge {% if preview_data.state == 'active' %}bg-success{% else %}bg-secondary{% endif %}">{{ preview_data.state }}</span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Resources:</strong>
+                        {% if preview_data.resources %}
+                        <ul class="list-group mt-2">
+                            {% for resource in preview_data.resources %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ resource.name }}
+                                <span class="badge bg-info">{{ resource.type }}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p class="text-muted">No resources defined</p>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Privileges:</strong>
+                        {% if preview_data.privileges %}
+                        <ul class="list-group mt-2">
+                            {% for privilege in preview_data.privileges %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ privilege.name }}
+                                <span class="badge bg-primary">{{ privilege.type }}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p class="text-muted">No privileges defined</p>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Actors:</strong>
+                        {% if preview_data.actors %}
+                        <ul class="list-group mt-2">
+                            {% for actor in preview_data.actors %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ actor.name }}
+                                <span class="badge bg-success">{{ actor.type }}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p class="text-muted">No actors defined</p>
+                        {% endif %}
+                    </div>
+                    
+                    {% if not validate_only %}
+                    <form method="post" class="mt-4">
+                        {% csrf_token %}
+                        <input type="hidden" name="confirmed" value="true">
+                        <input type="hidden" name="policy_data" value="{{ policy_json }}">
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-check me-1"></i> Confirm Import
+                            </button>
+                            <a href="{% url 'policy_import' %}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i> Validation successful. Import was not performed as "Validate only" was selected.
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <a href="{% url 'policy_import' %}" class="btn btn-outline-primary">Import Another Policy</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if validation_errors %}
+            <div class="card mb-4">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-exclamation-circle me-2"></i>Validation Failed
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-danger">
+                        <h5>The following errors were found in the policy file:</h5>
+                        <ul class="mb-0">
+                            {% for error in validation_errors %}
+                            <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-3">
+                        <a href="{% url 'policy_import' %}" class="btn btn-outline-primary">Try Again</a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %} 

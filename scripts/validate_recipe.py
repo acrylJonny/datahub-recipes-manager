@@ -22,29 +22,20 @@ TEMPLATE_SCHEMA = {
         "source": {
             "type": "object",
             "required": ["type", "config"],
-            "properties": {
-                "type": {"type": "string"},
-                "config": {"type": "object"}
-            }
+            "properties": {"type": {"type": "string"}, "config": {"type": "object"}},
         },
         "pipeline_name": {"type": "string"},
         "pipeline_description": {"type": "string"},
         "datahub_api": {
             "type": "object",
-            "properties": {
-                "server": {"type": "string"},
-                "token": {"type": "string"}
-            }
+            "properties": {"server": {"type": "string"}, "token": {"type": "string"}},
         },
         "executor_id": {"type": "string"},
         "schedule": {
             "type": "object",
-            "properties": {
-                "cron": {"type": "string"},
-                "timezone": {"type": "string"}
-            }
-        }
-    }
+            "properties": {"cron": {"type": "string"}, "timezone": {"type": "string"}},
+        },
+    },
 }
 
 # Schema for instance files
@@ -56,11 +47,8 @@ INSTANCE_SCHEMA = {
         "recipe_type": {"type": "string"},
         "description": {"type": "string"},
         "parameters": {"type": "object"},
-        "secret_references": {
-            "type": "array",
-            "items": {"type": "string"}
-        }
-    }
+        "secret_references": {"type": "array", "items": {"type": "string"}},
+    },
 }
 
 
@@ -77,7 +65,7 @@ def validate_yaml_file(file_path: str, schema: Dict[str, Any]) -> List[str]:
     """
     try:
         # Load YAML file
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             yaml_data = yaml.safe_load(f)
 
         # Validate against schema
@@ -106,7 +94,7 @@ def validate_instance_file(instance_path: str) -> List[str]:
         return errors
 
     # Load YAML file
-    with open(instance_path, 'r') as f:
+    with open(instance_path, "r") as f:
         instance_data = yaml.safe_load(f)
 
     # Check if the referenced template exists
@@ -116,19 +104,21 @@ def validate_instance_file(instance_path: str) -> List[str]:
 
     # Use a consistent base path for template resolution
     instance_dir = Path(instance_path).parent
-    project_root = Path(os.path.abspath(__file__)).parent.parent  # Go up from scripts to root
+    project_root = Path(
+        os.path.abspath(__file__)
+    ).parent.parent  # Go up from scripts to root
     template_path = project_root / "recipes" / "templates" / f"{recipe_type}.yml"
-    
+
     # Alternative paths to check
     alt_paths = [
         project_root / "recipes" / "templates" / f"{recipe_type}.yml",
         Path(instance_path).parent.parent.parent / "templates" / f"{recipe_type}.yml",
-        Path("recipes") / "templates" / f"{recipe_type}.yml"
+        Path("recipes") / "templates" / f"{recipe_type}.yml",
     ]
-    
+
     template_exists = template_path.exists()
     template_path_used = template_path
-    
+
     # If template not found at primary location, check alternative locations
     if not template_exists:
         for alt_path in alt_paths:
@@ -136,16 +126,18 @@ def validate_instance_file(instance_path: str) -> List[str]:
                 template_exists = True
                 template_path_used = alt_path
                 break
-                
+
     if not template_exists:
-        return [f"Template {recipe_type}.yml referenced in {instance_path} does not exist"]
+        return [
+            f"Template {recipe_type}.yml referenced in {instance_path} does not exist"
+        ]
 
     # Check parameter references
     parameters = instance_data.get("parameters", {})
     parameters_set = set(parameters.keys())
 
     # Load template file
-    with open(template_path_used, 'r') as f:
+    with open(template_path_used, "r") as f:
         template_content = f.read()
 
     # Find all parameter references in the template
@@ -159,15 +151,19 @@ def validate_instance_file(instance_path: str) -> List[str]:
     # Check for parameters that are specified but not used
     unused_params = parameters_set - param_refs
     if unused_params:
-        return [f"Warning: Unused parameters in {instance_path}: {', '.join(unused_params)}"]
+        return [
+            f"Warning: Unused parameters in {instance_path}: {', '.join(unused_params)}"
+        ]
 
     return []
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate DataHub ingestion recipe files")
-    parser.add_argument('--templates', nargs='+', help='Template files to validate')
-    parser.add_argument('--instances', nargs='+', help='Instance files to validate')
+    parser = argparse.ArgumentParser(
+        description="Validate DataHub ingestion recipe files"
+    )
+    parser.add_argument("--templates", nargs="+", help="Template files to validate")
+    parser.add_argument("--instances", nargs="+", help="Instance files to validate")
 
     args = parser.parse_args()
 
