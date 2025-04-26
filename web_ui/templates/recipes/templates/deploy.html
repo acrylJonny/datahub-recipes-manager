@@ -74,15 +74,19 @@
 
                 <!-- Environment Variables Section -->
                 <div class="card mb-3">
-                    <div class="card-header bg-light">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
                         <h5 class="card-title mb-0">
                             <i class="fas fa-cogs me-2"></i> Environment Variables
                         </h5>
+                        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#loadEnvVarsInstanceModal">
+                            <i class="fa fa-download me-1"></i> Load from Instance
+                        </button>
                     </div>
                     <div class="card-body">
                         <div class="alert alert-info">
                             <i class="fas fa-info-circle me-2"></i>
                             Set values for environment variables used in this template. Mark sensitive values as "Secret" to mask them.
+                            You can load values from an environment variable instance using the button above.
                         </div>
                         
                         <div id="env-vars-container">
@@ -118,9 +122,54 @@
         </div>
     </div>
 </div>
+
+<!-- Load Environment Variables Instance Modal -->
+<div class="modal fade" id="loadEnvVarsInstanceModal" tabindex="-1" aria-labelledby="loadEnvVarsInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="loadEnvVarsInstanceModalLabel">Load Environment Variables Instance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="instanceSearchInput" placeholder="Search instances...">
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover" id="envVarsInstancesTable">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Recipe Type</th>
+                                <th>Description</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Will be populated via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="noInstancesMessage" class="text-center py-3 d-none">
+                    <p class="text-muted">No environment variable instances found.</p>
+                </div>
+                <div id="loadingInstances" class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Template content to extract environment variables
@@ -130,6 +179,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const noVarsMessage = document.getElementById('no-vars-message');
     const envVarsInput = document.getElementById('env_vars_json');
     const envVarsData = {};
+    
+    // Load environment variables instance modal
+    const loadInstancesModal = new bootstrap.Modal(document.getElementById('loadEnvVarsInstanceModal'));
     
     // Extract environment variables from the template
     setTimeout(() => {
@@ -264,8 +316,178 @@ document.addEventListener('DOMContentLoaded', function() {
         // Make sure the environment variables are updated before submission
         updateEnvironmentVariables();
     });
+    
+    // Load the environment variables instances when the modal is shown
+    const loadEnvVarsInstanceModal = document.getElementById('loadEnvVarsInstanceModal');
+    if (loadEnvVarsInstanceModal) {
+        loadEnvVarsInstanceModal.addEventListener('show.bs.modal', function() {
+            loadEnvironmentVariablesInstances();
+        });
+    }
+    
+    // Function to load environment variables instances
+    function loadEnvironmentVariablesInstances() {
+        const tableBody = document.querySelector('#envVarsInstancesTable tbody');
+        const loadingElement = document.getElementById('loadingInstances');
+        const noInstancesMessage = document.getElementById('noInstancesMessage');
+        
+        // Show loading
+        loadingElement.classList.remove('d-none');
+        noInstancesMessage.classList.add('d-none');
+        tableBody.innerHTML = '';
+        
+        // Fetch instances
+        fetch('/env-vars/instances/list/', {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Hide loading
+            loadingElement.classList.add('d-none');
+            
+            if (data.instances && data.instances.length > 0) {
+                // Filter instances to match the recipe type
+                const recipeType = '{{ template.recipe_type }}';
+                const filteredInstances = data.instances.filter(instance => 
+                    instance.recipe_type === recipeType || instance.recipe_type === '');
+                
+                if (filteredInstances.length > 0) {
+                    // Populate table
+                    let html = '';
+                    
+                    filteredInstances.forEach(instance => {
+                        html += `<tr>
+                            <td>${instance.name}</td>
+                            <td><span class="badge bg-secondary">${instance.recipe_type}</span></td>
+                            <td>${instance.description || ''}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-primary load-instance" 
+                                        data-instance-id="${instance.id}">
+                                    <i class="fas fa-download me-1"></i> Load
+                                </button>
+                            </td>
+                        </tr>`;
+                    });
+                    
+                    tableBody.innerHTML = html;
+                    
+                    // Add event listeners to load buttons
+                    document.querySelectorAll('.load-instance').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const instanceId = this.getAttribute('data-instance-id');
+                            loadInstanceById(instanceId);
+                        });
+                    });
+                } else {
+                    // Show no instances message
+                    noInstancesMessage.classList.remove('d-none');
+                }
+            } else {
+                // Show no instances message
+                noInstancesMessage.classList.remove('d-none');
+            }
+        })
+        .catch(error => {
+            loadingElement.classList.add('d-none');
+            noInstancesMessage.classList.remove('d-none');
+            console.error('Error loading instances:', error);
+        });
+    }
+    
+    // Function to load an instance by ID
+    function loadInstanceById(instanceId) {
+        fetch(`/env-vars/instances/${instanceId}/json/`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.instance) {
+                // Map instance variables to envVarsData format
+                const instanceVars = data.instance.variables;
+                
+                // For each variable in our environment, find a matching one in the instance
+                for (const varName in envVarsData) {
+                    if (instanceVars[varName]) {
+                        envVarsData[varName].value = instanceVars[varName].value || '';
+                        envVarsData[varName].isSecret = instanceVars[varName].is_secret || false;
+                    }
+                }
+                
+                // Update the UI
+                document.querySelectorAll('.env-var-value').forEach(input => {
+                    const varName = input.getAttribute('data-var');
+                    if (envVarsData[varName]) {
+                        input.value = envVarsData[varName].value;
+                        
+                        // Update the secret toggle
+                        const toggle = document.querySelector(`.secret-toggle[data-var="${varName}"]`);
+                        if (toggle) {
+                            toggle.checked = envVarsData[varName].isSecret;
+                            
+                            // Update input type
+                            if (envVarsData[varName].isSecret) {
+                                input.setAttribute('type', 'password');
+                            } else {
+                                input.setAttribute('type', 'text');
+                            }
+                        }
+                    }
+                });
+                
+                // Update the hidden input
+                updateEnvironmentVariables();
+                
+                // Close the modal
+                loadInstancesModal.hide();
+                
+                // Show success message
+                alert(`Environment variables loaded from instance "${data.instance.name}" successfully!`);
+            } else {
+                alert('Error loading instance: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
+        });
+    }
+    
+    // Search functionality for instances
+    const instanceSearchInput = document.getElementById('instanceSearchInput');
+    if (instanceSearchInput) {
+        instanceSearchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const rows = document.querySelectorAll('#envVarsInstancesTable tbody tr');
+            
+            rows.forEach(row => {
+                const name = row.cells[0].textContent.toLowerCase();
+                const type = row.cells[1].textContent.toLowerCase();
+                const description = row.cells[2].textContent.toLowerCase();
+                
+                if (name.includes(searchTerm) || type.includes(searchTerm) || 
+                    description.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    }
+    
+    // Helper function to get CSRF token
+    function getCsrfToken() {
+        return document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    }
 });
 </script>
+
 {% endblock %}
 
 {% block styles %}

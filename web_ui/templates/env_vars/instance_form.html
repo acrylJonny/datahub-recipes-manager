@@ -1,0 +1,435 @@
+{% extends 'base.html' %}
+
+{% block title %}
+{% if instance %}Edit Environment Variables Instance - {{ instance.name }}{% else %}Create New Environment Variables Instance{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- Header -->
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'env_vars_instances' %}">Environment Variable Instances</a></li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    {% if instance %}Edit - {{ instance.name }}{% else %}Create Instance{% endif %}
+                </li>
+            </ol>
+        </nav>
+        <h1 class="h2 mb-0">
+            {% if instance %}Edit Environment Variables Instance: {{ instance.name }}{% else %}Create New Environment Variables Instance{% endif %}
+        </h1>
+    </div>
+
+    <!-- Messages/Alerts -->
+    {% if messages %}
+    <div class="messages">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Form -->
+    <form method="post" id="envVarsInstanceForm">
+        {% csrf_token %}
+        
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+            {{ error }}
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        <div class="row">
+            <div class="col-md-8">
+                <!-- Basic Information Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Instance Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label required">Name</label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                            <div class="text-danger">
+                                {% for error in form.name.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.template.id_for_label }}" class="form-label">Template</label>
+                            {{ form.template }}
+                            {% if form.template.errors %}
+                            <div class="text-danger">
+                                {% for error in form.template.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">Select a template to base this instance on</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.recipe_type.id_for_label }}" class="form-label required">Recipe Type</label>
+                            {{ form.recipe_type }}
+                            {% if form.recipe_type.errors %}
+                            <div class="text-danger">
+                                {% for error in form.recipe_type.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                            <div class="text-danger">
+                                {% for error in form.description.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">Briefly describe the purpose of this environment variables instance.</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Environment Variables Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Environment Variables</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="template_info" class="alert alert-info d-none">
+                            <i class="bi bi-info-circle"></i> 
+                            <span id="template_description"></span>
+                        </div>
+                        
+                        <div id="loading_spinner" class="text-center d-none">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p>Loading template variables...</p>
+                        </div>
+                        
+                        <div id="variables_container">
+                            <p class="text-muted">Define environment variables for this instance. Variables marked with * are required.</p>
+                            
+                            <div id="no_variables" class="alert alert-warning {% if instance %}d-none{% endif %}">
+                                <i class="bi bi-exclamation-triangle"></i> No variables defined. Select a template or add variables manually.
+                            </div>
+
+                            <div id="env_vars_list" class="mb-3">
+                                <!-- Variables will be dynamically added here -->
+                            </div>
+                            
+                            <div class="d-flex justify-content-between mb-3">
+                                <button type="button" id="add_variable_btn" class="btn btn-outline-primary">
+                                    <i class="bi bi-plus-circle"></i> Add Variable
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        {{ form.variables }}
+                        <button type="submit" class="btn btn-primary w-100 mb-3">
+                            <i class="bi bi-save"></i> Save Instance
+                        </button>
+                        <a href="{% url 'env_vars_instances' %}" class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-arrow-left"></i> Back to Instances
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        let variables = {};
+        
+        // Initialize the variables from the form if editing
+        {% if instance %}
+        try {
+            variables = JSON.parse('{{ instance.variables|escapejs }}');
+            renderVariablesList(variables);
+        } catch (e) {
+            console.error("Error parsing variables JSON:", e);
+        }
+        {% endif %}
+        
+        // Template selection handler
+        $("#{{ form.template.id_for_label }}").change(function() {
+            const templateId = $(this).val();
+            if (templateId) {
+                fetchTemplateDetails(templateId);
+            } else {
+                $("#template_info").addClass("d-none");
+                // Don't clear variables when template is deselected
+            }
+        });
+        
+        // Initialize the template if one is selected
+        const initialTemplateId = $("#{{ form.template.id_for_label }}").val();
+        if (initialTemplateId) {
+            fetchTemplateDetails(initialTemplateId);
+        }
+        
+        // Function to fetch template details
+        function fetchTemplateDetails(templateId) {
+            $("#loading_spinner").removeClass("d-none");
+            
+            $.ajax({
+                url: `/env-vars/templates/${templateId}/details/`,
+                method: "GET",
+                success: function(response) {
+                    $("#loading_spinner").addClass("d-none");
+                    $("#template_info").removeClass("d-none");
+                    $("#template_description").text(response.description || "No description available.");
+                    
+                    // Update recipe type if it's empty
+                    if (!$("#{{ form.recipe_type.id_for_label }}").val()) {
+                        $("#{{ form.recipe_type.id_for_label }}").val(response.recipe_type);
+                    }
+                    
+                    // Generate fields for template variables
+                    const variablesList = response.variables;
+                    if (variablesList && variablesList.length > 0) {
+                        let newVariables = {};
+                        
+                        // Create variable entries from template
+                        variablesList.forEach(varInfo => {
+                            // Only add if not already present
+                            if (!variables[varInfo.key]) {
+                                newVariables[varInfo.key] = {
+                                    value: varInfo.default_value || "",
+                                    description: varInfo.description || "",
+                                    required: varInfo.required || false,
+                                    isSecret: varInfo.is_secret || false
+                                };
+                            }
+                        });
+                        
+                        // Merge with existing variables
+                        variables = {...variables, ...newVariables};
+                        renderVariablesList(variables);
+                    }
+                    
+                    $("#no_variables").addClass("d-none");
+                },
+                error: function(xhr, status, error) {
+                    $("#loading_spinner").addClass("d-none");
+                    console.error("Error fetching template details:", error);
+                    alert("Error loading template details. Please try again.");
+                }
+            });
+        }
+        
+        // Add variable button handler
+        $("#add_variable_btn").click(function() {
+            const varKey = `var_${Date.now()}`;
+            variables[varKey] = {
+                value: "",
+                description: "",
+                required: false,
+                isSecret: false
+            };
+            renderVariablesList(variables);
+            $("#no_variables").addClass("d-none");
+        });
+        
+        // Function to render the variables list
+        function renderVariablesList(vars) {
+            const container = $("#env_vars_list");
+            container.empty();
+            
+            Object.keys(vars).forEach(key => {
+                const varData = vars[key];
+                const required = varData.required ? "required" : "";
+                const requiredStar = varData.required ? "*" : "";
+                
+                const varRow = $(
+                    '<div class="card mb-3 variable-item" data-key="' + key + '">' +
+                        '<div class="card-header d-flex justify-content-between align-items-center">' +
+                            '<div class="input-group">' +
+                                '<span class="input-group-text">Name' + requiredStar + '</span>' +
+                                '<input type="text" class="form-control var-key" value="' + key + '" ' + required + 
+                                       ' placeholder="Variable name" data-original-key="' + key + '">' +
+                            '</div>' +
+                            '<button type="button" class="btn btn-sm btn-outline-danger remove-var-btn">' +
+                                '<i class="bi bi-trash"></i>' +
+                            '</button>' +
+                        '</div>' +
+                        '<div class="card-body">' +
+                            '<div class="row mb-3">' +
+                                '<div class="col">' +
+                                    '<div class="input-group">' +
+                                        '<span class="input-group-text">Value' + requiredStar + '</span>' +
+                                        '<input type="text" class="form-control var-value" value="' + (varData.value || '') + '" ' +
+                                               required + ' placeholder="Variable value">' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="row mb-3">' +
+                                '<div class="col">' +
+                                    '<div class="input-group">' +
+                                        '<span class="input-group-text">Description</span>' +
+                                        '<input type="text" class="form-control var-description" ' + 
+                                               'value="' + (varData.description || '') + '" placeholder="Description">' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="row">' +
+                                '<div class="col">' +
+                                    '<div class="form-check">' +
+                                        '<input type="checkbox" class="form-check-input var-required" id="required_' + key + '" ' + 
+                                               (varData.required ? 'checked' : '') + '>' +
+                                        '<label class="form-check-label" for="required_' + key + '">Required</label>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div class="col">' +
+                                    '<div class="form-check">' +
+                                        '<input type="checkbox" class="form-check-input var-secret" id="secret_' + key + '" ' + 
+                                               (varData.isSecret ? 'checked' : '') + '>' +
+                                        '<label class="form-check-label" for="secret_' + key + '">Secret</label>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>'
+                );
+                
+                container.append(varRow);
+            });
+            
+            // Initialize event handlers for the new elements
+            initVariableHandlers();
+            
+            // Update the hidden form field
+            updateVariablesJson();
+        }
+        
+        // Function to initialize event handlers for variable elements
+        function initVariableHandlers() {
+            // Remove variable button
+            $(".remove-var-btn").off('click').on('click', function() {
+                const card = $(this).closest('.variable-item');
+                const key = card.data('key');
+                delete variables[key];
+                card.remove();
+                updateVariablesJson();
+                
+                if (Object.keys(variables).length === 0) {
+                    $("#no_variables").removeClass("d-none");
+                }
+            });
+            
+            // Variable name change
+            $(".var-key").off('change').on('change', function() {
+                const newKey = $(this).val().trim();
+                const originalKey = $(this).data('original-key');
+                
+                if (newKey && newKey !== originalKey) {
+                    // Check if the key already exists
+                    if (variables[newKey]) {
+                        alert(`Variable name "${newKey}" already exists.`);
+                        $(this).val(originalKey);
+                        return;
+                    }
+                    
+                    // Update the data structure with the new key
+                    variables[newKey] = {...variables[originalKey]};
+                    delete variables[originalKey];
+                    
+                    // Update the data attribute
+                    $(this).closest('.variable-item').data('key', newKey);
+                    $(this).data('original-key', newKey);
+                    
+                    // Update the IDs of checkboxes
+                    $(this).closest('.variable-item').find('.var-required').attr('id', `required_${newKey}`);
+                    $(this).closest('.variable-item').find('.var-required').next('label').attr('for', `required_${newKey}`);
+                    $(this).closest('.variable-item').find('.var-secret').attr('id', `secret_${newKey}`);
+                    $(this).closest('.variable-item').find('.var-secret').next('label').attr('for', `secret_${newKey}`);
+                    
+                    updateVariablesJson();
+                }
+            });
+            
+            // Value change
+            $(".var-value").off('change').on('change', function() {
+                const key = $(this).closest('.variable-item').data('key');
+                variables[key].value = $(this).val();
+                updateVariablesJson();
+            });
+            
+            // Description change
+            $(".var-description").off('change').on('change', function() {
+                const key = $(this).closest('.variable-item').data('key');
+                variables[key].description = $(this).val();
+                updateVariablesJson();
+            });
+            
+            // Required checkbox change
+            $(".var-required").off('change').on('change', function() {
+                const key = $(this).closest('.variable-item').data('key');
+                variables[key].required = $(this).is(':checked');
+                updateVariablesJson();
+            });
+            
+            // Secret checkbox change
+            $(".var-secret").off('change').on('change', function() {
+                const key = $(this).closest('.variable-item').data('key');
+                variables[key].isSecret = $(this).is(':checked');
+                updateVariablesJson();
+            });
+        }
+        
+        // Function to update the hidden form field with variables JSON
+        function updateVariablesJson() {
+            $("#{{ form.variables.id_for_label }}").val(JSON.stringify(variables));
+        }
+        
+        // Form submission
+        $("#envVarsInstanceForm").on('submit', function(e) {
+            // Validate required variables
+            let hasErrors = false;
+            
+            Object.keys(variables).forEach(key => {
+                if (variables[key].required && !variables[key].value) {
+                    hasErrors = true;
+                    // Find the corresponding input and add error class
+                    $(`.variable-item[data-key="${key}"]`).find('.var-value')
+                        .addClass('is-invalid');
+                }
+            });
+            
+            if (hasErrors) {
+                e.preventDefault();
+                alert("Please fill in all required variable values.");
+            }
+        });
+    });
+</script>
+{% endblock %} 

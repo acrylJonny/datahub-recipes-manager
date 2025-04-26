@@ -213,7 +213,9 @@ class RecipeSecret(models.Model):
     """Model for storing recipe environment variables as secrets."""
     recipe_id = models.CharField(max_length=255)
     variable_name = models.CharField(max_length=255)
+    value = models.TextField(blank=True, null=True)
     encrypted_value = models.TextField(blank=True, null=True)
+    is_secret = models.BooleanField(default=False)
     
     class Meta:
         unique_together = ('recipe_id', 'variable_name')
@@ -245,6 +247,68 @@ class PullRequest(models.Model):
     
     def __str__(self):
         return f"PR #{self.pr_number}: {self.title}"
+
+class EnvVarsTemplate(models.Model):
+    """Model for storing reusable environment variable templates."""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    recipe_type = models.CharField(max_length=50)
+    variables = models.TextField()  # JSON content of environment variables
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    tags = models.CharField(max_length=255, blank=True, null=True)  # Comma-separated tags
+    
+    def __str__(self):
+        return self.name
+    
+    def get_variables_dict(self):
+        """Get the environment variables as a dictionary."""
+        try:
+            return json.loads(self.variables)
+        except Exception:
+            return {}
+    
+    def set_variables_dict(self, variables_dict):
+        """Set the environment variables from a dictionary."""
+        self.variables = json.dumps(variables_dict)
+    
+    def get_tags_list(self):
+        """Get the tags as a list."""
+        if not self.tags:
+            return []
+        return [tag.strip() for tag in self.tags.split(',')]
+    
+    def set_tags_list(self, tags_list):
+        """Set the tags from a list."""
+        if not tags_list:
+            self.tags = ''
+        else:
+            self.tags = ','.join(tags_list)
+
+class EnvVarsInstance(models.Model):
+    """Model for storing actual instances of environment variable configurations."""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    template = models.ForeignKey(EnvVarsTemplate, on_delete=models.SET_NULL, null=True, blank=True)
+    recipe_id = models.CharField(max_length=255, null=True, blank=True)  # Optional link to a recipe
+    recipe_type = models.CharField(max_length=50)
+    variables = models.TextField()  # JSON content of environment variable values
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.name} ({self.recipe_id or 'No recipe'})"
+    
+    def get_variables_dict(self):
+        """Get the environment variables as a dictionary."""
+        try:
+            return json.loads(self.variables)
+        except Exception:
+            return {}
+    
+    def set_variables_dict(self, variables_dict):
+        """Set the environment variables from a dictionary."""
+        self.variables = json.dumps(variables_dict)
 
 class GitHubPR(models.Model):
     """Model for storing GitHub pull request information."""

@@ -40,17 +40,19 @@ urlpatterns = [
     path("recipes/delete/<str:recipe_id>/", web_ui_views.recipe_delete, name="recipe_delete"),
     path("recipes/run/<str:recipe_id>/", web_ui_views.recipe_run, name="recipe_run"),
     path("recipes/download/<str:recipe_id>/", web_ui_views.recipe_download, name="recipe_download"),
+    path("recipes/export-all/", web_ui_views.export_all_recipes, name="export_all_recipes"),
     
     # Recipe Templates
     path("recipes/templates/", web_ui_views.recipe_templates, name="recipe_templates"),
     path("recipes/templates/create/", web_ui_views.recipe_template_create, name="recipe_template_create"),
     path("recipes/templates/import/", web_ui_views.recipe_template_import, name="recipe_template_import"),
+    path("recipes/templates/export-all/", web_ui_views.export_all_templates, name="export_all_templates"),
     path("recipes/templates/<int:template_id>/", web_ui_views.recipe_template_detail, name="recipe_template_detail"),
     path("recipes/templates/<int:template_id>/edit/", web_ui_views.recipe_template_edit, name="recipe_template_edit"),
     path("recipes/templates/<int:template_id>/delete/", web_ui_views.recipe_template_delete, name="recipe_template_delete"),
     path("recipes/templates/<int:template_id>/export/", web_ui_views.recipe_template_export, name="recipe_template_export"),
     path("recipes/templates/<int:template_id>/deploy/", web_ui_views.recipe_template_deploy, name="recipe_template_deploy"),
-    path("recipes/save-as-template/<str:recipe_id>/", web_ui_views.recipe_save_as_template, name="recipe_save_as_template"),
+    path("recipes/save-as-template/<str:recipe_id>/", web_ui_views.recipe_save_as_template, name="recipe_template_save"),
     
     # Policy management
     path("policies/", web_ui_views.policies, name="policies"),
@@ -60,13 +62,30 @@ urlpatterns = [
     path("policies/edit/<str:policy_id>/", web_ui_views.policy_edit, name="policy_edit"),
     path("policies/delete/<str:policy_id>/", web_ui_views.policy_delete, name="policy_delete"),
     path("policies/download/<str:policy_id>/", web_ui_views.policy_download, name="policy_download"),
-    path("policies/export-all/", web_ui_views.policy_export_all, name="policy_export_all"),
+    path("policies/export-all/", web_ui_views.export_all_policies, name="export_all_policies"),
     
     # Logs
     path("logs/", web_ui_views.logs, name="logs"),
     
     # Settings
     path("settings/", web_ui_views.settings, name="settings"),
+    
+    # Environment Variables Templates
+    path("env-vars-templates/", web_ui_views.env_vars_templates, name="env_vars_templates"),
+    path("env-vars-templates/create/", web_ui_views.env_vars_template_create, name="env_vars_template_create"),
+    path("env-vars-templates/list/", web_ui_views.env_vars_template_list, name="env_vars_template_list"),
+    path("env-vars-templates/get/<int:template_id>/", web_ui_views.env_vars_template_get, name="env_vars_template_get"),
+    path("env-vars-templates/delete/<int:template_id>/", web_ui_views.env_vars_template_delete, name="env_vars_template_delete"),
+    
+    # Environment Variables Instances
+    path("env-vars/instances/", web_ui_views.env_vars_instances, name="env_vars_instances"),
+    path("env-vars/instances/create/", web_ui_views.env_vars_instance_create, name="env_vars_instance_create"),
+    path("env-vars/instances/<int:instance_id>/", web_ui_views.env_vars_instance_detail, name="env_vars_instance_detail"),
+    path("env-vars/instances/<int:instance_id>/edit/", web_ui_views.env_vars_instance_edit, name="env_vars_instance_edit"),
+    path("env-vars/instances/<int:instance_id>/delete/", web_ui_views.env_vars_instance_delete, name="env_vars_instance_delete"),
+    path("env-vars/instances/list/", web_ui_views.env_vars_instance_list, name="env_vars_instance_list"),
+    path("env-vars/instances/<int:instance_id>/json/", web_ui_views.env_vars_instance_json, name="env_vars_instance_json"),
+    path("env-vars/template/<int:template_id>/details/", web_ui_views.env_vars_template_details, name="env_vars_template_details"),
     
     # Health check
     path("health/", web_ui_views.health, name="health"),

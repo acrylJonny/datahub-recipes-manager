@@ -97,19 +97,29 @@
                         
                         <div class="mb-3">
                             <label for="{{ form.recipe_content.id_for_label }}" class="form-label">Recipe Content (YAML/JSON)</label>
-                            <div class="d-flex align-items-center mb-2">
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <input type="radio" class="btn-check" name="format" id="yamlFormat" value="yaml" checked>
-                                    <label class="btn btn-outline-secondary" for="yamlFormat">YAML</label>
-                                    
-                                    <input type="radio" class="btn-check" name="format" id="jsonFormat" value="json">
-                                    <label class="btn btn-outline-secondary" for="jsonFormat">JSON</label>
+                            
+                            <!-- Simple Recipe Editor Implementation -->
+                            <div class="card recipe-editor-box mb-2">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h6 class="m-0 fw-bold"><i class="fas fa-code me-2"></i>Recipe Definition</h6>
+                                    <div>
+                                        <div class="btn-group btn-group-sm me-2" role="group">
+                                            <input type="radio" class="btn-check" name="format" id="yamlFormat" value="yaml" checked>
+                                            <label class="btn btn-outline-secondary" for="yamlFormat">YAML</label>
+                                            
+                                            <input type="radio" class="btn-check" name="format" id="jsonFormat" value="json">
+                                            <label class="btn btn-outline-secondary" for="jsonFormat">JSON</label>
+                                        </div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="formatButton">
+                                            <i class="fas fa-code me-1"></i> Format
+                                        </button>
+                                    </div>
                                 </div>
-                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="formatButton">
-                                    <i class="fas fa-code me-1"></i> Format
-                                </button>
+                                <div class="card-body p-0">
+                                    {{ form.recipe_content }}
+                                </div>
                             </div>
-                            {{ form.recipe_content }}
+                            
                             <div class="form-text">
                                 The recipe configuration in YAML or JSON format. 
                                 Edit carefully as this will update the recipe in DataHub.
@@ -118,6 +128,14 @@
                         
                         <!-- Hidden field for environment variables -->
                         <input type="hidden" name="environment_variables" id="environment_variables" value="{{ env_vars_json|default:'{}' }}">
+                        
+                        <div class="form-check mb-3">
+                            {{ form.replace_env_vars }}
+                            <label class="form-check-label" for="{{ form.replace_env_vars.id_for_label }}">
+                                {{ form.replace_env_vars.label }}
+                            </label>
+                            <div class="form-text">{{ form.replace_env_vars.help_text }}</div>
+                        </div>
                         
                         <div class="d-flex justify-content-between">
                             <div>
@@ -130,7 +148,7 @@
                                 <button type="button" class="btn btn-outline-success run-recipe" data-recipe-id="{{ recipe_id }}">
                                     <i class="fas fa-play me-1"></i> Run Now
                                 </button>
-                                <a href="{% url 'recipe_save_as_template' recipe_id %}" class="btn btn-outline-info ms-2">
+                                <a href="{% url 'recipe_template_save' recipe_id %}" class="btn btn-outline-info ms-2">
                                     <i class="fas fa-save me-1"></i> Save as Template
                                 </a>
                                 <button type="button" class="btn btn-outline-danger ms-2 delete-recipe" data-recipe-id="{{ recipe_id }}" data-recipe-name="{{ form.recipe_name.value }}">
@@ -148,12 +166,26 @@
             <div class="card">
                 <div class="card-header bg-light d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">Environment Variables</h5>
-                    <span class="badge bg-info">{{ form.recipe_type.value }}</span>
+                    <div>
+                        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#saveEnvVarsTemplateModal">
+                            <i class="fas fa-save me-1"></i> Save as Template
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#loadEnvVarsTemplateModal">
+                            <i class="fas fa-folder-open me-1"></i> Load Template
+                        </button>
+                        <span class="badge bg-info ms-2">{{ form.recipe_type.value }}</span>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle me-2"></i>
-                        Manage environment variables for this recipe. Variables marked as "Secret" will be stored securely and masked in the UI.
+                        <strong>Environment Variables</strong> are detected automatically when you use <code>${VARIABLE_NAME}</code> syntax in your recipe. 
+                        Variables will be stored securely and can be applied to the recipe using the checkbox option in the Recipe Details tab.
+                        <ul class="mt-2 mb-0">
+                            <li>Variables marked as "Secret" will be stored securely and masked in the UI</li>
+                            <li>Any new variables detected in your recipe will appear here automatically</li>
+                            <li>Values entered here will be saved when you click "Save Environment Variables"</li>
+                        </ul>
                     </div>
                     
                     <form method="post" id="envVarsForm">
@@ -214,164 +246,411 @@
         </div>
     </div>
 </div>
+
+<!-- Save Environment Variables Template Modal -->
+<div class="modal fade" id="saveEnvVarsTemplateModal" tabindex="-1" aria-labelledby="saveEnvVarsTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saveEnvVarsTemplateModalLabel">Save Environment Variables as Template</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="saveEnvVarsTemplateForm" method="post" action="{% url 'env_vars_template_create' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="variables" id="save_env_vars_json" value="">
+                    <input type="hidden" name="recipe_type" value="{{ form.recipe_type.value }}">
+                    
+                    <div class="mb-3">
+                        <label for="template_name" class="form-label">Template Name</label>
+                        <input type="text" class="form-control" id="template_name" name="name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="template_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="template_description" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="template_tags" class="form-label">Tags</label>
+                        <input type="text" class="form-control" id="template_tags" name="tags" placeholder="comma,separated,tags">
+                        <div class="form-text">Enter comma-separated tags to categorize this template</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmSaveTemplateButton">Save Template</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load Environment Variables Template Modal -->
+<div class="modal fade" id="loadEnvVarsTemplateModal" tabindex="-1" aria-labelledby="loadEnvVarsTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="loadEnvVarsTemplateModalLabel">Load Environment Variables Template</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="templateSearchInput" placeholder="Search templates...">
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover" id="envVarsTemplatesTable">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Recipe Type</th>
+                                <th>Description</th>
+                                <th>Tags</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Will be populated via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="noTemplatesMessage" class="text-center py-3 d-none">
+                    <p class="text-muted">No environment variable templates found.</p>
+                </div>
+                <div id="loadingTemplates" class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .fill-height {
+        height: 100%;
+    }
+    
+    .recipe-editor-box {
+        margin-bottom: 1rem;
+    }
+    
+    #recipe_textarea {
+        width: 100%;
+        min-height: 300px;
+        font-family: Monaco, Menlo, "Ubuntu Mono", Consolas, source-code-pro, monospace;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        padding: 0.8rem;
+        border: none;
+        white-space: pre;
+        overflow-wrap: normal;
+        overflow-x: auto;
+    }
+    
+    .header-buttons {
+        display: flex;
+        align-items: center;
+    }
+    
+    .header-buttons .btn {
+        margin-left: 0.5rem;
+    }
+
+    /* Recipe ID field styles */
+    #id_recipe_id {
+        background-color: #e9ecef;
+    }
+    
+    /* Environment variables tab pulse animation */
+    @keyframes tab-pulse {
+        0% {
+            background-color: rgba(13, 110, 253, 0.1);
+        }
+        50% {
+            background-color: rgba(13, 110, 253, 0.3);
+        }
+        100% {
+            background-color: rgba(13, 110, 253, 0.1);
+        }
+    }
+    
+    .btn-pulse {
+        animation: tab-pulse 1s ease-in-out 3;
+    }
+</style>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/yaml/yaml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Get the original textarea
-        const originalTextarea = document.getElementById('{{ form.recipe_content.id_for_label }}');
+        // Replace with a simple textarea
+        const originalTextarea = document.getElementById('id_recipe_content');
         if (!originalTextarea) return;
         
-        // Create and add ID to improve CSS targeting
-        originalTextarea.id = 'original-textarea';
+        // Make Recipe ID field readonly with grey background
+        const recipeIdField = document.getElementById('id_recipe_id');
+        if (recipeIdField) {
+            recipeIdField.setAttribute('readonly', 'readonly');
+            recipeIdField.style.backgroundColor = '#e9ecef';
+        }
         
-        // Extract the initial content
-        let initialContent = originalTextarea.value || '';
-        const isJson = initialContent.trim().startsWith('{');
-        const initialMode = isJson ? 'application/json' : 'text/x-yaml';
+        // Get the card structure and update class names to match Bootstrap
+        const recipeBox = document.querySelector('.recipe-editor-box');
+        if (recipeBox) {
+            recipeBox.classList.add('card');
+            recipeBox.classList.add('fill-height');
+        }
         
-        // Format JSON for better readability if needed
-        if (isJson) {
-            try {
-                const jsonObj = JSON.parse(initialContent);
-                initialContent = JSON.stringify(jsonObj, null, 2);
-            } catch (e) {
-                console.error('Error formatting initial JSON content:', e);
+        // Add fill-height class to card-body too
+        const cardBody = recipeBox ? recipeBox.querySelector('.card-body') : null;
+        if (cardBody) {
+            cardBody.classList.add('fill-height');
+        }
+        
+        // Store the original content for reset functionality
+        const originalContent = originalTextarea.value || '';
+        const isJsonOriginal = originalContent.trim().startsWith('{');
+        
+        // Create a new textarea in a container
+        const editorDiv = document.createElement('div');
+        editorDiv.id = 'editor-container';
+        editorDiv.classList.add('fill-height');
+        
+        const newTextarea = document.createElement('textarea');
+        newTextarea.id = 'recipe_textarea';
+        newTextarea.className = 'form-control-plaintext fill-height';
+        newTextarea.value = originalContent;
+        newTextarea.placeholder = 'Enter your recipe definition in YAML or JSON format';
+        newTextarea.style.resize = 'none';
+        
+        // Hide the original textarea but keep it for form submission
+        originalTextarea.style.display = 'none';
+        originalTextarea.parentNode.insertBefore(editorDiv, originalTextarea);
+        editorDiv.appendChild(newTextarea);
+        
+        // Improved auto-resize function
+        function autoResizeTextarea() {
+            // Reset the height to auto so we can get the actual scrollHeight
+            newTextarea.style.height = 'auto';
+            
+            // Set the height to scrollHeight to fit all content
+            const newHeight = Math.max(300, newTextarea.scrollHeight + 10);
+            newTextarea.style.height = newHeight + 'px';
+            
+            // Ensure resize handle is disabled
+            newTextarea.style.resize = 'none';
+            
+            // Update parent container heights if needed
+            if (editorDiv) {
+                editorDiv.style.minHeight = newHeight + 'px';
+            }
+            
+            // Ensure entire page can see the expanded content
+            document.dispatchEvent(new Event('resize'));
+        }
+        
+        // Reset function to restore original content
+        function resetContent() {
+            // Set format radio button based on original content
+            if (isJsonOriginal) {
+                document.getElementById('jsonFormat').checked = true;
+            } else {
+                document.getElementById('yamlFormat').checked = true;
+            }
+            
+            // Restore content
+            newTextarea.value = originalContent;
+            originalTextarea.value = originalContent;
+            
+            // Resize after content change
+            setTimeout(autoResizeTextarea, 10);
+        }
+        
+        // Find the format button's parent
+        const formatButtonContainer = document.getElementById('formatButton').parentNode;
+        
+        // Create the Reset button
+        const resetButton = document.createElement('button');
+        resetButton.type = 'button';
+        resetButton.className = 'btn btn-sm btn-outline-secondary ms-2';
+        resetButton.id = 'resetButton';
+        resetButton.innerHTML = '<i class="fas fa-undo me-1"></i> Reset';
+        
+        // Add the Reset button after the Format button
+        formatButtonContainer.appendChild(resetButton);
+        
+        // Add event listener to Reset button
+        resetButton.addEventListener('click', resetContent);
+        
+        // Initial resize with a slight delay to ensure content is rendered
+        setTimeout(autoResizeTextarea, 10);
+        
+        // Resize on input
+        newTextarea.addEventListener('input', function() {
+            originalTextarea.value = this.value;
+            autoResizeTextarea();
+        });
+        
+        // Detect environment variables in recipe content
+        function detectEnvironmentVariables() {
+            const content = newTextarea.value;
+            if (!content) return;
+            
+            // Find all ${VAR_NAME} patterns
+            const regex = /\${([^}]+)}/g;
+            let match;
+            let foundVars = {};
+            
+            // Find all matches
+            while ((match = regex.exec(content)) !== null) {
+                const varName = match[1];
+                // Add to our found vars if not already there
+                foundVars[varName] = true;
+            }
+            
+            // For each found var, add to envVarsData if not already there
+            for (const varName in foundVars) {
+                if (!envVarsData[varName]) {
+                    // Initialize new environment variable
+                    envVarsData[varName] = {
+                        value: '',
+                        isSecret: false
+                    };
+                }
+            }
+            
+            // Update environment variables
+            renderEnvironmentVariables();
+            updateEnvironmentVariables();
+            
+            // Update the badge count on the tab
+            const badgeEl = document.querySelector('#env-vars-tab .badge');
+            if (badgeEl) {
+                badgeEl.textContent = Object.keys(envVarsData).length;
             }
         }
         
-        // Update format radio buttons
-        if (isJson) {
+        // Disable resize attempts via the DOM
+        newTextarea.addEventListener('mousedown', function(e) {
+            const rect = newTextarea.getBoundingClientRect();
+            const isInResizeArea = 
+                e.clientX > rect.right - 20 && 
+                e.clientY > rect.bottom - 20;
+                
+            if (isInResizeArea) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+        
+        // Set the correct radio button
+        if (isJsonOriginal) {
             document.getElementById('jsonFormat').checked = true;
         } else {
             document.getElementById('yamlFormat').checked = true;
         }
         
-        // Create a new container for the editor
-        const editorContainer = document.createElement('div');
-        editorContainer.id = 'editor-container';
-        originalTextarea.parentNode.insertBefore(editorContainer, originalTextarea);
-        
-        // Create a new textarea for CodeMirror
-        const newTextarea = document.createElement('textarea');
-        newTextarea.id = 'code-editor';
-        newTextarea.value = initialContent;
-        editorContainer.appendChild(newTextarea);
-        
-        // Initialize CodeMirror
-        let editor = null;
-        
-        // Initialize after a slight delay to ensure DOM is ready
-        setTimeout(() => {
-            editor = CodeMirror.fromTextArea(newTextarea, {
-                mode: initialMode,
-                lineNumbers: true,
-                theme: 'default',
-                indentUnit: 2,
-                tabSize: 2,
-                lineWrapping: true,
-                matchBrackets: true,
-                autoCloseBrackets: true,
-                viewportMargin: Infinity
-            });
-            
-            // Update original textarea when content changes
-            editor.on('change', function() {
-                originalTextarea.value = editor.getValue();
-            });
-            
-            // Handle form submission
-            const forms = document.querySelectorAll('form');
-            forms.forEach(form => {
-                form.addEventListener('submit', function() {
-                    originalTextarea.value = editor.getValue();
-                });
-            });
-            
-            // Handle format toggle
-            const formatRadios = document.querySelectorAll('input[name="format"]');
-            formatRadios.forEach(radio => {
-                radio.addEventListener('change', function() {
-                    const format = this.value;
+        // Format toggle handling
+        document.querySelectorAll('input[name="format"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const format = this.value;
+                const content = newTextarea.value;
+                
+                try {
+                    let newContent = content;
                     
-                    try {
-                        const content = editor.getValue();
-                        let newContent = content;
-                        
-                        if (format === 'json' && !content.trim().startsWith('{')) {
-                            // Convert YAML to JSON
-                            try {
-                                const obj = jsyaml.load(content);
-                                newContent = JSON.stringify(obj, null, 2);
-                            } catch (e) {
-                                console.error('Error converting YAML to JSON:', e);
-                                alert('Error converting YAML to JSON. Please check your syntax.');
-                                return;
-                            }
-                        } else if (format === 'yaml' && content.trim().startsWith('{')) {
-                            // Convert JSON to YAML
-                            try {
-                                const obj = JSON.parse(content);
-                                newContent = jsyaml.dump(obj);
-                            } catch (e) {
-                                console.error('Error converting JSON to YAML:', e);
-                                alert('Error converting JSON to YAML. Please check your syntax.');
-                                return;
-                            }
-                        }
-                        
-                        // Update editor content and mode
-                        editor.setValue(newContent);
-                        editor.setOption('mode', format === 'json' ? 'application/json' : 'text/x-yaml');
-                    } catch (e) {
-                        console.error('Error changing format:', e);
-                        alert('Error changing format. Please check your syntax.');
+                    // Convert between formats
+                    if (format === 'json' && !content.trim().startsWith('{')) {
+                        const obj = jsyaml.load(content);
+                        newContent = JSON.stringify(obj, null, 2);
+                    } else if (format === 'yaml' && content.trim().startsWith('{')) {
+                        const obj = JSON.parse(content);
+                        newContent = jsyaml.dump(obj);
                     }
-                });
-            });
-            
-            // Format button handler
-            const formatButton = document.getElementById('formatButton');
-            if (formatButton) {
-                formatButton.addEventListener('click', function() {
-                    const currentFormat = document.querySelector('input[name="format"]:checked').value;
                     
-                    try {
-                        const content = editor.getValue();
-                        let formattedContent = content;
-                        
-                        if (currentFormat === 'json') {
-                            const obj = JSON.parse(content);
-                            formattedContent = JSON.stringify(obj, null, 2);
-                        } else {
-                            const obj = jsyaml.load(content);
-                            formattedContent = jsyaml.dump(obj);
-                        }
-                        
-                        editor.setValue(formattedContent);
-                        
-                        // Refresh the editor to ensure proper rendering
-                        setTimeout(() => editor.refresh(), 10);
-                    } catch (e) {
-                        console.error('Error formatting:', e);
-                        alert('Error formatting code. Please check your syntax.');
+                    newTextarea.value = newContent;
+                    originalTextarea.value = newContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error changing format:', e);
+                    alert('Error changing format. Please check your syntax.');
+                }
+            });
+        });
+        
+        // Format button handler
+        const formatButton = document.getElementById('formatButton');
+        if (formatButton) {
+            formatButton.addEventListener('click', function() {
+                const format = document.querySelector('input[name="format"]:checked').value;
+                
+                try {
+                    const content = newTextarea.value;
+                    let formattedContent = content;
+                    
+                    if (format === 'json') {
+                        const obj = JSON.parse(content);
+                        formattedContent = JSON.stringify(obj, null, 2);
+                    } else {
+                        const obj = jsyaml.load(content);
+                        formattedContent = jsyaml.dump(obj);
                     }
-                });
-            }
-            
-            // Refresh the editor to ensure proper rendering
-            setTimeout(() => editor.refresh(), 10);
-        }, 100);
+                    
+                    newTextarea.value = formattedContent;
+                    originalTextarea.value = formattedContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error formatting:', e);
+                    alert('Error formatting code. Please check your syntax.');
+                }
+            });
+        }
+        
+        // Update form on submission
+        const recipeForm = document.getElementById('recipeForm');
+        if (recipeForm) {
+            recipeForm.addEventListener('submit', function() {
+                originalTextarea.value = newTextarea.value;
+            });
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            setTimeout(autoResizeTextarea, 10);
+        });
+        
+        // Force auto-resize on tab change and when the element gains focus
+        const tabLinks = document.querySelectorAll('button[data-bs-toggle="tab"]');
+        tabLinks.forEach(tabLink => {
+            tabLink.addEventListener('shown.bs.tab', function() {
+                setTimeout(autoResizeTextarea, 10);
+                
+                // Run variable detection when Environment Variables tab is shown
+                if (this.id === 'env-vars-tab') {
+                    detectEnvironmentVariables();
+                }
+            });
+        });
+        
+        newTextarea.addEventListener('focus', function() {
+            setTimeout(autoResizeTextarea, 10);
+        });
         
         // Environment Variables Handling
         const envVarsData = JSON.parse('{{ env_vars_json|default:"{}" | escapejs }}');
         const envVarsTableBody = document.getElementById('env-vars-table-body');
-        const envVarsJsonInput = document.getElementById('env_vars_json');
         
         // Populate environment variables table
         function renderEnvironmentVariables() {
@@ -466,8 +745,7 @@
         // Environment variables form submission
         const envVarsForm = document.getElementById('envVarsForm');
         if (envVarsForm) {
-            envVarsForm.addEventListener('submit', function(event) {
-                // Make sure environment variables are updated
+            envVarsForm.addEventListener('submit', function() {
                 updateEnvironmentVariables();
             });
         }
@@ -560,44 +838,185 @@
         function getCsrfToken() {
             return document.querySelector('input[name="csrfmiddlewaretoken"]').value;
         }
+        
+        // Run the resize one more time after a delay to catch any edge cases
+        setTimeout(autoResizeTextarea, 100);
+        
+        // Environment Variables Template Handling
+        const saveTemplateModal = new bootstrap.Modal(document.getElementById('saveEnvVarsTemplateModal'));
+        const loadTemplateModal = new bootstrap.Modal(document.getElementById('loadEnvVarsTemplateModal'));
+        const confirmSaveTemplateButton = document.getElementById('confirmSaveTemplateButton');
+        
+        // Update the hidden variables field when saving a template
+        if (confirmSaveTemplateButton) {
+            confirmSaveTemplateButton.addEventListener('click', function() {
+                const saveForm = document.getElementById('saveEnvVarsTemplateForm');
+                document.getElementById('save_env_vars_json').value = JSON.stringify(envVarsData);
+                
+                // Submit the form via AJAX
+                fetch(saveForm.action, {
+                    method: 'POST',
+                    body: new FormData(saveForm),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Environment variables template saved successfully!');
+                        saveTemplateModal.hide();
+                    } else {
+                        alert('Error saving template: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                });
+            });
+        }
+        
+        // Load the environment variables templates when the modal is shown
+        const loadEnvVarsTemplateModal = document.getElementById('loadEnvVarsTemplateModal');
+        if (loadEnvVarsTemplateModal) {
+            loadEnvVarsTemplateModal.addEventListener('show.bs.modal', function() {
+                loadEnvironmentVariablesTemplates();
+            });
+        }
+        
+        // Function to load environment variables templates
+        function loadEnvironmentVariablesTemplates() {
+            const tableBody = document.querySelector('#envVarsTemplatesTable tbody');
+            const loadingElement = document.getElementById('loadingTemplates');
+            const noTemplatesMessage = document.getElementById('noTemplatesMessage');
+            
+            // Show loading
+            loadingElement.classList.remove('d-none');
+            noTemplatesMessage.classList.add('d-none');
+            tableBody.innerHTML = '';
+            
+            // Fetch templates
+            fetch('/env-vars-templates/list/', {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': getCsrfToken()
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading
+                loadingElement.classList.add('d-none');
+                
+                if (data.templates && data.templates.length > 0) {
+                    // Populate table
+                    let html = '';
+                    
+                    data.templates.forEach(template => {
+                        html += `<tr>
+                            <td>${template.name}</td>
+                            <td><span class="badge bg-secondary">${template.recipe_type}</span></td>
+                            <td>${template.description || ''}</td>
+                            <td>`;
+                            
+                        // Add tags as badges
+                        if (template.tags && template.tags.length > 0) {
+                            template.tags.forEach(tag => {
+                                html += `<span class="badge bg-info me-1">${tag}</span>`;
+                            });
+                        }
+                        
+                        html += `</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-primary load-template" 
+                                        data-template-id="${template.id}">
+                                    <i class="fas fa-download me-1"></i> Load
+                                </button>
+                            </td>
+                        </tr>`;
+                    });
+                    
+                    tableBody.innerHTML = html;
+                    
+                    // Add event listeners to load buttons
+                    document.querySelectorAll('.load-template').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const templateId = this.getAttribute('data-template-id');
+                            loadTemplateById(templateId);
+                        });
+                    });
+                } else {
+                    // Show no templates message
+                    noTemplatesMessage.classList.remove('d-none');
+                }
+            })
+            .catch(error => {
+                loadingElement.classList.add('d-none');
+                noTemplatesMessage.classList.remove('d-none');
+                console.error('Error loading templates:', error);
+            });
+        }
+        
+        // Function to load a template by ID
+        function loadTemplateById(templateId) {
+            fetch(`/env-vars-templates/get/${templateId}/`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': getCsrfToken()
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.template) {
+                    // Merge with existing variables, preferring template values
+                    const templateVars = data.template.variables;
+                    
+                    // For each template variable, add or update in envVarsData
+                    for (const [varName, varData] of Object.entries(templateVars)) {
+                        envVarsData[varName] = varData;
+                    }
+                    
+                    // Update the environment variables table
+                    renderEnvironmentVariables();
+                    updateEnvironmentVariables();
+                    
+                    // Close the modal
+                    loadTemplateModal.hide();
+                    
+                    // Show success message
+                    alert(`Template "${data.template.name}" loaded successfully!`);
+                } else {
+                    alert('Error loading template: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error);
+            });
+        }
+        
+        // Search functionality for templates
+        const templateSearchInput = document.getElementById('templateSearchInput');
+        if (templateSearchInput) {
+            templateSearchInput.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const rows = document.querySelectorAll('#envVarsTemplatesTable tbody tr');
+                
+                rows.forEach(row => {
+                    const name = row.cells[0].textContent.toLowerCase();
+                    const type = row.cells[1].textContent.toLowerCase();
+                    const description = row.cells[2].textContent.toLowerCase();
+                    const tags = row.cells[3].textContent.toLowerCase();
+                    
+                    if (name.includes(searchTerm) || type.includes(searchTerm) || 
+                        description.includes(searchTerm) || tags.includes(searchTerm)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+        }
     });
 </script>
-{% endblock %}
-
-{% block styles %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
-<style>
-    /* Create a fixed-size container for the editor */
-    #editor-container {
-        width: 100%;
-        height: 400px;
-        border: 1px solid #dee2e6;
-        border-radius: 0.25rem;
-        margin-bottom: 1rem;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    /* Force CodeMirror to fill the container */
-    .CodeMirror {
-        height: 100% !important;
-        width: 100% !important;
-        font-family: monospace;
-        font-size: 14px;
-        line-height: 1.5;
-    }
-    
-    /* Hide the original textarea */
-    #original-textarea {
-        display: none;
-    }
-    
-    .env-var-value[type="password"] {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    }
-    
-    .card {
-        margin-bottom: 1.5rem;
-    }
-</style>
 {% endblock %} 

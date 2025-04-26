@@ -235,21 +235,29 @@
                         {% csrf_token %}
                         <input type="hidden" name="section" value="advanced_settings">
                         <div class="mb-3">
-                            <label for="log_level" class="form-label">Log Level</label>
-                            <select class="form-select" id="log_level" name="log_level">
-                                <option value="DEBUG" {% if config.log_level == 'DEBUG' %}selected{% endif %}>Debug</option>
-                                <option value="INFO" {% if config.log_level == 'INFO' %}selected{% endif %}>Info</option>
-                                <option value="WARNING" {% if config.log_level == 'WARNING' %}selected{% endif %}>Warning</option>
-                                <option value="ERROR" {% if config.log_level == 'ERROR' %}selected{% endif %}>Error</option>
-                            </select>
-                            <div class="form-text">Level of detail for application logs.</div>
-                        </div>
-                        
-                        <div class="mb-3">
                             <label for="timeout" class="form-label">API Timeout (seconds)</label>
                             <input type="number" class="form-control" id="timeout" name="timeout"
                                    value="{{ config.timeout }}" min="5" max="300">
                             <div class="form-text">Timeout for API requests to DataHub (in seconds).</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="log_level" class="form-label">Log Level</label>
+                            <select class="form-select" id="log_level" name="log_level">
+                                <option value="DEBUG" {% if config.log_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                                <option value="INFO" {% if config.log_level == 'INFO' %}selected{% endif %}>INFO</option>
+                                <option value="WARNING" {% if config.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                                <option value="ERROR" {% if config.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                                <option value="CRITICAL" {% if config.log_level == 'CRITICAL' %}selected{% endif %}>CRITICAL</option>
+                            </select>
+                            <div class="form-text">Logging level for application logs.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="refresh_rate" class="form-label">Refresh Rate (seconds)</label>
+                            <input type="number" class="form-control" id="refresh_rate" name="refresh_rate"
+                                   value="{{ config.refresh_rate|default:60 }}" min="0" max="3600">
+                            <div class="form-text">Auto-refresh rate for recipes and policies pages (in seconds). Set to 0 to disable.</div>
                         </div>
                         
                         <div class="mb-3 form-check">

@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form.instance.id|yesno:"Edit,New" }} Environment Variable Instance - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'env_vars_instances' %}">Environment Variable Instances</a></li>
+            {% if form.instance.id %}
+            <li class="breadcrumb-item"><a href="{% url 'env_vars_instance_detail' form.instance.id %}">{{ form.instance.name }}</a></li>
+            <li class="breadcrumb-item active">Edit</li>
+            {% else %}
+            <li class="breadcrumb-item active">New Instance</li>
+            {% endif %}
+        </ol>
+    </nav>
+
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-md-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header">
+            <h4 class="card-title mb-0">
+                {% if form.instance.id %}Edit{% else %}New{% endif %} Environment Variable Instance
+            </h4>
+        </div>
+        <div class="card-body">
+            <form method="post" id="env-vars-form">
+                {% csrf_token %}
+                
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label">Instance Name *</label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.name.errors }}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">A descriptive name for this set of environment variables</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.template.id_for_label }}" class="form-label">Template *</label>
+                            {{ form.template }}
+                            {% if form.template.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.template.errors }}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">The template defining which environment variables are needed</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.recipe_type.id_for_label }}" class="form-label">Recipe Type *</label>
+                            {{ form.recipe_type }}
+                            {% if form.recipe_type.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.recipe_type.errors }}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">The type of recipe these environment variables will be used with</div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.description.errors }}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">Optional description of this environment variable instance</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.tenant.id_for_label }}" class="form-label">Tenant</label>
+                            {{ form.tenant }}
+                            {% if form.tenant.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.tenant.errors }}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">Optional tenant association for multi-tenant environments</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h5 class="mb-3">Environment Variables</h5>
+                <div class="alert alert-info mb-4">
+                    <i class="fa fa-info-circle me-2"></i> 
+                    Variables marked as <span class="badge bg-success">Required</span> must have values. 
+                    Variables marked as <span class="badge bg-warning">Secret</span> will be stored securely and not displayed in plain text.
+                </div>
+                
+                <div id="env-vars-container">
+                    <!-- Dynamic form fields will be inserted here -->
+                    {% for formset in env_vars_formset %}
+                    <div class="env-var-row row mb-3">
+                        {% for field in formset.visible_fields %}
+                        <div class="col-md-{% if field.name == 'key' or field.name == 'value' %}3{% elif field.name == 'description' %}4{% else %}1{% endif %}">
+                            {% if forloop.first %}
+                            <div class="d-flex align-items-center h-100">
+                                <span class="me-2">{{ forloop.parentloop.counter }}.</span>
+                                {{ field }}
+                            </div>
+                            {% else %}
+                            {{ field }}
+                            {% endif %}
+                            
+                            {% if field.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ field.errors }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        
+                        <div class="col-md-1 d-flex align-items-center">
+                            {% if not formset.initial.is_required %}
+                            <button type="button" class="btn btn-outline-danger remove-env-var">
+                                <i class="fa fa-trash"></i>
+                            </button>
+                            {% else %}
+                            <button type="button" class="btn btn-outline-danger remove-env-var" disabled title="Required variables cannot be removed">
+                                <i class="fa fa-trash"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Hidden fields -->
+                        {% for field in formset.hidden_fields %}
+                        {{ field }}
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- Management form for formset -->
+                {{ env_vars_formset.management_form }}
+                
+                <div class="mb-4 mt-3">
+                    <button type="button" id="add-env-var" class="btn btn-outline-primary">
+                        <i class="fa fa-plus me-1"></i> Add Custom Environment Variable
+                    </button>
+                </div>
+                
+                <hr>
+                
+                <div class="d-flex justify-content-between">
+                    <div>
+                        {% if form.instance.id %}
+                        <a href="{% url 'env_vars_instance_detail' form.instance.id %}" class="btn btn-outline-secondary">
+                            <i class="fa fa-times me-1"></i> Cancel
+                        </a>
+                        {% else %}
+                        <a href="{% url 'env_vars_instances' %}" class="btn btn-outline-secondary">
+                            <i class="fa fa-times me-1"></i> Cancel
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa fa-save me-1"></i> Save Instance
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Empty row template for JavaScript -->
+<template id="env-var-row-template">
+    <div class="env-var-row row mb-3">
+        <div class="col-md-3">
+            <div class="d-flex align-items-center h-100">
+                <span class="me-2 row-number"></span>
+                <input type="text" name="env_vars-__prefix__-key" maxlength="255" 
+                       class="form-control" id="id_env_vars-__prefix__-key" placeholder="Key">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <input type="text" name="env_vars-__prefix__-value" maxlength="1024" 
+                   class="form-control" id="id_env_vars-__prefix__-value" placeholder="Value">
+        </div>
+        <div class="col-md-4">
+            <input type="text" name="env_vars-__prefix__-description" maxlength="255" 
+                   class="form-control" id="id_env_vars-__prefix__-description" placeholder="Description (optional)">
+        </div>
+        <div class="col-md-1">
+            <div class="form-check">
+                <input type="checkbox" name="env_vars-__prefix__-is_secret" 
+                       class="form-check-input" id="id_env_vars-__prefix__-is_secret">
+                <label class="form-check-label" for="id_env_vars-__prefix__-is_secret"></label>
+            </div>
+        </div>
+        <div class="col-md-1 d-flex align-items-center">
+            <button type="button" class="btn btn-outline-danger remove-env-var">
+                <i class="fa fa-trash"></i>
+            </button>
+        </div>
+        <input type="hidden" name="env_vars-__prefix__-id" id="id_env_vars-__prefix__-id">
+        <input type="hidden" name="env_vars-__prefix__-instance" id="id_env_vars-__prefix__-instance">
+        <input type="hidden" name="env_vars-__prefix__-is_required" id="id_env_vars-__prefix__-is_required" value="false">
+    </div>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        const formsetPrefix = 'env_vars';
+        let formCount = parseInt($('#id_' + formsetPrefix + '-TOTAL_FORMS').val());
+        const maxForms = parseInt($('#id_' + formsetPrefix + '-MAX_NUM_FORMS').val());
+        
+        // Update row numbers
+        function updateRowNumbers() {
+            $('.env-var-row').each(function(index) {
+                $(this).find('.row-number').text((index + 1) + '.');
+            });
+        }
+        
+        // Add new environment variable row
+        $('#add-env-var').click(function() {
+            if (formCount < maxForms) {
+                const template = document.getElementById('env-var-row-template');
+                const newRow = template.content.cloneNode(true);
+                
+                // Update form index
+                $(newRow).find('[name], [id]').each(function() {
+                    const name = $(this).attr('name');
+                    const id = $(this).attr('id');
+                    
+                    if (name) {
+                        $(this).attr('name', name.replace('__prefix__', formCount));
+                    }
+                    
+                    if (id) {
+                        $(this).attr('id', id.replace('__prefix__', formCount));
+                    }
+                });
+                
+                $('#env-vars-container').append(newRow);
+                formCount++;
+                $('#id_' + formsetPrefix + '-TOTAL_FORMS').val(formCount);
+                
+                updateRowNumbers();
+                
+                // Enable remove button for the new row
+                $('.env-var-row:last .remove-env-var').click(function() {
+                    $(this).closest('.env-var-row').remove();
+                    formCount--;
+                    $('#id_' + formsetPrefix + '-TOTAL_FORMS').val(formCount);
+                    updateRowNumbers();
+                });
+            } else {
+                alert('Maximum number of environment variables reached.');
+            }
+        });
+        
+        // Remove row button handler
+        $('.remove-env-var').click(function() {
+            if (!$(this).prop('disabled')) {
+                $(this).closest('.env-var-row').remove();
+                formCount--;
+                $('#id_' + formsetPrefix + '-TOTAL_FORMS').val(formCount);
+                updateRowNumbers();
+            }
+        });
+        
+        // Show/hide fields based on template selection
+        $('#{{ form.template.id_for_label }}').change(function() {
+            const templateId = $(this).val();
+            
+            if (templateId) {
+                $.ajax({
+                    url: '/env-vars/templates/' + templateId + '/variables/',
+                    method: 'GET',
+                    success: function(data) {
+                        // Clear existing non-required fields
+                        $('.env-var-row').each(function() {
+                            const isRequired = $(this).find('[name$="-is_required"]').val() === 'true';
+                            if (!isRequired) {
+                                $(this).remove();
+                                formCount--;
+                            }
+                        });
+                        
+                        // Add template variables
+                        data.variables.forEach(function(variable) {
+                            // Check if this variable already exists
+                            let exists = false;
+                            $('.env-var-row').each(function() {
+                                const key = $(this).find('[name$="-key"]').val();
+                                if (key === variable.key) {
+                                    exists = true;
+                                    return false;
+                                }
+                            });
+                            
+                            // Add if it doesn't exist
+                            if (!exists) {
+                                const template = document.getElementById('env-var-row-template');
+                                const newRow = template.content.cloneNode(true);
+                                
+                                // Update form index and values
+                                $(newRow).find('[name], [id]').each(function() {
+                                    const name = $(this).attr('name');
+                                    const id = $(this).attr('id');
+                                    
+                                    if (name) {
+                                        $(this).attr('name', name.replace('__prefix__', formCount));
+                                    }
+                                    
+                                    if (id) {
+                                        $(this).attr('id', id.replace('__prefix__', formCount));
+                                    }
+                                });
+                                
+                                $(newRow).find('[name$="-key"]').val(variable.key);
+                                $(newRow).find('[name$="-description"]').val(variable.description || '');
+                                $(newRow).find('[name$="-is_secret"]').prop('checked', variable.is_secret);
+                                $(newRow).find('[name$="-is_required"]').val(variable.is_required.toString());
+                                
+                                // Disable remove button if required
+                                if (variable.is_required) {
+                                    $(newRow).find('.remove-env-var').prop('disabled', true)
+                                        .attr('title', 'Required variables cannot be removed');
+                                }
+                                
+                                $('#env-vars-container').append(newRow);
+                                formCount++;
+                            }
+                        });
+                        
+                        $('#id_' + formsetPrefix + '-TOTAL_FORMS').val(formCount);
+                        updateRowNumbers();
+                        
+                        // Reattach remove handlers
+                        $('.remove-env-var').off('click').click(function() {
+                            if (!$(this).prop('disabled')) {
+                                $(this).closest('.env-var-row').remove();
+                                formCount--;
+                                $('#id_' + formsetPrefix + '-TOTAL_FORMS').val(formCount);
+                                updateRowNumbers();
+                            }
+                        });
+                    },
+                    error: function() {
+                        alert('Error loading template variables.');
+                    }
+                });
+            }
+        });
+        
+        // Form validation
+        $('#env-vars-form').submit(function(e) {
+            let valid = true;
+            
+            // Check that required fields have values
+            $('.env-var-row').each(function() {
+                const isRequired = $(this).find('[name$="-is_required"]').val() === 'true';
+                const key = $(this).find('[name$="-key"]').val().trim();
+                const value = $(this).find('[name$="-value"]').val().trim();
+                
+                if (isRequired && (key === '' || value === '')) {
+                    valid = false;
+                    
+                    if (key === '') {
+                        $(this).find('[name$="-key"]').addClass('is-invalid');
+                    }
+                    
+                    if (value === '') {
+                        $(this).find('[name$="-value"]').addClass('is-invalid');
+                    }
+                }
+            });
+            
+            if (!valid) {
+                e.preventDefault();
+                alert('Please fill in all required environment variables.');
+            }
+        });
+        
+        // Clear validation errors on input
+        $(document).on('input', '.form-control', function() {
+            $(this).removeClass('is-invalid');
+        });
+        
+        // Initial row numbers
+        updateRowNumbers();
+    });
+</script>
+{% endblock %} 

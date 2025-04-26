@@ -13,12 +13,13 @@ import shutil
 import logging
 from django.db import models
 import re
+from django.contrib.auth.decorators import login_required
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # Import custom forms
-from .forms import RecipeForm, RecipeImportForm, PolicyForm, PolicyImportForm, RecipeTemplateForm, RecipeDeployForm, RecipeTemplateImportForm
+from .forms import RecipeForm, RecipeImportForm, PolicyForm, PolicyImportForm, RecipeTemplateForm, RecipeDeployForm, RecipeTemplateImportForm, EnvVarsTemplateForm, EnvVarsInstanceForm
 
 # Try to import the DataHub client
 try:
@@ -27,7 +28,7 @@ try:
 except ImportError:
     DATAHUB_CLIENT_AVAILABLE = False
 
-from .models import AppSettings, GitHubSettings, LogEntry, RecipeTemplate
+from .models import AppSettings, GitHubSettings, LogEntry, RecipeTemplate, EnvVarsTemplate, EnvVarsInstance
 
 logger = logging.getLogger(__name__)
 
@@ -121,16 +122,57 @@ def recipes(request):
     """List all recipes."""
     client = get_datahub_client()
     recipes_list = []
+    connected = False
     
     if client and client.test_connection():
+        connected = True
         try:
             recipes_list = client.list_ingestion_sources()
+            
+            # Process each recipe to format schedule and status
+            for recipe in recipes_list:
+                # Format schedule nicely
+                schedule_data = recipe.get('schedule', {})
+                if schedule_data:
+                    if isinstance(schedule_data, dict):
+                        cron = schedule_data.get('interval', '')
+                        timezone = schedule_data.get('timezone', 'UTC')
+                        if cron:
+                            recipe['formatted_schedule'] = f"{cron} ({timezone})"
+                            # If we have a schedule, the recipe is enabled
+                            recipe['enabled'] = True
+                        else:
+                            recipe['formatted_schedule'] = None
+                            recipe['enabled'] = False
+                    # Handle case where schedule might be a string
+                    elif isinstance(schedule_data, str):
+                        recipe['formatted_schedule'] = schedule_data
+                        recipe['enabled'] = True
+                else:
+                    recipe['formatted_schedule'] = None
+                    recipe['enabled'] = False
+                
+                # Store the original schedule data for reference
+                recipe['schedule_data'] = schedule_data
+            
+            # Sort by name
+            recipes_list.sort(key=lambda x: x.get('name', '').lower())
         except Exception as e:
             messages.error(request, f"Error fetching recipes: {str(e)}")
+    else:
+        messages.warning(request, "Not connected to DataHub")
+    
+    # Get refresh rate from settings
+    refresh_rate = AppSettings.get_int('refresh_rate', 60)
+    
+    # Store connection status in session
+    request.session['datahub_connected'] = connected
     
     return render(request, 'recipes/list.html', {
         'title': 'Recipes',
-        'recipes': recipes_list
+        'recipes': recipes_list,
+        'refresh_rate': refresh_rate,
+        'connection': {'connected': connected}
     })
 
 def recipe_create(request):
@@ -145,9 +187,11 @@ def recipe_create(request):
                     recipe_content = form.cleaned_data['recipe_content']
                     try:
                         if recipe_content.strip().startswith('{'):
-                            recipe = json.loads(recipe_content)
+                            recipe_json = json.loads(recipe_content)
                         else:
-                            recipe = yaml.safe_load(recipe_content)
+                            # If content is in YAML format, convert to JSON before sending to DataHub
+                            import yaml
+                            recipe_json = yaml.safe_load(recipe_content)
                     except Exception as e:
                         messages.error(request, f"Invalid recipe format: {str(e)}")
                         return render(request, 'recipes/create.html', {'form': form})
@@ -164,7 +208,7 @@ def recipe_create(request):
                     result = client.create_ingestion_source(
                         name=form.cleaned_data['recipe_name'],
                         type=form.cleaned_data['recipe_type'],
-                        recipe=recipe,
+                        recipe=recipe_json,
                         source_id=form.cleaned_data['recipe_id'],
                         schedule=schedule,
                         executor_id="default"
@@ -237,9 +281,11 @@ def recipe_edit(request, recipe_id):
                 updated_recipe_content = form.cleaned_data['recipe_content']
                 try:
                     if updated_recipe_content.strip().startswith('{'):
-                        updated_recipe = json.loads(updated_recipe_content)
+                        updated_recipe_json = json.loads(updated_recipe_content)
                     else:
-                        updated_recipe = yaml.safe_load(updated_recipe_content)
+                        # If content is in YAML format, convert to JSON before sending to DataHub
+                        import yaml
+                        updated_recipe_json = yaml.safe_load(updated_recipe_content)
                 except Exception as e:
                     messages.error(request, f"Invalid recipe format: {str(e)}")
                     return render(request, 'recipes/edit.html', {
@@ -253,8 +299,14 @@ def recipe_edit(request, recipe_id):
                 if env_vars_data:
                     try:
                         env_vars_dict = json.loads(env_vars_data)
-                        updated_recipe = replace_env_vars_with_values(updated_recipe, env_vars_dict)
+                        # Store all environment variables
                         update_recipe_environment_variables(recipe_id, env_vars_dict)
+                        
+                        # Only replace values in the recipe if needed
+                        # This allows users to use placeholders in recipe that will be
+                        # replaced at runtime with actual values
+                        if form.cleaned_data.get('replace_env_vars', False):
+                            updated_recipe_json = replace_env_vars_with_values(updated_recipe_json, env_vars_dict)
                     except Exception as e:
                         logger.error(f"Error processing environment variables: {str(e)}")
                 
@@ -270,7 +322,7 @@ def recipe_edit(request, recipe_id):
                 result = client.patch_ingestion_source(
                     urn=recipe_id,
                     name=form.cleaned_data['recipe_name'],
-                    recipe=updated_recipe,
+                    recipe=updated_recipe_json,
                     schedule=schedule
                 )
                 
@@ -351,21 +403,32 @@ def recipe_delete(request, recipe_id):
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)})
 
-@require_POST
 def recipe_run(request, recipe_id):
     """Run a recipe immediately."""
     client = get_datahub_client()
     if not client or not client.test_connection():
-        return JsonResponse({'success': False, 'message': 'Not connected to DataHub'})
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': 'Not connected to DataHub'})
+        messages.error(request, "Not connected to DataHub")
+        return redirect('recipes')
     
     try:
         result = client.trigger_ingestion(recipe_id)
         if result:
-            return JsonResponse({'success': True, 'execution_id': result})
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': True, 'execution_id': result})
+            messages.success(request, "Recipe execution started successfully!")
+            return redirect('recipes')
         else:
-            return JsonResponse({'success': False, 'message': 'Failed to trigger ingestion'})
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'message': 'Failed to trigger ingestion'})
+            messages.error(request, "Failed to run recipe")
+            return redirect('recipes')
     except Exception as e:
-        return JsonResponse({'success': False, 'message': str(e)})
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'message': str(e)})
+        messages.error(request, f"Error running recipe: {str(e)}")
+        return redirect('recipes')
 
 def recipe_download(request, recipe_id):
     """Download a recipe as JSON."""
@@ -422,10 +485,14 @@ def policies(request):
     else:
         messages.warning(request, "Not connected to DataHub")
     
+    # Get refresh rate from settings
+    refresh_rate = AppSettings.get_int('refresh_rate', 60)
+    
     return render(request, 'policies/list.html', {
         'title': 'Policies',
         'policies': policies_list,
-        'connected': connected
+        'connected': connected,
+        'refresh_rate': refresh_rate
     })
 
 def policy_create(request):
@@ -602,16 +669,20 @@ def policy_delete(request, policy_id):
     """Delete a policy."""
     client = get_datahub_client()
     if not client or not client.test_connection():
-        return JsonResponse({'success': False, 'message': 'Not connected to DataHub'})
+        messages.error(request, "Not connected to DataHub")
+        return redirect('policies')
     
     try:
         result = client.delete_policy(policy_id)
         if result:
-            return JsonResponse({'success': True})
+            messages.success(request, f"Policy '{policy_id}' deleted successfully")
+            return redirect('policies')
         else:
-            return JsonResponse({'success': False, 'message': 'Failed to delete policy'})
+            messages.error(request, "Failed to delete policy")
+            return redirect('policies')
     except Exception as e:
-        return JsonResponse({'success': False, 'message': str(e)})
+        messages.error(request, f"Error deleting policy: {str(e)}")
+        return redirect('policies')
 
 def policy_download(request, policy_id):
     """Download a policy as JSON."""
@@ -626,9 +697,12 @@ def policy_download(request, policy_id):
         messages.error(request, f"Policy {policy_id} not found")
         return redirect('policies')
     
+    # Extract file name from policy name or ID
+    filename = f"policy_{policy_data.get('name', policy_id).replace(' ', '_').lower()}.json"
+    
     # Prepare response
     response = HttpResponse(json.dumps(policy_data, indent=2), content_type='application/json')
-    response['Content-Disposition'] = f'attachment; filename="policy_{policy_id}.json"'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
 def policy_detail(request, policy_id):
@@ -728,6 +802,114 @@ def policy_export_all(request):
         messages.error(request, f"Error exporting policies: {str(e)}")
         return redirect('policies')
 
+def export_all_policies(request):
+    """Alias for policy_export_all for consistency."""
+    return policy_export_all(request)
+
+def export_all_recipes(request):
+    """Export all recipes to JSON files in a zip archive."""
+    client = get_datahub_client()
+    if not client or not client.test_connection():
+        messages.error(request, "Not connected to DataHub")
+        return redirect('recipes')
+    
+    try:
+        # Create a temporary directory for recipes
+        output_dir = tempfile.mkdtemp()
+        
+        # Get all recipes
+        recipes_list = client.list_ingestion_sources()
+        
+        # Save each recipe to a file
+        for recipe in recipes_list:
+            recipe_id = recipe.get('urn', '').split(':')[-1] if recipe.get('urn') else recipe.get('id', 'unknown')
+            recipe_name = recipe.get('name', 'Unnamed').replace(' ', '_').lower()
+            filename = f"{recipe_name}_{recipe_id}.json"
+            
+            # Extract recipe content
+            recipe_content = recipe.get('config', {}).get('recipe', '{}')
+            if isinstance(recipe_content, str):
+                try:
+                    recipe_content = json.loads(recipe_content)
+                except:
+                    pass
+            
+            # Write recipe to file
+            with open(os.path.join(output_dir, filename), 'w') as f:
+                json.dump(recipe_content, f, indent=2)
+        
+        # Create a zip file
+        zip_path = os.path.join(tempfile.gettempdir(), f'datahub_recipes_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip')
+        shutil.make_archive(zip_path[:-4], 'zip', output_dir)
+        
+        # Clean up the temp directory
+        shutil.rmtree(output_dir, ignore_errors=True)
+        
+        # Serve the zip file
+        with open(zip_path, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='application/zip')
+            response['Content-Disposition'] = f'attachment; filename="datahub_recipes.zip"'
+        
+        # Clean up the zip file
+        os.unlink(zip_path)
+        
+        return response
+        
+    except Exception as e:
+        messages.error(request, f"Error exporting recipes: {str(e)}")
+        return redirect('recipes')
+
+def export_all_templates(request):
+    """Export all recipe templates to JSON files in a zip archive."""
+    try:
+        # Get all recipe templates from the database
+        templates = RecipeTemplate.objects.all()
+        
+        if not templates:
+            messages.warning(request, "No recipe templates found to export")
+            return redirect('recipe_templates')
+        
+        # Create a temporary directory for templates
+        output_dir = tempfile.mkdtemp()
+        
+        # Save each template to a file
+        for template in templates:
+            template_name = template.name.replace(' ', '_').lower()
+            filename = f"{template_name}_{template.id}.json"
+            
+            # Extract template content
+            template_content = template.content
+            if isinstance(template_content, str):
+                try:
+                    template_content = json.loads(template_content)
+                except:
+                    pass
+            
+            # Write template to file
+            with open(os.path.join(output_dir, filename), 'w') as f:
+                json.dump(template_content, f, indent=2)
+        
+        # Create a zip file
+        zip_path = os.path.join(tempfile.gettempdir(), f'datahub_templates_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip')
+        shutil.make_archive(zip_path[:-4], 'zip', output_dir)
+        
+        # Clean up the temp directory
+        shutil.rmtree(output_dir, ignore_errors=True)
+        
+        # Serve the zip file
+        with open(zip_path, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='application/zip')
+            response['Content-Disposition'] = f'attachment; filename="datahub_templates.zip"'
+        
+        # Clean up the zip file
+        os.unlink(zip_path)
+        
+        return response
+        
+    except Exception as e:
+        messages.error(request, f"Error exporting templates: {str(e)}")
+        return redirect('recipe_templates')
+
 def settings(request):
     """Settings page."""
     # Initialize the config dictionary
@@ -751,6 +933,7 @@ def settings(request):
         'log_level': AppSettings.get('log_level', 'INFO'),
         'timeout': AppSettings.get_int('timeout', 30),
         'debug_mode': AppSettings.get_bool('debug_mode', False),
+        'refresh_rate': AppSettings.get_int('refresh_rate', 60),
         
         # GitHub settings
         'github_token': GitHubSettings.get_token(),
@@ -824,17 +1007,34 @@ def settings(request):
         
         elif section == 'advanced_settings':
             # Update advanced settings
-            log_level = request.POST.get('log_level', 'INFO')
             timeout = request.POST.get('timeout', '30')
+            log_level = request.POST.get('log_level', 'INFO')
             debug_mode = 'debug_mode' in request.POST
+            refresh_rate = request.POST.get('refresh_rate', '60')
             
-            # Save settings to database
-            AppSettings.set('log_level', log_level)
-            AppSettings.set('timeout', timeout)
-            AppSettings.set('debug_mode', 'true' if debug_mode else 'false')
-            
-            messages.success(request, "Advanced settings updated")
-            
+            # Validate and save settings
+            try:
+                timeout = int(timeout)
+                if timeout < 5:
+                    timeout = 5
+                elif timeout > 300:
+                    timeout = 300
+                AppSettings.set('timeout', str(timeout))
+                
+                refresh_rate = int(refresh_rate)
+                if refresh_rate < 0:
+                    refresh_rate = 0
+                elif refresh_rate > 3600:
+                    refresh_rate = 3600
+                AppSettings.set('refresh_rate', str(refresh_rate))
+                
+                AppSettings.set('log_level', log_level)
+                AppSettings.set('debug_mode', 'true' if debug_mode else 'false')
+                
+                messages.success(request, "Advanced settings updated")
+            except ValueError:
+                messages.error(request, "Invalid value for timeout or refresh rate")
+        
         elif section == 'github_settings':
             # Update GitHub settings
             github_token = request.POST.get('github_token', '')
@@ -875,6 +1075,7 @@ def settings(request):
             'log_level': AppSettings.get('log_level', 'INFO'),
             'timeout': AppSettings.get_int('timeout', 30),
             'debug_mode': AppSettings.get_bool('debug_mode', False),
+            'refresh_rate': AppSettings.get_int('refresh_rate', 60),
             
             # GitHub settings
             'github_token': GitHubSettings.get_token(),
@@ -1361,6 +1562,10 @@ def recipe_template_import(request):
 
 def recipe_template_deploy(request, template_id):
     """Deploy a recipe template to DataHub."""
+    from .forms import RecipeDeployForm
+    from .models import RecipeManager
+    import uuid
+    
     template = get_object_or_404(RecipeTemplate, id=template_id)
     client = get_datahub_client()
     
@@ -1421,10 +1626,6 @@ def recipe_template_deploy(request, template_id):
         
     else:
         # Generate a default recipe ID and name based on template
-        from .forms import RecipeDeployForm
-        from .models import RecipeManager
-        import uuid
-        
         recipe_id = f"{template.recipe_type.lower()}-{uuid.uuid4().hex[:8]}"
         
         form = RecipeDeployForm(initial={
@@ -1670,9 +1871,16 @@ def get_recipe_environment_variables(recipe_id, recipe_content):
     try:
         secrets = RecipeSecret.objects.filter(recipe_id=recipe_id)
         for secret in secrets:
+            # If it's in env_vars, update the existing entry
             if secret.variable_name in env_vars:
                 env_vars[secret.variable_name]['value'] = secret.value
-                env_vars[secret.variable_name]['isSecret'] = True
+                env_vars[secret.variable_name]['isSecret'] = secret.is_secret
+            # Otherwise add a new entry
+            else:
+                env_vars[secret.variable_name] = {
+                    'value': secret.value,
+                    'isSecret': secret.is_secret
+                }
     except Exception as e:
         # Log error but continue
         logger.error(f"Error retrieving recipe secrets: {str(e)}")
@@ -1692,11 +1900,263 @@ def update_recipe_environment_variables(recipe_id, env_vars_dict):
     # Delete existing secrets
     RecipeSecret.objects.filter(recipe_id=recipe_id).delete()
     
-    # Store new secrets
+    # Store all variables
     for var_name, var_data in env_vars_dict.items():
-        if var_data.get('isSecret') and var_data.get('value'):
-            RecipeSecret.objects.create(
-                recipe_id=recipe_id,
-                variable_name=var_name,
-                value=var_data['value']
-            ) 
+        RecipeSecret.objects.create(
+            recipe_id=recipe_id,
+            variable_name=var_name,
+            value=var_data.get('value', ''),
+            is_secret=var_data.get('isSecret', False)
+        )
+
+@login_required
+def env_vars_templates(request):
+    """List all environment variables templates."""
+    templates = EnvVarsTemplate.objects.all().order_by('-updated_at')
+    return render(request, 'env_vars/templates.html', {'templates': templates})
+
+@login_required
+def env_vars_template_create(request):
+    """Create a new environment variables template."""
+    form = EnvVarsTemplateForm()
+    
+    if request.method == 'POST':
+        form = EnvVarsTemplateForm(request.POST)
+        if form.is_valid():
+            # Create new template
+            template = EnvVarsTemplate(
+                name=form.cleaned_data['name'],
+                description=form.cleaned_data['description'],
+                recipe_type=form.cleaned_data['recipe_type'],
+                variables=form.cleaned_data['variables']
+            )
+            
+            # Handle tags
+            if form.cleaned_data['tags']:
+                template.set_tags_list([tag.strip() for tag in form.cleaned_data['tags'].split(',')])
+            
+            template.save()
+            messages.success(request, f"Environment variables template '{template.name}' created successfully")
+            return redirect('env_vars_templates')
+        else:
+            messages.error(request, "Please correct the errors below")
+    
+    return render(request, 'env_vars/template_form.html', {
+        'form': form,
+        'title': 'Create Environment Variables Template',
+        'is_new': True
+    })
+
+@login_required
+def env_vars_instances(request):
+    """List all environment variables instances."""
+    instances = EnvVarsInstance.objects.all().order_by('-updated_at')
+    return render(request, 'env_vars/instances.html', {'instances': instances})
+
+@login_required
+def env_vars_instance_create(request):
+    """Create a new environment variables instance."""
+    form = EnvVarsInstanceForm()
+    
+    if request.method == 'POST':
+        form = EnvVarsInstanceForm(request.POST)
+        if form.is_valid():
+            # Create new instance
+            instance = EnvVarsInstance()
+            instance.name = form.cleaned_data['name']
+            instance.description = form.cleaned_data['description']
+            instance.template = form.cleaned_data['template']
+            instance.recipe_type = form.cleaned_data['recipe_type']
+            instance.variables = form.cleaned_data['variables']
+            instance.save()
+
+            messages.success(request, f"Environment variables instance '{instance.name}' created successfully")
+            return redirect('env_vars_instances')
+        else:
+            messages.error(request, "Please correct the errors below")
+    
+    return render(request, 'env_vars/instance_form.html', {
+        'form': form,
+        'title': 'Create Environment Variables Instance',
+        'is_new': True
+    })
+
+@login_required
+def env_vars_instance_edit(request, instance_id):
+    """Edit an existing environment variables instance."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    
+    if request.method == 'POST':
+        form = EnvVarsInstanceForm(request.POST)
+        if form.is_valid():
+            # Update instance
+            instance.name = form.cleaned_data['name']
+            instance.description = form.cleaned_data['description']
+            instance.template = form.cleaned_data['template']
+            instance.recipe_type = form.cleaned_data['recipe_type']
+            instance.variables = form.cleaned_data['variables']
+            instance.save()
+
+            messages.success(request, f"Environment variables instance '{instance.name}' updated successfully")
+            return redirect('env_vars_instances')
+        else:
+            messages.error(request, "Please correct the errors below")
+    else:
+        form = EnvVarsInstanceForm(initial={
+            'name': instance.name,
+            'description': instance.description,
+            'template': instance.template,
+            'recipe_type': instance.recipe_type,
+            'variables': instance.variables,
+        })
+    
+    return render(request, 'env_vars/instance_form.html', {
+        'form': form,
+        'instance': instance,
+        'title': f'Edit Environment Variables Instance: {instance.name}',
+        'is_new': False
+    })
+
+@login_required
+def env_vars_instance_delete(request, instance_id):
+    """Delete an environment variables instance."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    
+    if request.method == 'POST':
+        instance_name = instance.name
+        instance.delete()
+        messages.success(request, f"Environment variables instance '{instance_name}' deleted successfully")
+        return redirect('env_vars_instances')
+    
+    return render(request, 'env_vars/instance_confirm_delete.html', {'instance': instance})
+
+@login_required
+def env_vars_instance_detail(request, instance_id):
+    """View details of an environment variables instance."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    variables = instance.get_variables_dict()
+    
+    return render(request, 'env_vars/instance_detail.html', {
+        'instance': instance,
+        'variables': variables,
+    })
+
+@login_required
+def env_vars_template_details(request, template_id):
+    """Get the details of an environment variables template as JSON."""
+    template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    variables = template.get_variables_dict()
+    
+    # Convert to a list of variables with key, description, required, is_secret fields
+    variables_list = []
+    for key, details in variables.items():
+        variables_list.append({
+            'key': key,
+            'description': details.get('description', ''),
+            'required': details.get('required', False),
+            'is_secret': details.get('is_secret', False),
+            'default_value': details.get('default_value', '')
+        })
+    
+    response_data = {
+        'id': template.id,
+        'name': template.name,
+        'description': template.description,
+        'recipe_type': template.recipe_type,
+        'variables': variables_list
+    }
+    
+    return JsonResponse(response_data)
+
+@login_required
+def env_vars_template_list(request):
+    """Get a list of all environment variables templates as JSON."""
+    templates = EnvVarsTemplate.objects.all().order_by('name')
+    
+    templates_list = [{
+        'id': template.id,
+        'name': template.name,
+        'recipe_type': template.recipe_type,
+        'description': template.description,
+        'tags': template.get_tags_list(),
+        'variable_count': len(template.get_variables_dict())
+    } for template in templates]
+    
+    return JsonResponse({'templates': templates_list})
+
+@login_required
+def env_vars_template_get(request, template_id):
+    """Get a specific environment variables template as JSON."""
+    template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    response_data = {
+        'id': template.id,
+        'name': template.name,
+        'description': template.description,
+        'recipe_type': template.recipe_type,
+        'variables': template.get_variables_dict(),
+        'tags': template.get_tags_list(),
+        'created_at': template.created_at.isoformat(),
+        'updated_at': template.updated_at.isoformat()
+    }
+    
+    return JsonResponse(response_data)
+
+@login_required
+def env_vars_template_delete(request, template_id):
+    """Delete an environment variables template."""
+    template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    # Check if template is in use by any instances
+    instances_using_template = EnvVarsInstance.objects.filter(template=template).count()
+    
+    if request.method == 'POST':
+        template_name = template.name
+        template.delete()
+        messages.success(request, f"Environment variables template '{template_name}' deleted successfully")
+        return redirect('env_vars_templates')
+    
+    return render(request, 'env_vars/template_confirm_delete.html', {
+        'template': template,
+        'instances_count': instances_using_template
+    })
+
+@login_required
+def env_vars_instance_list(request):
+    """Get a list of all environment variables instances as JSON."""
+    instances = EnvVarsInstance.objects.all().order_by('name')
+    
+    instances_list = [{
+        'id': instance.id,
+        'name': instance.name,
+        'recipe_type': instance.recipe_type,
+        'description': instance.description,
+        'template_id': instance.template.id if instance.template else None,
+        'template_name': instance.template.name if instance.template else None,
+        'variable_count': len(instance.get_variables_dict())
+    } for instance in instances]
+    
+    return JsonResponse({'instances': instances_list})
+
+@login_required
+def env_vars_instance_json(request, instance_id):
+    """Get a specific environment variables instance as JSON."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    
+    response_data = {
+        'success': True,
+        'instance': {
+            'id': instance.id,
+            'name': instance.name,
+            'description': instance.description,
+            'recipe_type': instance.recipe_type,
+            'template_id': instance.template.id if instance.template else None,
+            'template_name': instance.template.name if instance.template else None,
+            'variables': instance.get_variables_dict(),
+            'created_at': instance.created_at.isoformat(),
+            'updated_at': instance.updated_at.isoformat()
+        }
+    }
+    
+    return JsonResponse(response_data) 

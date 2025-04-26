@@ -106,7 +106,7 @@
                                 <div class="list-group-item">
                                     <div class="d-flex w-100 justify-content-between">
                                         <h6 class="mb-1">{{ recipe.name }}</h6>
-                                        <small class="text-muted">{{ recipe.updated_at|date:"M d, Y" }}</small>
+                                        <small class="text-muted">{{ recipe.updated_at|date:"Y-m-d H:i:s" }} UTC</small>
                                     </div>
                                     <p class="mb-1 text-truncate">{{ recipe.description|default:"No description" }}</p>
                                     <div class="d-flex mt-2">
@@ -150,17 +150,17 @@
                                 <div class="list-group-item">
                                     <div class="d-flex w-100 justify-content-between">
                                         <h6 class="mb-1">{{ policy.name }}</h6>
-                                        <small class="text-muted">{{ policy.last_updated|date:"M d, Y" }}</small>
+                                        <small class="text-muted">{{ policy.last_updated|date:"Y-m-d H:i:s" }} UTC</small>
                                     </div>
                                     <p class="mb-1 text-truncate">{{ policy.description|default:"No description" }}</p>
                                     <div class="d-flex mt-2">
                                         <a href="{% url 'policy_view' policy.id %}" class="btn btn-sm btn-outline-secondary me-2">
                                             <i class="fas fa-eye me-1"></i> View
                                         </a>
-                                        <span class="badge bg-{% if policy.type == 'METADATA' %}primary{% else %}secondary{% endif %} me-2">
+                                        <span class="badge bg-{% if policy.type == 'METADATA' %}primary{% else %}secondary{% endif %} me-2 d-flex align-items-center">
                                             {{ policy.type }}
                                         </span>
-                                        <span class="badge bg-{% if policy.state == 'ACTIVE' %}success{% else %}warning{% endif %}">
+                                        <span class="badge bg-{% if policy.state == 'ACTIVE' %}success{% else %}warning{% endif %} d-flex align-items-center">
                                             {{ policy.state }}
                                         </span>
                                     </div>

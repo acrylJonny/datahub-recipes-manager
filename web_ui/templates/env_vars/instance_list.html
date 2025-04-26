@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}Environment Variable Instances - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Environment Variable Instances</h2>
+        <div>
+            <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary me-2">
+                <i class="fa fa-list me-1"></i> Templates
+            </a>
+            <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary">
+                <i class="fa fa-plus me-1"></i> New Instance
+            </a>
+        </div>
+    </div>
+    
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-md-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <div class="input-group">
+                        <input type="text" name="search" class="form-control" placeholder="Search instances..." value="{{ request.GET.search|default:'' }}">
+                        <button class="btn btn-outline-secondary" type="submit">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select name="recipe_type" class="form-select">
+                        <option value="">All Recipe Types</option>
+                        {% for type_id, type_name in recipe_types %}
+                        <option value="{{ type_id }}" {% if request.GET.recipe_type == type_id %}selected{% endif %}>
+                            {{ type_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select name="template" class="form-select">
+                        <option value="">All Templates</option>
+                        {% for template in templates %}
+                        <option value="{{ template.id }}" {% if request.GET.template == template.id|stringformat:"s" %}selected{% endif %}>
+                            {{ template.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fa fa-filter me-1"></i> Filter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body">
+                    {% if instances %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Recipe Type</th>
+                                    <th>Description</th>
+                                    <th>Last Updated</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for instance in instances %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'env_vars_instance_detail' instance.id %}">
+                                            {{ instance.name }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'env_vars_template_detail' instance.template.id %}">
+                                            {{ instance.template.name }}
+                                        </a>
+                                    </td>
+                                    <td>{{ instance.get_recipe_type_display }}</td>
+                                    <td>{{ instance.description|default:"-" }}</td>
+                                    <td>{{ instance.updated_at|date:"Y-m-d H:i" }}</td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fa fa-eye"></i>
+                                            </a>
+                                            <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fa fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" 
+                                                    data-bs-toggle="modal" 
+                                                    data-bs-target="#deleteModal" 
+                                                    data-instance-id="{{ instance.id }}"
+                                                    data-instance-name="{{ instance.name }}">
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    {% if instances.has_other_pages %}
+                    <nav aria-label="Page navigation" class="mt-3">
+                        <ul class="pagination justify-content-center">
+                            {% if instances.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?{% url_replace request 'page' instances.previous_page_number %}" aria-label="Previous">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+                            {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link" aria-hidden="true">&laquo;</span>
+                            </li>
+                            {% endif %}
+                            
+                            {% for i in instances.paginator.page_range %}
+                                {% if instances.number == i %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ i }}</span>
+                                </li>
+                                {% elif i > instances.number|add:'-3' and i < instances.number|add:'3' %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?{% url_replace request 'page' i %}">{{ i }}</a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if instances.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?{% url_replace request 'page' instances.next_page_number %}" aria-label="Next">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                            {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link" aria-hidden="true">&raquo;</span>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="fa fa-clipboard-list fa-3x text-muted mb-3"></i>
+                        <h5>No Environment Variable Instances</h5>
+                        <p class="text-muted">
+                            {% if request.GET.search or request.GET.recipe_type or request.GET.template %}
+                            No instances match your search criteria. <a href="{% url 'env_vars_instances' %}">Clear filters</a>
+                            {% else %}
+                            You haven't created any environment variable instances yet.
+                            {% endif %}
+                        </p>
+                        <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary mt-2">
+                            <i class="fa fa-plus me-1"></i> Create New Instance
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the instance "<span id="instance-name"></span>"?</p>
+                <p class="text-danger"><strong>Warning:</strong> This action cannot be undone. Any recipes using this instance will be affected.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-form" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        $('#deleteModal').on('show.bs.modal', function(event) {
+            const button = $(event.relatedTarget);
+            const instanceId = button.data('instance-id');
+            const instanceName = button.data('instance-name');
+            
+            const modal = $(this);
+            modal.find('#instance-name').text(instanceName);
+            modal.find('#delete-form').attr('action', `/env-vars/instance/${instanceId}/delete/`);
+        });
+    });
+</script>
+{% endblock %} 

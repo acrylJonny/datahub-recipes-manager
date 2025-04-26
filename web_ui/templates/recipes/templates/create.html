@@ -68,20 +68,30 @@
                     </div>
                 </div>
                 
-                <div class="row mb-3">
-                    <div class="col-md-12">
-                        <label for="id_content" class="form-label">Recipe Content (YAML/JSON) <span class="text-danger">*</span></label>
-                        <div class="input-group mb-2">
-                            <span class="input-group-text">Format</span>
-                            <select class="form-select" id="format-selector" style="max-width: 120px;">
-                                <option value="yaml" {% if form.content.value and not form.content.value|slice:":1" == '{' %}selected{% endif %}>YAML</option>
-                                <option value="json" {% if form.content.value and form.content.value|slice:":1" == '{' %}selected{% endif %}>JSON</option>
-                            </select>
-                            <button type="button" class="btn btn-outline-secondary" id="format-button">
-                                Format
-                            </button>
+                <div class="mb-3">
+                    <label for="id_content" class="form-label">Recipe Content (YAML/JSON) <span class="text-danger">*</span></label>
+                    
+                    <!-- Simple Recipe Editor Implementation -->
+                    <div class="card recipe-editor-box mb-2">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="m-0 fw-bold"><i class="fas fa-code me-2"></i>Recipe Definition</h6>
+                            <div>
+                                <div class="btn-group btn-group-sm me-2" role="group">
+                                    <input type="radio" class="btn-check" name="format" id="yamlFormat" value="yaml" {% if form.content.value and not form.content.value|slice:":1" == '{' %}checked{% endif %}>
+                                    <label class="btn btn-outline-secondary" for="yamlFormat">YAML</label>
+                                    
+                                    <input type="radio" class="btn-check" name="format" id="jsonFormat" value="json" {% if form.content.value and form.content.value|slice:":1" == '{' %}checked{% endif %}>
+                                    <label class="btn btn-outline-secondary" for="jsonFormat">JSON</label>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="formatButton">
+                                    <i class="fas fa-code me-1"></i> Format
+                                </button>
+                            </div>
                         </div>
-                        <textarea class="form-control code-editor" id="id_content" name="content" rows="20" required>{{ form.content.value|default:'' }}</textarea>
+                        <div class="card-body p-0">
+                            <textarea id="id_content" name="content" rows="20" required class="d-none">{{ form.content.value|default:'' }}</textarea>
+                            <div id="editor-container" class="fill-height"></div>
+                        </div>
                     </div>
                 </div>
                 
@@ -96,86 +106,183 @@
 {% endblock %}
 
 {% block styles %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/eclipse.min.css">
 <style>
-    .CodeMirror {
-        height: 400px;
-        border: 1px solid #ced4da;
-        border-radius: 0.25rem;
+    .fill-height {
+        height: 100%;
+    }
+    
+    .recipe-editor-box {
+        margin-bottom: 1rem;
+    }
+    
+    #recipe_textarea {
+        width: 100%;
+        min-height: 300px;
+        font-family: Monaco, Menlo, "Ubuntu Mono", Consolas, source-code-pro, monospace;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        padding: 0.8rem;
+        border: none;
+        white-space: pre;
+        overflow-wrap: normal;
+        overflow-x: auto;
     }
 </style>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/yaml/yaml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
-
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Initialize CodeMirror
-        const contentArea = document.getElementById('id_content');
-        const initialContent = contentArea.value.trim();
-        const initialMode = initialContent.startsWith('{') ? 'application/json' : 'text/x-yaml';
+        // Replace the original textarea with a simpler one for our editor
+        const originalTextarea = document.getElementById('id_content');
+        if (!originalTextarea) return;
         
-        const editor = CodeMirror.fromTextArea(contentArea, {
-            mode: initialMode,
-            theme: 'eclipse',
-            lineNumbers: true,
-            indentUnit: 2,
-            tabSize: 2,
-            lineWrapping: true,
-            foldGutter: true,
-            gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"]
+        // Store the original content for reset functionality
+        const originalContent = originalTextarea.value || '';
+        const isJsonOriginal = originalContent.trim().startsWith('{');
+        
+        // Create a new textarea in a container
+        const editorDiv = document.getElementById('editor-container');
+        
+        const newTextarea = document.createElement('textarea');
+        newTextarea.id = 'recipe_textarea';
+        newTextarea.className = 'form-control-plaintext fill-height';
+        newTextarea.value = originalContent;
+        newTextarea.placeholder = 'Enter your recipe template definition in YAML or JSON format';
+        newTextarea.style.resize = 'none';
+        
+        // Add the textarea to the container
+        editorDiv.appendChild(newTextarea);
+        
+        // Improved auto-resize function
+        function autoResizeTextarea() {
+            // Reset the height to auto so we can get the actual scrollHeight
+            newTextarea.style.height = 'auto';
+            
+            // Set the height to scrollHeight to fit all content
+            const newHeight = Math.max(300, newTextarea.scrollHeight + 10);
+            newTextarea.style.height = newHeight + 'px';
+            
+            // Ensure resize handle is disabled
+            newTextarea.style.resize = 'none';
+            
+            // Update parent container heights if needed
+            if (editorDiv) {
+                editorDiv.style.minHeight = newHeight + 'px';
+            }
+        }
+        
+        // Reset function to restore original content
+        function resetContent() {
+            // Set format radio button based on original content
+            if (isJsonOriginal) {
+                document.getElementById('jsonFormat').checked = true;
+            } else {
+                document.getElementById('yamlFormat').checked = true;
+            }
+            
+            // Restore content
+            newTextarea.value = originalContent;
+            originalTextarea.value = originalContent;
+            
+            // Resize after content change
+            setTimeout(autoResizeTextarea, 10);
+        }
+        
+        // Initial resize with a slight delay to ensure content is rendered
+        setTimeout(autoResizeTextarea, 10);
+        
+        // Resize on input
+        newTextarea.addEventListener('input', function() {
+            originalTextarea.value = this.value;
+            autoResizeTextarea();
         });
         
-        // Format selector
-        const formatSelector = document.getElementById('format-selector');
-        formatSelector.addEventListener('change', function() {
-            const mode = this.value === 'json' ? 'application/json' : 'text/x-yaml';
-            editor.setOption('mode', mode);
-        });
-        
-        // Format button
-        const formatButton = document.getElementById('format-button');
-        formatButton.addEventListener('click', function() {
-            try {
-                const content = editor.getValue();
-                const format = formatSelector.value;
+        // Disable resize attempts via the DOM
+        newTextarea.addEventListener('mousedown', function(e) {
+            const rect = newTextarea.getBoundingClientRect();
+            const isInResizeArea = 
+                e.clientX > rect.right - 20 && 
+                e.clientY > rect.bottom - 20;
                 
-                if (format === 'json') {
-                    // Convert to JSON if it's YAML
-                    if (!content.trim().startsWith('{')) {
-                        const obj = jsyaml.load(content);
-                        editor.setValue(JSON.stringify(obj, null, 2));
-                    } else {
-                        // Just reformat JSON
-                        const obj = JSON.parse(content);
-                        editor.setValue(JSON.stringify(obj, null, 2));
-                    }
-                } else {
-                    // Convert to YAML if it's JSON
-                    if (content.trim().startsWith('{')) {
-                        const obj = JSON.parse(content);
-                        editor.setValue(jsyaml.dump(obj));
-                    } else {
-                        // Just reformat YAML
-                        const obj = jsyaml.load(content);
-                        editor.setValue(jsyaml.dump(obj));
-                    }
-                }
-                
-                editor.setOption('mode', format === 'json' ? 'application/json' : 'text/x-yaml');
-            } catch (e) {
-                alert('Error formatting: ' + e.message);
+            if (isInResizeArea) {
+                e.preventDefault();
+                e.stopPropagation();
             }
         });
         
-        // Form submission - update textarea with editor content
-        document.querySelector('form').addEventListener('submit', function() {
-            editor.save();
+        // Format toggle handling
+        document.querySelectorAll('input[name="format"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const format = this.value;
+                const content = newTextarea.value;
+                
+                try {
+                    let newContent = content;
+                    
+                    // Convert between formats
+                    if (format === 'json' && !content.trim().startsWith('{')) {
+                        const obj = jsyaml.load(content);
+                        newContent = JSON.stringify(obj, null, 2);
+                    } else if (format === 'yaml' && content.trim().startsWith('{')) {
+                        const obj = JSON.parse(content);
+                        newContent = jsyaml.dump(obj);
+                    }
+                    
+                    newTextarea.value = newContent;
+                    originalTextarea.value = newContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error changing format:', e);
+                    alert('Error changing format. Please check your syntax.');
+                }
+            });
+        });
+        
+        // Format button handler
+        const formatButton = document.getElementById('formatButton');
+        if (formatButton) {
+            formatButton.addEventListener('click', function() {
+                const format = document.querySelector('input[name="format"]:checked').value;
+                
+                try {
+                    const content = newTextarea.value;
+                    let formattedContent = content;
+                    
+                    if (format === 'json') {
+                        const obj = JSON.parse(content);
+                        formattedContent = JSON.stringify(obj, null, 2);
+                    } else {
+                        const obj = jsyaml.load(content);
+                        formattedContent = jsyaml.dump(obj);
+                    }
+                    
+                    newTextarea.value = formattedContent;
+                    originalTextarea.value = formattedContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error formatting:', e);
+                    alert('Error formatting code. Please check your syntax.');
+                }
+            });
+        }
+        
+        // Update form on submission
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', function() {
+                originalTextarea.value = newTextarea.value;
+            });
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            setTimeout(autoResizeTextarea, 10);
         });
     });
 </script>
