@@ -121,18 +121,13 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link{% if request.path == '/logs/' %} active{% endif %}" href="{% url 'logs' %}">
-                                <i class="fas fa-clipboard-list fa-fw me-2"></i> Logs
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link{% if request.path == '/settings/' %} active{% endif %}" href="{% url 'settings' %}">
-                                <i class="fas fa-cog fa-fw me-2"></i> Settings
-                            </a>
-                        </li>
-                        <li class="nav-item">
                             <a class="nav-link" href="{% url 'github' %}">
                                 <i class="fab fa-github"></i> GitHub
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/logs/' %} active{% endif %}" href="{% url 'logs' %}">
+                                <i class="fas fa-clipboard-list fa-fw me-2"></i> Logs
                             </a>
                         </li>
                     </ul>

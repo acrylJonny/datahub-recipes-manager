@@ -104,8 +104,10 @@
                             {% if instance.deployed %}
                                 <form action="{% url 'recipe_instance_undeploy' instance.id %}" method="post" class="d-inline">
                                     {% csrf_token %}
-                                    <button type="submit" class="btn btn-warning">
-                                        <i class="fas fa-cloud-download-alt me-1"></i> Undeploy
+                                    <button type="submit" class="btn btn-danger ms-2" 
+                                            data-bs-toggle="tooltip" data-bs-placement="top" 
+                                            title="Delete from DataHub but keep locally">
+                                        <i class="fas fa-cloud-download-alt me-1"></i> Undeploy (Delete from DataHub)
                                     </button>
                                 </form>
                             {% else %}

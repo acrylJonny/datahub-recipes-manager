@@ -111,16 +111,13 @@
                                             <a href="{% url 'recipe_download' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-secondary">
                                                 <i class="fas fa-download"></i>
                                             </a>
-                                            <a href="{% url 'recipe_convert_to_template_instance' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info" title="Convert to Template & Instance">
-                                                <i class="fas fa-file-export"></i>
-                                            </a>
                                             <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-copy"></i>
                                             </a>
                                             <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}">
                                                 <i class="fas fa-play"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}">
+                                            <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}" data-bs-toggle="modal" data-bs-target="#deleteRecipeModal">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </div>
@@ -239,13 +236,93 @@
         // Handle delete recipe modal
         const deleteModal = document.getElementById('deleteRecipeModal');
         if (deleteModal) {
+            // Set up the modal data when opened
             deleteModal.addEventListener('show.bs.modal', function(event) {
                 const button = event.relatedTarget;
                 const recipeId = button.getAttribute('data-recipe-id');
                 const recipeName = button.getAttribute('data-recipe-name');
                 
                 document.getElementById('delete-recipe-name').textContent = recipeName;
-                document.getElementById('delete-recipe-form').action = "{% url 'recipe_delete' 0 %}".replace('0', recipeId);
+                const deleteForm = document.getElementById('delete-recipe-form');
+                deleteForm.setAttribute('data-recipe-id', recipeId);
+                deleteForm.action = `/recipes/delete/${encodeURIComponent(recipeId)}/`;
+            });
+            
+            // Handle form submission with AJAX
+            document.getElementById('delete-recipe-form').addEventListener('submit', function(event) {
+                event.preventDefault();
+                
+                const recipeId = this.getAttribute('data-recipe-id');
+                const deleteButton = this.querySelector('button[type="submit"]');
+                const originalText = deleteButton.innerHTML;
+                
+                // Disable button and show spinner
+                deleteButton.disabled = true;
+                deleteButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Deleting...';
+                
+                // Send AJAX request to delete recipe
+                fetch(this.action, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken(),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide modal
+                    const modalInstance = bootstrap.Modal.getInstance(deleteModal);
+                    modalInstance.hide();
+                    
+                    if (data.success) {
+                        // Show success message and refresh the page
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Recipe deleted successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Show toast and reload page after a short delay
+                        const bsToast = new bootstrap.Toast(toast, { delay: 2000 });
+                        bsToast.show();
+                        
+                        // Reload the page after the toast is shown
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        // Re-enable button
+                        deleteButton.disabled = false;
+                        deleteButton.innerHTML = originalText;
+                        
+                        // Show error message
+                        alert(`Error: ${data.error || 'Failed to delete recipe'}`);
+                    }
+                })
+                .catch(error => {
+                    // Re-enable button
+                    deleteButton.disabled = false;
+                    deleteButton.innerHTML = originalText;
+                    
+                    // Hide modal
+                    const modalInstance = bootstrap.Modal.getInstance(deleteModal);
+                    modalInstance.hide();
+                    
+                    // Show error message
+                    alert(`Error: ${error.message || 'Failed to delete recipe'}`);
+                });
             });
         }
         
@@ -261,12 +338,14 @@
                 this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
                 
                 // Send AJAX request to run recipe
-                fetch("{% url 'recipe_run' 0 %}".replace('0', recipeId), {
+                fetch(`/recipes/run/${recipeId}/`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': getCSRFToken()
-                    }
+                        'X-CSRFToken': getCSRFToken(),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({})
                 })
                 .then(response => response.json())
                 .then(data => {

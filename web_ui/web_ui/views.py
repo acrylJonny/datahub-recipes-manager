@@ -401,42 +401,66 @@ def recipe_import(request):
 def recipe_delete(request, recipe_id):
     """Delete a recipe."""
     client = get_datahub_client()
-    if not client or not client.test_connection():
-        return JsonResponse({'success': False, 'message': 'Not connected to DataHub'})
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     
-    try:
-        result = client.delete_ingestion_source(recipe_id)
-        if result:
-            return JsonResponse({'success': True})
-        else:
-            return JsonResponse({'success': False, 'message': 'Failed to delete recipe'})
-    except Exception as e:
-        return JsonResponse({'success': False, 'message': str(e)})
-
-def recipe_run(request, recipe_id):
-    """Run a recipe immediately."""
-    client = get_datahub_client()
     if not client or not client.test_connection():
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': False, 'message': 'Not connected to DataHub'})
+        if is_ajax:
+            return JsonResponse({'success': False, 'error': 'Not connected to DataHub'})
         messages.error(request, "Not connected to DataHub")
         return redirect('recipes')
     
     try:
-        result = client.trigger_ingestion(recipe_id)
+        result = client.delete_ingestion_source(recipe_id)
         if result:
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'success': True, 'execution_id': result})
-            messages.success(request, "Recipe execution started successfully!")
+            if is_ajax:
+                return JsonResponse({'success': True, 'redirect': '/recipes/'})
+            messages.success(request, "Recipe deleted successfully")
             return redirect('recipes')
         else:
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'success': False, 'message': 'Failed to trigger ingestion'})
-            messages.error(request, "Failed to run recipe")
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': 'Failed to delete recipe'})
+            messages.error(request, "Failed to delete recipe")
             return redirect('recipes')
     except Exception as e:
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': False, 'message': str(e)})
+        if is_ajax:
+            return JsonResponse({'success': False, 'error': str(e)})
+        messages.error(request, f"Error deleting recipe: {str(e)}")
+        return redirect('recipes')
+
+def recipe_run(request, recipe_id):
+    """Run a recipe immediately."""
+    client = get_datahub_client()
+    
+    # Check if this is a POST or AJAX request
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    is_post = request.method == 'POST'
+    
+    if not client or not client.test_connection():
+        if is_ajax:
+            return JsonResponse({'success': False, 'error': 'Not connected to DataHub'})
+        messages.error(request, "Not connected to DataHub")
+        return redirect('recipes')
+    
+    try:
+        # Make sure we're always sending a POST for the actual run action
+        if is_post or is_ajax:
+            result = client.trigger_ingestion(recipe_id)
+            if result:
+                if is_ajax:
+                    return JsonResponse({'success': True, 'execution_id': result})
+                messages.success(request, "Recipe execution started successfully!")
+                return redirect('recipes')
+            else:
+                if is_ajax:
+                    return JsonResponse({'success': False, 'error': 'Failed to trigger ingestion'})
+                messages.error(request, "Failed to run recipe")
+                return redirect('recipes')
+        else:
+            # If it's a GET request, just redirect to recipes
+            return redirect('recipes')
+    except Exception as e:
+        if is_ajax:
+            return JsonResponse({'success': False, 'error': str(e)})
         messages.error(request, f"Error running recipe: {str(e)}")
         return redirect('recipes')
 
@@ -1736,6 +1760,7 @@ def recipe_save_as_template(request, recipe_id):
     recipe_name = recipe_data.get('name', '')
     recipe_type = recipe_data.get('type', '')
     recipe_content = recipe_data.get('config', {}).get('recipe', '{}')
+    original_content = recipe_content
     
     # Convert leaf values to environment variables
     if isinstance(recipe_content, dict):
@@ -1747,7 +1772,8 @@ def recipe_save_as_template(request, recipe_id):
         form = RecipeTemplateForm(request.POST)
         
         if form.is_valid():
-            from .models import RecipeTemplate
+            from .models import RecipeTemplate, EnvVarsInstance
+            import re
             
             # Create the template
             template = RecipeTemplate(
@@ -1762,6 +1788,78 @@ def recipe_save_as_template(request, recipe_id):
                 template.set_tags_list([tag.strip() for tag in form.cleaned_data['tags'].split(',')])
             
             template.save()
+            
+            # Extract environment variables
+            env_vars = {}
+            
+            # Find all environment variables using regex
+            regex = r'\${([^}]+)}'
+            matches = re.findall(regex, form.cleaned_data['content'])
+            
+            # Create environment variables dictionary
+            for var_name in matches:
+                # Determine if it looks like a secret based on name
+                is_secret = any(keyword in var_name.lower() for keyword in ['password', 'secret', 'key', 'token', 'auth'])
+                
+                # Try to extract actual value from original content
+                value = ""
+                try:
+                    # If we have the original dict content
+                    if isinstance(original_content, dict):
+                        # Try to find the value in the original content by traversing the path
+                        parts = var_name.lower().split('_')
+                        current = original_content
+                        for part in parts:
+                            # Try to find a key that matches (case insensitive)
+                            found = False
+                            for key in current.keys():
+                                if key.lower() == part:
+                                    current = current[key]
+                                    found = True
+                                    break
+                            
+                            if not found:
+                                break
+                        
+                        # If we found a value and it's a leaf node, use it
+                        if found and not isinstance(current, (dict, list)):
+                            value = str(current)
+                except Exception:
+                    # If we can't extract the value, leave it blank
+                    pass
+                
+                env_vars[var_name] = {
+                    "value": value,
+                    "is_required": True,
+                    "is_secret": is_secret
+                }
+            
+            # Only create environment variables instance if we have variables
+            if env_vars:
+                try:
+                    # Create a matching environment variables instance
+                    env_vars_instance = EnvVarsInstance(
+                        name=f"{template.name} Variables",
+                        description=f"Environment variables extracted from {recipe_name}",
+                        recipe_type=template.recipe_type,
+                        variables=json.dumps(env_vars)
+                    )
+                    env_vars_instance.save()
+                    messages.success(request, f"Created environment variables instance '{env_vars_instance.name}' with {len(env_vars)} variables")
+                    
+                    # Also create a recipe instance linking them
+                    from .models import RecipeInstance
+                    instance = RecipeInstance(
+                        name=f"{template.name} Instance",
+                        description=f"Instance created from {recipe_name}",
+                        template=template,
+                        env_vars_instance=env_vars_instance
+                    )
+                    instance.save()
+                    messages.success(request, f"Created recipe instance '{instance.name}'")
+                except Exception as e:
+                    messages.warning(request, f"Could not create environment variables instance: {str(e)}")
+            
             messages.success(request, f"Recipe saved as template '{template.name}' successfully")
             return redirect('recipe_templates')
     else:
@@ -2307,7 +2405,7 @@ def recipe_instance_deploy(request, instance_id):
     return redirect('recipe_instances')
 
 def recipe_instance_undeploy(request, instance_id):
-    """Undeploy a recipe instance from DataHub."""
+    """Undeploy a recipe instance from DataHub by deleting it from the server."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
     client = get_datahub_client()
     
@@ -2316,26 +2414,145 @@ def recipe_instance_undeploy(request, instance_id):
         return redirect('recipe_instances')
     
     try:
+        deletion_succeeded = False
+        
         if instance.datahub_urn:
-            # Delete from DataHub
-            result = client.delete_ingestion_source(instance.datahub_urn)
+            # First try - delete using the URN
+            try:
+                result = client.delete_ingestion_source(instance.datahub_urn)
+                if result:
+                    deletion_succeeded = True
+                    logger.info(f"Recipe '{instance.name}' deleted from DataHub using URN: {instance.datahub_urn}")
+            except Exception as e:
+                logger.warning(f"Failed to delete recipe using URN: {str(e)}")
+            
+            # Second try - If the first attempt failed, try with the recipe ID
+            if not deletion_succeeded:
+                try:
+                    recipe_id = instance.get_recipe_id()
+                    if recipe_id:
+                        result = client.delete_ingestion_source(recipe_id)
+                        if result:
+                            deletion_succeeded = True
+                            logger.info(f"Recipe '{instance.name}' deleted from DataHub using recipe ID: {recipe_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete recipe using recipe ID: {str(e)}")
+        else:
+            messages.warning(request, "Recipe instance does not have a DataHub URN. It may not be deployed.")
+        
+        # Always mark as undeployed locally, even if DataHub deletion failed
+        instance.deployed = False
+        instance.deployed_at = None
+        
+        # If the force_undeploy flag is set or the deletion succeeded, clear the URN
+        if deletion_succeeded or request.POST.get('force_undeploy'):
+            instance.datahub_urn = ''  # Clear the URN reference
+        
+        instance.save()
+        
+        if deletion_succeeded:
+            messages.success(request, f"Recipe instance '{instance.name}' successfully deleted from DataHub")
+        elif request.POST.get('force_undeploy'):
+            messages.warning(request, f"Recipe instance '{instance.name}' marked as undeployed locally only. The recipe may still exist in DataHub.")
+        else:
+            messages.error(request, f"Failed to delete recipe '{instance.name}' from DataHub, but marked as undeployed locally.")
+    except Exception as e:
+        messages.error(request, f"Error undeploying recipe instance: {str(e)}")
+        logger.error(f"Error undeploying recipe instance: {str(e)}", exc_info=True)
+    
+    return redirect('recipe_instances')
+
+def recipe_instance_redeploy(request, instance_id):
+    """Redeploy a recipe instance to DataHub, updating an existing deployment."""
+    instance = get_object_or_404(RecipeInstance, id=instance_id)
+    client = get_datahub_client()
+    
+    if not client or not client.test_connection():
+        messages.error(request, "Not connected to DataHub")
+        return redirect('recipe_instances')
+    
+    try:
+        # Get combined content with env vars applied
+        recipe_content = instance.get_combined_content()
+        
+        if not recipe_content:
+            messages.error(request, "Unable to generate recipe content")
+            return redirect('recipe_instances')
+        
+        if instance.deployed and instance.datahub_urn:
+            # Update existing recipe
+            recipe_id = instance.get_recipe_id()
+            if not recipe_id:
+                messages.error(request, "Unable to extract recipe ID from URN")
+                return redirect('recipe_instances')
+                
+            # Prepare the recipe data for update
+            recipe_data = {
+                'name': instance.name,
+                'description': instance.description or '',
+                'recipe': recipe_content,
+                'type': instance.template.recipe_type,
+            }
+            
+            # Update in DataHub
+            result = client.update_ingestion_source(recipe_id, recipe_data)
             
             if result:
                 # Update the instance
-                instance.deployed = False
-                instance.deployed_at = None
-                # Keep the URN for reference, but could be cleared if desired
+                instance.deployed_at = timezone.now()
                 instance.save()
                 
-                messages.success(request, f"Recipe instance '{instance.name}' undeployed successfully")
+                messages.success(request, f"Recipe instance '{instance.name}' redeployed successfully")
             else:
-                messages.error(request, "Failed to undeploy recipe instance")
+                messages.error(request, "Failed to redeploy recipe instance")
         else:
-            messages.error(request, "Recipe instance has not been deployed")
+            # Not deployed yet, use normal deploy
+            # Prepare the recipe for deployment
+            recipe_data = {
+                'name': instance.name,
+                'description': instance.description or '',
+                'recipe': recipe_content,
+                'type': instance.template.recipe_type,
+            }
+            
+            # Deploy to DataHub
+            result = client.create_ingestion_source(recipe_data)
+            
+            if result:
+                # Update the instance with deployment info
+                instance.datahub_urn = result
+                instance.deployed = True
+                instance.deployed_at = timezone.now()
+                instance.save()
+                
+                messages.success(request, f"Recipe instance '{instance.name}' deployed successfully")
+            else:
+                messages.error(request, "Failed to deploy recipe instance")
     except Exception as e:
-        messages.error(request, f"Error undeploying recipe instance: {str(e)}")
+        messages.error(request, f"Error redeploying recipe instance: {str(e)}")
     
     return redirect('recipe_instances')
+
+def recipe_instance_download(request, instance_id):
+    """Download a recipe instance as JSON."""
+    instance = get_object_or_404(RecipeInstance, id=instance_id)
+    
+    try:
+        # Get combined content with environment variables applied
+        combined_content = instance.get_combined_content()
+        
+        if not combined_content:
+            messages.error(request, "Unable to generate recipe content")
+            return redirect('recipe_instances')
+        
+        # Prepare response
+        response = HttpResponse(json.dumps(combined_content, indent=2), content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename="{instance.name.replace(" ", "_")}_recipe.json"'
+        return response
+    except Exception as e:
+        messages.error(request, f"Error generating recipe download: {str(e)}")
+        logger.error(f"Error generating recipe download: {str(e)}")
+        return redirect('recipe_instances')
 
 def recipe_template_preview(request, template_id):
     """API endpoint to preview a recipe template with environment variables applied."""
@@ -2359,151 +2576,6 @@ def recipe_template_preview(request, template_id):
     
     # If no env vars, just return the template content
     return JsonResponse({'content': template_content})
-
-def recipe_convert_to_template_instance(request, recipe_id):
-    """Convert a DataHub recipe to a template and an instance, extracting environment variables."""
-    
-    # Get DataHub client
-    client = get_dh_client(request)
-    if not client:
-        messages.error(request, "Connection to DataHub could not be established.")
-        return redirect('recipes_list')
-    
-    try:
-        # Fetch the recipe from DataHub
-        recipe_data = client.get_recipe(recipe_id)
-        
-        # Extract recipe content
-        recipe_content = None
-        if 'config' in recipe_data:
-            try:
-                recipe_content = recipe_data['config'].get('jsonSchema') or recipe_data['config'].get('yamlSchema')
-            except Exception as e:
-                messages.error(request, f"Could not extract recipe content: {str(e)}")
-                return redirect('recipes_list')
-        else:
-            messages.error(request, "Recipe has no content to extract.")
-            return redirect('recipes_list')
-        
-        # Parse the content to detect the format
-        try:
-            if recipe_content.strip().startswith('{'):
-                # It's JSON
-                content_dict = json.loads(recipe_content)
-                is_json = True
-            else:
-                # It's YAML
-                content_dict = yaml.safe_load(recipe_content)
-                is_json = False
-        except Exception as e:
-            messages.error(request, f"Failed to parse recipe content: {str(e)}")
-            return redirect('recipes_list')
-        
-        # Extract environment variables from recipe content
-        env_vars = []
-        env_vars_secret = []
-        
-        def extract_env_vars(content, path=""):
-            """Recursively extract environment variables from content."""
-            if isinstance(content, dict):
-                for key, value in content.items():
-                    new_path = f"{path}.{key}" if path else key
-                    if isinstance(value, (dict, list)):
-                        extract_env_vars(value, new_path)
-                    elif isinstance(value, str) and "${" in value and "}" in value:
-                        # Extract variable name from ${VAR_NAME}
-                        import re
-                        matches = re.findall(r'\${([^}]+)}', value)
-                        for match in matches:
-                            # Check if value contains 'password', 'secret', 'key', or 'token' to mark as secret
-                            is_secret = any(keyword in new_path.lower() for keyword in ['password', 'secret', 'key', 'token'])
-                            if is_secret and match not in env_vars_secret:
-                                env_vars_secret.append(match)
-                            elif match not in env_vars and match not in env_vars_secret:
-                                env_vars.append(match)
-            elif isinstance(content, list):
-                for i, item in enumerate(content):
-                    new_path = f"{path}[{i}]"
-                    extract_env_vars(item, new_path)
-        
-        # Extract env vars from the recipe content
-        extract_env_vars(content_dict)
-        
-        if request.method == 'POST':
-            # Create recipe template
-            template_name = request.POST.get('template_name')
-            template_description = request.POST.get('template_description', '')
-            
-            template = RecipeTemplate(
-                name=template_name,
-                description=template_description,
-                recipe_type=recipe_data.get('type', 'UNKNOWN'),
-                content=recipe_content
-            )
-            template.save()
-            
-            # Create env vars instance
-            env_vars_instance_name = request.POST.get('env_vars_instance_name')
-            env_vars_instance_description = request.POST.get('env_vars_instance_description', '')
-            
-            # Prepare the variables object for ENV vars instance
-            variables = {}
-            for var in env_vars:
-                variables[var] = {
-                    "value": "",
-                    "is_required": True,
-                    "is_secret": False
-                }
-            
-            for var in env_vars_secret:
-                variables[var] = {
-                    "value": "",
-                    "is_required": True,
-                    "is_secret": True
-                }
-            
-            env_vars_instance = EnvVarsInstance(
-                name=env_vars_instance_name,
-                description=env_vars_instance_description,
-                recipe_type=recipe_data.get('type', 'UNKNOWN'),
-                variables=json.dumps(variables)
-            )
-            env_vars_instance.save()
-            
-            # Create recipe instance
-            instance_name = request.POST.get('instance_name')
-            instance_description = request.POST.get('instance_description', '')
-            
-            recipe_instance = RecipeInstance(
-                name=instance_name,
-                description=instance_description,
-                template=template,
-                env_vars_instance=env_vars_instance
-            )
-            recipe_instance.save()
-            
-            messages.success(request, "Recipe was successfully converted to a template and instance.")
-            return redirect('recipe_instance_view', instance_id=recipe_instance.id)
-        else:
-            # Show the form to create template, env vars instance, and recipe instance
-            recipe_name = recipe_data.get('name', '')
-            
-            context = {
-                'recipe_id': recipe_id,
-                'recipe_name': recipe_name,
-                'recipe_type': recipe_data.get('type', 'UNKNOWN'),
-                'env_vars': env_vars,
-                'env_vars_secret': env_vars_secret,
-                'suggested_template_name': f"{recipe_name} Template",
-                'suggested_env_vars_name': f"{recipe_name} Env Vars",
-                'suggested_instance_name': f"{recipe_name} Instance"
-            }
-            
-            return render(request, 'recipes/convert_to_template.html', context)
-            
-    except Exception as e:
-        messages.error(request, f"Error converting recipe: {str(e)}")
-        return redirect('recipes_list')
 
 # GitHub integration views
 def github_index(request):

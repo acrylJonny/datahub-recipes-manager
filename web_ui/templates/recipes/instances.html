@@ -70,10 +70,19 @@
                                             <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
                                                 <i class="fas fa-edit"></i>
                                             </a>
+                                            <a href="{% url 'recipe_instance_download' instance_id=instance.id %}" class="btn btn-sm btn-outline-info" title="Download">
+                                                <i class="fas fa-download"></i>
+                                            </a>
                                             <form action="{% url 'recipe_instance_undeploy' instance.id %}" method="post" class="d-inline">
                                                 {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Undeploy">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Undeploy (Delete from DataHub)" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-original-title="This will delete the recipe from DataHub but keep it in the local database">
                                                     <i class="fas fa-cloud-download-alt"></i>
+                                                </button>
+                                            </form>
+                                            <form action="{% url 'recipe_instance_redeploy' instance.id %}" method="post" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Redeploy">
+                                                    <i class="fas fa-sync-alt"></i>
                                                 </button>
                                             </form>
                                             <a href="#" class="btn btn-sm btn-outline-success run-recipe" data-recipe-id="{{ instance.datahub_urn }}" title="Run Now">
@@ -148,6 +157,9 @@
                                             <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
                                                 <i class="fas fa-edit"></i>
                                             </a>
+                                            <a href="{% url 'recipe_instance_download' instance_id=instance.id %}" class="btn btn-sm btn-outline-info" title="Download">
+                                                <i class="fas fa-download"></i>
+                                            </a>
                                             <form action="{% url 'recipe_instance_deploy' instance.id %}" method="post" class="d-inline">
                                                 {% csrf_token %}
                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy">
@@ -204,11 +216,46 @@
         </div>
     </div>
 </div>
+
+<!-- Force Undeploy Modal -->
+<div class="modal fade" id="forceUndeployModal" tabindex="-1" aria-labelledby="forceUndeployModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="forceUndeployModalLabel">Force Undeploy</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Unable to delete the recipe instance <strong id="force-undeploy-name"></strong> from DataHub.</p>
+                <p>Do you want to mark this instance as undeployed in the local database only?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    The recipe will remain in DataHub but will be marked as undeployed locally.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="force-undeploy-form" method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="force_undeploy" value="true">
+                    <button type="submit" class="btn btn-warning">Force Undeploy</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
         // Handle delete instance modal
         const deleteModal = document.getElementById('deleteInstanceModal');
         if (deleteModal) {

@@ -198,3 +198,14 @@ LOGGING = {
 
 # Ensure logs directory exists
 os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
+
+# Configure authentication - No login required for local development
+LOGIN_URL = '/login/'
+LOGOUT_URL = '/logout/'
+LOGIN_REDIRECT_URL = '/'
+
+# Allow anonymous users
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend', 
+    'web_ui.auth_backends.AnonymousUserBackend',
+]

@@ -62,12 +62,18 @@
         </div>
     </div>
 
-    <!-- Template/Instance Tabs -->
+    <!-- Template/Environment Variables/Instance Tabs -->
     <ul class="nav nav-tabs mb-4" id="recipeTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates-panel" 
                     type="button" role="tab" aria-controls="templates-panel" aria-selected="true">
-                <i class="fas fa-folder me-1"></i> Templates
+                <i class="fas fa-folder me-1"></i> Recipes
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="env-vars-tab" data-bs-toggle="tab" data-bs-target="#env-vars-panel" 
+                    type="button" role="tab" aria-controls="env-vars-panel" aria-selected="false">
+                <i class="fas fa-key me-1"></i> Environment Variables
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -190,28 +196,96 @@
             </div>
         </div>
         
-        <!-- Instances Tab Panel -->
-        <div class="tab-pane fade" id="instances-panel" role="tabpanel" aria-labelledby="instances-tab">
+        <!-- Environment Variables Tab Panel -->
+        <div class="tab-pane fade" id="env-vars-panel" role="tabpanel" aria-labelledby="env-vars-tab">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Environment Variable Templates</h5>
+                    <div>
+                        <a href="{% url 'env_vars_template_create' %}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Template
+                        </a>
+                        <a href="{% url 'env_vars_templates' %}" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="fas fa-external-link-alt me-1"></i> View All
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p>Environment variable templates define sets of variables required by specific types of recipe templates.</p>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Create environment variable templates to define the structure of variables needed for different recipes.
+                    </div>
+                    
+                    <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
+                        <a href="{% url 'env_vars_template_create' %}" class="btn btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Environment Variable Template
+                        </a>
+                        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-list me-1"></i> View All Templates
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
             <div class="card">
                 <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Environment Variable Instances</h5>
+                    <div>
+                        <a href="{% url 'env_vars_instance_create' %}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Instance
+                        </a>
+                        <a href="{% url 'env_vars_instances' %}" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="fas fa-external-link-alt me-1"></i> View All
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p>Environment variable instances are reusable sets of key-value pairs that can be applied to recipe templates.</p>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Create environment variable instances to easily reuse configurations across multiple recipes.
+                    </div>
+                    
+                    <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
+                        <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Environment Variables Instance
+                        </a>
+                        <a href="{% url 'env_vars_instances' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-list me-1"></i> View All Instances
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Instances Tab Panel -->
+        <div class="tab-pane fade" id="instances-panel" role="tabpanel" aria-labelledby="instances-tab">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">Recipe Instances</h5>
-                    <a href="{% url 'recipes' %}" class="btn btn-sm btn-outline-primary">
-                        <i class="fas fa-external-link-alt me-1"></i> View All Recipes
-                    </a>
+                    <div>
+                        <a href="{% url 'recipe_instance_create' %}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Instance
+                        </a>
+                        <a href="{% url 'recipe_instances' %}" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="fas fa-external-link-alt me-1"></i> View All
+                        </a>
+                    </div>
                 </div>
                 <div class="card-body">
                     <p>Recipe instances are the actual deployed recipes in your DataHub environment.</p>
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle me-2"></i>
-                        To manage your recipe instances, create a new instance by deploying a template, or go to the <a href="{% url 'recipes' %}" class="alert-link">Recipes page</a>.
+                        Create a recipe instance by combining a template with environment variables.
                     </div>
                     
                     <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
-                        <a href="{% url 'recipes' %}" class="btn btn-primary">
-                            <i class="fas fa-file-code me-1"></i> View Recipe Instances
+                        <a href="{% url 'recipe_instance_create' %}" class="btn btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Recipe Instance
                         </a>
-                        <a href="{% url 'recipe_template_create' %}" class="btn btn-outline-success">
-                            <i class="fas fa-plus me-1"></i> Create New Template
+                        <a href="{% url 'recipe_instances' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-list me-1"></i> View All Recipe Instances
                         </a>
                     </div>
                 </div>

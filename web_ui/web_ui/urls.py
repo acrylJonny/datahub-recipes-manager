@@ -20,6 +20,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.shortcuts import redirect
 from web_ui import views as web_ui_views
+from django.contrib.auth import views as auth_views
 
 # Redirect to dashboard by default
 def home_redirect(request):
@@ -27,6 +28,11 @@ def home_redirect(request):
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    
+    # Authentication
+    path("login/", auth_views.LoginView.as_view(template_name='auth/login.html'), name="login"),
+    path("logout/", auth_views.LogoutView.as_view(next_page='login'), name="logout"),
+    path("accounts/login/", auth_views.LoginView.as_view(template_name='auth/login.html')),  # Fallback for default Django auth
     
     # Homepage and redirects
     path("", home_redirect, name="home"),
@@ -53,7 +59,7 @@ urlpatterns = [
     path("recipes/templates/<int:template_id>/export/", web_ui_views.recipe_template_export, name="recipe_template_export"),
     path("recipes/templates/<int:template_id>/deploy/", web_ui_views.recipe_template_deploy, name="recipe_template_deploy"),
     path("recipes/save-as-template/<str:recipe_id>/", web_ui_views.recipe_save_as_template, name="recipe_template_save"),
-    path("recipes/convert-to-template-instance/<str:recipe_id>/", web_ui_views.recipe_convert_to_template_instance, name="recipe_convert_to_template_instance"),
+    # path("recipes/convert-to-template-instance/<str:recipe_id>/", web_ui_views.recipe_convert_to_template_instance, name="recipe_convert_to_template_instance"),
     
     # Policy management
     path("policies/", web_ui_views.policies, name="policies"),
@@ -72,11 +78,12 @@ urlpatterns = [
     path("settings/", web_ui_views.settings, name="settings"),
     
     # Environment Variables Templates
-    path("env-vars-templates/", web_ui_views.env_vars_templates, name="env_vars_templates"),
-    path("env-vars-templates/create/", web_ui_views.env_vars_template_create, name="env_vars_template_create"),
-    path("env-vars-templates/list/", web_ui_views.env_vars_template_list, name="env_vars_template_list"),
-    path("env-vars-templates/get/<int:template_id>/", web_ui_views.env_vars_template_get, name="env_vars_template_get"),
-    path("env-vars-templates/delete/<int:template_id>/", web_ui_views.env_vars_template_delete, name="env_vars_template_delete"),
+    path("env-vars/templates/", web_ui_views.env_vars_templates, name="env_vars_templates"),
+    path("env-vars/templates/create/", web_ui_views.env_vars_template_create, name="env_vars_template_create"),
+    path("env-vars/templates/list/", web_ui_views.env_vars_template_list, name="env_vars_template_list"),
+    path("env-vars/templates/get/<int:template_id>/", web_ui_views.env_vars_template_get, name="env_vars_template_get"),
+    path("env-vars/templates/delete/<int:template_id>/", web_ui_views.env_vars_template_delete, name="env_vars_template_delete"),
+    path("env-vars/templates/<int:template_id>/details/", web_ui_views.env_vars_template_details, name="env_vars_template_details"),
     
     # Environment Variables Instances
     path("env-vars/instances/", web_ui_views.env_vars_instances, name="env_vars_instances"),
@@ -86,7 +93,6 @@ urlpatterns = [
     path("env-vars/instances/<int:instance_id>/delete/", web_ui_views.env_vars_instance_delete, name="env_vars_instance_delete"),
     path("env-vars/instances/list/", web_ui_views.env_vars_instance_list, name="env_vars_instance_list"),
     path("env-vars/instances/<int:instance_id>/json/", web_ui_views.env_vars_instance_json, name="env_vars_instance_json"),
-    path("env-vars/template/<int:template_id>/details/", web_ui_views.env_vars_template_details, name="env_vars_template_details"),
     
     # Health check
     path("health/", web_ui_views.health, name="health"),
@@ -98,6 +104,8 @@ urlpatterns = [
     path('recipe-instances/<int:instance_id>/delete/', web_ui_views.recipe_instance_delete, name='recipe_instance_delete'),
     path('recipe-instances/<int:instance_id>/deploy/', web_ui_views.recipe_instance_deploy, name='recipe_instance_deploy'),
     path('recipe-instances/<int:instance_id>/undeploy/', web_ui_views.recipe_instance_undeploy, name='recipe_instance_undeploy'),
+    path('recipe-instances/<int:instance_id>/redeploy/', web_ui_views.recipe_instance_redeploy, name='recipe_instance_redeploy'),
+    path('recipe-instances/<int:instance_id>/download/', web_ui_views.recipe_instance_download, name='recipe_instance_download'),
 
     # API endpoints for recipe templates
     path('api/recipe-templates/<int:template_id>/preview/', web_ui_views.recipe_template_preview, name='recipe_template_preview'),

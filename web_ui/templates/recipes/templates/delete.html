@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Recipe Template - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Delete Recipe Template</h1>
+        <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Templates
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-danger text-white">
+            <h5 class="card-title mb-0">Confirm Deletion</h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Are you sure you want to delete the template <strong>{{ template.name }}</strong>?
+            </div>
+            
+            <p>This action cannot be undone. The template and all its data will be permanently deleted.</p>
+            
+            {% if template.deployed %}
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-circle me-2"></i>
+                <strong>Warning:</strong> This template has been deployed to DataHub. Deleting it may affect any dependent recipes or instances.
+            </div>
+            {% endif %}
+            
+            <form method="post">
+                {% csrf_token %}
+                <div class="d-flex justify-content-end mt-3">
+                    <a href="{% url 'recipe_templates' %}" class="btn btn-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i> Delete Template
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %} 
