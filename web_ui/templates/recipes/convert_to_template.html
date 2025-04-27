@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Convert Recipe to Template - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'recipes_list' %}">Recipes</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Convert "{{ recipe_name }}" to Template and Instance</li>
+        </ol>
+    </nav>
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="row">
+        <div class="col-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Main Card -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+            <h6 class="m-0 font-weight-bold text-primary">Convert Recipe to Template and Instance</h6>
+        </div>
+        <div class="card-body">
+            <p>
+                Converting recipe <strong>"{{ recipe_name }}"</strong> (Type: {{ recipe_type }}) to a template and instance.
+                The system has detected <strong>{{ env_vars|length }}</strong> regular environment variables 
+                and <strong>{{ env_vars_secret|length }}</strong> sensitive variables (passwords, keys, tokens).
+            </p>
+
+            <form method="post" action="{% url 'recipe_convert_to_template_instance' recipe_id=recipe_id %}">
+                {% csrf_token %}
+                
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <h5>Recipe Template</h5>
+                        <hr>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="template_name">Template Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="template_name" name="template_name" 
+                                   value="{{ suggested_template_name }}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="template_description">Template Description</label>
+                            <input type="text" class="form-control" id="template_description" name="template_description" 
+                                   value="Template created from {{ recipe_name }}">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <h5>Environment Variables Instance</h5>
+                        <hr>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="env_vars_instance_name">Environment Variables Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="env_vars_instance_name" name="env_vars_instance_name" 
+                                   value="{{ suggested_env_vars_name }}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="env_vars_instance_description">Environment Variables Description</label>
+                            <input type="text" class="form-control" id="env_vars_instance_description" name="env_vars_instance_description" 
+                                   value="Environment variables for {{ recipe_name }}">
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-12 mt-3">
+                        <div class="alert alert-info">
+                            <h6>Detected Environment Variables</h6>
+                            {% if env_vars %}
+                            <p><strong>Regular Variables:</strong></p>
+                            <ul class="list-group mb-3">
+                                {% for var in env_vars %}
+                                <li class="list-group-item">{{ var }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                            
+                            {% if env_vars_secret %}
+                            <p><strong>Sensitive Variables (passwords, keys, tokens):</strong></p>
+                            <ul class="list-group">
+                                {% for var in env_vars_secret %}
+                                <li class="list-group-item bg-light text-dark">{{ var }} <span class="badge bg-warning text-dark ms-2">Secret</span></li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                            
+                            {% if not env_vars and not env_vars_secret %}
+                            <p>No environment variables were detected in this recipe.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <h5>Recipe Instance</h5>
+                        <hr>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="instance_name">Instance Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="instance_name" name="instance_name" 
+                                   value="{{ suggested_instance_name }}" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group mb-3">
+                            <label for="instance_description">Instance Description</label>
+                            <input type="text" class="form-control" id="instance_description" name="instance_description" 
+                                   value="Instance created from {{ recipe_name }}">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-primary">Create Template and Instance</button>
+                        <a href="{% url 'recipes_list' %}" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+    $(document).ready(function() {
+        // Any client-side validation or UI enhancements can go here
+    });
+</script>
+{% endblock %} 

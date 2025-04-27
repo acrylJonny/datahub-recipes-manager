@@ -104,23 +104,23 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <div class="btn-group" role="group">
-                                            <a href="{% url 'recipe_edit' recipe.urn %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                        <div class="btn-group">
+                                            <a href="{% url 'recipe_edit' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-primary">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            <a href="{% url 'recipe_download' recipe.urn %}" class="btn btn-sm btn-outline-info" title="Download">
+                                            <a href="{% url 'recipe_download' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-secondary">
                                                 <i class="fas fa-download"></i>
                                             </a>
-                                            <a href="{% url 'recipe_template_save' recipe.urn %}" class="btn btn-sm btn-outline-primary" title="Save as Template">
-                                                <i class="fas fa-scroll"></i>
+                                            <a href="{% url 'recipe_convert_to_template_instance' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info" title="Convert to Template & Instance">
+                                                <i class="fas fa-file-export"></i>
                                             </a>
-                                            <button type="button" class="btn btn-sm btn-outline-success run-recipe" 
-                                                    data-recipe-urn="{{ recipe.urn }}" data-recipe-name="{{ recipe.name }}" title="Run Now">
+                                            <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info">
+                                                <i class="fas fa-copy"></i>
+                                            </a>
+                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}">
                                                 <i class="fas fa-play"></i>
                                             </button>
-                                            <button type="button" class="btn btn-sm btn-outline-danger delete-recipe" 
-                                                    data-bs-toggle="modal" data-bs-target="#deleteRecipeModal"
-                                                    data-recipe-urn="{{ recipe.urn }}" data-recipe-name="{{ recipe.name }}" title="Delete">
+                                            <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </div>
@@ -241,20 +241,19 @@
         if (deleteModal) {
             deleteModal.addEventListener('show.bs.modal', function(event) {
                 const button = event.relatedTarget;
-                const recipeUrn = button.getAttribute('data-recipe-urn');
+                const recipeId = button.getAttribute('data-recipe-id');
                 const recipeName = button.getAttribute('data-recipe-name');
                 
                 document.getElementById('delete-recipe-name').textContent = recipeName;
-                document.getElementById('delete-recipe-form').action = "{% url 'recipe_delete' 0 %}".replace('0', recipeUrn);
+                document.getElementById('delete-recipe-form').action = "{% url 'recipe_delete' 0 %}".replace('0', recipeId);
             });
         }
         
         // Handle run recipe buttons
-        const runButtons = document.querySelectorAll('.run-recipe');
+        const runButtons = document.querySelectorAll('.run-recipe-btn');
         runButtons.forEach(button => {
             button.addEventListener('click', function() {
-                const recipeUrn = this.getAttribute('data-recipe-urn');
-                const recipeName = this.getAttribute('data-recipe-name');
+                const recipeId = this.getAttribute('data-recipe-id');
                 
                 // Disable button and show spinner
                 this.disabled = true;
@@ -262,7 +261,7 @@
                 this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
                 
                 // Send AJAX request to run recipe
-                fetch("{% url 'recipe_run' 0 %}".replace('0', recipeUrn), {
+                fetch("{% url 'recipe_run' 0 %}".replace('0', recipeId), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -287,7 +286,7 @@
                             <div class="d-flex">
                                 <div class="toast-body">
                                     <i class="fas fa-check-circle me-2"></i>
-                                    Recipe "${recipeName}" started successfully!
+                                    Recipe started successfully!
                                 </div>
                                 <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
                             </div>

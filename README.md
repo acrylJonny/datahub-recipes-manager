@@ -9,6 +9,19 @@ This repository provides a complete solution for managing [DataHub](https://data
 - Manage scheduling and executor configuration remotely
 - Trigger immediate execution of ingestion sources
 
+## Architecture Overview
+
+The system separates recipes into three distinct layers:
+
+1. **Recipe Templates** - Reusable, parameterized recipe patterns with environment variable placeholders
+2. **Environment Variable Instances** - Sets of configuration values that populate recipe templates
+3. **Recipe Instances** - The combination of a template and an environment variables instance
+
+This separation allows you to:
+- Reuse the same template with different configurations across environments
+- Manage sensitive values separately from recipe templates
+- Deploy/undeploy recipes to DataHub with appropriate environment values
+
 ## Structure
 
 ```
@@ -17,13 +30,14 @@ datahub-recipes-manager/
 ├── recipes/                 # Recipe templates and instances
 │   ├── templates/           # Parameterized YAML templates
 │   └── instances/           # Concrete recipe instances by environment
-├── params/                  # Parameter templates and defaults
-│   └── default_params.yaml  # Default parameters template 
+├── env_vars/                # Environment variable templates and instances
+│   ├── templates/           # Environment variable templates by recipe type
+│   └── instances/           # Concrete environment variable instances
 ├── scripts/                 # Python scripts for SDK interaction
 ├── utils/                   # Utility modules
 │   ├── template_renderer.py # Template rendering utilities
 │   └── datahub_api.py       # DataHub SDK wrapper
-└── config/                  # Configuration files
+└── web_ui/                  # Web UI for recipe and policy management
 ```
 
 ## Getting Started
@@ -675,3 +689,26 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [DataHub Project](https://datahubproject.io/) - The open-source metadata platform this manager integrates with
 - [Acryl Data](https://www.acryldata.io/) - Maintainers of the DataHub SDK
 - All contributors who have helped improve this project
+
+## Staging and Deployment Workflow
+
+The recipes and policies in this system follow a staging-to-deployment workflow:
+
+1. **Staging**: Create and configure recipes, environment variables, and policies in the web interface
+   - Recipes and policies created in the system are first saved locally in the database
+   - They can be edited, previewed, and validated before being deployed to DataHub
+
+2. **Deployment**: Deploy the configured items to the DataHub instance
+   - Recipe instances combine a template with environment variables and deploy to DataHub
+   - Environment variables marked as secrets are stored in DataHub's secure storage
+   - Non-secret environment variables are populated directly in the recipe at deploy time
+   - Policies are deployed to DataHub and immediately become active
+
+3. **Undeployment**: Remove deployed items from DataHub while retaining the configuration locally
+   - Undeployed items remain in the staging area for future redeployment
+   - This allows for easy testing and version control of configurations
+
+This workflow ensures that:
+- Configuration is versioned and managed separately from the actual deployed resources
+- Secrets are handled securely and never exposed in recipe definitions
+- Recipes can be easily moved between environments by changing only the environment variable instances

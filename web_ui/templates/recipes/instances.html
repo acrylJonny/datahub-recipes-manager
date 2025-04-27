@@ -1,0 +1,294 @@
+{% extends 'base.html' %}
+
+{% block title %}Recipe Instances - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Recipe Instances</h1>
+        <div>
+            <a href="{% url 'recipe_instance_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> Create New Instance
+            </a>
+            <a href="{% url 'recipes' %}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-list me-1"></i> View All Recipes
+            </a>
+        </div>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <!-- Deployed Instances -->
+    <div class="card mb-4">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Deployed Instances</h5>
+        </div>
+        <div class="card-body p-0">
+            {% if deployed %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Template</th>
+                                <th>Environment Variables</th>
+                                <th>Deployed At</th>
+                                <th width="20%">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for instance in deployed %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'recipe_instance_edit' instance.id %}" class="text-decoration-none">
+                                            {{ instance.name }}
+                                        </a>
+                                        {% if instance.description %}
+                                            <p class="text-muted small mb-0">{{ instance.description|truncatechars:50 }}</p>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ instance.template.name }}</td>
+                                    <td>
+                                        {% if instance.env_vars_instance %}
+                                            <a href="{% url 'env_vars_instance_detail' instance.env_vars_instance.id %}">
+                                                {{ instance.env_vars_instance.name }}
+                                            </a>
+                                        {% else %}
+                                            <span class="text-muted">None</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ instance.deployed_at }}</td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <form action="{% url 'recipe_instance_undeploy' instance.id %}" method="post" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Undeploy">
+                                                    <i class="fas fa-cloud-download-alt"></i>
+                                                </button>
+                                            </form>
+                                            <a href="#" class="btn btn-sm btn-outline-success run-recipe" data-recipe-id="{{ instance.datahub_urn }}" title="Run Now">
+                                                <i class="fas fa-play"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger delete-recipe-instance" 
+                                                    data-bs-toggle="modal" data-bs-target="#deleteInstanceModal"
+                                                    data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="py-4 text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-cloud fa-4x text-muted"></i>
+                    </div>
+                    <h4>No deployed instances</h4>
+                    <p class="text-muted">Once you deploy instances, they will appear here.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Staging Instances -->
+    <div class="card mb-4">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Staging Instances</h5>
+        </div>
+        <div class="card-body p-0">
+            {% if staging %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Template</th>
+                                <th>Environment Variables</th>
+                                <th>Created At</th>
+                                <th width="20%">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for instance in staging %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'recipe_instance_edit' instance.id %}" class="text-decoration-none">
+                                            {{ instance.name }}
+                                        </a>
+                                        {% if instance.description %}
+                                            <p class="text-muted small mb-0">{{ instance.description|truncatechars:50 }}</p>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ instance.template.name }}</td>
+                                    <td>
+                                        {% if instance.env_vars_instance %}
+                                            <a href="{% url 'env_vars_instance_detail' instance.env_vars_instance.id %}">
+                                                {{ instance.env_vars_instance.name }}
+                                            </a>
+                                        {% else %}
+                                            <span class="text-muted">None</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ instance.created_at }}</td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <form action="{% url 'recipe_instance_deploy' instance.id %}" method="post" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy">
+                                                    <i class="fas fa-cloud-upload-alt"></i>
+                                                </button>
+                                            </form>
+                                            <button type="button" class="btn btn-sm btn-outline-danger delete-recipe-instance" 
+                                                    data-bs-toggle="modal" data-bs-target="#deleteInstanceModal"
+                                                    data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="py-4 text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-drafting-compass fa-4x text-muted"></i>
+                    </div>
+                    <h4>No staging instances</h4>
+                    <p class="text-muted">Create a new instance to get started.</p>
+                    <a href="{% url 'recipe_instance_create' %}" class="btn btn-primary mt-2">
+                        <i class="fas fa-plus me-1"></i> Create New Instance
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete Instance Modal -->
+<div class="modal fade" id="deleteInstanceModal" tabindex="-1" aria-labelledby="deleteInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteInstanceModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the recipe instance <strong id="delete-instance-name"></strong>?</p>
+                <p class="text-danger">This action cannot be undone. If this instance is deployed, it will remain in DataHub until manually undeployed.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-instance-form" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle delete instance modal
+        const deleteModal = document.getElementById('deleteInstanceModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const instanceId = button.getAttribute('data-instance-id');
+                const instanceName = button.getAttribute('data-instance-name');
+                
+                document.getElementById('delete-instance-name').textContent = instanceName;
+                document.getElementById('delete-instance-form').action = "{% url 'recipe_instance_delete' 0 %}".replace('0', instanceId);
+            });
+        }
+        
+        // Handle run recipe buttons
+        const runButtons = document.querySelectorAll('.run-recipe');
+        runButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const recipeId = this.getAttribute('data-recipe-id');
+                
+                // Disable button and show spinner
+                this.disabled = true;
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+                
+                // Send AJAX request to run recipe
+                fetch("{% url 'recipe_run' 0 %}".replace('0', recipeId), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    
+                    // Show notification
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Recipe started successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.message || 'Failed to run recipe'}`);
+                    }
+                })
+                .catch(error => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    
+                    // Show error
+                    alert(`Error: ${error.message || 'Failed to run recipe'}`);
+                });
+            });
+        });
+    });
+</script>
+{% endblock %} 

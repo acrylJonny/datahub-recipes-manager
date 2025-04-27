@@ -148,6 +148,9 @@ class RecipeTemplate(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     tags = models.CharField(max_length=255, blank=True, null=True)  # Comma-separated tags
+    deployed = models.BooleanField(default=False)
+    deployed_at = models.DateTimeField(null=True, blank=True)
+    datahub_urn = models.CharField(max_length=255, null=True, blank=True)  # Store the DataHub URN when deployed
     
     def __str__(self):
         return self.name
@@ -175,6 +178,17 @@ class RecipeTemplate(models.Model):
             self.tags = ''
         else:
             self.tags = ','.join(tags_list)
+    
+    def get_recipe_id(self):
+        """Extract the ID portion from the DataHub URN."""
+        if not self.datahub_urn:
+            return None
+        
+        # URN format: urn:li:dataHubIngestionSource:<id>
+        parts = self.datahub_urn.split(':')
+        if len(parts) >= 4:
+            return parts[3]
+        return None
 
 class RecipeManager:
     """Helper class for recipe-specific operations."""
@@ -225,6 +239,69 @@ class RecipeSecret(models.Model):
     def __str__(self):
         return f"{self.recipe_id} - {self.variable_name}"
 
+class PolicyTemplate(models.Model):
+    """Model for storing policy templates with staging/deployed status."""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    policy_type = models.CharField(max_length=50)
+    state = models.CharField(max_length=20, default="ACTIVE")
+    content = models.TextField()  # JSON content
+    resources = models.TextField(blank=True, null=True)  # JSON array
+    privileges = models.TextField(blank=True, null=True)  # JSON array
+    actors = models.TextField(blank=True, null=True)  # JSON array
+    deployed = models.BooleanField(default=False)
+    deployed_at = models.DateTimeField(null=True, blank=True)
+    datahub_urn = models.CharField(max_length=255, null=True, blank=True)  # Store the DataHub URN when deployed
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.name
+    
+    def get_resources(self):
+        """Get the resources as a Python object."""
+        try:
+            return json.loads(self.resources or '[]')
+        except Exception:
+            return []
+    
+    def set_resources(self, resources):
+        """Set the resources from a Python object."""
+        self.resources = json.dumps(resources or [])
+    
+    def get_privileges(self):
+        """Get the privileges as a Python object."""
+        try:
+            return json.loads(self.privileges or '[]')
+        except Exception:
+            return []
+    
+    def set_privileges(self, privileges):
+        """Set the privileges from a Python object."""
+        self.privileges = json.dumps(privileges or [])
+    
+    def get_actors(self):
+        """Get the actors as a Python object."""
+        try:
+            return json.loads(self.actors or '[]')
+        except Exception:
+            return []
+    
+    def set_actors(self, actors):
+        """Set the actors from a Python object."""
+        self.actors = json.dumps(actors or [])
+    
+    def get_policy_id(self):
+        """Extract the ID portion from the DataHub URN."""
+        if not self.datahub_urn:
+            return None
+        
+        # URN format: urn:li:policy:<id>
+        parts = self.datahub_urn.split(':')
+        if len(parts) >= 4:
+            return parts[3]
+        return None
+
 class PullRequest(models.Model):
     """Model to track GitHub Pull Requests for recipes"""
     
@@ -247,6 +324,46 @@ class PullRequest(models.Model):
     
     def __str__(self):
         return f"PR #{self.pr_number}: {self.title}"
+
+class RecipeInstance(models.Model):
+    """Model for storing the combination of a recipe template and an environment variables instance."""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    template = models.ForeignKey(RecipeTemplate, on_delete=models.CASCADE)
+    env_vars_instance = models.ForeignKey('EnvVarsInstance', on_delete=models.SET_NULL, null=True, blank=True)
+    datahub_urn = models.CharField(max_length=255, null=True, blank=True)  # Store the DataHub URN when deployed
+    deployed = models.BooleanField(default=False)
+    deployed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.name} ({self.template.name})"
+    
+    def get_recipe_id(self):
+        """Extract the ID portion from the DataHub URN."""
+        if not self.datahub_urn:
+            return None
+        
+        # URN format: urn:li:dataHubIngestionSource:<id>
+        parts = self.datahub_urn.split(':')
+        if len(parts) >= 4:
+            return parts[3]
+        return None
+    
+    def get_combined_content(self):
+        """Get the template content with environment variables applied."""
+        template_content = self.template.get_content()
+        
+        if not template_content or not self.env_vars_instance:
+            return template_content
+            
+        try:
+            env_vars = self.env_vars_instance.get_variables_dict()
+            return replace_env_vars_with_values(template_content, env_vars)
+        except Exception:
+            logger.error(f"Error applying environment variables to template for instance {self.id}")
+            return template_content
 
 class EnvVarsTemplate(models.Model):
     """Model for storing reusable environment variable templates."""
@@ -293,6 +410,9 @@ class EnvVarsInstance(models.Model):
     recipe_id = models.CharField(max_length=255, null=True, blank=True)  # Optional link to a recipe
     recipe_type = models.CharField(max_length=50)
     variables = models.TextField()  # JSON content of environment variable values
+    deployed = models.BooleanField(default=False)
+    deployed_at = models.DateTimeField(null=True, blank=True)
+    datahub_secrets_created = models.BooleanField(default=False)  # Track if secrets have been created in DataHub
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -309,6 +429,11 @@ class EnvVarsInstance(models.Model):
     def set_variables_dict(self, variables_dict):
         """Set the environment variables from a dictionary."""
         self.variables = json.dumps(variables_dict)
+        
+    def get_secret_variables(self):
+        """Get only the variables marked as secrets."""
+        variables = self.get_variables_dict()
+        return {k: v for k, v in variables.items() if v.get('isSecret', False)}
 
 class GitHubPR(models.Model):
     """Model for storing GitHub pull request information."""

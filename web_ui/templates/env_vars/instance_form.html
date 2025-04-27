@@ -33,6 +33,18 @@
     </div>
     {% endif %}
 
+    <!-- Info Alert -->
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>Environment Variable Instances</strong> are used to provide values for variables referenced in recipe templates.
+        These instances are combined with recipe templates to create recipe instances, forming the complete recipe that will be deployed to DataHub.
+        <ul class="mb-0 mt-2">
+            <li>Values marked as "Secret" will be stored securely in DataHub</li>
+            <li>Non-secret values will be directly populated in the recipe at deploy time</li>
+            <li>Environment variable instances can be reused across multiple recipes</li>
+        </ul>
+    </div>
+
     <!-- Form -->
     <form method="post" id="envVarsInstanceForm">
         {% csrf_token %}

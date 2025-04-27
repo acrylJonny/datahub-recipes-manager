@@ -93,10 +93,27 @@
                                 <i class="fas fa-tachometer-alt fa-fw me-2"></i> Dashboard
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link{% if request.path|slice:':9' == '/recipes/' %} active{% endif %}" href="{% url 'recipes' %}">
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle{% if request.path|slice:':9' == '/recipes/' or request.path|slice:':16' == '/recipe-instances' %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="fas fa-file-code fa-fw me-2"></i> Recipes
                             </a>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/recipes/' %} active{% endif %}" href="{% url 'recipes' %}">
+                                        <i class="fas fa-list fa-fw me-2"></i> All Recipes
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/recipe-instances/' %} active{% endif %}" href="{% url 'recipe_instances' %}">
+                                        <i class="fas fa-cubes fa-fw me-2"></i> Recipe Instances
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/recipe-templates/' %} active{% endif %}" href="{% url 'recipe_templates' %}">
+                                        <i class="fas fa-scroll fa-fw me-2"></i> Recipe Templates
+                                    </a>
+                                </li>
+                            </ul>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link{% if request.path|slice:':10' == '/policies/' %} active{% endif %}" href="{% url 'policies' %}">

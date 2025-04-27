@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+
+{% block title %}Convert Recipe to Template and Instance - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Convert Recipe to Template and Instance</h1>
+        <a href="{% url 'recipe_edit' recipe_id %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Recipe
+        </a>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>Converting a Recipe</strong> will create three new components:
+        <ol class="mb-0 mt-2">
+            <li>A reusable <strong>Recipe Template</strong> with environment variable placeholders</li>
+            <li>An <strong>Environment Variables Instance</strong> with all extracted values</li>
+            <li>A <strong>Recipe Instance</strong> linking the template and environment variables</li>
+        </ol>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Source Recipe Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4 fw-bold">Recipe ID:</div>
+                        <div class="col-md-8"><code>{{ display_recipe_id }}</code></div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4 fw-bold">Recipe Name:</div>
+                        <div class="col-md-8">{{ recipe_name }}</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4 fw-bold">Recipe Type:</div>
+                        <div class="col-md-8">{{ recipe_type }}</div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 fw-bold">Environment Variables:</div>
+                        <div class="col-md-8">
+                            <span class="badge bg-info">{{ env_vars_count }} variables found</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <form method="post" class="needs-validation" novalidate>
+                {% csrf_token %}
+                
+                <!-- Recipe Template Section -->
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="card-title mb-0">Recipe Template Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="template_name" class="form-label">Template Name</label>
+                            <input type="text" class="form-control" id="template_name" name="template_name" 
+                                   value="{{ recipe_name }} Template" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="template_description" class="form-label">Template Description</label>
+                            <textarea class="form-control" id="template_description" name="template_description" 
+                                      rows="2">Template created from {{ recipe_name }}</textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Environment Variables Instance Section -->
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="card-title mb-0">Environment Variables Instance Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="env_vars_name" class="form-label">Environment Variables Instance Name</label>
+                            <input type="text" class="form-control" id="env_vars_name" name="env_vars_name" 
+                                   value="{{ recipe_name }} Environment Variables" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="env_vars_description" class="form-label">Environment Variables Description</label>
+                            <textarea class="form-control" id="env_vars_description" name="env_vars_description" 
+                                      rows="2">Environment variables extracted from {{ recipe_name }}</textarea>
+                        </div>
+                        
+                        {% if env_vars %}
+                            <h6 class="mt-4 mb-3">Extracted Environment Variables</h6>
+                            <div class="table-responsive">
+                                <table class="table table-striped table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Variable Name</th>
+                                            <th>Value</th>
+                                            <th>Secret</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for var_name, var_data in env_vars.items %}
+                                            <tr>
+                                                <td><code>{{ var_name }}</code></td>
+                                                <td>
+                                                    {% if var_data.isSecret %}
+                                                        <span class="text-muted">********</span>
+                                                    {% else %}
+                                                        {{ var_data.value }}
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" 
+                                                               name="secret_{{ var_name }}" 
+                                                               {% if var_data.isSecret %}checked{% endif %}>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                No environment variables were found in this recipe.
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Recipe Instance Section -->
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="card-title mb-0">Recipe Instance Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="instance_name" class="form-label">Instance Name</label>
+                            <input type="text" class="form-control" id="instance_name" name="instance_name" 
+                                   value="{{ recipe_name }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="instance_description" class="form-label">Instance Description</label>
+                            <textarea class="form-control" id="instance_description" name="instance_description" 
+                                      rows="2">Instance created from {{ recipe_name }}</textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-between mb-4">
+                    <a href="{% url 'recipe_edit' recipe_id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-times me-1"></i> Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check me-1"></i> Convert Recipe
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Conversion Process</h5>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0">
+                        <li class="mb-3">
+                            <strong>Template Creation</strong>
+                            <p class="text-muted small mb-0">
+                                The recipe's content will be converted to a reusable template with all environment variable references preserved.
+                            </p>
+                        </li>
+                        <li class="mb-3">
+                            <strong>Environment Variables Extraction</strong>
+                            <p class="text-muted small mb-0">
+                                All values for the detected environment variables will be extracted and stored in a new environment variables instance.
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Instance Creation</strong>
+                            <p class="text-muted small mb-0">
+                                A new recipe instance will be created linking the template and environment variables, 
+                                which can be deployed to DataHub.
+                            </p>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">What Happens Next?</h5>
+                </div>
+                <div class="card-body">
+                    <p>After conversion, you will have:</p>
+                    <ul class="mb-0">
+                        <li>A reusable template that can be used with multiple environment variable sets</li>
+                        <li>An environment variables instance that can be edited and optionally reused</li>
+                        <li>A recipe instance that can be deployed to DataHub</li>
+                    </ul>
+                    <hr>
+                    <p class="mb-1 text-muted small">
+                        <i class="fas fa-info-circle me-1"></i> 
+                        <strong>Note:</strong> The original recipe remains unchanged in DataHub.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

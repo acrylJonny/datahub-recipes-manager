@@ -1,0 +1,219 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">{{ title }}</h1>
+        <a href="{% url 'recipe_instances' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Instances
+        </a>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Instance Details</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" class="needs-validation" novalidate>
+                {% csrf_token %}
+                
+                <div class="mb-3">
+                    <label for="{{ form.name.id_for_label }}" class="form-label">Instance Name</label>
+                    {{ form.name }}
+                    <div class="form-text">A descriptive name for this recipe instance</div>
+                    {% if form.name.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.name.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                    {{ form.description }}
+                    <div class="form-text">Optional description of this recipe instance</div>
+                    {% if form.description.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.description.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <label for="{{ form.template.id_for_label }}" class="form-label">Recipe Template</label>
+                    {{ form.template }}
+                    <div class="form-text">Select a recipe template to use for this instance</div>
+                    {% if form.template.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.template.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <label for="{{ form.env_vars_instance.id_for_label }}" class="form-label">Environment Variables Instance</label>
+                    {{ form.env_vars_instance }}
+                    <div class="form-text">Select an environment variables instance to use (optional)</div>
+                    {% if form.env_vars_instance.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.env_vars_instance.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="preview-section mt-4 mb-3" style="display: none;">
+                    <h4>Preview</h4>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        This preview shows how the template and environment variables will combine to create the final recipe.
+                    </div>
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Combined Recipe</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <pre id="preview-content" class="p-3 mb-0" style="max-height: 400px; overflow-y: auto;"></pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <button type="submit" class="btn btn-primary">
+                            {% if is_new %}
+                                <i class="fas fa-plus me-1"></i> Create Instance
+                            {% else %}
+                                <i class="fas fa-save me-1"></i> Update Instance
+                            {% endif %}
+                        </button>
+                        <a href="{% url 'recipe_instances' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                    </div>
+                    <div>
+                        {% if not is_new %}
+                            {% if instance.deployed %}
+                                <form action="{% url 'recipe_instance_undeploy' instance.id %}" method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-warning">
+                                        <i class="fas fa-cloud-download-alt me-1"></i> Undeploy
+                                    </button>
+                                </form>
+                            {% else %}
+                                <form action="{% url 'recipe_instance_deploy' instance.id %}" method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="fas fa-cloud-upload-alt me-1"></i> Deploy
+                                    </button>
+                                </form>
+                            {% endif %}
+                            <button type="button" class="btn btn-danger ms-2" data-bs-toggle="modal" data-bs-target="#deleteInstanceModal">
+                                <i class="fas fa-trash me-1"></i> Delete
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% if not is_new %}
+<!-- Delete Instance Modal -->
+<div class="modal fade" id="deleteInstanceModal" tabindex="-1" aria-labelledby="deleteInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteInstanceModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the recipe instance <strong>{{ instance.name }}</strong>?</p>
+                <p class="text-danger">This action cannot be undone. If this instance is deployed, it will remain in DataHub until manually undeployed.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{% url 'recipe_instance_delete' instance.id %}" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const templateSelect = document.getElementById('{{ form.template.id_for_label }}');
+        const envVarsSelect = document.getElementById('{{ form.env_vars_instance.id_for_label }}');
+        const previewSection = document.querySelector('.preview-section');
+        const previewContent = document.getElementById('preview-content');
+        
+        // Function to update preview
+        function updatePreview() {
+            const templateId = templateSelect.value;
+            const envVarsId = envVarsSelect.value;
+            
+            if (!templateId) {
+                previewSection.style.display = 'none';
+                return;
+            }
+            
+            previewSection.style.display = 'block';
+            previewContent.innerHTML = '<div class="text-center py-3"><div class="spinner-border" role="status"></div><p class="mt-2">Loading preview...</p></div>';
+            
+            // Build URL to fetch combined preview
+            let url = `/api/recipe-templates/${templateId}/preview/`;
+            if (envVarsId) {
+                url += `?env_vars_id=${envVarsId}`;
+            }
+            
+            // Fetch preview content
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.content) {
+                        try {
+                            // Pretty print JSON
+                            const content = JSON.stringify(data.content, null, 2);
+                            previewContent.textContent = content;
+                        } catch (e) {
+                            previewContent.textContent = data.content;
+                        }
+                    } else {
+                        previewContent.textContent = 'Unable to generate preview';
+                    }
+                })
+                .catch(error => {
+                    previewContent.textContent = `Error: ${error.message}`;
+                });
+        }
+        
+        // Listen for changes to template and env vars selects
+        if (templateSelect) {
+            templateSelect.addEventListener('change', updatePreview);
+        }
+        
+        if (envVarsSelect) {
+            envVarsSelect.addEventListener('change', updatePreview);
+        }
+        
+        // Initial update if values are pre-selected
+        if (templateSelect && templateSelect.value) {
+            updatePreview();
+        }
+    });
+</script>
+{% endblock %} 

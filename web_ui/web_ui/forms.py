@@ -1,4 +1,11 @@
 from django import forms
+from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.models import User
+from django.conf import settings
+import json
+import yaml
+
+from .models import RecipeTemplate, EnvVarsTemplate, EnvVarsInstance
 
 class RecipeForm(forms.Form):
     """Form for creating or editing a recipe."""
@@ -125,4 +132,31 @@ class EnvVarsInstanceForm(forms.Form):
     def __init__(self, *args, **kwargs):
         from .models import EnvVarsTemplate
         super().__init__(*args, **kwargs)
-        self.fields['template'].queryset = EnvVarsTemplate.objects.all().order_by('name') 
+        self.fields['template'].queryset = EnvVarsTemplate.objects.all().order_by('name')
+
+class RecipeInstanceForm(forms.Form):
+    """Form for creating or editing a recipe instance."""
+    name = forms.CharField(
+        max_length=255, 
+        required=True,
+        label="Instance Name",
+        widget=forms.TextInput(attrs={'class': 'form-control'})
+    )
+    description = forms.CharField(
+        max_length=1000,
+        required=False,
+        label="Description",
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3})
+    )
+    template = forms.ModelChoiceField(
+        queryset=RecipeTemplate.objects.all(),
+        required=True,
+        label="Recipe Template",
+        widget=forms.Select(attrs={'class': 'form-control'})
+    )
+    env_vars_instance = forms.ModelChoiceField(
+        queryset=EnvVarsInstance.objects.all(),
+        required=False,
+        label="Environment Variables Instance",
+        widget=forms.Select(attrs={'class': 'form-control'})
+    ) 

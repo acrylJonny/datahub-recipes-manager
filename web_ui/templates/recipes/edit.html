@@ -60,7 +60,7 @@
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <label for="{{ form.recipe_id.id_for_label }}" class="form-label">Recipe ID</label>
-                                {{ form.recipe_id }}
+                                <input type="text" class="form-control" value="{{ display_recipe_id }}" readonly>
                                 <div class="form-text">A unique identifier for this recipe (read-only in edit mode)</div>
                             </div>
                             <div class="col-md-6">

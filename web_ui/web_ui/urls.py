@@ -53,6 +53,7 @@ urlpatterns = [
     path("recipes/templates/<int:template_id>/export/", web_ui_views.recipe_template_export, name="recipe_template_export"),
     path("recipes/templates/<int:template_id>/deploy/", web_ui_views.recipe_template_deploy, name="recipe_template_deploy"),
     path("recipes/save-as-template/<str:recipe_id>/", web_ui_views.recipe_save_as_template, name="recipe_template_save"),
+    path("recipes/convert-to-template-instance/<str:recipe_id>/", web_ui_views.recipe_convert_to_template_instance, name="recipe_convert_to_template_instance"),
     
     # Policy management
     path("policies/", web_ui_views.policies, name="policies"),
@@ -89,6 +90,17 @@ urlpatterns = [
     
     # Health check
     path("health/", web_ui_views.health, name="health"),
+
+    # Recipe Instances
+    path('recipe-instances/', web_ui_views.recipe_instances, name='recipe_instances'),
+    path('recipe-instances/create/', web_ui_views.recipe_instance_create, name='recipe_instance_create'),
+    path('recipe-instances/<int:instance_id>/edit/', web_ui_views.recipe_instance_edit, name='recipe_instance_edit'),
+    path('recipe-instances/<int:instance_id>/delete/', web_ui_views.recipe_instance_delete, name='recipe_instance_delete'),
+    path('recipe-instances/<int:instance_id>/deploy/', web_ui_views.recipe_instance_deploy, name='recipe_instance_deploy'),
+    path('recipe-instances/<int:instance_id>/undeploy/', web_ui_views.recipe_instance_undeploy, name='recipe_instance_undeploy'),
+
+    # API endpoints for recipe templates
+    path('api/recipe-templates/<int:template_id>/preview/', web_ui_views.recipe_template_preview, name='recipe_template_preview'),
 ]
 
 # Add media files URL
