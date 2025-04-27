@@ -101,6 +101,17 @@ urlpatterns = [
 
     # API endpoints for recipe templates
     path('api/recipe-templates/<int:template_id>/preview/', web_ui_views.recipe_template_preview, name='recipe_template_preview'),
+    
+    # GitHub integration
+    path('github/', web_ui_views.github_index, name='github'),
+    path('github/settings/', web_ui_views.github_settings_edit, name='github_settings_edit'),
+    path('github/pull-requests/', web_ui_views.github_pull_requests, name='github_pull_requests'),
+    path('github/test-connection/', web_ui_views.github_test_connection, name='github_test_connection'),
+    path('github/create-branch/', web_ui_views.github_create_branch, name='github_create_branch'),
+    path('github/sync-recipes/', web_ui_views.github_sync_recipes, name='github_sync_recipes'),
+    path('github/sync-status/', web_ui_views.github_sync_status, name='github_sync_status'),
+    path('github/pull-requests/<int:pr_number>/update/', web_ui_views.github_update_pr_status, name='github_update_pr_status'),
+    path('github/pull-requests/<int:pr_id>/delete/', web_ui_views.github_delete_pr, name='github_delete_pr'),
 ]
 
 # Add media files URL

@@ -5,7 +5,7 @@ from django.conf import settings
 import json
 import yaml
 
-from .models import RecipeTemplate, EnvVarsTemplate, EnvVarsInstance
+from .models import RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, GitHubSettings
 
 class RecipeForm(forms.Form):
     """Form for creating or editing a recipe."""
@@ -160,3 +160,21 @@ class RecipeInstanceForm(forms.Form):
         label="Environment Variables Instance",
         widget=forms.Select(attrs={'class': 'form-control'})
     ) 
+
+class GitHubSettingsForm(forms.ModelForm):
+    """Form for GitHub integration settings."""
+    
+    class Meta:
+        model = GitHubSettings
+        fields = ['username', 'repository', 'token', 'enabled']
+        widgets = {
+            'token': forms.PasswordInput(render_value=True),
+            'username': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'GitHub username or organization'}),
+            'repository': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Repository name'}),
+        }
+        help_texts = {
+            'token': 'GitHub Personal Access Token with repo scope',
+            'username': 'Your GitHub username or organization name',
+            'repository': 'The repository name (not the full URL)',
+            'enabled': 'Enable GitHub integration'
+        } 
