@@ -212,18 +212,13 @@
                 </div>
                 <div class="card-body">
                     <p>Environment variable templates define sets of variables required by specific types of recipe templates.</p>
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        Create environment variable templates to define the structure of variables needed for different recipes.
-                    </div>
-                    
-                    <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
-                        <a href="{% url 'env_vars_template_create' %}" class="btn btn-primary">
-                            <i class="fas fa-plus me-1"></i> Create Environment Variable Template
-                        </a>
-                        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary">
-                            <i class="fas fa-list me-1"></i> View All Templates
-                        </a>
+                    <div id="env-vars-templates-list">
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading templates...</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -241,20 +236,107 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <p>Environment variable instances are reusable sets of key-value pairs that can be applied to recipe templates.</p>
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        Create environment variable instances to easily reuse configurations across multiple recipes.
+                    {% if env_vars_instances %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Recipe Type</th>
+                                    <th>Variables</th>
+                                    <th>Recipes</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for instance in env_vars_instances %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'env_vars_instance_detail' instance.id %}" class="fw-bold text-decoration-none">
+                                            {{ instance.name }}
+                                        </a>
+                                        {% if instance.description %}
+                                        <div class="text-muted small text-truncate" style="max-width: 200px;" title="{{ instance.description }}">
+                                            {{ instance.description }}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if instance.template %}
+                                        <span class="badge bg-secondary">{{ instance.template.name }}</span>
+                                        {% else %}
+                                        <span class="text-muted">None</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ instance.get_recipe_type_display }}</span>
+                                    </td>
+                                    <td>
+                                        {% with variables=instance.get_variables_dict %}
+                                            {% with secret_count=0 %}
+                                                {% for value in variables.values %}
+                                                    {% if value.isSecret %}
+                                                        {% with secret_count=secret_count|add:1 %}{% endwith %}
+                                                    {% endif %}
+                                                {% endfor %}
+                                                {% with total_count=variables|length %}
+                                                    {% with non_secret_count=total_count %}
+                                                        {% for value in variables.values %}
+                                                            {% if value.isSecret %}
+                                                                {% with non_secret_count=non_secret_count|add:-1 %}{% endwith %}
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                        <span class="badge bg-primary" title="Non-secret variables">{{ non_secret_count }}</span>
+                                                        {% if secret_count > 0 %}
+                                                        <span class="badge bg-warning ms-1" title="Secret variables">{{ secret_count }} <i class="fa fa-lock"></i></span>
+                                                        {% endif %}
+                                                    {% endwith %}
+                                                {% endwith %}
+                                            {% endwith %}
+                                        {% endwith %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-success">{{ instance.recipes.count }}</span>
+                                    </td>
+                                    <td>
+                                        <span title="{{ instance.created_at }}">{{ instance.created_at|date:"M d, Y" }}</span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-outline-secondary" title="View details">
+                                                <i class="fa fa-eye"></i>
+                                            </a>
+                                            <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" title="Edit instance">
+                                                <i class="fa fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-outline-danger" 
+                                                   data-bs-toggle="modal" 
+                                                   data-bs-target="#deleteInstanceModal" 
+                                                   data-instance-id="{{ instance.id }}"
+                                                   data-instance-name="{{ instance.name }}"
+                                                   data-recipe-count="{{ instance.recipes.count }}"
+                                                   title="Delete instance">
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    
-                    <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
-                        <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary">
-                            <i class="fas fa-plus me-1"></i> Create Environment Variables Instance
-                        </a>
-                        <a href="{% url 'env_vars_instances' %}" class="btn btn-outline-secondary">
-                            <i class="fas fa-list me-1"></i> View All Instances
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fa fa-key fa-3x text-muted mb-3"></i>
+                        <h4>No Environment Variable Instances</h4>
+                        <p class="text-muted">Create your first environment variable instance to manage variables across recipes.</p>
+                        <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary mt-2">
+                            <i class="fa fa-plus me-1"></i> Create New Instance
                         </a>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -293,4 +375,150 @@
         </div>
     </div>
 </div>
+
+<!-- Delete Instance Modal -->
+<div class="modal fade" id="deleteInstanceModal" tabindex="-1" aria-labelledby="deleteInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteInstanceModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    Are you sure you want to delete the instance <strong id="instanceNamePlaceholder"></strong>?
+                </div>
+                <div id="recipeWarning" class="alert alert-danger d-none">
+                    <i class="fa fa-exclamation-circle me-2"></i>
+                    This instance is currently used by <strong id="recipeCountPlaceholder"></strong> recipes.
+                    Deleting it will remove these environment variables from those recipes.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteInstanceForm" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Delete template modal
+        const deleteModal = document.getElementById('deleteTemplateModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const templateId = button.getAttribute('data-template-id');
+                const templateName = button.getAttribute('data-template-name');
+                
+                document.getElementById('delete-template-name').textContent = templateName;
+                document.getElementById('delete-template-form').action = `/recipe-templates/${templateId}/delete/`;
+            });
+        }
+        
+        // Load environment variable templates
+        function loadEnvVarsTemplates() {
+            const templatesContainer = document.getElementById('env-vars-templates-list');
+            
+            fetch('/env-vars/templates/list/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.templates && data.templates.length > 0) {
+                        let html = '<div class="table-responsive">';
+                        html += '<table class="table table-hover table-striped">';
+                        html += '<thead><tr><th>Name</th><th>Recipe Type</th><th>Variables</th><th>Actions</th></tr></thead>';
+                        html += '<tbody>';
+                        
+                        data.templates.forEach(template => {
+                            html += `<tr>
+                                <td>
+                                    <strong>${template.name}</strong>
+                                    ${template.description ? `<p class="text-muted small mb-0">${template.description.substring(0, 100)}${template.description.length > 100 ? '...' : ''}</p>` : ''}
+                                </td>
+                                <td><span class="badge bg-primary">${template.recipe_type}</span></td>
+                                <td>${template.variable_count} variable${template.variable_count !== 1 ? 's' : ''}</td>
+                                <td>
+                                    <div class="btn-group">
+                                        <a href="/env-vars/templates/${template.id}/edit/" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>`;
+                        });
+                        
+                        html += '</tbody></table></div>';
+                        templatesContainer.innerHTML = html;
+                    } else {
+                        templatesContainer.innerHTML = `
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                No environment variable templates found. Create your first template to get started.
+                            </div>
+                            
+                            <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
+                                <a href="{% url 'env_vars_template_create' %}" class="btn btn-primary">
+                                    <i class="fas fa-plus me-1"></i> Create Environment Variable Template
+                                </a>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading templates:', error);
+                    templatesContainer.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Failed to load environment variable templates. Please try again.
+                        </div>
+                    `;
+                });
+        }
+        
+        // Load templates when the environment variables tab is shown
+        const envVarsTab = document.getElementById('env-vars-tab');
+        if (envVarsTab) {
+            envVarsTab.addEventListener('shown.bs.tab', function() {
+                loadEnvVarsTemplates();
+            });
+            
+            // Also load if this tab is active initially
+            if (envVarsTab.classList.contains('active')) {
+                loadEnvVarsTemplates();
+            }
+        }
+    });
+
+    $(document).ready(function() {
+        // Configure delete modal when shown
+        $('#deleteInstanceModal').on('show.bs.modal', function (event) {
+            const button = $(event.relatedTarget);
+            const instanceId = button.data('instance-id');
+            const instanceName = button.data('instance-name');
+            const recipeCount = button.data('recipe-count');
+            
+            // Update modal content
+            $('#instanceNamePlaceholder').text(instanceName);
+            
+            // Show recipe warning if applicable
+            if (recipeCount > 0) {
+                $('#recipeWarning').removeClass('d-none');
+                $('#recipeCountPlaceholder').text(recipeCount);
+            } else {
+                $('#recipeWarning').addClass('d-none');
+            }
+            
+            // Set the form action using the correct URL pattern
+            $('#deleteInstanceForm').attr('action', `/env-vars/instances/${instanceId}/delete/`);
+        });
+    });
+</script>
 {% endblock %} 

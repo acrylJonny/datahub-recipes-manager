@@ -41,6 +41,24 @@
                             <i class="fas fa-external-link-alt ms-1 small"></i>
                         </a>
                     </div>
+                    <div class="mb-3">
+                        <span class="fw-bold">Current Branch:</span>
+                        <div class="dropdown d-inline-block ms-2">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="branchDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                {{ github_settings.current_branch|default:"main" }}
+                            </button>
+                            <ul class="dropdown-menu" aria-labelledby="branchDropdown">
+                                {% for branch in github_settings.branches %}
+                                <li>
+                                    <a class="dropdown-item{% if branch == github_settings.current_branch %} active{% endif %}" 
+                                       href="{% url 'github_switch_branch' branch %}">
+                                        {{ branch }}
+                                    </a>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
                     <div class="d-grid">
                         <a href="{% url 'github_settings_edit' %}" class="btn btn-outline-primary">
                             <i class="fas fa-cog me-1"></i> Edit Settings

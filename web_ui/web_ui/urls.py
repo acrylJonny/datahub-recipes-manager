@@ -21,6 +21,7 @@ from django.conf.urls.static import static
 from django.shortcuts import redirect
 from web_ui import views as web_ui_views
 from django.contrib.auth import views as auth_views
+from django.views.generic import RedirectView
 
 # Redirect to dashboard by default
 def home_redirect(request):
@@ -30,9 +31,9 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     
     # Authentication
+    path("accounts/login/", RedirectView.as_view(url='/login/', permanent=True)),
     path("login/", auth_views.LoginView.as_view(template_name='auth/login.html'), name="login"),
     path("logout/", auth_views.LogoutView.as_view(next_page='login'), name="logout"),
-    path("accounts/login/", auth_views.LoginView.as_view(template_name='auth/login.html')),  # Fallback for default Django auth
     
     # Homepage and redirects
     path("", home_redirect, name="home"),
@@ -80,6 +81,7 @@ urlpatterns = [
     # Environment Variables Templates
     path("env-vars/templates/", web_ui_views.env_vars_templates, name="env_vars_templates"),
     path("env-vars/templates/create/", web_ui_views.env_vars_template_create, name="env_vars_template_create"),
+    path("env-vars/templates/<int:template_id>/edit/", web_ui_views.env_vars_template_edit, name="env_vars_template_edit"),
     path("env-vars/templates/list/", web_ui_views.env_vars_template_list, name="env_vars_template_list"),
     path("env-vars/templates/get/<int:template_id>/", web_ui_views.env_vars_template_get, name="env_vars_template_get"),
     path("env-vars/templates/delete/<int:template_id>/", web_ui_views.env_vars_template_delete, name="env_vars_template_delete"),
@@ -114,12 +116,18 @@ urlpatterns = [
     path('github/', web_ui_views.github_index, name='github'),
     path('github/settings/', web_ui_views.github_settings_edit, name='github_settings_edit'),
     path('github/pull-requests/', web_ui_views.github_pull_requests, name='github_pull_requests'),
+    #path('github/pull-requests/<int:pr_id>/', web_ui_views.github_pull_request_detail, name='github_pull_request_detail'),
+    #path('github/switch-branch/<str:branch_name>/', web_ui_views.github_switch_branch, name='github_switch_branch'),
     path('github/test-connection/', web_ui_views.github_test_connection, name='github_test_connection'),
     path('github/create-branch/', web_ui_views.github_create_branch, name='github_create_branch'),
     path('github/sync-recipes/', web_ui_views.github_sync_recipes, name='github_sync_recipes'),
     path('github/sync-status/', web_ui_views.github_sync_status, name='github_sync_status'),
     path('github/pull-requests/<int:pr_number>/update/', web_ui_views.github_update_pr_status, name='github_update_pr_status'),
     path('github/pull-requests/<int:pr_id>/delete/', web_ui_views.github_delete_pr, name='github_delete_pr'),
+    
+    # Recipe instance and template GitHub push endpoints
+    path('recipe-instances/<int:instance_id>/push-github/', web_ui_views.recipe_instance_push_github, name='recipe_instance_push_github'),
+    path('recipe-templates/<int:template_id>/push-github/', web_ui_views.recipe_template_push_github, name='recipe_template_push_github'),
 ]
 
 # Add media files URL

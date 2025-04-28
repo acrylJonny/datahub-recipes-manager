@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Environment Variable Template - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Delete Environment Variable Template</h1>
+        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Templates
+        </a>
+    </div>
+    
+    <div class="card">
+        <div class="card-header bg-danger text-white">
+            <h5 class="card-title mb-0">Confirm Deletion</h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Warning:</strong> This action cannot be undone.
+            </div>
+            
+            <p>Are you sure you want to delete the environment variable template <strong>{{ template.name }}</strong>?</p>
+            
+            <form method="post">
+                {% csrf_token %}
+                <div class="d-flex justify-content-end mt-4">
+                    <a href="{% url 'env_vars_templates' %}" class="btn btn-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-danger">Delete Template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %} 

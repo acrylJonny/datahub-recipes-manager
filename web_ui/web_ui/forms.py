@@ -100,19 +100,23 @@ class RecipeDeployForm(forms.Form):
     description = forms.CharField(label="Description", required=False,
                                 widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
 
-class EnvVarsTemplateForm(forms.Form):
+class EnvVarsTemplateForm(forms.ModelForm):
     """Form for creating or editing an environment variables template."""
-    name = forms.CharField(label="Template Name", max_length=255, required=True,
-                          widget=forms.TextInput(attrs={'class': 'form-control'}))
-    description = forms.CharField(label="Description", required=False,
-                                 widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
-    recipe_type = forms.CharField(label="Recipe Type", max_length=50, required=True,
-                                 widget=forms.TextInput(attrs={'class': 'form-control'}))
-    tags = forms.CharField(label="Tags", max_length=255, required=False,
-                          widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'comma,separated,tags'}),
-                          help_text="Enter comma-separated tags to categorize this template")
     variables = forms.CharField(label="Environment Variables", required=True,
                               widget=forms.HiddenInput(attrs={'id': 'env_vars_template_json'}))
+    
+    class Meta:
+        model = EnvVarsTemplate
+        fields = ['name', 'description', 'recipe_type', 'tags', 'variables']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'recipe_type': forms.TextInput(attrs={'class': 'form-control'}),
+            'tags': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'comma,separated,tags'}),
+        }
+        help_texts = {
+            'tags': "Enter comma-separated tags to categorize this template"
+        }
 
 class EnvVarsInstanceForm(forms.Form):
     """Form for creating or editing an environment variables instance."""

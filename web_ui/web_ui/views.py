@@ -1390,6 +1390,7 @@ def policy_view(request, policy_id):
 def recipe_templates(request):
     """List all recipe templates."""
     templates = RecipeTemplate.objects.all().order_by('-updated_at')
+    env_vars_instances = EnvVarsInstance.objects.all().order_by('-updated_at')
     
     # Handle filtering
     tag_filter = request.GET.get('tag')
@@ -1415,6 +1416,7 @@ def recipe_templates(request):
     return render(request, 'recipes/templates/list.html', {
         'title': 'Recipe Templates',
         'templates': templates,
+        'env_vars_instances': env_vars_instances,
         'tag_filter': tag_filter,
         'search_query': search_query,
         'all_tags': sorted(all_tags)
@@ -2023,36 +2025,49 @@ def env_vars_templates(request):
     templates = EnvVarsTemplate.objects.all().order_by('-updated_at')
     return render(request, 'env_vars/templates.html', {'templates': templates})
 
-@login_required
 def env_vars_template_create(request):
     """Create a new environment variables template."""
-    form = EnvVarsTemplateForm()
+    template_exists = EnvVarsTemplate.objects.count() > 0
     
-    if request.method == 'POST':
+    if request.method == "POST":
         form = EnvVarsTemplateForm(request.POST)
         if form.is_valid():
-            # Create new template
-            template = EnvVarsTemplate(
-                name=form.cleaned_data['name'],
-                description=form.cleaned_data['description'],
-                recipe_type=form.cleaned_data['recipe_type'],
-                variables=form.cleaned_data['variables']
-            )
-            
-            # Handle tags
-            if form.cleaned_data['tags']:
-                template.set_tags_list([tag.strip() for tag in form.cleaned_data['tags'].split(',')])
-            
-            template.save()
-            messages.success(request, f"Environment variables template '{template.name}' created successfully")
+            template = form.save()
+            messages.success(request, f"Template '{template.name}' created successfully.")
             return redirect('env_vars_templates')
-        else:
-            messages.error(request, "Please correct the errors below")
+    else:
+        form = EnvVarsTemplateForm()
+        
+    return render(request, 'env_vars/template_form.html', {
+        'form': form,
+        'is_new': True,
+        'title': 'Create Environment Variables Template',
+        'template_exists': template_exists,
+        'data_types': EnvVarsTemplate.DATA_TYPES,
+    })
+
+def env_vars_template_edit(request, template_id):
+    """Edit an environment variables template."""
+    template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    if request.method == "POST":
+        form = EnvVarsTemplateForm(request.POST, instance=template)
+        if form.is_valid():
+            template = form.save()
+            messages.success(request, f"Template '{template.name}' updated successfully.")
+            return redirect('env_vars_templates')
+    else:
+        form = EnvVarsTemplateForm(instance=template)
+        
+    variables = template.get_variables_dict()
     
     return render(request, 'env_vars/template_form.html', {
         'form': form,
-        'title': 'Create Environment Variables Template',
-        'is_new': True
+        'template': template,
+        'variables': variables,
+        'is_new': False,
+        'title': f'Edit Environment Variables Template: {template.name}',
+        'data_types': EnvVarsTemplate.DATA_TYPES,
     })
 
 @login_required
@@ -2086,7 +2101,8 @@ def env_vars_instance_create(request):
     return render(request, 'env_vars/instance_form.html', {
         'form': form,
         'title': 'Create Environment Variables Instance',
-        'is_new': True
+        'is_new': True,
+        'instance': None  # Explicitly set instance to None for create view
     })
 
 @login_required
@@ -2164,7 +2180,8 @@ def env_vars_template_details(request, template_id):
             'description': details.get('description', ''),
             'required': details.get('required', False),
             'is_secret': details.get('is_secret', False),
-            'default_value': details.get('default_value', '')
+            'default_value': details.get('default_value', ''),
+            'data_type': details.get('data_type', 'text')
         })
     
     response_data = {
@@ -2400,7 +2417,9 @@ def recipe_instance_deploy(request, instance_id):
         else:
             messages.error(request, "Failed to deploy recipe instance")
     except Exception as e:
-        messages.error(request, f"Error deploying recipe instance: {str(e)}")
+        error_msg = f"Error deploying recipe instance: {str(e)}"
+        messages.error(request, error_msg)
+        logger.error(error_msg, exc_info=True)
     
     return redirect('recipe_instances')
 
@@ -2875,3 +2894,61 @@ def github_delete_pr(request, pr_id):
         messages.error(request, f"Error deleting record: {str(e)}")
     
     return redirect('github_pull_requests')
+
+@require_POST
+def recipe_instance_push_github(request, instance_id):
+    """Push a recipe instance to GitHub."""
+    instance = get_object_or_404(RecipeInstance, id=instance_id)
+    
+    try:
+        # Get the GitHub integration
+        github = GitHubIntegration()
+        
+        # Push to GitHub
+        pr = github.push_to_github(instance)
+        
+        if pr:
+            return JsonResponse({
+                'success': True,
+                'pr_url': pr.pr_url
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Failed to push to GitHub'
+            })
+    except Exception as e:
+        logger.error(f"Error pushing instance to GitHub: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@require_POST
+def recipe_template_push_github(request, template_id):
+    """Push a recipe template to GitHub."""
+    template = get_object_or_404(RecipeTemplate, id=template_id)
+    
+    try:
+        # Get the GitHub integration
+        github = GitHubIntegration()
+        
+        # Push to GitHub
+        pr = github.push_to_github(template)
+        
+        if pr:
+            return JsonResponse({
+                'success': True,
+                'pr_url': pr.pr_url
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Failed to push to GitHub'
+            })
+    except Exception as e:
+        logger.error(f"Error pushing template to GitHub: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })

@@ -8,6 +8,24 @@ import requests
 import logging
 from django.contrib.auth.models import User
 import uuid
+from pathlib import Path
+import yaml
+
+logger = logging.getLogger(__name__)
+
+# Define recipe types
+RECIPE_TYPES = [
+    ('kafka', 'Kafka'),
+    ('file', 'File'),
+    ('s3', 'S3'),
+    ('snowflake', 'Snowflake'),
+    ('bigquery', 'BigQuery'),
+    ('postgres', 'PostgreSQL'),
+    ('mysql', 'MySQL'),
+    ('mssql', 'Microsoft SQL Server'),
+    ('oracle', 'Oracle'),
+    ('other', 'Other')
+]
 
 class Settings(models.Model):
     """Settings model for storing application configuration."""
@@ -190,6 +208,34 @@ class RecipeTemplate(models.Model):
             return parts[3]
         return None
 
+    def export_to_yaml(self, base_dir=None):
+        """Export the recipe template to a YAML file."""
+        if not base_dir:
+            base_dir = Path(__file__).parent.parent.parent / 'recipes' / 'templates'
+        
+        # Create directory if it doesn't exist
+        base_dir = Path(base_dir)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create YAML content
+        yaml_content = {
+            'name': self.name,
+            'description': self.description,
+            'recipe_type': self.recipe_type,
+            'content': self.content
+        }
+        
+        # Add tags if present
+        if self.tags:
+            yaml_content['tags'] = self.tags
+        
+        # Write to file
+        file_path = base_dir / f"{self.recipe_type.lower()}.yml"
+        with open(file_path, 'w') as f:
+            yaml.dump(yaml_content, f, default_flow_style=False, sort_keys=False)
+        
+        return file_path
+
 class RecipeManager:
     """Helper class for recipe-specific operations."""
     
@@ -365,42 +411,95 @@ class RecipeInstance(models.Model):
             logger.error(f"Error applying environment variables to template for instance {self.id}")
             return template_content
 
+    def export_to_yaml(self, base_dir=None):
+        """Export the recipe instance to a YAML file."""
+        if not base_dir:
+            base_dir = Path(__file__).parent.parent.parent / 'recipes' / 'instances'
+        
+        # Create directory if it doesn't exist
+        base_dir = Path(base_dir)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get the recipe content
+        recipe_content = self.get_combined_content()
+        if not recipe_content:
+            raise ValueError("Unable to generate recipe content")
+        
+        # Create YAML content
+        yaml_content = {
+            'name': self.name,
+            'description': self.description,
+            'recipe_type': self.template.recipe_type,
+            'recipe': recipe_content
+        }
+        
+        # Add environment variables if present
+        if self.env_vars_instance:
+            yaml_content['env_vars'] = self.env_vars_instance.get_variables_dict()
+        
+        # Write to file
+        file_path = base_dir / f"{self.name.lower().replace(' ', '_')}.yml"
+        with open(file_path, 'w') as f:
+            yaml.dump(yaml_content, f, default_flow_style=False, sort_keys=False)
+        
+        return file_path
+
 class EnvVarsTemplate(models.Model):
-    """Model for storing reusable environment variable templates."""
+    """Template for environment variables to be used in recipes."""
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    recipe_type = models.CharField(max_length=50)
-    variables = models.TextField()  # JSON content of environment variables
+    tags = models.TextField(blank=True, null=True)
+    recipe_type = models.CharField(max_length=50, choices=RECIPE_TYPES)
+    variables = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    tags = models.CharField(max_length=255, blank=True, null=True)  # Comma-separated tags
+    
+    DATA_TYPES = [
+        ('text', 'Text'),
+        ('number', 'Number'),
+        ('boolean', 'Boolean'),
+        ('json', 'JSON')
+    ]
     
     def __str__(self):
         return self.name
     
     def get_variables_dict(self):
-        """Get the environment variables as a dictionary."""
-        try:
-            return json.loads(self.variables)
-        except Exception:
+        """Return the variables as a python dictionary."""
+        if not self.variables:
             return {}
+        return json.loads(self.variables)
     
     def set_variables_dict(self, variables_dict):
-        """Set the environment variables from a dictionary."""
+        """Set the variables from a python dictionary."""
         self.variables = json.dumps(variables_dict)
     
     def get_tags_list(self):
-        """Get the tags as a list."""
+        """Return the tags as a list."""
         if not self.tags:
             return []
         return [tag.strip() for tag in self.tags.split(',')]
     
     def set_tags_list(self, tags_list):
         """Set the tags from a list."""
-        if not tags_list:
-            self.tags = ''
-        else:
-            self.tags = ','.join(tags_list)
+        self.tags = ','.join(tags_list)
+        
+    def get_display_variables(self):
+        """Return variables formatted for display in a template."""
+        variables = self.get_variables_dict()
+        result = []
+        
+        for key, details in variables.items():
+            result.append({
+                'key': key,
+                'description': details.get('description', ''),
+                'required': details.get('required', False),
+                'is_secret': details.get('is_secret', False),
+                'data_type': details.get('data_type', 'text'),
+                'default_value': details.get('default_value', '')
+            })
+            
+        return result
 
 class EnvVarsInstance(models.Model):
     """Model for storing actual instances of environment variable configurations."""
@@ -408,8 +507,8 @@ class EnvVarsInstance(models.Model):
     description = models.TextField(blank=True, null=True)
     template = models.ForeignKey(EnvVarsTemplate, on_delete=models.SET_NULL, null=True, blank=True)
     recipe_id = models.CharField(max_length=255, null=True, blank=True)  # Optional link to a recipe
-    recipe_type = models.CharField(max_length=50)
-    variables = models.TextField()  # JSON content of environment variable values
+    recipe_type = models.CharField(max_length=50, choices=RECIPE_TYPES)
+    variables = models.TextField()  # JSON content with actual values, format: {"KEY": {"value": "actual_value", "isSecret": true/false}}
     deployed = models.BooleanField(default=False)
     deployed_at = models.DateTimeField(null=True, blank=True)
     datahub_secrets_created = models.BooleanField(default=False)  # Track if secrets have been created in DataHub
@@ -434,6 +533,70 @@ class EnvVarsInstance(models.Model):
         """Get only the variables marked as secrets."""
         variables = self.get_variables_dict()
         return {k: v for k, v in variables.items() if v.get('isSecret', False)}
+    
+    @property
+    def has_secret_variables(self):
+        """Check if this instance has any secret variables."""
+        variables = self.get_variables_dict()
+        return any(v.get('isSecret', False) for k, v in variables.items())
+        
+    def validate_all_variables(self):
+        """Validate all variable values against their defined data types in the template."""
+        if not self.template:
+            return True
+            
+        template_vars = self.template.get_variables_dict()
+        instance_vars = self.get_variables_dict()
+        
+        for key, template_def in template_vars.items():
+            # Skip if not required and not provided
+            if not template_def.get('required', False) and (key not in instance_vars or not instance_vars[key].get('value')):
+                continue
+                
+            # Check if required key is missing
+            if template_def.get('required', False) and (key not in instance_vars or not instance_vars[key].get('value')):
+                return False
+                
+            # Validate type if value exists
+            if key in instance_vars and 'value' in instance_vars[key]:
+                value = instance_vars[key]['value']
+                if not self.template.validate_value_for_type(key, value):
+                    return False
+                    
+        return True
+        
+    def get_typed_value(self, key):
+        """Get the value converted to its proper data type based on the template."""
+        variables = self.get_variables_dict()
+        if key not in variables or 'value' not in variables[key]:
+            return None
+            
+        value = variables[key]['value']
+        
+        if not self.template:
+            return value
+            
+        template_vars = self.template.get_variables_dict()
+        if key not in template_vars:
+            return value
+            
+        data_type = template_vars[key].get('data_type', 'text')
+        
+        try:
+            if data_type == 'text':
+                return str(value)
+            elif data_type == 'number':
+                return float(value)
+            elif data_type == 'boolean':
+                val_lower = str(value).lower()
+                return val_lower in ('true', 'yes', '1')
+            elif data_type == 'json':
+                if isinstance(value, str):
+                    return json.loads(value)
+                return value
+            return value
+        except Exception:
+            return value
 
 class GitHubPR(models.Model):
     """Model for storing GitHub pull request information."""
@@ -552,6 +715,10 @@ class GitHubSettings(models.Model):
 class GitHubIntegration:
     """Helper class for GitHub operations."""
     
+    # Rate limiting constants
+    RATE_LIMIT_WINDOW = 60  # seconds
+    MAX_REQUESTS = 30  # per window
+    
     @classmethod
     def is_configured(cls):
         """Check if GitHub integration is configured."""
@@ -576,6 +743,41 @@ class GitHubIntegration:
         return None
     
     @classmethod
+    def _make_request(cls, method, url, headers=None, json=None, retries=3):
+        """Make a request to GitHub API with rate limiting and retries."""
+        if not headers:
+            headers = {
+                'Authorization': f'token {GitHubSettings.get_token()}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        
+        for attempt in range(retries):
+            try:
+                response = requests.request(method, url, headers=headers, json=json)
+                
+                # Check rate limits
+                remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
+                reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
+                
+                if remaining <= 0:
+                    wait_time = reset_time - time.time()
+                    if wait_time > 0:
+                        logger.warning(f"Rate limit reached. Waiting {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                
+                response.raise_for_status()
+                return response
+                
+            except requests.exceptions.RequestException as e:
+                if attempt == retries - 1:
+                    raise
+                logger.warning(f"Request failed (attempt {attempt + 1}/{retries}): {str(e)}")
+                time.sleep(2 ** attempt)  # Exponential backoff
+                
+        return None
+    
+    @classmethod
     def get_active_prs(cls, recipe_id=None):
         """Get active pull requests, optionally filtered by recipe_id."""
         queryset = GitHubPR.objects.filter(pr_status__in=['open', 'pending'])
@@ -585,98 +787,63 @@ class GitHubIntegration:
     
     @classmethod
     def create_pull_request(cls, recipe_id, recipe_name, recipe_content):
-        """Create a GitHub pull request for a recipe.
-        
-        Args:
-            recipe_id: The ID of the recipe
-            recipe_name: The name of the recipe
-            recipe_content: The content of the recipe
-            
-        Returns:
-            GitHubPR object if successful, None otherwise
-        """
+        """Create a GitHub pull request for a recipe."""
         if not cls.is_configured():
             logger.error("GitHub integration not configured")
             return None
         
-        token = GitHubSettings.get_token()
-        
-        # Create a unique branch name
-        timestamp = int(time.time())
-        safe_recipe_id = re.sub(r'[^a-zA-Z0-9]', '-', recipe_id)
-        branch_name = f"recipe-{safe_recipe_id}-{timestamp}"
-        
-        # Create PR title and description
-        title = f"Update recipe: {recipe_name}"
-        description = f"This PR updates the recipe '{recipe_name}' (ID: {recipe_id})."
-        
-        # Get the default branch
-        api_url = cls.get_api_url()
-        headers = {
-            'Authorization': f'token {token}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
-        
         try:
-            # Get the default branch
-            response = requests.get(api_url, headers=headers)
-            response.raise_for_status()
+            # Get default branch
+            api_url = cls.get_api_url()
+            response = cls._make_request('GET', api_url)
             default_branch = response.json().get('default_branch', 'main')
             
-            # Get the reference to the default branch
+            # Create branch
+            branch_name = f"recipe-{recipe_id}-{int(time.time())}"
             ref_url = cls.get_api_url(f"/git/refs/heads/{default_branch}")
-            response = requests.get(ref_url, headers=headers)
-            response.raise_for_status()
+            response = cls._make_request('GET', ref_url)
             sha = response.json().get('object', {}).get('sha')
             
-            # Create a new branch
+            # Create new branch
             create_ref_url = cls.get_api_url("/git/refs")
             data = {
                 'ref': f'refs/heads/{branch_name}',
                 'sha': sha
             }
-            response = requests.post(create_ref_url, headers=headers, json=data)
-            response.raise_for_status()
+            cls._make_request('POST', create_ref_url, json=data)
             
-            # Get recipe path
+            # Create/update recipe file
             recipe_path = f"recipes/{recipe_id}.yml"
-            
-            # Check if file exists
             content_url = cls.get_api_url(f"/contents/{recipe_path}")
-            file_exists = True
+            
             try:
-                response = requests.get(content_url, headers=headers)
-                response.raise_for_status()
+                response = cls._make_request('GET', content_url)
                 file_sha = response.json().get('sha')
             except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 404:
-                    file_exists = False
-                else:
+                if e.response.status_code != 404:
                     raise
+                file_sha = None
             
-            # Create or update file
+            # Upload file
             data = {
                 'message': f"Update recipe: {recipe_name}",
                 'content': base64.b64encode(recipe_content.encode()).decode(),
                 'branch': branch_name
             }
-            
-            if file_exists:
+            if file_sha:
                 data['sha'] = file_sha
-            
-            response = requests.put(content_url, headers=headers, json=data)
-            response.raise_for_status()
+                
+            cls._make_request('PUT', content_url, json=data)
             
             # Create PR
             pr_url = cls.get_api_url("/pulls")
             data = {
-                'title': title,
-                'body': description,
+                'title': f"Update recipe: {recipe_name}",
+                'body': f"This PR updates the recipe '{recipe_name}' (ID: {recipe_id}).",
                 'head': branch_name,
                 'base': default_branch
             }
-            response = requests.post(pr_url, headers=headers, json=data)
-            response.raise_for_status()
+            response = cls._make_request('POST', pr_url, json=data)
             pr_data = response.json()
             
             # Create PR record
@@ -686,13 +853,14 @@ class GitHubIntegration:
                 pr_number=pr_data.get('number'),
                 pr_status='open',
                 branch_name=branch_name,
-                title=title,
-                description=description
+                title=f"Update recipe: {recipe_name}",
+                description=f"This PR updates the recipe '{recipe_name}' (ID: {recipe_id})."
             )
             return pr
             
         except Exception as e:
-            logger.error(f"Error creating PR: {str(e)}")
+            error_msg = f"Error creating PR: {str(e)}"
+            logger.error(error_msg, exc_info=True)
             return None
     
     @classmethod
@@ -764,4 +932,232 @@ class GitHubIntegration:
             return None
         except Exception as e:
             logger.error(f"Error fetching PR status: {str(e)}")
+            return None
+    
+    @classmethod
+    def get_pull_request(cls, pr_number):
+        """Get a pull request by number.
+        
+        Args:
+            pr_number: The pull request number
+            
+        Returns:
+            GitHubPR object if successful, None otherwise
+        """
+        if not cls.is_configured():
+            logger.error("GitHub integration not configured")
+            return None
+        
+        token = GitHubSettings.get_token()
+        api_url = cls.get_api_url(f"/pulls/{pr_number}")
+        headers = {
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        
+        try:
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()
+            pr_data = response.json()
+            
+            # Update or create PR record
+            pr, created = GitHubPR.objects.update_or_create(
+                pr_number=pr_number,
+                defaults={
+                    'recipe_id': pr_data.get('title', '').split(':')[0] if ':' in pr_data.get('title', '') else '',
+                    'pr_url': pr_data.get('html_url'),
+                    'pr_status': 'merged' if pr_data.get('merged') else 'closed' if pr_data.get('state') == 'closed' else 'open',
+                    'branch_name': pr_data.get('head', {}).get('ref'),
+                    'title': pr_data.get('title'),
+                    'description': pr_data.get('body')
+                }
+            )
+            return pr
+            
+        except Exception as e:
+            error_msg = f"Error getting PR #{pr_number}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return None
+    
+    @classmethod
+    def update_pull_request_status(cls, pr_number):
+        """Update the status of a pull request.
+        
+        Args:
+            pr_number: The pull request number
+            
+        Returns:
+            GitHubPR object if successful, None otherwise
+        """
+        if not cls.is_configured():
+            logger.error("GitHub integration not configured")
+            return None
+        
+        token = GitHubSettings.get_token()
+        api_url = cls.get_api_url(f"/pulls/{pr_number}")
+        headers = {
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        
+        try:
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()
+            pr_data = response.json()
+            
+            # Update PR record
+            pr = GitHubPR.objects.get(pr_number=pr_number)
+            pr.pr_status = 'merged' if pr_data.get('merged') else 'closed' if pr_data.get('state') == 'closed' else 'open'
+            pr.save()
+            return pr
+            
+        except GitHubPR.DoesNotExist:
+            error_msg = f"PR #{pr_number} not found in database"
+            logger.error(error_msg)
+            return None
+        except Exception as e:
+            error_msg = f"Error updating PR #{pr_number} status: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return None
+    
+    @classmethod
+    def get_pull_request_content(cls, pr_number):
+        """Get the content of a pull request.
+        
+        Args:
+            pr_number: The pull request number
+            
+        Returns:
+            Dictionary with recipe content if successful, None otherwise
+        """
+        if not cls.is_configured():
+            logger.error("GitHub integration not configured")
+            return None
+        
+        token = GitHubSettings.get_token()
+        api_url = cls.get_api_url(f"/pulls/{pr_number}/files")
+        headers = {
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        
+        try:
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()
+            files = response.json()
+            
+            # Find recipe file
+            recipe_file = next((f for f in files if f['filename'].endswith('.yml')), None)
+            if not recipe_file:
+                error_msg = f"No recipe file found in PR #{pr_number}"
+                logger.error(error_msg)
+                return None
+            
+            # Get file content
+            content_url = recipe_file['raw_url']
+            response = requests.get(content_url)
+            response.raise_for_status()
+            content = response.text
+            
+            return {
+                'filename': recipe_file['filename'],
+                'content': content
+            }
+            
+        except Exception as e:
+            error_msg = f"Error getting PR #{pr_number} content: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return None
+    
+    @classmethod
+    def push_to_github(cls, instance_or_template, commit_message=None):
+        """Push a recipe instance or template to GitHub and create a PR."""
+        if not cls.is_configured():
+            logger.error("GitHub integration not configured")
+            return None
+        
+        try:
+            # Export to YAML
+            if isinstance(instance_or_template, RecipeInstance):
+                file_path = instance_or_template.export_to_yaml()
+                branch_name = f"recipe-instance-{instance_or_template.id}-{int(time.time())}"
+                pr_title = f"Update recipe instance: {instance_or_template.name}"
+                pr_description = f"This PR updates the recipe instance '{instance_or_template.name}' (ID: {instance_or_template.id})."
+            elif isinstance(instance_or_template, RecipeTemplate):
+                file_path = instance_or_template.export_to_yaml()
+                branch_name = f"recipe-template-{instance_or_template.id}-{int(time.time())}"
+                pr_title = f"Update recipe template: {instance_or_template.name}"
+                pr_description = f"This PR updates the recipe template '{instance_or_template.name}' (ID: {instance_or_template.id})."
+            else:
+                raise ValueError("Invalid object type")
+            
+            if not commit_message:
+                commit_message = pr_title
+            
+            # Get default branch
+            api_url = cls.get_api_url()
+            response = cls._make_request('GET', api_url)
+            default_branch = response.json().get('default_branch', 'main')
+            
+            # Create branch
+            ref_url = cls.get_api_url(f"/git/refs/heads/{default_branch}")
+            response = cls._make_request('GET', ref_url)
+            sha = response.json().get('object', {}).get('sha')
+            
+            # Create new branch
+            create_ref_url = cls.get_api_url("/git/refs")
+            data = {
+                'ref': f'refs/heads/{branch_name}',
+                'sha': sha
+            }
+            cls._make_request('POST', create_ref_url, json=data)
+            
+            # Read file content
+            with open(file_path, 'r') as f:
+                content = f.read()
+            
+            # Upload file
+            content_url = cls.get_api_url(f"/contents/{file_path.relative_to(Path(__file__).parent.parent.parent)}")
+            data = {
+                'message': commit_message,
+                'content': base64.b64encode(content.encode()).decode(),
+                'branch': branch_name
+            }
+            
+            # Check if file exists
+            try:
+                response = cls._make_request('GET', content_url)
+                data['sha'] = response.json().get('sha')
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code != 404:
+                    raise
+            
+            cls._make_request('PUT', content_url, json=data)
+            
+            # Create PR
+            pr_url = cls.get_api_url("/pulls")
+            data = {
+                'title': pr_title,
+                'body': pr_description,
+                'head': branch_name,
+                'base': default_branch
+            }
+            response = cls._make_request('POST', pr_url, json=data)
+            pr_data = response.json()
+            
+            # Create PR record
+            pr = GitHubPR.objects.create(
+                recipe_id=instance_or_template.id,
+                pr_url=pr_data.get('html_url'),
+                pr_number=pr_data.get('number'),
+                pr_status='open',
+                branch_name=branch_name,
+                title=pr_title,
+                description=pr_description
+            )
+            return pr
+            
+        except Exception as e:
+            error_msg = f"Error pushing to GitHub: {str(e)}"
+            logger.error(error_msg, exc_info=True)
             return None 

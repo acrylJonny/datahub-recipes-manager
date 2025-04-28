@@ -94,10 +94,10 @@
                     <h5 class="card-title mb-0">
                         <i class="fa fa-key me-2"></i> Environment Variables
                     </h5>
-                    <span class="badge bg-primary">{{ env_vars|length }}</span>
+                    <span class="badge bg-primary">{{ variables|length }}</span>
                 </div>
                 <div class="card-body">
-                    {% if env_vars %}
+                    {% if variables %}
                     <div class="table-responsive">
                         <table class="table table-sm table-hover">
                             <thead>
@@ -107,16 +107,16 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for env_var in env_vars %}
+                                {% for key, value in variables.items %}
                                 <tr>
-                                    <td class="fw-bold text-nowrap">{{ env_var.key }}</td>
+                                    <td class="fw-bold text-nowrap">{{ key }}</td>
                                     <td>
-                                        {% if env_var.is_secret %}
+                                        {% if value.isSecret %}
                                         <span class="text-muted">
                                             <i class="fa fa-lock me-1"></i> [Hidden]
                                         </span>
                                         {% else %}
-                                        {{ env_var.value }}
+                                        {{ value.value }}
                                         {% endif %}
                                     </td>
                                 </tr>

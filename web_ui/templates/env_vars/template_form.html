@@ -1,0 +1,402 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">{{ title }}</h1>
+        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Templates
+        </a>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Template Details</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" class="needs-validation" novalidate id="templateForm">
+                {% csrf_token %}
+                
+                <div class="mb-3">
+                    <label for="{{ form.name.id_for_label }}" class="form-label">Template Name</label>
+                    {{ form.name }}
+                    <div class="form-text">A descriptive name for this environment variable template</div>
+                    {% if form.name.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.name.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                    {{ form.description }}
+                    <div class="form-text">Optional description of this template</div>
+                    {% if form.description.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.description.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <label for="{{ form.recipe_type.id_for_label }}" class="form-label">Recipe Type</label>
+                    {{ form.recipe_type }}
+                    <div class="form-text">The type of recipe this template is for</div>
+                    {% if form.recipe_type.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.recipe_type.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <label for="{{ form.tags.id_for_label }}" class="form-label">Tags</label>
+                    {{ form.tags }}
+                    <div class="form-text">Optional comma-separated tags</div>
+                    {% if form.tags.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.tags.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Variables Definition</label>
+                    <div class="form-text mb-2">
+                        Define the variables required by this template. Variables will be referenced in recipes as ${VARIABLE_NAME}.
+                    </div>
+                    
+                    <!-- Hidden field to store the JSON representation of variables -->
+                    <input type="hidden" name="variables" id="variables" value="{{ form.variables.value|default:'' }}">
+                    
+                    <div id="variablesContainer" class="mb-3">
+                        <!-- Variables will be added here dynamically -->
+                    </div>
+                    
+                    <button type="button" id="addVariable" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-plus"></i> Add Variable
+                    </button>
+                    
+                    {% if form.variables.errors %}
+                        <div class="invalid-feedback d-block mt-2">
+                            {{ form.variables.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <button type="submit" class="btn btn-primary">
+                            {% if is_new %}
+                                <i class="fas fa-plus me-1"></i> Create Template
+                            {% else %}
+                                <i class="fas fa-save me-1"></i> Update Template
+                            {% endif %}
+                        </button>
+                        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const variablesContainer = document.getElementById('variablesContainer');
+        const variablesInput = document.getElementById('variables');
+        const addVariableBtn = document.getElementById('addVariable');
+        const form = document.getElementById('templateForm');
+        
+        // Initialize from existing values
+        let variables = {};
+        try {
+            if (variablesInput.value) {
+                variables = JSON.parse(variablesInput.value);
+                renderVariables();
+            }
+        } catch (e) {
+            console.error("Error parsing variables JSON:", e);
+        }
+        
+        // Add a new variable
+        addVariableBtn.addEventListener('click', function() {
+            const variableId = 'var_' + Date.now();
+            variables[variableId] = {
+                key: '',  // Use empty string as initial key instead of ID
+                description: '',
+                required: false,
+                is_secret: false,
+                data_type: 'text',
+                default_value: ''
+            };
+            renderVariables();
+        });
+        
+        // Handle form submission
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            // Convert variables to the format expected by the server
+            const finalVariables = {};
+            const allCards = document.querySelectorAll('.variable-card');
+            
+            for (const card of allCards) {
+                const varId = card.dataset.varId;
+                const keyInput = card.querySelector('.var-key');
+                const key = keyInput.value.trim();
+                
+                if (!key) {
+                    alert('All variables must have a name');
+                    return;
+                }
+                
+                if (Object.keys(finalVariables).includes(key)) {
+                    alert(`Duplicate variable name: ${key}`);
+                    return;
+                }
+                
+                const description = card.querySelector('.var-description').value;
+                const required = card.querySelector('.var-required').checked;
+                const isSecret = card.querySelector('.var-secret').checked;
+                const dataType = card.querySelector('.var-data-type').value;
+                const defaultValue = card.querySelector('.var-default').value;
+                
+                finalVariables[key] = {
+                    description: description,
+                    required: required,
+                    is_secret: isSecret,
+                    data_type: dataType,
+                    default_value: defaultValue
+                };
+            }
+            
+            // Set the hidden input value
+            variablesInput.value = JSON.stringify(finalVariables);
+            form.submit();
+        });
+        
+        // Render all variables
+        function renderVariables() {
+            variablesContainer.innerHTML = '';
+            
+            if (Object.keys(variables).length === 0) {
+                const noVarsMessage = document.createElement('div');
+                noVarsMessage.className = 'alert alert-info';
+                noVarsMessage.textContent = 'No variables defined yet. Click "Add Variable" to begin.';
+                variablesContainer.appendChild(noVarsMessage);
+                return;
+            }
+            
+            for (const [varId, varData] of Object.entries(variables)) {
+                const card = createVariableCard(varId, varData);
+                variablesContainer.appendChild(card);
+            }
+        }
+        
+        // Create a variable card
+        function createVariableCard(varId, varData) {
+            const card = document.createElement('div');
+            card.className = 'card mb-3 variable-card';
+            card.dataset.varId = varId;
+            
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+            
+            // Header with name and remove button
+            const header = document.createElement('div');
+            header.className = 'd-flex justify-content-between align-items-start mb-3';
+            
+            const nameWrapper = document.createElement('div');
+            nameWrapper.className = 'flex-grow-1 me-2';
+            
+            const nameLabel = document.createElement('label');
+            nameLabel.className = 'form-label';
+            nameLabel.textContent = 'Variable Name';
+            
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'form-control var-key';
+            nameInput.value = typeof varData === 'string' ? varId : (varData.key || varId);
+            nameInput.placeholder = 'VARIABLE_NAME';
+            
+            // Add input change handler to update the variable key
+            nameInput.addEventListener('input', function() {
+                variables[varId].key = this.value;
+            });
+            
+            nameWrapper.appendChild(nameLabel);
+            nameWrapper.appendChild(nameInput);
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn btn-outline-danger';
+            removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            removeBtn.addEventListener('click', function() {
+                delete variables[varId];
+                renderVariables();
+            });
+            
+            header.appendChild(nameWrapper);
+            header.appendChild(removeBtn);
+            
+            // Data type selection
+            const dataTypeWrapper = document.createElement('div');
+            dataTypeWrapper.className = 'mb-3';
+            
+            const dataTypeLabel = document.createElement('label');
+            dataTypeLabel.className = 'form-label';
+            dataTypeLabel.textContent = 'Data Type';
+            
+            const dataTypeSelect = document.createElement('select');
+            dataTypeSelect.className = 'form-select var-data-type';
+            
+            const dataTypes = [
+                { value: 'text', label: 'Text' },
+                { value: 'number', label: 'Number' },
+                { value: 'boolean', label: 'Boolean' },
+                { value: 'json', label: 'JSON' }
+            ];
+            
+            for (const dt of dataTypes) {
+                const option = document.createElement('option');
+                option.value = dt.value;
+                option.textContent = dt.label;
+                if (varData.data_type === dt.value) {
+                    option.selected = true;
+                }
+                dataTypeSelect.appendChild(option);
+            }
+            
+            // Add change handler
+            dataTypeSelect.addEventListener('change', function() {
+                variables[varId].data_type = this.value;
+            });
+            
+            dataTypeWrapper.appendChild(dataTypeLabel);
+            dataTypeWrapper.appendChild(dataTypeSelect);
+            
+            // Description field
+            const descWrapper = document.createElement('div');
+            descWrapper.className = 'mb-3';
+            
+            const descLabel = document.createElement('label');
+            descLabel.className = 'form-label';
+            descLabel.textContent = 'Description';
+            
+            const descInput = document.createElement('textarea');
+            descInput.className = 'form-control var-description';
+            descInput.rows = 2;
+            descInput.value = varData.description || '';
+            descInput.placeholder = 'Description of this variable';
+            
+            // Add input handler
+            descInput.addEventListener('input', function() {
+                variables[varId].description = this.value;
+            });
+            
+            descWrapper.appendChild(descLabel);
+            descWrapper.appendChild(descInput);
+            
+            // Default value field
+            const defaultWrapper = document.createElement('div');
+            defaultWrapper.className = 'mb-3';
+            
+            const defaultLabel = document.createElement('label');
+            defaultLabel.className = 'form-label';
+            defaultLabel.textContent = 'Default Value';
+            
+            const defaultInput = document.createElement('input');
+            defaultInput.type = 'text';
+            defaultInput.className = 'form-control var-default';
+            defaultInput.value = varData.default_value || '';
+            defaultInput.placeholder = 'Default value (optional)';
+            
+            // Add input handler
+            defaultInput.addEventListener('input', function() {
+                variables[varId].default_value = this.value;
+            });
+            
+            defaultWrapper.appendChild(defaultLabel);
+            defaultWrapper.appendChild(defaultInput);
+            
+            // Checkboxes for required and secret
+            const checkboxesWrapper = document.createElement('div');
+            checkboxesWrapper.className = 'd-flex gap-4 mb-2';
+            
+            // Required checkbox
+            const requiredWrapper = document.createElement('div');
+            requiredWrapper.className = 'form-check';
+            
+            const requiredInput = document.createElement('input');
+            requiredInput.type = 'checkbox';
+            requiredInput.className = 'form-check-input var-required';
+            requiredInput.id = `var-required-${varId}`;
+            requiredInput.checked = varData.required || false;
+            
+            // Add change handler
+            requiredInput.addEventListener('change', function() {
+                variables[varId].required = this.checked;
+            });
+            
+            const requiredLabel = document.createElement('label');
+            requiredLabel.className = 'form-check-label';
+            requiredLabel.htmlFor = `var-required-${varId}`;
+            requiredLabel.textContent = 'Required';
+            
+            requiredWrapper.appendChild(requiredInput);
+            requiredWrapper.appendChild(requiredLabel);
+            
+            // Secret checkbox
+            const secretWrapper = document.createElement('div');
+            secretWrapper.className = 'form-check';
+            
+            const secretInput = document.createElement('input');
+            secretInput.type = 'checkbox';
+            secretInput.className = 'form-check-input var-secret';
+            secretInput.id = `var-secret-${varId}`;
+            secretInput.checked = varData.is_secret || false;
+            
+            // Add change handler
+            secretInput.addEventListener('change', function() {
+                variables[varId].is_secret = this.checked;
+            });
+            
+            const secretLabel = document.createElement('label');
+            secretLabel.className = 'form-check-label';
+            secretLabel.htmlFor = `var-secret-${varId}`;
+            secretLabel.textContent = 'Secret';
+            
+            secretWrapper.appendChild(secretInput);
+            secretWrapper.appendChild(secretLabel);
+            
+            checkboxesWrapper.appendChild(requiredWrapper);
+            checkboxesWrapper.appendChild(secretWrapper);
+            
+            // Assemble card
+            cardBody.appendChild(header);
+            cardBody.appendChild(dataTypeWrapper);
+            cardBody.appendChild(descWrapper);
+            cardBody.appendChild(defaultWrapper);
+            cardBody.appendChild(checkboxesWrapper);
+            
+            card.appendChild(cardBody);
+            return card;
+        }
+    });
+</script>
+{% endblock %}
