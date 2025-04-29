@@ -48,7 +48,7 @@
                                 {{ github_settings.current_branch|default:"main" }}
                             </button>
                             <ul class="dropdown-menu" aria-labelledby="branchDropdown">
-                                {% for branch in github_settings.branches %}
+                                {% for branch in branches %}
                                 <li>
                                     <a class="dropdown-item{% if branch == github_settings.current_branch %} active{% endif %}" 
                                        href="{% url 'github_switch_branch' branch %}">

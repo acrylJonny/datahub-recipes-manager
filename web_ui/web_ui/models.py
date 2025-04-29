@@ -643,6 +643,7 @@ class GitHubSettings(models.Model):
     token = models.CharField(max_length=255, help_text="GitHub Personal Access Token")
     username = models.CharField(max_length=100, help_text="GitHub username or organization")
     repository = models.CharField(max_length=100, help_text="GitHub repository name")
+    current_branch = models.CharField(max_length=255, default="main", help_text="Current branch for GitHub operations")
     enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -711,6 +712,31 @@ class GitHubSettings(models.Model):
         """Check if GitHub settings are properly configured"""
         settings = cls.get_instance()
         return settings.enabled and bool(settings.token and settings.username and settings.repository)
+
+    @classmethod
+    def get_branches(cls):
+        """Fetch all branches from GitHub."""
+        settings = cls.get_instance()
+        if not cls.is_configured():
+            return []
+
+        headers = {
+            'Authorization': f'token {settings.token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+
+        try:
+            # Get all branches from GitHub
+            branches_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/branches'
+            response = requests.get(branches_url, headers=headers)
+            response.raise_for_status()
+            
+            # Extract branch names
+            branches = [branch['name'] for branch in response.json()]
+            return branches
+        except Exception as e:
+            logger.error(f"Error fetching branches: {str(e)}")
+            return []
 
 class GitHubIntegration:
     """Helper class for GitHub operations."""

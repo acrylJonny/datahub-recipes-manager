@@ -310,24 +310,4 @@ def github_delete_pr(request, pr_id):
     except Exception as e:
         messages.error(request, f"Error deleting record: {str(e)}")
     
-    return redirect('github_pull_requests')
-
-@login_required
-def github_switch_branch(request, branch_name):
-    """Switch the current branch in GitHub settings."""
-    try:
-        github_settings = GitHubSettings.objects.first()
-        if not github_settings:
-            messages.error(request, "GitHub settings not found")
-            return redirect('github_index')
-
-        # Update the current branch
-        github_settings.current_branch = branch_name
-        github_settings.save()
-
-        messages.success(request, f"Switched to branch: {branch_name}")
-    except Exception as e:
-        logger.error(f"Error switching branch: {str(e)}")
-        messages.error(request, f"Error switching branch: {str(e)}")
-
-    return redirect('github_index') 
+    return redirect('github_pull_requests') 

@@ -2605,7 +2605,8 @@ def github_index(request):
     context = {
         'github_settings': settings,
         'pull_requests': pull_requests,
-        'is_configured': settings.is_configured()
+        'is_configured': settings.is_configured(),
+        'branches': GitHubSettings.get_branches()
     }
     
     return render(request, 'github/index.html', context)
@@ -2895,6 +2896,26 @@ def github_delete_pr(request, pr_id):
     
     return redirect('github_pull_requests')
 
+@login_required
+def github_switch_branch(request, branch_name):
+    """Switch the current branch in GitHub settings."""
+    try:
+        github_settings = GitHubSettings.objects.first()
+        if not github_settings:
+            messages.error(request, "GitHub settings not found")
+            return redirect('github')
+
+        # Update the current branch
+        github_settings.current_branch = branch_name
+        github_settings.save()
+
+        messages.success(request, f"Switched to branch: {branch_name}")
+    except Exception as e:
+        logger.error(f"Error switching branch: {str(e)}")
+        messages.error(request, f"Error switching branch: {str(e)}")
+
+    return redirect('github')
+
 @require_POST
 def recipe_instance_push_github(request, instance_id):
     """Push a recipe instance to GitHub."""
@@ -2952,3 +2973,17 @@ def recipe_template_push_github(request, template_id):
             'success': False,
             'error': str(e)
         })
+
+@login_required
+def github_pull_request_detail(request, pr_id):
+    """View details of a specific pull request."""
+    pr = get_object_or_404(GitHubPR, id=pr_id)
+    settings = GitHubSettings.get_instance()
+    
+    context = {
+        'pr': pr,
+        'github_settings': settings,
+        'is_configured': settings.is_configured()
+    }
+    
+    return render(request, 'github/pull_request_detail.html', context)
