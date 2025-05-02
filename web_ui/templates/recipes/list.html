@@ -97,10 +97,10 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if recipe.enabled %}
-                                            <span class="badge bg-success">Enabled</span>
+                                        {% if recipe.is_active %}
+                                            <span class="badge bg-success">Active</span>
                                         {% else %}
-                                            <span class="badge bg-secondary">Disabled</span>
+                                            <span class="badge bg-secondary">Inactive</span>
                                         {% endif %}
                                     </td>
                                     <td>
@@ -114,7 +114,7 @@
                                             <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-copy"></i>
                                             </a>
-                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}">
+                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}" {% if recipe.id|slice:':4' == 'cli-' %}disabled title="Cannot run CLI-created recipes from the UI"{% endif %}>
                                                 <i class="fas fa-play"></i>
                                             </button>
                                             <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}" data-bs-toggle="modal" data-bs-target="#deleteRecipeModal">

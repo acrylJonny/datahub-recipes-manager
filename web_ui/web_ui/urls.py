@@ -122,8 +122,11 @@ urlpatterns = [
     path('github/create-branch/', web_ui_views.github_create_branch, name='github_create_branch'),
     path('github/sync-recipes/', web_ui_views.github_sync_recipes, name='github_sync_recipes'),
     path('github/sync-status/', web_ui_views.github_sync_status, name='github_sync_status'),
-    path('github/pull-requests/<int:pr_number>/update/', web_ui_views.github_update_pr_status, name='github_update_pr_status'),
-    path('github/pull-requests/<int:pr_id>/delete/', web_ui_views.github_delete_pr, name='github_delete_pr'),
+    path('github/update-pr-status/<int:pr_number>/', web_ui_views.github_update_pr_status, name='github_update_pr_status'),
+    path('github/delete-pr/<int:pr_id>/', web_ui_views.github_delete_pr, name='github_delete_pr'),
+    path('github/create-pr/', web_ui_views.github_create_pr, name='github_create_pr'),
+    path('github/branch-diff/', web_ui_views.github_branch_diff, name='github_branch_diff'),
+    path('github/workflows-overview/', web_ui_views.github_workflows_overview, name='github_workflows_overview'),
     
     # Recipe instance and template GitHub push endpoints
     path('recipe-instances/<int:instance_id>/push-github/', web_ui_views.recipe_instance_push_github, name='recipe_instance_push_github'),

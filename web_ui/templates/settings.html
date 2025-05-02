@@ -83,34 +83,57 @@
                     <form method="POST" action="{% url 'settings' %}">
                         {% csrf_token %}
                         <input type="hidden" name="section" value="github_settings">
-                        <div class="mb-3">
-                            <label for="github_username" class="form-label">GitHub Username</label>
-                            <input type="text" class="form-control" id="github_username" name="github_username"
-                                   value="{{ config.github_username }}" placeholder="Your GitHub username">
-                            <div class="form-text">Your GitHub username.</div>
+                        
+                        <div class="form-check form-switch mb-4">
+                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" 
+                                  {% if github_form.enabled.value %}checked{% endif %}>
+                            <label class="form-check-label" for="enabled">Enable GitHub Integration</label>
                         </div>
                         
                         <div class="mb-3">
-                            <label for="github_repository" class="form-label">Repository</label>
-                            <input type="text" class="form-control" id="github_repository" name="github_repository"
-                                   value="{{ config.github_repository }}" placeholder="username/repository">
-                            <div class="form-text">The repository where your GitHub Actions are defined (e.g., username/repository).</div>
+                            <label for="username" class="form-label">GitHub Username/Organization <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="username" name="username" 
+                                   value="{{ github_form.username.value|default:'' }}" required>
+                            <div class="form-text">Your GitHub username or organization name.</div>
+                            {% if github_form.username.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ github_form.username.errors }}
+                                </div>
+                            {% endif %}
                         </div>
                         
                         <div class="mb-3">
-                            <label for="github_token" class="form-label">GitHub Personal Access Token</label>
+                            <label for="repository" class="form-label">Repository Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="repository" name="repository" 
+                                   value="{{ github_form.repository.value|default:'' }}" required>
+                            <div class="form-text">Name of the repository where recipes will be stored (e.g., datahub-recipes).</div>
+                            {% if github_form.repository.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ github_form.repository.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="token" class="form-label">GitHub Personal Access Token <span class="text-danger">*</span></label>
                             <div class="input-group">
-                                <input type="password" class="form-control" id="github_token" name="github_token"
-                                       placeholder="Enter your GitHub token">
-                                <button class="btn btn-outline-secondary" type="button" id="toggleGitHubToken">
+                                <input type="password" class="form-control" id="token" name="token" 
+                                       value="{{ github_form.token.value|default:'' }}" required>
+                                <button class="btn btn-outline-secondary" type="button" id="toggleToken">
                                     <i class="fas fa-eye"></i>
                                 </button>
                             </div>
                             <div class="form-text">
-                                Personal access token with 'repo' and 'workflow' permissions. 
-                                <a href="https://github.com/settings/tokens" target="_blank">Create one here</a>.
-                                Leave empty to keep existing token.
+                                Personal access token with 'repo' scope. 
+                                <a href="https://github.com/settings/tokens/new" target="_blank">
+                                    Create a new token <i class="fas fa-external-link-alt ms-1 small"></i>
+                                </a>
                             </div>
+                            {% if github_form.token.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ github_form.token.errors }}
+                                </div>
+                            {% endif %}
                         </div>
                         
                         <div class="d-flex justify-content-between">
@@ -295,13 +318,13 @@
         }
         
         // Toggle GitHub token visibility
-        const toggleGitHubToken = document.getElementById('toggleGitHubToken');
-        const githubToken = document.getElementById('github_token');
+        const toggleToken = document.getElementById('toggleToken');
+        const token = document.getElementById('token');
         
-        if (toggleGitHubToken && githubToken) {
-            toggleGitHubToken.addEventListener('click', function() {
-                const type = githubToken.getAttribute('type') === 'password' ? 'text' : 'password';
-                githubToken.setAttribute('type', type);
+        if (toggleToken && token) {
+            toggleToken.addEventListener('click', function() {
+                const type = token.getAttribute('type') === 'password' ? 'text' : 'password';
+                token.setAttribute('type', type);
                 this.querySelector('i').classList.toggle('fa-eye');
                 this.querySelector('i').classList.toggle('fa-eye-slash');
             });

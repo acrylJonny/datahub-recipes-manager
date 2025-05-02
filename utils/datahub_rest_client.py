@@ -140,7 +140,31 @@ class DataHubRestClient:
                 headers=self.headers,
                 timeout=10
             )
-            return response.status_code == 200
+            if response.status_code != 200:
+                logger.error(f"Failed to access config endpoint: {response.status_code}")
+                return False
+
+            # Try to list recipes to check permissions
+            try:
+                sources = self.list_ingestion_sources()
+                if not isinstance(sources, list):
+                    logger.error("Failed to list ingestion sources: Invalid response format")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to list ingestion sources: {str(e)}")
+                return False
+
+            # Try to list policies to check permissions
+            try:
+                policies = self.list_policies()
+                if not isinstance(policies, list):
+                    logger.error("Failed to list policies: Invalid response format")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to list policies: {str(e)}")
+                return False
+
+            return True
         except Exception as e:
             logger.error(f"Error testing connection: {str(e)}")
             return False

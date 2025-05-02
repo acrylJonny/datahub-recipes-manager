@@ -174,6 +174,9 @@
                         {% endif %}
                     </div>
                     <div>
+                        <button type="button" class="btn btn-outline-secondary me-2" onclick="addToGitPR()">
+                            <i class="fab fa-github me-1"></i> Add to Git PR
+                        </button>
                         <button type="submit" class="btn btn-primary">
                             <i class="fa fa-save me-1"></i> Save Instance
                         </button>
@@ -405,5 +408,37 @@
         // Initial row numbers
         updateRowNumbers();
     });
+
+    function addToGitPR() {
+        if (!confirm('Are you sure you want to add these environment variables to a Git PR? This will create a new branch if needed.')) {
+            return;
+        }
+        
+        // Get the current form data
+        const form = document.querySelector('form');
+        const formData = new FormData(form);
+        
+        // Send to the server
+        fetch('{% url "env_vars_instance_push_github" form.instance.id %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(Object.fromEntries(formData))
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Successfully added to GitHub PR! PR URL: ' + data.pr_url);
+                window.open(data.pr_url, '_blank');
+            } else {
+                alert('Error adding to GitHub PR: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Error adding to GitHub PR: ' + error);
+        });
+    }
 </script>
 {% endblock %} 

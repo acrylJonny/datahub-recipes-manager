@@ -741,363 +741,43 @@ class GitHubSettings(models.Model):
 class GitHubIntegration:
     """Helper class for GitHub operations."""
     
-    # Rate limiting constants
-    RATE_LIMIT_WINDOW = 60  # seconds
-    MAX_REQUESTS = 30  # per window
-    
     @classmethod
     def is_configured(cls):
         """Check if GitHub integration is configured."""
-        return bool(GitHubSettings.get_token() and GitHubSettings.get_repository())
-    
-    @classmethod
-    def get_repo_url(cls):
-        """Get the repository URL."""
-        username = GitHubSettings.get_username()
-        repo = GitHubSettings.get_repository()
-        if username and repo:
-            return f"https://github.com/{username}/{repo}"
-        return None
+        settings = GitHubSettings.get_instance()
+        return settings and settings.is_configured()
     
     @classmethod
     def get_api_url(cls, endpoint=""):
-        """Get GitHub API URL for the configured repository."""
-        username = GitHubSettings.get_username()
-        repo = GitHubSettings.get_repository()
-        if username and repo:
-            return f"https://api.github.com/repos/{username}/{repo}{endpoint}"
-        return None
+        """Get the GitHub API URL for the configured repository."""
+        settings = GitHubSettings.get_instance()
+        if not settings:
+            return None
+        base_url = f"https://api.github.com/repos/{settings.username}/{settings.repository}"
+        return f"{base_url}{endpoint}" if endpoint else base_url
     
     @classmethod
-    def _make_request(cls, method, url, headers=None, json=None, retries=3):
-        """Make a request to GitHub API with rate limiting and retries."""
-        if not headers:
-            headers = {
-                'Authorization': f'token {GitHubSettings.get_token()}',
-                'Accept': 'application/vnd.github.v3+json'
-            }
+    def _make_request(cls, method, url, **kwargs):
+        """Make a request to the GitHub API."""
+        settings = GitHubSettings.get_instance()
+        if not settings or not settings.token:
+            raise ValueError("GitHub token not configured")
         
-        for attempt in range(retries):
-            try:
-                response = requests.request(method, url, headers=headers, json=json)
-                
-                # Check rate limits
-                remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
-                reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
-                
-                if remaining <= 0:
-                    wait_time = reset_time - time.time()
-                    if wait_time > 0:
-                        logger.warning(f"Rate limit reached. Waiting {wait_time} seconds...")
-                        time.sleep(wait_time)
-                        continue
-                
-                response.raise_for_status()
-                return response
-                
-            except requests.exceptions.RequestException as e:
-                if attempt == retries - 1:
-                    raise
-                logger.warning(f"Request failed (attempt {attempt + 1}/{retries}): {str(e)}")
-                time.sleep(2 ** attempt)  # Exponential backoff
-                
-        return None
-    
-    @classmethod
-    def get_active_prs(cls, recipe_id=None):
-        """Get active pull requests, optionally filtered by recipe_id."""
-        queryset = GitHubPR.objects.filter(pr_status__in=['open', 'pending'])
-        if recipe_id:
-            queryset = queryset.filter(recipe_id=recipe_id)
-        return queryset
-    
-    @classmethod
-    def create_pull_request(cls, recipe_id, recipe_name, recipe_content):
-        """Create a GitHub pull request for a recipe."""
-        if not cls.is_configured():
-            logger.error("GitHub integration not configured")
-            return None
-        
-        try:
-            # Get default branch
-            api_url = cls.get_api_url()
-            response = cls._make_request('GET', api_url)
-            default_branch = response.json().get('default_branch', 'main')
-            
-            # Create branch
-            branch_name = f"recipe-{recipe_id}-{int(time.time())}"
-            ref_url = cls.get_api_url(f"/git/refs/heads/{default_branch}")
-            response = cls._make_request('GET', ref_url)
-            sha = response.json().get('object', {}).get('sha')
-            
-            # Create new branch
-            create_ref_url = cls.get_api_url("/git/refs")
-            data = {
-                'ref': f'refs/heads/{branch_name}',
-                'sha': sha
-            }
-            cls._make_request('POST', create_ref_url, json=data)
-            
-            # Create/update recipe file
-            recipe_path = f"recipes/{recipe_id}.yml"
-            content_url = cls.get_api_url(f"/contents/{recipe_path}")
-            
-            try:
-                response = cls._make_request('GET', content_url)
-                file_sha = response.json().get('sha')
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code != 404:
-                    raise
-                file_sha = None
-            
-            # Upload file
-            data = {
-                'message': f"Update recipe: {recipe_name}",
-                'content': base64.b64encode(recipe_content.encode()).decode(),
-                'branch': branch_name
-            }
-            if file_sha:
-                data['sha'] = file_sha
-                
-            cls._make_request('PUT', content_url, json=data)
-            
-            # Create PR
-            pr_url = cls.get_api_url("/pulls")
-            data = {
-                'title': f"Update recipe: {recipe_name}",
-                'body': f"This PR updates the recipe '{recipe_name}' (ID: {recipe_id}).",
-                'head': branch_name,
-                'base': default_branch
-            }
-            response = cls._make_request('POST', pr_url, json=data)
-            pr_data = response.json()
-            
-            # Create PR record
-            pr = GitHubPR.objects.create(
-                recipe_id=recipe_id,
-                pr_url=pr_data.get('html_url'),
-                pr_number=pr_data.get('number'),
-                pr_status='open',
-                branch_name=branch_name,
-                title=f"Update recipe: {recipe_name}",
-                description=f"This PR updates the recipe '{recipe_name}' (ID: {recipe_id})."
-            )
-            return pr
-            
-        except Exception as e:
-            error_msg = f"Error creating PR: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return None
-    
-    @classmethod
-    def update_pr_status(cls, pr_id, status):
-        """Update the status of a pull request.
-        
-        Args:
-            pr_id: The ID of the GitHubPR object
-            status: The new status ('open', 'merged', 'closed')
-            
-        Returns:
-            GitHubPR object if successful, None otherwise
-        """
-        try:
-            pr = GitHubPR.objects.get(id=pr_id)
-            pr.pr_status = status
-            pr.updated_at = timezone.now()
-            pr.save()
-            return pr
-        except GitHubPR.DoesNotExist:
-            logger.error(f"PR with ID {pr_id} not found")
-            return None
-    
-    @classmethod
-    def fetch_pr_status(cls, pr_id):
-        """Fetch the current status of a pull request from GitHub.
-        
-        Args:
-            pr_id: The ID of the GitHubPR object
-            
-        Returns:
-            Updated GitHubPR object if successful, None otherwise
-        """
-        if not cls.is_configured():
-            logger.error("GitHub integration not configured")
-            return None
-        
-        try:
-            pr = GitHubPR.objects.get(id=pr_id)
-            token = GitHubSettings.get_token()
-            headers = {
-                'Authorization': f'token {token}',
-                'Accept': 'application/vnd.github.v3+json'
-            }
-            
-            # Get PR info
-            pr_api_url = cls.get_api_url(f"/pulls/{pr.pr_number}")
-            response = requests.get(pr_api_url, headers=headers)
-            response.raise_for_status()
-            pr_data = response.json()
-            
-            # Update status
-            state = pr_data.get('state')
-            merged = pr_data.get('merged', False)
-            
-            if merged:
-                pr.pr_status = 'merged'
-            elif state == 'closed':
-                pr.pr_status = 'closed'
-            else:
-                pr.pr_status = 'open'
-            
-            pr.updated_at = timezone.now()
-            pr.save()
-            return pr
-            
-        except GitHubPR.DoesNotExist:
-            logger.error(f"PR with ID {pr_id} not found")
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching PR status: {str(e)}")
-            return None
-    
-    @classmethod
-    def get_pull_request(cls, pr_number):
-        """Get a pull request by number.
-        
-        Args:
-            pr_number: The pull request number
-            
-        Returns:
-            GitHubPR object if successful, None otherwise
-        """
-        if not cls.is_configured():
-            logger.error("GitHub integration not configured")
-            return None
-        
-        token = GitHubSettings.get_token()
-        api_url = cls.get_api_url(f"/pulls/{pr_number}")
         headers = {
-            'Authorization': f'token {token}',
+            'Authorization': f'token {settings.token}',
             'Accept': 'application/vnd.github.v3+json'
         }
         
-        try:
-            response = requests.get(api_url, headers=headers)
-            response.raise_for_status()
-            pr_data = response.json()
-            
-            # Update or create PR record
-            pr, created = GitHubPR.objects.update_or_create(
-                pr_number=pr_number,
-                defaults={
-                    'recipe_id': pr_data.get('title', '').split(':')[0] if ':' in pr_data.get('title', '') else '',
-                    'pr_url': pr_data.get('html_url'),
-                    'pr_status': 'merged' if pr_data.get('merged') else 'closed' if pr_data.get('state') == 'closed' else 'open',
-                    'branch_name': pr_data.get('head', {}).get('ref'),
-                    'title': pr_data.get('title'),
-                    'description': pr_data.get('body')
-                }
-            )
-            return pr
-            
-        except Exception as e:
-            error_msg = f"Error getting PR #{pr_number}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return None
+        if 'headers' in kwargs:
+            headers.update(kwargs.pop('headers'))
+        
+        response = requests.request(method, url, headers=headers, **kwargs)
+        response.raise_for_status()
+        return response
     
     @classmethod
-    def update_pull_request_status(cls, pr_number):
-        """Update the status of a pull request.
-        
-        Args:
-            pr_number: The pull request number
-            
-        Returns:
-            GitHubPR object if successful, None otherwise
-        """
-        if not cls.is_configured():
-            logger.error("GitHub integration not configured")
-            return None
-        
-        token = GitHubSettings.get_token()
-        api_url = cls.get_api_url(f"/pulls/{pr_number}")
-        headers = {
-            'Authorization': f'token {token}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
-        
-        try:
-            response = requests.get(api_url, headers=headers)
-            response.raise_for_status()
-            pr_data = response.json()
-            
-            # Update PR record
-            pr = GitHubPR.objects.get(pr_number=pr_number)
-            pr.pr_status = 'merged' if pr_data.get('merged') else 'closed' if pr_data.get('state') == 'closed' else 'open'
-            pr.save()
-            return pr
-            
-        except GitHubPR.DoesNotExist:
-            error_msg = f"PR #{pr_number} not found in database"
-            logger.error(error_msg)
-            return None
-        except Exception as e:
-            error_msg = f"Error updating PR #{pr_number} status: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return None
-    
-    @classmethod
-    def get_pull_request_content(cls, pr_number):
-        """Get the content of a pull request.
-        
-        Args:
-            pr_number: The pull request number
-            
-        Returns:
-            Dictionary with recipe content if successful, None otherwise
-        """
-        if not cls.is_configured():
-            logger.error("GitHub integration not configured")
-            return None
-        
-        token = GitHubSettings.get_token()
-        api_url = cls.get_api_url(f"/pulls/{pr_number}/files")
-        headers = {
-            'Authorization': f'token {token}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
-        
-        try:
-            response = requests.get(api_url, headers=headers)
-            response.raise_for_status()
-            files = response.json()
-            
-            # Find recipe file
-            recipe_file = next((f for f in files if f['filename'].endswith('.yml')), None)
-            if not recipe_file:
-                error_msg = f"No recipe file found in PR #{pr_number}"
-                logger.error(error_msg)
-                return None
-            
-            # Get file content
-            content_url = recipe_file['raw_url']
-            response = requests.get(content_url)
-            response.raise_for_status()
-            content = response.text
-            
-            return {
-                'filename': recipe_file['filename'],
-                'content': content
-            }
-            
-        except Exception as e:
-            error_msg = f"Error getting PR #{pr_number} content: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return None
-    
-    @classmethod
-    def push_to_github(cls, instance_or_template, commit_message=None):
-        """Push a recipe instance or template to GitHub and create a PR."""
+    def stage_changes(cls, instance_or_template, commit_message=None):
+        """Stage changes on the current branch without creating a PR."""
         if not cls.is_configured():
             logger.error("GitHub integration not configured")
             return None
@@ -1106,37 +786,23 @@ class GitHubIntegration:
             # Export to YAML
             if isinstance(instance_or_template, RecipeInstance):
                 file_path = instance_or_template.export_to_yaml()
-                branch_name = f"recipe-instance-{instance_or_template.id}-{int(time.time())}"
                 pr_title = f"Update recipe instance: {instance_or_template.name}"
-                pr_description = f"This PR updates the recipe instance '{instance_or_template.name}' (ID: {instance_or_template.id})."
             elif isinstance(instance_or_template, RecipeTemplate):
                 file_path = instance_or_template.export_to_yaml()
-                branch_name = f"recipe-template-{instance_or_template.id}-{int(time.time())}"
                 pr_title = f"Update recipe template: {instance_or_template.name}"
-                pr_description = f"This PR updates the recipe template '{instance_or_template.name}' (ID: {instance_or_template.id})."
             else:
                 raise ValueError("Invalid object type")
             
             if not commit_message:
                 commit_message = pr_title
             
-            # Get default branch
-            api_url = cls.get_api_url()
-            response = cls._make_request('GET', api_url)
-            default_branch = response.json().get('default_branch', 'main')
+            # Get current branch from settings
+            settings = GitHubSettings.get_instance()
+            current_branch = settings.current_branch
             
-            # Create branch
-            ref_url = cls.get_api_url(f"/git/refs/heads/{default_branch}")
-            response = cls._make_request('GET', ref_url)
-            sha = response.json().get('object', {}).get('sha')
-            
-            # Create new branch
-            create_ref_url = cls.get_api_url("/git/refs")
-            data = {
-                'ref': f'refs/heads/{branch_name}',
-                'sha': sha
-            }
-            cls._make_request('POST', create_ref_url, json=data)
+            if not current_branch:
+                logger.error("No current branch selected in GitHub settings")
+                return None
             
             # Read file content
             with open(file_path, 'r') as f:
@@ -1147,7 +813,7 @@ class GitHubIntegration:
             data = {
                 'message': commit_message,
                 'content': base64.b64encode(content.encode()).decode(),
-                'branch': branch_name
+                'branch': current_branch
             }
             
             # Check if file exists
@@ -1160,30 +826,83 @@ class GitHubIntegration:
             
             cls._make_request('PUT', content_url, json=data)
             
+            return {
+                'success': True,
+                'branch': current_branch,
+                'file_path': str(file_path)
+            }
+            
+        except Exception as e:
+            error_msg = f"Error staging changes: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return None
+    
+    @classmethod
+    def create_pr_from_staged_changes(cls, title=None, description=None, base=None):
+        """Create a PR from staged changes on the current branch."""
+        if not cls.is_configured():
+            logger.error("GitHub integration not configured")
+            return None
+        
+        try:
+            # Get current branch from settings
+            settings = GitHubSettings.get_instance()
+            current_branch = settings.current_branch
+            
+            if not current_branch:
+                logger.error("No current branch selected in GitHub settings")
+                return None
+            
+            # Get default branch
+            api_url = cls.get_api_url()
+            response = cls._make_request('GET', api_url)
+            default_branch = response.json().get('default_branch', 'main')
+            base_branch = base or default_branch
+            
             # Create PR
             pr_url = cls.get_api_url("/pulls")
             data = {
-                'title': pr_title,
-                'body': pr_description,
-                'head': branch_name,
-                'base': default_branch
+                'title': title or f"Update from branch: {current_branch}",
+                'body': description or f"Changes from branch: {current_branch}",
+                'head': current_branch,
+                'base': base_branch
             }
-            response = cls._make_request('POST', pr_url, json=data)
+            logger.info(f"Creating PR with data: {data}")
+            try:
+                response = cls._make_request('POST', pr_url, json=data)
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"GitHub PR creation failed: {e.response.status_code} {e.response.text}")
+                raise
             pr_data = response.json()
             
             # Create PR record
             pr = GitHubPR.objects.create(
-                recipe_id=instance_or_template.id,
+                recipe_id=current_branch,  # Using branch name as recipe_id for tracking
                 pr_url=pr_data.get('html_url'),
                 pr_number=pr_data.get('number'),
                 pr_status='open',
-                branch_name=branch_name,
-                title=pr_title,
-                description=pr_description
+                branch_name=current_branch,
+                title=data['title'],
+                description=data['body']
             )
             return pr
             
         except Exception as e:
-            error_msg = f"Error pushing to GitHub: {str(e)}"
+            error_msg = f"Error creating PR: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return None 
+            return None
+    
+    @classmethod
+    def push_to_github(cls, instance_or_template, commit_message=None):
+        """Stage changes and optionally create a PR."""
+        # First stage the changes
+        result = cls.stage_changes(instance_or_template, commit_message)
+        if not result:
+            return None
+        
+        # Return success without creating PR
+        return {
+            'success': True,
+            'branch': result['branch'],
+            'file_path': result['file_path']
+        } 

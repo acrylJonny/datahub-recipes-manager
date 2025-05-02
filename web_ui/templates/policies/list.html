@@ -89,7 +89,7 @@
                                     </td>
                                     <td>
                                         <span class="badge bg-{% if policy.state == 'ACTIVE' %}success{% else %}warning{% endif %} d-flex align-items-center justify-content-center" style="width: fit-content">
-                                            {{ policy.state }}
+                                            {% if policy.state == 'ACTIVE' %}Active{% else %}Inactive{% endif %}
                                         </span>
                                     </td>
                                     <td>

@@ -17,6 +17,8 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.core.paginator import Paginator
 import requests
+from django.views.decorators.csrf import csrf_exempt
+import base64
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -31,7 +33,7 @@ try:
 except ImportError:
     DATAHUB_CLIENT_AVAILABLE = False
 
-from .models import AppSettings, GitHubSettings, LogEntry, RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, RecipeInstance, GitHubPR
+from .models import AppSettings, GitHubSettings, LogEntry, RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, RecipeInstance, GitHubPR, GitHubIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -70,17 +72,25 @@ def index(request):
             
             if connected:
                 # Get recipes
-                recipes = client.list_ingestion_sources()
-                if recipes:
-                    recipes_count = len(recipes)
-                    active_schedules_count = sum(1 for r in recipes if r.get('schedule'))
-                    
-                    # Get 5 most recent recipes
-                    recent_recipes = sorted(
-                        recipes, 
-                        key=lambda x: x.get('lastUpdated', 0), 
-                        reverse=True
-                    )[:5]
+                try:
+                    recipes = client.list_ingestion_sources()
+                    if recipes:
+                        recipes_count = len(recipes)
+                        active_schedules_count = sum(1 for r in recipes if r.get('schedule'))
+                        
+                        # Get 5 most recent recipes
+                        sorted_recipes = sorted(
+                            recipes, 
+                            key=lambda x: x.get('lastUpdated', 0), 
+                            reverse=True
+                        )[:5]
+                        # Add is_active property based on schedule
+                        for recipe in sorted_recipes:
+                            recipe['is_active'] = bool(recipe.get('schedule'))
+                        recent_recipes = sorted_recipes
+                except Exception as e:
+                    logger.error(f"Error fetching recipes for dashboard: {str(e)}")
+                    messages.warning(request, "Unable to fetch recipe information. Please check your DataHub connection.")
                 
                 # Get policies
                 try:
@@ -103,12 +113,16 @@ def index(request):
                         policies_count = len(valid_policies)
                         
                         # Get 5 most recent policies with valid IDs
-                        recent_policies = valid_policies[:5]  # Assuming they're already sorted
+                        recent_policies = sorted(
+                            valid_policies,
+                            key=lambda x: x.get('lastUpdated', 0),
+                            reverse=True
+                        )[:5]
                 except Exception as e:
                     logger.error(f"Error fetching policies for dashboard: {str(e)}")
-                    # Policies might not be available in older DataHub versions
-                    pass
+                    messages.warning(request, "Unable to fetch policy information. Please check your DataHub connection.")
         except Exception as e:
+            logger.error(f"Error connecting to DataHub: {str(e)}")
             messages.error(request, f"Error connecting to DataHub: {str(e)}")
     
     return render(request, 'dashboard.html', {
@@ -157,6 +171,9 @@ def recipes(request):
                 
                 # Store the original schedule data for reference
                 recipe['schedule_data'] = schedule_data
+                
+                # Add is_active property for consistency with dashboard
+                recipe['is_active'] = bool(recipe.get('schedule'))
             
             # Sort by name
             recipes_list.sort(key=lambda x: x.get('name', '').lower())
@@ -968,16 +985,15 @@ def settings(request):
         'timeout': AppSettings.get_int('timeout', 30),
         'debug_mode': AppSettings.get_bool('debug_mode', False),
         'refresh_rate': AppSettings.get_int('refresh_rate', 60),
-        
-        # GitHub settings
-        'github_token': GitHubSettings.get_token(),
-        'github_repository': GitHubSettings.get_repository(),
-        'github_username': GitHubSettings.get_username(),
     }
     
     # Get connection status
     client = get_datahub_client()
     connected = client and client.test_connection()
+    
+    # Get GitHub settings form
+    github_settings = GitHubSettings.get_instance()
+    github_form = GitHubSettingsForm(instance=github_settings)
     
     if request.method == 'POST':
         # Get the section being updated
@@ -1070,52 +1086,34 @@ def settings(request):
                 messages.error(request, "Invalid value for timeout or refresh rate")
         
         elif section == 'github_settings':
-            # Update GitHub settings
-            github_token = request.POST.get('github_token', '')
-            github_repository = request.POST.get('github_repository', '')
-            github_username = request.POST.get('github_username', '')
-            
-            # Save settings to database
-            if github_token:  # Only update token if provided
-                GitHubSettings.set_token(github_token)
-            GitHubSettings.set_repository(github_repository)
-            GitHubSettings.set_username(github_username)
-            
-            messages.success(request, "GitHub settings updated")
-            
-            # Test GitHub connection if requested
-            if 'test_github_connection' in request.POST:
-                # TODO: Implement GitHub connection test
-                messages.info(request, "GitHub connection test functionality will be implemented soon")
-        
-        # Refresh config after updates
-        config = {
-            'datahub_url': AppSettings.get('datahub_url', ''),
-            'datahub_token': AppSettings.get('datahub_token', ''),
-            'verify_ssl': AppSettings.get_bool('verify_ssl', True),
-            
-            # Policy settings
-            'policy_export_dir': AppSettings.get('policy_export_dir', ''),
-            'default_policy_type': AppSettings.get('default_policy_type', 'METADATA'),
-            'validate_on_import': AppSettings.get_bool('validate_on_import', True),
-            'auto_backup_policies': AppSettings.get_bool('auto_backup_policies', True),
-            
-            # Recipe settings
-            'recipe_dir': AppSettings.get('recipe_dir', ''),
-            'default_schedule': AppSettings.get('default_schedule', '0 0 * * *'),
-            'auto_enable_recipes': AppSettings.get_bool('auto_enable_recipes', False),
-            
-            # Advanced settings
-            'log_level': AppSettings.get('log_level', 'INFO'),
-            'timeout': AppSettings.get_int('timeout', 30),
-            'debug_mode': AppSettings.get_bool('debug_mode', False),
-            'refresh_rate': AppSettings.get_int('refresh_rate', 60),
-            
-            # GitHub settings
-            'github_token': GitHubSettings.get_token(),
-            'github_repository': GitHubSettings.get_repository(),
-            'github_username': GitHubSettings.get_username(),
-        }
+            # Update GitHub settings using the form
+            github_form = GitHubSettingsForm(request.POST, instance=github_settings)
+            if github_form.is_valid():
+                github_form.save()
+                messages.success(request, "GitHub settings updated successfully")
+                
+                # Test GitHub connection if requested
+                if 'test_github_connection' in request.POST:
+                    try:
+                        # Test connection with GitHub API
+                        headers = {
+                            'Authorization': f'token {github_settings.token}',
+                            'Accept': 'application/vnd.github.v3+json'
+                        }
+                        
+                        # Test repo access
+                        repo_url = f'https://api.github.com/repos/{github_settings.username}/{github_settings.repository}'
+                        response = requests.get(repo_url, headers=headers)
+                        
+                        if response.status_code == 200:
+                            messages.success(request, "Successfully connected to GitHub!")
+                        else:
+                            error_message = response.json().get('message', 'Unknown error')
+                            messages.error(request, f"Failed to connect to GitHub: {error_message}")
+                    except Exception as e:
+                        messages.error(request, f"Error testing GitHub connection: {str(e)}")
+            else:
+                messages.error(request, "Please correct the errors in the GitHub settings form")
     
     # If the session-based connection method is being used, update it
     if connected:
@@ -1130,7 +1128,8 @@ def settings(request):
         'title': 'Settings',
         'config': config,
         'connected': connected,
-        'github_configured': GitHubSettings.is_configured()
+        'github_configured': GitHubSettings.is_configured(),
+        'github_form': github_form
     })
 
 def health(request):
@@ -2925,21 +2924,23 @@ def recipe_instance_push_github(request, instance_id):
         # Get the GitHub integration
         github = GitHubIntegration()
         
-        # Push to GitHub
-        pr = github.push_to_github(instance)
+        # Push to GitHub (stage changes)
+        result = github.push_to_github(instance)
         
-        if pr:
+        if result:
             return JsonResponse({
                 'success': True,
-                'pr_url': pr.pr_url
+                'branch': result['branch'],
+                'file_path': result['file_path'],
+                'message': f"Changes staged on branch '{result['branch']}'"
             })
         else:
             return JsonResponse({
                 'success': False,
-                'error': 'Failed to push to GitHub'
+                'error': 'Failed to stage changes'
             })
     except Exception as e:
-        logger.error(f"Error pushing instance to GitHub: {str(e)}")
+        logger.error(f"Error staging instance to GitHub: {str(e)}")
         return JsonResponse({
             'success': False,
             'error': str(e)
@@ -2954,21 +2955,58 @@ def recipe_template_push_github(request, template_id):
         # Get the GitHub integration
         github = GitHubIntegration()
         
-        # Push to GitHub
-        pr = github.push_to_github(template)
+        # Push to GitHub (stage changes)
+        result = github.push_to_github(template)
         
-        if pr:
+        if result:
             return JsonResponse({
                 'success': True,
-                'pr_url': pr.pr_url
+                'branch': result['branch'],
+                'file_path': result['file_path'],
+                'message': f"Changes staged on branch '{result['branch']}'"
             })
         else:
             return JsonResponse({
                 'success': False,
-                'error': 'Failed to push to GitHub'
+                'error': 'Failed to stage changes'
             })
     except Exception as e:
-        logger.error(f"Error pushing template to GitHub: {str(e)}")
+        logger.error(f"Error staging template to GitHub: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@require_POST
+def github_create_pr(request):
+    """Create a PR from staged changes."""
+    if not GitHubSettings.is_configured():
+        return JsonResponse({'success': False, 'error': 'GitHub integration not configured'})
+    
+    try:
+        title = request.POST.get('title')
+        description = request.POST.get('description')
+        base = request.POST.get('base')
+        
+        # Get the GitHub integration
+        github = GitHubIntegration()
+        
+        # Create PR from staged changes
+        pr = github.create_pr_from_staged_changes(title, description, base)
+        
+        if pr:
+            return JsonResponse({
+                'success': True,
+                'pr_url': pr.pr_url,
+                'message': f"Pull request #{pr.pr_number} created successfully"
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Failed to create pull request'
+            })
+    except Exception as e:
+        logger.error(f"Error creating PR: {str(e)}")
         return JsonResponse({
             'success': False,
             'error': str(e)
@@ -2987,3 +3025,123 @@ def github_pull_request_detail(request, pr_id):
     }
     
     return render(request, 'github/pull_request_detail.html', context)
+
+@csrf_exempt
+def github_branch_diff(request):
+    """Return the diff between the current branch and a base branch using the GitHub API."""
+    if not GitHubSettings.is_configured():
+        return JsonResponse({'success': False, 'error': 'GitHub integration not configured'}, status=400)
+
+    try:
+        if request.method == 'POST':
+            data = json.loads(request.body.decode())
+            base = data.get('base')
+            head = data.get('head')
+        else:
+            base = request.GET.get('base')
+            head = request.GET.get('head')
+
+        settings = GitHubSettings.get_instance()
+        if not head:
+            head = settings.current_branch or 'main'
+        if not base:
+            # Default to main or default branch
+            api_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}'
+            headers = {
+                'Authorization': f'token {settings.token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()
+            base = response.json().get('default_branch', 'main')
+
+        compare_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/compare/{base}...{head}'
+        headers = {
+            'Authorization': f'token {settings.token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        response = requests.get(compare_url, headers=headers)
+        response.raise_for_status()
+        compare_data = response.json()
+
+        files = compare_data.get('files', [])
+        # Only return relevant fields for each file
+        file_diffs = [
+            {
+                'filename': f['filename'],
+                'status': f['status'],
+                'additions': f['additions'],
+                'deletions': f['deletions'],
+                'changes': f['changes'],
+                'patch': f.get('patch', ''),
+                'raw_url': f.get('raw_url', '')
+            }
+            for f in files
+        ]
+        return JsonResponse({'success': True, 'base': base, 'head': head, 'files': file_diffs})
+    except Exception as e:
+        logger.error(f"Error fetching branch diff: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def github_workflows_overview(request):
+    """Return a summary of CI workflows in .github/workflows from the GitHub repo, for a given branch/ref."""
+    if not GitHubSettings.is_configured():
+        logger.error("GitHub integration not configured for workflows overview")
+        return JsonResponse({'success': False, 'error': 'GitHub integration not configured'}, status=400)
+    try:
+        import base64
+        settings = GitHubSettings.get_instance()
+        headers = {
+            'Authorization': f'token {settings.token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        # Get ref/branch from request
+        ref = request.GET.get('ref') or request.POST.get('ref')
+        if not ref:
+            ref = settings.current_branch or 'main'
+        # List files in .github/workflows for the given ref
+        url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/contents/.github/workflows?ref={ref}'
+        resp = requests.get(url, headers=headers)
+        logger.info(f"Workflows API response: {resp.status_code} {resp.text[:200]}")
+        if resp.status_code == 404:
+            logger.warning("No .github/workflows directory found in repo.")
+            return JsonResponse({'success': True, 'workflows': []})
+        resp.raise_for_status()
+        files = resp.json()
+        logger.info(f"Workflow files found: {[f['name'] for f in files]}")
+        workflows = []
+        for f in files:
+            if not f['name'].endswith('.yml') and not f['name'].endswith('.yaml'):
+                logger.info(f"Skipping non-YAML file: {f['name']}")
+                continue
+            # Fetch file content using the contents API (for private repos)
+            file_api_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/contents/.github/workflows/{f["name"]}?ref={ref}'
+            file_resp = requests.get(file_api_url, headers=headers)
+            if file_resp.status_code != 200:
+                logger.error(f"Failed to fetch workflow file {f['name']}: {file_resp.status_code} {file_resp.text[:200]}")
+                continue
+            try:
+                file_json = file_resp.json()
+                content = base64.b64decode(file_json['content']).decode('utf-8')
+                data = yaml.safe_load(content)
+                workflow = {
+                    'filename': f['name'],
+                    'name': data.get('name', f['name']),
+                    'on': data.get('on', {}),
+                    'description': '',
+                    'raw_url': file_json.get('html_url', f.get('html_url', ''))
+                }
+                # Try to extract a description from the top comment
+                if content.lstrip().startswith('#'):
+                    first_comment = content.lstrip().split('\n')[0]
+                    workflow['description'] = first_comment.lstrip('#').strip()
+                workflows.append(workflow)
+            except Exception as e:
+                logger.error(f"Error parsing workflow file {f['name']}: {str(e)}")
+                continue
+        logger.info(f"Final workflows list: {workflows}")
+        return JsonResponse({'success': True, 'workflows': workflows})
+    except Exception as e:
+        logger.error(f"Error fetching workflows overview: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
