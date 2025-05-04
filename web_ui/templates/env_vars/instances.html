@@ -92,6 +92,10 @@
                                     <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" title="Edit instance">
                                         <i class="fa fa-edit"></i>
                                     </a>
+                                    <button type="button" class="btn btn-outline-primary add-to-git-pr" 
+                                           data-instance-id="{{ instance.id }}" title="Add to GitHub PR">
+                                        <i class="fab fa-github"></i>
+                                    </button>
                                     <button type="button" class="btn btn-outline-danger" 
                                            data-bs-toggle="modal" 
                                            data-bs-target="#deleteInstanceModal" 
@@ -176,6 +180,52 @@
             
             // Set the form action using the correct URL pattern
             $('#deleteInstanceForm').attr('action', "{% url 'env_vars_instance_delete' 0 %}".replace('0', instanceId));
+        });
+        
+        // Handle "Add to Git PR" buttons
+        $('.add-to-git-pr').on('click', function() {
+            const instanceId = $(this).data('instance-id');
+            const button = $(this);
+            
+            // Show loading state
+            const originalHTML = button.html();
+            button.html('<i class="fas fa-spinner fa-spin"></i>');
+            button.prop('disabled', true);
+            
+            // Send AJAX request
+            $.ajax({
+                url: "/env-vars/instances/" + instanceId + "/push-github/",
+                method: "POST",
+                headers: {
+                    'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Create success alert
+                        const alert = $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
+                            .append('<i class="fas fa-check-circle me-2"></i> Environment Variables Instance added to GitHub PR successfully!')
+                            .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
+                        
+                        // Add the alert at the top of the page
+                        $('.container-fluid').prepend(alert);
+                        
+                        // Auto dismiss after 5 seconds
+                        setTimeout(function() {
+                            alert.alert('close');
+                        }, 5000);
+                    } else {
+                        alert('Error: ' + (response.error || 'Failed to add to GitHub PR'));
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Error: ' + error);
+                },
+                complete: function() {
+                    // Restore button state
+                    button.html(originalHTML);
+                    button.prop('disabled', false);
+                }
+            });
         });
     });
 </script>

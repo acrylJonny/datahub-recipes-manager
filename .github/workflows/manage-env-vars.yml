@@ -1,0 +1,205 @@
+name: Manage Environment Variables
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'list'
+        type: choice
+        options:
+          - list
+          - get
+          - create
+          - update
+          - delete
+          - export
+          - import
+      environment:
+        description: 'Environment to target'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      instance_id:
+        description: 'Environment Variables Instance ID (for get, update, delete actions)'
+        required: false
+        type: string
+      instance_name:
+        description: 'Environment Variables Instance Name (for create action)'
+        required: false
+        type: string
+      recipe_type:
+        description: 'Recipe Type (for create, update actions)'
+        required: false
+        type: choice
+        options:
+          - postgres
+          - mysql
+          - mssql
+          - snowflake
+          - bigquery
+          - redshift
+          - databricks
+      variables:
+        description: 'Variables as YAML file path or inline YAML'
+        required: false
+        type: string
+      export_dir:
+        description: 'Directory for export/import variables'
+        required: false
+        default: 'params/environments'
+        type: string
+      import_options:
+        description: 'Import options as JSON (skip_existing, force_update)'
+        required: false
+        default: '{"skip_existing": false, "force_update": false}'
+        type: string
+
+jobs:
+  manage-env-vars:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Create .env file
+        env:
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          DATAHUB_SERVER: ${{ secrets.DATAHUB_SERVER }}
+        run: |
+          echo "DATAHUB_TOKEN=$DATAHUB_TOKEN" > .env
+          echo "DATAHUB_SERVER=$DATAHUB_SERVER" >> .env
+          
+      - name: List environment variables instances
+        if: github.event.inputs.action == 'list'
+        run: python scripts/manage_env_vars.py list
+          
+      - name: Get environment variables instance
+        if: github.event.inputs.action == 'get'
+        run: python scripts/manage_env_vars.py get ${{ github.event.inputs.instance_id }}
+        
+      - name: Create environment variables instance
+        if: github.event.inputs.action == 'create'
+        run: |
+          if [ -n "${{ github.event.inputs.instance_name }}" ] && [ -n "${{ github.event.inputs.recipe_type }}" ] && [ -n "${{ github.event.inputs.variables }}" ]; then
+            # Check if variables is a file path
+            if [ -f "${{ github.event.inputs.variables }}" ]; then
+              python scripts/manage_env_vars.py create \
+                --name "${{ github.event.inputs.instance_name }}" \
+                --recipe-type "${{ github.event.inputs.recipe_type }}" \
+                --variables-file "${{ github.event.inputs.variables }}"
+            else
+              # Treat as inline YAML
+              echo "${{ github.event.inputs.variables }}" > temp_vars.yml
+              python scripts/manage_env_vars.py create \
+                --name "${{ github.event.inputs.instance_name }}" \
+                --recipe-type "${{ github.event.inputs.recipe_type }}" \
+                --variables-file temp_vars.yml
+              rm temp_vars.yml
+            fi
+          else
+            echo "Error: Missing required parameters for create action."
+            echo "You must provide instance_name, recipe_type, and variables."
+            exit 1
+          fi
+        
+      - name: Update environment variables instance
+        if: github.event.inputs.action == 'update'
+        run: |
+          if [ -n "${{ github.event.inputs.instance_id }}" ] && [ -n "${{ github.event.inputs.variables }}" ]; then
+            # Check if variables is a file path
+            if [ -f "${{ github.event.inputs.variables }}" ]; then
+              python scripts/manage_env_vars.py update \
+                --id "${{ github.event.inputs.instance_id }}" \
+                --variables-file "${{ github.event.inputs.variables }}"
+            else
+              # Treat as inline YAML
+              echo "${{ github.event.inputs.variables }}" > temp_vars.yml
+              python scripts/manage_env_vars.py update \
+                --id "${{ github.event.inputs.instance_id }}" \
+                --variables-file temp_vars.yml
+              rm temp_vars.yml
+            fi
+          else
+            echo "Error: Missing required parameters for update action."
+            echo "You must provide instance_id and variables."
+            exit 1
+          fi
+        
+      - name: Delete environment variables instance
+        if: github.event.inputs.action == 'delete'
+        run: |
+          if [ -n "${{ github.event.inputs.instance_id }}" ]; then
+            python scripts/manage_env_vars.py delete --id "${{ github.event.inputs.instance_id }}"
+          else
+            echo "Error: Missing instance_id for delete action."
+            exit 1
+          fi
+        
+      - name: Export environment variables instances
+        if: github.event.inputs.action == 'export'
+        run: |
+          mkdir -p ${{ github.event.inputs.export_dir }}
+          
+          if [ -n "${{ github.event.inputs.instance_id }}" ]; then
+            python scripts/export_env_vars.py --instance-id "${{ github.event.inputs.instance_id }}" --output-dir ${{ github.event.inputs.export_dir }}
+          else
+            python scripts/export_env_vars.py --output-dir ${{ github.event.inputs.export_dir }}
+          fi
+          
+          echo "Exported environment variables instances:"
+          ls -la ${{ github.event.inputs.export_dir }}
+        
+      - name: Archive exported environment variables
+        if: github.event.inputs.action == 'export'
+        uses: actions/upload-artifact@v3
+        with:
+          name: exported-env-vars
+          path: ${{ github.event.inputs.export_dir }}
+          
+      - name: Download environment variables for import
+        if: github.event.inputs.action == 'import'
+        uses: actions/download-artifact@v3
+        with:
+          name: exported-env-vars
+          path: ${{ github.event.inputs.export_dir }}
+          
+      - name: Import environment variables
+        if: github.event.inputs.action == 'import'
+        run: |
+          ls -la ${{ github.event.inputs.export_dir }}
+          
+          # Parse import options
+          OPTIONS='${{ github.event.inputs.import_options }}'
+          SKIP_EXISTING=$(echo $OPTIONS | jq -r '.skip_existing // false')
+          FORCE_UPDATE=$(echo $OPTIONS | jq -r '.force_update // false')
+          
+          CMD="python scripts/import_env_vars.py --input-dir ${{ github.event.inputs.export_dir }}"
+          
+          if [ "$SKIP_EXISTING" == "true" ]; then
+            CMD="$CMD --skip-existing"
+          fi
+          
+          if [ "$FORCE_UPDATE" == "true" ]; then
+            CMD="$CMD --force-update"
+          fi
+          
+          echo "Executing: $CMD"
+          eval "$CMD" 

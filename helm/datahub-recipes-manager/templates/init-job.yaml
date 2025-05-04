@@ -1,0 +1,65 @@
+{{- if .Values.initJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "datahub-recipes-manager.fullname" . }}-init
+  labels:
+    {{- include "datahub-recipes-manager.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  backoffLimit: {{ .Values.initJob.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.initJob.activeDeadlineSeconds }}
+  template:
+    metadata:
+      name: {{ include "datahub-recipes-manager.fullname" . }}-init
+      labels:
+        {{- include "datahub-recipes-manager.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: {{ .Values.initJob.restartPolicy }}
+      serviceAccountName: {{ include "datahub-recipes-manager.serviceAccountName" . }}
+      containers:
+        - name: init
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python"]
+          args: ["scripts/upgrade_db.py"]
+          env:
+            - name: DEBUG
+              value: "{{ .Values.config.debug }}"
+            - name: DJANGO_SETTINGS_MODULE
+              value: "config.settings.{{ .Values.config.djangoSettings }}"
+            - name: DATAHUB_URL
+              value: "{{ .Values.config.datahubUrl }}"
+            - name: DATABASE_URL
+              value: "sqlite:////data/recipes_manager.db"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "datahub-recipes-manager.fullname" . }}
+                  key: secret-key
+            - name: DATAHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "datahub-recipes-manager.fullname" . }}
+                  key: datahub-token
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: recipes
+              mountPath: /app/recipes
+            - name: templates
+              mountPath: /app/templates
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "datahub-recipes-manager.fullname" . }}-0-data
+        - name: recipes
+          persistentVolumeClaim:
+            claimName: {{ include "datahub-recipes-manager.fullname" . }}-0-recipes
+        - name: templates
+          persistentVolumeClaim:
+            claimName: {{ include "datahub-recipes-manager.fullname" . }}-0-templates
+{{- end }} 

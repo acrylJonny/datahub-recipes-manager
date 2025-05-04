@@ -118,6 +118,11 @@
                                     </button>
                                 </form>
                             {% endif %}
+                            
+                            <button id="gitPrBtn" class="btn btn-outline-primary ms-2">
+                                <i class="fab fa-github me-1"></i> Add to GitHub PR
+                            </button>
+                            
                             <button type="button" class="btn btn-danger ms-2" data-bs-toggle="modal" data-bs-target="#deleteInstanceModal">
                                 <i class="fas fa-trash me-1"></i> Delete
                             </button>
@@ -216,6 +221,46 @@
         if (templateSelect && templateSelect.value) {
             updatePreview();
         }
+        
+        // GitHub PR Button handling
+        {% if not is_new and instance %}
+        const gitPrBtn = document.getElementById('gitPrBtn');
+        if (gitPrBtn) {
+            gitPrBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Show loading state
+                const originalText = gitPrBtn.innerHTML;
+                gitPrBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Adding...';
+                gitPrBtn.disabled = true;
+                
+                // Send POST request to add to GitHub PR
+                fetch("{% url 'recipe_instance_push_github' instance.id %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Recipe instance added to GitHub PR successfully!');
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                })
+                .finally(() => {
+                    // Restore button state
+                    gitPrBtn.innerHTML = originalText;
+                    gitPrBtn.disabled = false;
+                });
+            });
+        }
+        {% endif %}
     });
 </script>
 {% endblock %} 

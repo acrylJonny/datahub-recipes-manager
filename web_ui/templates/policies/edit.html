@@ -105,6 +105,11 @@
                 <div class="d-flex justify-content-end">
                     <a href="{% url 'policy_view' policy.id %}" class="btn btn-secondary me-2">Cancel</a>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
+                    {% if request.session.github_connected %}
+                    <button type="button" class="btn btn-success ms-2" onclick="addToGitPR()">
+                        <i class="fab fa-github me-1"></i> Add to GitHub PR
+                    </button>
+                    {% endif %}
                 </div>
             </form>
         </div>
@@ -206,6 +211,48 @@
             }
         });
     });
+    
+    function addToGitPR() {
+        if (!confirm('Are you sure you want to add this policy to a GitHub PR? This will create a new branch if needed.')) {
+            return;
+        }
+        
+        // Get the current form data
+        const form = document.getElementById('policy-edit-form');
+        const formData = new FormData(form);
+        
+        // Get JSON values from the editors
+        const resourcesJson = document.getElementById('policy-resources').value;
+        const privilegesJson = document.getElementById('policy-privileges').value;
+        const actorsJson = document.getElementById('policy-actors').value;
+        
+        // Add them to the form data
+        formData.set('resources', resourcesJson);
+        formData.set('privileges', privilegesJson);
+        formData.set('actors', actorsJson);
+        
+        // Send to the server
+        fetch('{% url "policy_push_github" policy.id %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Successfully added policy to GitHub branch!');
+                // Redirect to GitHub page
+                window.location.href = '{% url "github" %}';
+            } else {
+                alert('Error adding policy to GitHub: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Error adding policy to GitHub: ' + error);
+        });
+    }
 </script>
 
 <style>

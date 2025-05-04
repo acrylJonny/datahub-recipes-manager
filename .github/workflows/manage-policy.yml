@@ -59,6 +59,14 @@ on:
         required: false
         default: '{"skip_existing": false, "force_update": false}'
         type: string
+      format:
+        description: 'Export/import format'
+        required: false
+        default: 'yaml'
+        type: choice
+        options:
+          - yaml
+          - json
 
 jobs:
   manage-policy:
@@ -200,10 +208,17 @@ jobs:
         run: |
           mkdir -p ${{ github.event.inputs.export_dir }}
           
-          if [ -n "${{ github.event.inputs.policy_id }}" ]; then
-            python scripts/export_policy.py --policy-id "${{ github.event.inputs.policy_id }}" --output-dir ${{ github.event.inputs.export_dir }}
+          FORMAT_FLAG=""
+          if [ "${{ github.event.inputs.format }}" == "yaml" ]; then
+            FORMAT_FLAG="--format yaml"
           else
-            python scripts/export_policy.py --output-dir ${{ github.event.inputs.export_dir }}
+            FORMAT_FLAG="--format json"
+          fi
+          
+          if [ -n "${{ github.event.inputs.policy_id }}" ]; then
+            python scripts/export_policy.py --policy-id "${{ github.event.inputs.policy_id }}" --output-dir ${{ github.event.inputs.export_dir }} $FORMAT_FLAG
+          else
+            python scripts/export_policy.py --output-dir ${{ github.event.inputs.export_dir }} $FORMAT_FLAG
           fi
           
           echo "Exported policies:"

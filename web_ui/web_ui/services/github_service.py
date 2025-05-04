@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import re
+import time
+import yaml
 from typing import Dict, Optional, Tuple, Union, List
 
 import requests
@@ -172,6 +174,91 @@ class GitHubService:
                 
         except Exception as e:
             logger.error(f"Exception committing file: {str(e)}")
+            return False
+    
+    def commit_policy(self, policy_data: dict, branch: str, policy_name: str = None) -> bool:
+        """
+        Commit a policy to the repository in YAML format
+        
+        Args:
+            policy_data: Policy data dictionary
+            branch: Branch to commit to
+            policy_name: Optional name override for the policy file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return False
+        
+        try:
+            # Extract policy name if not provided
+            if not policy_name and "policy" in policy_data and "name" in policy_data["policy"]:
+                policy_name = policy_data["policy"]["name"]
+            
+            if not policy_name:
+                policy_name = f"policy_{int(time.time())}"
+            
+            # Sanitize name for filename
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', policy_name)
+            
+            # Convert to YAML
+            yaml_content = yaml.dump(policy_data, default_flow_style=False, sort_keys=False)
+            
+            # Create file path for the policy
+            file_path = f"policies/{safe_name}.yml"
+            
+            # Commit the file
+            return self.commit_file(
+                path=file_path,
+                content=yaml_content,
+                branch=branch,
+                message=f"Add/update policy: {policy_name}",
+                update=True  # Try to update if exists
+            )
+        
+        except Exception as e:
+            logger.error(f"Exception committing policy: {str(e)}")
+            return False
+    
+    def commit_env_vars(self, env_vars_data: dict, branch: str, instance_name: str) -> bool:
+        """
+        Commit environment variables to the repository in YAML format
+        
+        Args:
+            env_vars_data: Environment variables dictionary
+            branch: Branch to commit to
+            instance_name: Name of the environment instance
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return False
+        
+        try:
+            # Sanitize name for filename
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', instance_name)
+            
+            # Convert to YAML
+            yaml_content = yaml.dump(env_vars_data, default_flow_style=False, sort_keys=False)
+            
+            # Create file path for the env vars
+            file_path = f"params/environments/{safe_name}.yml"
+            
+            # Commit the file
+            return self.commit_file(
+                path=file_path,
+                content=yaml_content,
+                branch=branch,
+                message=f"Add/update environment variables for: {instance_name}",
+                update=True  # Try to update if exists
+            )
+        
+        except Exception as e:
+            logger.error(f"Exception committing environment variables: {str(e)}")
             return False
     
     def create_pull_request(self, title: str, body: str, head_branch: str, base_branch: str = "main") -> Optional[Dict]:

@@ -107,6 +107,14 @@
                         </button>
                         <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
                     </div>
+                    
+                    {% if not is_new and template %}
+                    <div>
+                        <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteTemplateModal">
+                            <i class="fas fa-trash me-1"></i> Delete Template
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
             </form>
         </div>
@@ -400,3 +408,32 @@
     });
 </script>
 {% endblock %}
+
+{% if not is_new and template %}
+<!-- Delete Template Modal -->
+<div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTemplateModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the environment variables template <strong>{{ template.name }}</strong>?</p>
+                
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Warning:</strong> This action cannot be undone. Deleting this template may affect any instances that use it.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{% url 'env_vars_template_delete' template.id %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

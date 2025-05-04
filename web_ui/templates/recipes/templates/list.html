@@ -97,74 +97,67 @@
                 </div>
                 <div class="card-body">
                     {% if templates %}
-                        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
-                            {% for template in templates %}
-                                <div class="col">
-                                    <div class="card h-100">
-                                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                            <h6 class="card-subtitle mb-0 text-truncate">{{ template.name }}</h6>
-                                            <div class="dropdown">
-                                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
-                                                    <i class="fas fa-ellipsis-v"></i>
-                                                </button>
-                                                <ul class="dropdown-menu dropdown-menu-end">
-                                                    <li>
-                                                        <a class="dropdown-item" href="{% url 'recipe_template_edit' template_id=template.id %}">
-                                                            <i class="fas fa-edit me-2 text-primary"></i> Edit
-                                                        </a>
-                                                    </li>
-                                                    <li>
-                                                        <a class="dropdown-item" href="{% url 'recipe_template_deploy' template_id=template.id %}">
-                                                            <i class="fas fa-rocket me-2 text-success"></i> Deploy
-                                                        </a>
-                                                    </li>
-                                                    <li>
-                                                        <a class="dropdown-item" href="{% url 'recipe_template_export' template_id=template.id %}">
-                                                            <i class="fas fa-file-export me-2 text-info"></i> Export
-                                                        </a>
-                                                    </li>
-                                                    <li><hr class="dropdown-divider"></li>
-                                                    <li>
-                                                        <a class="dropdown-item text-danger" href="{% url 'recipe_template_delete' template_id=template.id %}">
-                                                            <i class="fas fa-trash-alt me-2"></i> Delete
-                                                        </a>
-                                                    </li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                        <div class="card-body">
-                                            <div class="mb-2">
-                                                <span class="badge bg-primary">{{ template.recipe_type }}</span>
-                                                {% if template.is_favorite %}
-                                                    <span class="badge bg-warning"><i class="fas fa-star"></i> Favorite</span>
-                                                {% endif %}
-                                            </div>
-                                            <p class="card-text text-muted small">
-                                                {{ template.description|truncatechars:100|default:"No description" }}
-                                            </p>
-                                            <div class="mt-auto">
-                                                {% if template.tags %}
-                                                    <div class="mt-2">
-                                                        {% for tag in template.get_tags_list %}
-                                                            <a href="{% url 'recipe_templates' %}?tag={{ tag }}" class="badge bg-light text-dark text-decoration-none">
-                                                                #{{ tag }}
-                                                            </a>
-                                                        {% endfor %}
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Recipe Type</th>
+                                        <th>Tags</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for template in templates %}
+                                        <tr>
+                                            <td>
+                                                <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="fw-bold text-decoration-none">
+                                                    {{ template.name }}
+                                                </a>
+                                                {% if template.description %}
+                                                    <div class="text-muted small text-truncate" style="max-width: 300px;" title="{{ template.description }}">
+                                                        {{ template.description|truncatechars:100 }}
                                                     </div>
                                                 {% endif %}
-                                            </div>
-                                        </div>
-                                        <div class="card-footer bg-white text-end">
-                                            <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-sm btn-outline-primary">
-                                                View Details
-                                            </a>
-                                            <a href="{% url 'recipe_template_deploy' template_id=template.id %}" class="btn btn-sm btn-outline-success">
-                                                Deploy
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            {% endfor %}
+                                            </td>
+                                            <td><span class="badge bg-primary">{{ template.recipe_type }}</span></td>
+                                            <td>
+                                                {% if template.tags %}
+                                                    {% for tag in template.get_tags_list %}
+                                                        <a href="{% url 'recipe_templates' %}?tag={{ tag }}" class="badge bg-light text-dark text-decoration-none">
+                                                            #{{ tag }}
+                                                        </a>
+                                                    {% endfor %}
+                                                {% else %}
+                                                    <span class="text-muted">No tags</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ template.created_at|date:"M d, Y" }}</td>
+                                            <td>
+                                                <div class="btn-group">
+                                                    <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <a href="{% url 'recipe_template_edit' template_id=template.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                    <a href="{% url 'recipe_template_deploy' template_id=template.id %}" class="btn btn-sm btn-outline-success" title="Deploy">
+                                                        <i class="fas fa-rocket"></i>
+                                                    </a>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                            data-template-id="{{ template.id }}" title="Add to Git PR">
+                                                        <i class="fab fa-github"></i>
+                                                    </button>
+                                                    <a href="{% url 'recipe_template_delete' template_id=template.id %}" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                        <i class="fas fa-trash"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
                         </div>
                     {% else %}
                         <div class="text-center py-5">
@@ -423,6 +416,68 @@
                 document.getElementById('delete-template-form').action = `/recipe-templates/${templateId}/delete/`;
             });
         }
+        
+        // Handle "Add to Git PR" buttons for recipe templates
+        const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
+        addToGitPrButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const templateId = this.getAttribute('data-template-id');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Send POST request to add template to GitHub PR
+                fetch(`/recipe-templates/${templateId}/push-github/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Template added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add template to GitHub PR'}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error}`);
+                })
+                .finally(() => {
+                    // Restore button state
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
+                });
+            });
+        });
         
         // Load environment variable templates
         function loadEnvVarsTemplates() {

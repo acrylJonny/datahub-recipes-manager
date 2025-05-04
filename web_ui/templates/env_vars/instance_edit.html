@@ -174,9 +174,11 @@
                         {% endif %}
                     </div>
                     <div>
+                        {% if request.session.github_connected and form.instance.id %}
                         <button type="button" class="btn btn-outline-secondary me-2" onclick="addToGitPR()">
                             <i class="fab fa-github me-1"></i> Add to Git PR
                         </button>
+                        {% endif %}
                         <button type="submit" class="btn btn-primary">
                             <i class="fa fa-save me-1"></i> Save Instance
                         </button>
@@ -422,16 +424,16 @@
         fetch('{% url "env_vars_instance_push_github" form.instance.id %}', {
             method: 'POST',
             headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json'
+                'X-CSRFToken': '{{ csrf_token }}'
             },
-            body: JSON.stringify(Object.fromEntries(formData))
+            body: formData
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('Successfully added to GitHub PR! PR URL: ' + data.pr_url);
-                window.open(data.pr_url, '_blank');
+                alert('Successfully added to GitHub branch!');
+                // Redirect to GitHub page
+                window.location.href = '{% url "github" %}';
             } else {
                 alert('Error adding to GitHub PR: ' + data.error);
             }

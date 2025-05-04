@@ -24,7 +24,7 @@ on:
         required: false
         type: string
       recipe_file:
-        description: 'Path to recipe file (optional for patch)'
+        description: 'Path to recipe file (optional for patch - must be a YAML file)'
         required: false
         type: string
       schedule:
@@ -67,6 +67,14 @@ jobs:
         env:
           DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+      
+      - name: Validate recipe file format
+        if: ${{ github.event.inputs.action == 'patch' && github.event.inputs.recipe_file != '' }}
+        run: |
+          if [[ ! "${{ github.event.inputs.recipe_file }}" =~ \.(yaml|yml)$ ]]; then
+            echo "Error: Recipe file must be in YAML format with .yaml or .yml extension"
+            exit 1
+          fi
       
       - name: Patch ingestion source (recipe only)
         if: ${{ github.event.inputs.action == 'patch' && github.event.inputs.source_id != '' && github.event.inputs.recipe_file != '' && github.event.inputs.schedule == '' }}

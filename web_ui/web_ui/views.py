@@ -2924,6 +2924,17 @@ def recipe_instance_push_github(request, instance_id):
         # Get the GitHub integration
         github = GitHubIntegration()
         
+        # Get current branch
+        settings = GitHubSettings.get_instance()
+        current_branch = settings.current_branch or 'main'
+        
+        # Prevent pushing directly to main/master branch
+        if current_branch.lower() in ['main', 'master']:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Cannot push directly to the main branch. Please create and use a feature branch.'
+            })
+        
         # Push to GitHub (stage changes)
         result = github.push_to_github(instance)
         
@@ -2955,6 +2966,17 @@ def recipe_template_push_github(request, template_id):
         # Get the GitHub integration
         github = GitHubIntegration()
         
+        # Get current branch
+        settings = GitHubSettings.get_instance()
+        current_branch = settings.current_branch or 'main'
+        
+        # Prevent pushing directly to main/master branch
+        if current_branch.lower() in ['main', 'master']:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Cannot push directly to the main branch. Please create and use a feature branch.'
+            })
+        
         # Push to GitHub (stage changes)
         result = github.push_to_github(template)
         
@@ -2984,6 +3006,17 @@ def github_create_pr(request):
         return JsonResponse({'success': False, 'error': 'GitHub integration not configured'})
     
     try:
+        # Get current branch
+        settings = GitHubSettings.get_instance()
+        current_branch = settings.current_branch or 'main'
+        
+        # Prevent creating PRs directly from main/master branch
+        if current_branch.lower() in ['main', 'master']:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Cannot create a PR directly from the main branch. Please create and use a feature branch.'
+            })
+        
         title = request.POST.get('title')
         description = request.POST.get('description')
         base = request.POST.get('base')
@@ -3086,12 +3119,27 @@ def github_branch_diff(request):
 @csrf_exempt
 def github_workflows_overview(request):
     """Return a summary of CI workflows in .github/workflows from the GitHub repo, for a given branch/ref."""
+    logger.info("========== WORKFLOW OVERVIEW REQUEST ==========")
+    logger.info(f"Request method: {request.method}")
+    logger.info(f"Request GET data: {request.GET}")
+    logger.info(f"Request POST data: {request.POST}")
+    
     if not GitHubSettings.is_configured():
         logger.error("GitHub integration not configured for workflows overview")
         return JsonResponse({'success': False, 'error': 'GitHub integration not configured'}, status=400)
     try:
         import base64
+        import yaml
+        logger.info("Attempting to import WorkflowAnalyzer")
+        try:
+            from .utils.workflow_analyzer import WorkflowAnalyzer
+            logger.info("WorkflowAnalyzer imported successfully")
+        except ImportError as e:
+            logger.error(f"Failed to import WorkflowAnalyzer: {str(e)}")
+            return JsonResponse({'success': False, 'error': f'Failed to import WorkflowAnalyzer: {str(e)}'}, status=500)
+        
         settings = GitHubSettings.get_instance()
+        logger.info(f"GitHub settings: {settings.username}/{settings.repository}, branch: {settings.current_branch}")
         headers = {
             'Authorization': f'token {settings.token}',
             'Accept': 'application/vnd.github.v3+json'
@@ -3100,48 +3148,243 @@ def github_workflows_overview(request):
         ref = request.GET.get('ref') or request.POST.get('ref')
         if not ref:
             ref = settings.current_branch or 'main'
+            
+        logger.info(f"Fetching workflows for branch: {ref}")
+        
         # List files in .github/workflows for the given ref
         url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/contents/.github/workflows?ref={ref}'
-        resp = requests.get(url, headers=headers)
-        logger.info(f"Workflows API response: {resp.status_code} {resp.text[:200]}")
-        if resp.status_code == 404:
-            logger.warning("No .github/workflows directory found in repo.")
-            return JsonResponse({'success': True, 'workflows': []})
-        resp.raise_for_status()
-        files = resp.json()
-        logger.info(f"Workflow files found: {[f['name'] for f in files]}")
-        workflows = []
-        for f in files:
-            if not f['name'].endswith('.yml') and not f['name'].endswith('.yaml'):
-                logger.info(f"Skipping non-YAML file: {f['name']}")
-                continue
-            # Fetch file content using the contents API (for private repos)
-            file_api_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/contents/.github/workflows/{f["name"]}?ref={ref}'
-            file_resp = requests.get(file_api_url, headers=headers)
-            if file_resp.status_code != 200:
-                logger.error(f"Failed to fetch workflow file {f['name']}: {file_resp.status_code} {file_resp.text[:200]}")
-                continue
-            try:
-                file_json = file_resp.json()
-                content = base64.b64decode(file_json['content']).decode('utf-8')
-                data = yaml.safe_load(content)
-                workflow = {
-                    'filename': f['name'],
-                    'name': data.get('name', f['name']),
-                    'on': data.get('on', {}),
-                    'description': '',
-                    'raw_url': file_json.get('html_url', f.get('html_url', ''))
-                }
-                # Try to extract a description from the top comment
-                if content.lstrip().startswith('#'):
-                    first_comment = content.lstrip().split('\n')[0]
-                    workflow['description'] = first_comment.lstrip('#').strip()
-                workflows.append(workflow)
-            except Exception as e:
-                logger.error(f"Error parsing workflow file {f['name']}: {str(e)}")
-                continue
-        logger.info(f"Final workflows list: {workflows}")
-        return JsonResponse({'success': True, 'workflows': workflows})
+        logger.info(f"GitHub API URL: {url}")
+        
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            logger.info(f"Workflows API response: {resp.status_code}")
+            
+            if resp.status_code == 404:
+                logger.warning("No .github/workflows directory found in repo.")
+                return JsonResponse({'success': True, 'workflows': []})
+                
+            resp.raise_for_status()
+            files = resp.json()
+            
+            if not isinstance(files, list):
+                logger.error(f"Expected a list of files but got: {type(files)}")
+                return JsonResponse({'success': False, 'error': 'Invalid response from GitHub API'}, status=500)
+                
+            logger.info(f"Workflow files found: {[f.get('name', 'unknown') for f in files if isinstance(f, dict) and 'name' in f]}")
+            
+            workflows = []
+            for f in files:
+                if not isinstance(f, dict) or 'name' not in f:
+                    logger.warning(f"Skipping invalid file entry: {f}")
+                    continue
+                    
+                if not (f['name'].endswith('.yml') or f['name'].endswith('.yaml')):
+                    logger.info(f"Skipping non-YAML file: {f['name']}")
+                    continue
+                    
+                # Fetch file content using the contents API (for private repos)
+                file_api_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/contents/.github/workflows/{f["name"]}?ref={ref}'
+                logger.info(f"Fetching file content from: {file_api_url}")
+                
+                try:
+                    file_resp = requests.get(file_api_url, headers=headers, timeout=10)
+                    if file_resp.status_code != 200:
+                        logger.error(f"Failed to fetch workflow file {f['name']}: {file_resp.status_code}")
+                        continue
+                        
+                    file_json = file_resp.json()
+                    if not isinstance(file_json, dict) or 'content' not in file_json:
+                        logger.error(f"Invalid file content response for {f['name']}")
+                        continue
+                        
+                    content = base64.b64decode(file_json['content']).decode('utf-8')
+                    logger.info(f"Successfully decoded content for {f['name']}")
+                    
+                    # Use the workflow analyzer to extract information
+                    try:
+                        workflow_info = WorkflowAnalyzer.analyze_workflow(content)
+                        logger.info(f"Workflow analysis successful for {f['name']}")
+                    except Exception as analyze_err:
+                        logger.error(f"Error analyzing workflow {f['name']}: {str(analyze_err)}")
+                        continue
+                    
+                    # Create the workflow object with analyzed information
+                    workflow = {
+                        'filename': f['name'],
+                        'name': workflow_info['name'],
+                        'description': workflow_info['description'],
+                        'on': workflow_info['triggers'],
+                        'actions': workflow_info['actions'],
+                        'environments': workflow_info['environments'],
+                        'inputs': workflow_info['inputs'],
+                        'jobs': workflow_info['jobs'],
+                        'steps': workflow_info['steps'],
+                        'raw_url': file_json.get('html_url', f.get('html_url', ''))
+                    }
+                    
+                    workflows.append(workflow)
+                    
+                except Exception as file_err:
+                    logger.error(f"Error processing workflow file {f['name']}: {str(file_err)}")
+                    continue
+                    
+            logger.info(f"Successfully processed {len(workflows)} workflow files")
+            return JsonResponse({'success': True, 'workflows': workflows})
+            
+        except requests.RequestException as req_err:
+            logger.error(f"Request error listing workflows: {str(req_err)}")
+            return JsonResponse({'success': False, 'error': f'GitHub API error: {str(req_err)}'}, status=500)
+            
     except Exception as e:
         logger.error(f"Error fetching workflows overview: {str(e)}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': f'Error processing workflows: {str(e)}'}, status=500)
+
+@require_POST
+def github_delete_branch(request):
+    """Delete a branch from GitHub."""
+    if not GitHubSettings.is_configured():
+        messages.error(request, "GitHub integration is not configured")
+        return redirect('github')
+    
+    branch_name = request.POST.get('branch_name')
+    
+    if not branch_name:
+        messages.error(request, "Branch name is required")
+        return redirect('github')
+    
+    # Prevent deletion of main/master branches
+    if branch_name.lower() in ['main', 'master']:
+        messages.error(request, "Cannot delete main/master branch")
+        return redirect('github')
+    
+    settings = GitHubSettings.get_instance()
+    headers = {
+        'Authorization': f'token {settings.token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    
+    try:
+        # Delete the branch using the Git References API
+        delete_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/git/refs/heads/{branch_name}'
+        response = requests.delete(delete_url, headers=headers)
+        
+        if response.status_code in [204, 200]:
+            messages.success(request, f"Branch '{branch_name}' deleted successfully")
+        else:
+            error_data = response.json() if response.content else {'message': f'Status code: {response.status_code}'}
+            error_message = error_data.get('message', 'Unknown error')
+            messages.error(request, f"GitHub error: {error_message}")
+    
+    except Exception as e:
+        logger.error(f"Error deleting branch: {str(e)}")
+        messages.error(request, f"Error deleting branch: {str(e)}")
+    
+    return redirect('github')
+
+@require_POST
+def policy_push_github(request, policy_id):
+    """Add a policy to GitHub PR."""
+    if not GitHubSettings.is_configured():
+        return JsonResponse({'success': False, 'error': 'GitHub integration not configured'})
+    
+    try:
+        # Get current branch
+        settings = GitHubSettings.get_instance()
+        current_branch = settings.current_branch or 'main'
+        
+        # Prevent pushing directly to main/master branch
+        if current_branch.lower() in ['main', 'master']:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Cannot push directly to the main branch. Please create and use a feature branch.'
+            })
+            
+        # Get the policy data
+        policy = Policy.objects.get(id=policy_id)
+        policy_data = policy.to_dict()
+        
+        # Get the GitHub service
+        github_service = GitHubService()
+        
+        # Commit the policy to GitHub
+        success = github_service.commit_policy(
+            policy_data=policy_data,
+            branch=current_branch,
+            policy_name=policy.name
+        )
+        
+        if success:
+            return JsonResponse({
+                'success': True,
+                'message': f"Policy '{policy.name}' added to branch {current_branch}"
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Failed to add policy to GitHub'
+            })
+    except Policy.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': f"Policy with ID {policy_id} not found"
+        })
+    except Exception as e:
+        logger.error(f"Error pushing policy to GitHub: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@require_POST
+def env_vars_instance_push_github(request, instance_id):
+    """Add environment variables to GitHub PR."""
+    if not GitHubSettings.is_configured():
+        return JsonResponse({'success': False, 'error': 'GitHub integration not configured'})
+    
+    try:
+        # Get current branch
+        settings = GitHubSettings.get_instance()
+        current_branch = settings.current_branch or 'main'
+        
+        # Prevent pushing directly to main/master branch
+        if current_branch.lower() in ['main', 'master']:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Cannot push directly to the main branch. Please create and use a feature branch.'
+            })
+            
+        # Get the environment variables data
+        env_instance = EnvironmentInstance.objects.get(id=instance_id)
+        env_vars_data = env_instance.to_dict()
+        
+        # Get the GitHub service
+        github_service = GitHubService()
+        
+        # Commit the environment variables to GitHub
+        success = github_service.commit_env_vars(
+            env_vars_data=env_vars_data,
+            branch=current_branch,
+            instance_name=env_instance.name
+        )
+        
+        if success:
+            return JsonResponse({
+                'success': True,
+                'message': f"Environment variables for '{env_instance.name}' added to branch {current_branch}"
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Failed to add environment variables to GitHub'
+            })
+    except EnvironmentInstance.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': f"Environment instance with ID {instance_id} not found"
+        })
+    except Exception as e:
+        logger.error(f"Error pushing environment variables to GitHub: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })

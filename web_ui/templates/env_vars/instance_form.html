@@ -170,6 +170,13 @@
                         <a href="{% url 'env_vars_instances' %}" class="btn btn-outline-secondary w-100">
                             <i class="fas fa-arrow-left"></i> Back to Instances
                         </a>
+                        
+                        {% if instance %}
+                        <hr>
+                        <button type="button" id="gitPrBtn" class="btn btn-outline-primary w-100">
+                            <i class="fab fa-github me-1"></i> Add to GitHub PR
+                        </button>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -556,9 +563,38 @@
                 
                 return true;
             });
+
+            // Initialize the template field on page load if it's already set
+            {% if instance and instance.template %}
+            console.log("Initializing with existing template:", "{{ instance.template.id }}");
+            fetchTemplateDetails("{{ instance.template.id }}");
+            {% endif %}
+            
+            // Initialize GitHub PR button functionality
+            {% if instance %}
+            $("#gitPrBtn").click(function() {
+                $.ajax({
+                    url: "{% url 'env_vars_instance_push_github' instance.id %}",
+                    method: "POST",
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            alert('Environment Variables Instance added to GitHub PR successfully!');
+                        } else {
+                            alert('Error: ' + response.error);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        alert('Error: ' + error);
+                    }
+                });
+            });
+            {% endif %}
         });
-    } catch (error) {
-        console.error("Error initializing environment variables form:", error);
+    } catch (e) {
+        console.error('Error in script initialization:', e);
     }
 </script>
 {% endblock %} 

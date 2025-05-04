@@ -104,6 +104,10 @@
                                             <a href="{% url 'policy_download' policy.id %}" class="btn btn-sm btn-outline-info" title="Download">
                                                 <i class="fas fa-download"></i>
                                             </a>
+                                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                    data-policy-id="{{ policy.id }}" title="Add to GitHub PR">
+                                                <i class="fab fa-github"></i>
+                                            </button>
                                             <button type="button" class="btn btn-sm btn-outline-danger delete-policy" 
                                                     data-bs-toggle="modal" data-bs-target="#deletePolicyModal"
                                                     data-policy-id="{{ policy.id }}" data-policy-name="{{ policy.name }}" title="Delete">
@@ -307,6 +311,68 @@
                 noResultsMessage.style.display = 'none';
             }
         }
+        
+        // Handle "Add to Git PR" buttons
+        const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
+        addToGitPrButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const policyId = this.getAttribute('data-policy-id');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Send POST request to add policy to GitHub PR
+                fetch(`/policies/${policyId}/push-github/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Policy added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add policy to GitHub PR'}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error}`);
+                })
+                .finally(() => {
+                    // Restore button state
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
+                });
+            });
+        });
     });
 </script>
 {% endblock %} 

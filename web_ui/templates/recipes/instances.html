@@ -88,6 +88,10 @@
                                             <a href="#" class="btn btn-sm btn-outline-success run-recipe" data-recipe-id="{{ instance.datahub_urn }}" title="Run Now">
                                                 <i class="fas fa-play"></i>
                                             </a>
+                                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                    data-instance-id="{{ instance.id }}" title="Add to GitHub PR">
+                                                <i class="fab fa-github"></i>
+                                            </button>
                                             <button type="button" class="btn btn-sm btn-outline-danger delete-recipe-instance" 
                                                     data-bs-toggle="modal" data-bs-target="#deleteInstanceModal"
                                                     data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete">
@@ -166,6 +170,10 @@
                                                     <i class="fas fa-cloud-upload-alt"></i>
                                                 </button>
                                             </form>
+                                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                    data-instance-id="{{ instance.id }}" title="Add to GitHub PR">
+                                                <i class="fab fa-github"></i>
+                                            </button>
                                             <button type="button" class="btn btn-sm btn-outline-danger delete-recipe-instance" 
                                                     data-bs-toggle="modal" data-bs-target="#deleteInstanceModal"
                                                     data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete">
@@ -333,6 +341,68 @@
                     
                     // Show error
                     alert(`Error: ${error.message || 'Failed to run recipe'}`);
+                });
+            });
+        });
+        
+        // Handle "Add to Git PR" buttons
+        const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
+        addToGitPrButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const instanceId = this.getAttribute('data-instance-id');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Send POST request to add instance to GitHub PR
+                fetch(`/recipe-instances/${instanceId}/push-github/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Recipe instance added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add instance to GitHub PR'}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error}`);
+                })
+                .finally(() => {
+                    // Restore button state
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
                 });
             });
         });

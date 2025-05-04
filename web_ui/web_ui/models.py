@@ -10,6 +10,8 @@ from django.contrib.auth.models import User
 import uuid
 from pathlib import Path
 import yaml
+import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -905,4 +907,168 @@ class GitHubIntegration:
             'success': True,
             'branch': result['branch'],
             'file_path': result['file_path']
-        } 
+        }
+
+class Policy(models.Model):
+    """Model for storing DataHub policies."""
+    id = models.CharField(max_length=255, primary_key=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    type = models.CharField(max_length=50, choices=[('METADATA', 'Metadata'), ('PLATFORM', 'Platform')])
+    state = models.CharField(max_length=50, choices=[('ACTIVE', 'Active'), ('INACTIVE', 'Inactive')])
+    resources = models.TextField()
+    privileges = models.TextField()
+    actors = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name_plural = "Policies"
+    
+    def __str__(self):
+        return self.name
+    
+    @property
+    def resources_json(self):
+        return self.resources if self.resources else '[]'
+    
+    @property
+    def privileges_json(self):
+        return self.privileges if self.privileges else '[]'
+    
+    @property
+    def actors_json(self):
+        return self.actors if self.actors else '{}'
+    
+    def to_dict(self):
+        """Convert policy to a dictionary suitable for JSON/YAML export."""
+        try:
+            resources = json.loads(self.resources)
+        except (json.JSONDecodeError, TypeError):
+            resources = []
+            
+        try:
+            privileges = json.loads(self.privileges)
+        except (json.JSONDecodeError, TypeError):
+            privileges = []
+            
+        try:
+            actors = json.loads(self.actors)
+        except (json.JSONDecodeError, TypeError):
+            actors = {}
+            
+        return {
+            "policy": {
+                "id": self.id,
+                "name": self.name,
+                "description": self.description or "",
+                "type": self.type,
+                "state": self.state,
+                "resources": resources,
+                "privileges": privileges,
+                "actors": actors
+            },
+            "metadata": {
+                "exported_at": datetime.now().isoformat(),
+                "exported_by": "datahub_recipes_manager"
+            }
+        }
+    
+    def to_yaml(self, path=None):
+        """
+        Export policy to YAML format.
+        
+        Args:
+            path: Optional path to save the YAML file
+            
+        Returns:
+            Path to the saved file or the YAML string if path is None
+        """
+        import yaml
+        
+        data = self.to_dict()
+        yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
+        
+        if path:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            
+            # Write to file
+            with open(path, 'w') as f:
+                f.write(yaml_content)
+            return path
+        
+        return yaml_content
+
+class EnvironmentInstance(models.Model):
+    """Model representing a set of environment variables for a specific deployment"""
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    template = models.ForeignKey(EnvVarsTemplate, on_delete=models.PROTECT, related_name='instances')
+    recipe_type = models.CharField(max_length=50, choices=(
+        ('postgres', 'PostgreSQL'),
+        ('mysql', 'MySQL'),
+        ('mssql', 'Microsoft SQL Server'),
+        ('snowflake', 'Snowflake'),
+        ('bigquery', 'BigQuery'),
+        ('redshift', 'Redshift'),
+        ('databricks', 'Databricks'),
+    ))
+    tenant = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.name
+    
+    def to_dict(self):
+        """Convert environment instance to a dictionary suitable for JSON/YAML export."""
+        env_vars = {}
+        for var in self.variables.all():
+            env_vars[var.key] = {
+                "value": var.value,
+                "description": var.description or "",
+                "is_secret": var.is_secret,
+                "is_required": var.is_required
+            }
+            
+        return {
+            "environment_instance": {
+                "name": self.name,
+                "description": self.description or "",
+                "recipe_type": self.recipe_type,
+                "template": self.template.name,
+                "tenant": self.tenant or "",
+                "variables": env_vars
+            },
+            "metadata": {
+                "exported_at": datetime.now().isoformat(),
+                "exported_by": "datahub_recipes_manager"
+            }
+        }
+    
+    def to_yaml(self, path=None):
+        """
+        Export environment instance to YAML format.
+        
+        Args:
+            path: Optional path to save the YAML file
+            
+        Returns:
+            Path to the saved file or the YAML string if path is None
+        """
+        import yaml
+        
+        data = self.to_dict()
+        yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
+        
+        if path:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            
+            # Write to file
+            with open(path, 'w') as f:
+                f.write(yaml_content)
+            return path
+        
+        return yaml_content 

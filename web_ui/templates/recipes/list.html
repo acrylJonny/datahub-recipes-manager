@@ -114,7 +114,7 @@
                                             <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info">
                                                 <i class="fas fa-copy"></i>
                                             </a>
-                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}" {% if recipe.id|slice:':4' == 'cli-' %}disabled title="Cannot run CLI-created recipes from the UI"{% endif %}>
+                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}" {% if recipe.id|slice:':4' == 'cli-' %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Cannot run CLI-created recipes from the UI" tabindex="0"{% endif %}>
                                                 <i class="fas fa-play"></i>
                                             </button>
                                             <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}" data-bs-toggle="modal" data-bs-target="#deleteRecipeModal">
@@ -476,6 +476,12 @@
                 noResultsMessage.style.display = 'none';
             }
         }
+        
+        // Enable Bootstrap tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+            new bootstrap.Tooltip(tooltipTriggerEl);
+        });
     });
 </script>
 {% endblock %} 
