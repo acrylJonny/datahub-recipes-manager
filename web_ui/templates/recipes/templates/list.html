@@ -4,6 +4,11 @@
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Hidden form to ensure CSRF token is available -->
+    <form id="csrf-form" style="display:none">
+        {% csrf_token %}
+    </form>
+    
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h1 class="h2">Recipe Templates</h1>
@@ -304,6 +309,11 @@
                                             <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" title="Edit instance">
                                                 <i class="fa fa-edit"></i>
                                             </a>
+                                            <button type="button" class="btn btn-outline-primary add-env-instance-to-git-pr" 
+                                                   data-instance-id="{{ instance.id }}"
+                                                   title="Add to Git PR">
+                                                <i class="fab fa-github"></i>
+                                            </button>
                                             <button type="button" class="btn btn-outline-danger" 
                                                    data-bs-toggle="modal" 
                                                    data-bs-target="#deleteInstanceModal" 
@@ -350,7 +360,65 @@
                 </div>
                 <div class="card-body">
                     <p>Recipe instances are the actual deployed recipes in your DataHub environment.</p>
-                    <div class="alert alert-info">
+                    
+                    {% if recipe_instances %}
+                    <div class="table-responsive mt-3">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Environment</th>
+                                    <th>Deployed</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for instance in recipe_instances %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ instance.name }}</strong>
+                                        {% if instance.description %}<div class="small text-muted">{{ instance.description|truncatechars:100 }}</div>{% endif %}
+                                    </td>
+                                    <td>{{ instance.template.name }}</td>
+                                    <td>{{ instance.env_vars_instance.name|default:"—" }}</td>
+                                    <td>
+                                        {% if instance.deployed %}
+                                        <span class="badge bg-success">Deployed</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Staging</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-primary" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-primary add-recipe-instance-to-git-pr" 
+                                                   data-instance-id="{{ instance.id }}" title="Add to Git PR">
+                                                <i class="fab fa-github"></i>
+                                            </button>
+                                            {% if instance.deployed %}
+                                            <a href="{% url 'recipe_instance_redeploy' instance.id %}" class="btn btn-sm btn-outline-success" title="Redeploy">
+                                                <i class="fas fa-sync"></i>
+                                            </a>
+                                            {% else %}
+                                            <a href="{% url 'recipe_instance_deploy' instance.id %}" class="btn btn-sm btn-outline-success" title="Deploy">
+                                                <i class="fas fa-upload"></i>
+                                            </a>
+                                            {% endif %}
+                                            <a href="{% url 'recipe_instance_delete' instance.id %}" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info mt-3">
                         <i class="fas fa-info-circle me-2"></i>
                         Create a recipe instance by combining a template with environment variables.
                     </div>
@@ -363,6 +431,7 @@
                             <i class="fas fa-list me-1"></i> View All Recipe Instances
                         </a>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -391,6 +460,32 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <form id="deleteInstanceForm" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Environment Variable Template Modal -->
+<div class="modal fade" id="deleteEnvTemplateModal" tabindex="-1" aria-labelledby="deleteEnvTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteEnvTemplateModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    Are you sure you want to delete the template <strong id="envTemplateNamePlaceholder"></strong>?
+                </div>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteEnvTemplateForm" method="post" action="">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-danger">Delete</button>
                 </form>
@@ -505,6 +600,17 @@
                                         <a href="/env-vars/templates/${template.id}/edit/" class="btn btn-sm btn-outline-primary">
                                             <i class="fas fa-edit"></i>
                                         </a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary add-env-template-to-git-pr" 
+                                                data-template-id="${template.id}" title="Add to Git PR">
+                                            <i class="fab fa-github"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger delete-env-template" 
+                                                data-template-id="${template.id}" 
+                                                data-template-name="${template.name}"
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#deleteEnvTemplateModal" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>`;
@@ -512,6 +618,9 @@
                         
                         html += '</tbody></table></div>';
                         templatesContainer.innerHTML = html;
+                        
+                        // Attach event handlers to the newly created buttons
+                        attachEnvTemplateButtonHandlers();
                     } else {
                         templatesContainer.innerHTML = `
                             <div class="alert alert-info">
@@ -538,6 +647,96 @@
                 });
         }
         
+        // Function to attach event handlers to env template buttons
+        function attachEnvTemplateButtonHandlers() {
+            // Handle delete buttons
+            document.querySelectorAll('.delete-env-template').forEach(button => {
+                button.addEventListener('click', function() {
+                    const templateId = this.getAttribute('data-template-id');
+                    const templateName = this.getAttribute('data-template-name');
+                    
+                    document.getElementById('envTemplateNamePlaceholder').textContent = templateName;
+                    const deleteForm = document.getElementById('deleteEnvTemplateForm');
+                    deleteForm.action = `/env-vars/templates/delete/${templateId}/`;
+                    
+                    // Ensure CSRF token is present
+                    let csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                    let existingTokenInput = deleteForm.querySelector('input[name=csrfmiddlewaretoken]');
+                    
+                    if (existingTokenInput) {
+                        existingTokenInput.value = csrfToken;
+                    } else {
+                        let tokenInput = document.createElement('input');
+                        tokenInput.type = 'hidden';
+                        tokenInput.name = 'csrfmiddlewaretoken';
+                        tokenInput.value = csrfToken;
+                        deleteForm.prepend(tokenInput);
+                    }
+                });
+            });
+            
+            // Handle "Add to Git PR" buttons
+            document.querySelectorAll('.add-env-template-to-git-pr').forEach(button => {
+                button.addEventListener('click', function() {
+                    const templateId = this.getAttribute('data-template-id');
+                    
+                    // Show loading state
+                    const originalHTML = this.innerHTML;
+                    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    this.disabled = true;
+                    
+                    // Send POST request to add template to GitHub PR
+                    fetch(`/env-vars/templates/${templateId}/push-github/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Create a toast notification
+                            const toast = document.createElement('div');
+                            toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                            toast.setAttribute('role', 'alert');
+                            toast.setAttribute('aria-live', 'assertive');
+                            toast.setAttribute('aria-atomic', 'true');
+                            toast.innerHTML = `
+                                <div class="d-flex">
+                                    <div class="toast-body">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        Environment variable template added to GitHub PR successfully!
+                                    </div>
+                                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                                </div>
+                            `;
+                            document.body.appendChild(toast);
+                            
+                            // Initialize and show the toast
+                            const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                            bsToast.show();
+                            
+                            // Remove toast from DOM after it's hidden
+                            toast.addEventListener('hidden.bs.toast', function() {
+                                toast.remove();
+                            });
+                        } else {
+                            alert(`Error: ${data.error || 'Failed to add template to GitHub PR'}`);
+                        }
+                    })
+                    .catch(error => {
+                        alert(`Error: ${error}`);
+                    })
+                    .finally(() => {
+                        // Restore button state
+                        this.innerHTML = originalHTML;
+                        this.disabled = false;
+                    });
+                });
+            });
+        }
+        
         // Load templates when the environment variables tab is shown
         const envVarsTab = document.getElementById('env-vars-tab');
         if (envVarsTab) {
@@ -560,6 +759,8 @@
             const instanceName = button.data('instance-name');
             const recipeCount = button.data('recipe-count');
             
+            console.log("Opening delete modal for instance ID:", instanceId, "Name:", instanceName);
+            
             // Update modal content
             $('#instanceNamePlaceholder').text(instanceName);
             
@@ -572,8 +773,153 @@
             }
             
             // Set the form action using the correct URL pattern
-            $('#deleteInstanceForm').attr('action', `/env-vars/instances/${instanceId}/delete/`);
+            const deleteForm = $('#deleteInstanceForm');
+            deleteForm.attr('action', '/env-vars/instances/' + instanceId + '/delete/');
+            console.log("Setting form action to:", deleteForm.attr('action'));
+            
+            // Ensure CSRF token is present
+            const csrfToken = $('[name=csrfmiddlewaretoken]').val();
+            let existingToken = deleteForm.find('input[name=csrfmiddlewaretoken]');
+            
+            if (existingToken.length) {
+                existingToken.val(csrfToken);
+            } else {
+                deleteForm.prepend(`<input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">`);
+            }
         });
+        
+        // Add form submission handler with debug logging
+        $('#deleteInstanceForm').on('submit', function(e) {
+            e.preventDefault();
+            const form = $(this);
+            const url = form.attr('action');
+            const formData = new FormData(form[0]);
+            
+            console.log("Submitting delete form to URL:", url);
+            
+            // Make an AJAX POST request
+            $.ajax({
+                url: url,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    console.log("Delete successful, redirecting");
+                    window.location.reload();
+                },
+                error: function(xhr, status, error) {
+                    console.error("Error deleting instance:", error);
+                    console.error("Status:", xhr.status);
+                    console.error("Response:", xhr.responseText);
+                    alert(`Error deleting instance: ${error}`);
+                }
+            });
+        });
+        
+        // Handle "Add to Git PR" buttons for environment variable instances
+        $(document).on('click', '.add-env-instance-to-git-pr', function() {
+            const instanceId = $(this).data('instance-id');
+            
+            // Show loading state
+            const $button = $(this);
+            const originalHTML = $button.html();
+            $button.html('<i class="fas fa-spinner fa-spin"></i>');
+            $button.prop('disabled', true);
+            
+            // Send POST request to add instance to GitHub PR
+            $.ajax({
+                url: `/env-vars/instances/${instanceId}/push-github/`,
+                type: 'POST',
+                headers: {
+                    'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
+                },
+                success: function(data) {
+                    if (data.success) {
+                        showSuccessToast('Environment variable instance added to GitHub PR successfully!');
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add instance to GitHub PR'}`);
+                    }
+                },
+                error: function(xhr) {
+                    let errorMsg = 'Failed to add instance to GitHub PR';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg = xhr.responseJSON.error;
+                    }
+                    alert(`Error: ${errorMsg}`);
+                },
+                complete: function() {
+                    // Restore button state
+                    $button.html(originalHTML);
+                    $button.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Handle "Add to Git PR" buttons for recipe instances
+        $(document).on('click', '.add-recipe-instance-to-git-pr', function() {
+            const instanceId = $(this).data('instance-id');
+            
+            // Show loading state
+            const $button = $(this);
+            const originalHTML = $button.html();
+            $button.html('<i class="fas fa-spinner fa-spin"></i>');
+            $button.prop('disabled', true);
+            
+            // Send POST request to add recipe instance to GitHub PR
+            $.ajax({
+                url: `/recipe-instances/${instanceId}/push-github/`,
+                type: 'POST',
+                headers: {
+                    'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
+                },
+                success: function(data) {
+                    if (data.success) {
+                        showSuccessToast('Recipe instance added to GitHub PR successfully!');
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add recipe instance to GitHub PR'}`);
+                    }
+                },
+                error: function(xhr) {
+                    let errorMsg = 'Failed to add recipe instance to GitHub PR';
+                    if (xhr.responseJSON && xhr.responseJSON.error) {
+                        errorMsg = xhr.responseJSON.error;
+                    }
+                    alert(`Error: ${errorMsg}`);
+                },
+                complete: function() {
+                    // Restore button state
+                    $button.html(originalHTML);
+                    $button.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Helper function to show success toast
+        function showSuccessToast(message) {
+            const toast = $(`
+                <div class="toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="fas fa-check-circle me-2"></i>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                </div>
+            `);
+            
+            $('body').append(toast);
+            
+            // Initialize and show the toast
+            const bsToast = new bootstrap.Toast(toast[0], { delay: 5000 });
+            bsToast.show();
+            
+            // Remove toast from DOM after it's hidden
+            toast.on('hidden.bs.toast', function() {
+                toast.remove();
+            });
+        }
     });
 </script>
 {% endblock %} 

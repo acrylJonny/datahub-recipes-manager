@@ -1,6 +1,8 @@
 import yaml
 import re
 import os
+import requests
+import base64
 from typing import Dict, List, Optional, Tuple
 import logging
 
@@ -8,6 +10,127 @@ logger = logging.getLogger(__name__)
 
 class WorkflowAnalyzer:
     """Utility class to analyze GitHub workflow files and generate intelligent descriptions."""
+    
+    def __init__(self, username, repository, token, base_url=None):
+        """
+        Initialize the WorkflowAnalyzer with repository details.
+        
+        Args:
+            username: The username/organization name of the repository owner
+            repository: The repository name
+            token: The Git provider API token
+            base_url: Optional base URL for the Git provider API (defaults to GitHub API)
+        """
+        self.username = username
+        self.repository = repository
+        self.token = token
+        self.base_url = base_url or "https://api.github.com"
+        
+        # Remove trailing slash if present
+        if self.base_url.endswith('/'):
+            self.base_url = self.base_url[:-1]
+            
+        # Set up headers
+        self.headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": f"token {self.token}",
+        }
+    
+    def get_workflows(self, branch='main'):
+        """
+        Get all workflow files from the repository for a specific branch.
+        
+        Args:
+            branch: The branch to fetch workflows from
+            
+        Returns:
+            List of workflow information dictionaries
+        """
+        try:
+            # Determine the API endpoint based on the base URL
+            if "github.com" in self.base_url:
+                # GitHub API
+                workflows_url = f"{self.base_url}/repos/{self.username}/{self.repository}/contents/.github/workflows?ref={branch}"
+            elif "dev.azure.com" in self.base_url or "visualstudio.com" in self.base_url:
+                # Azure DevOps API
+                project = self.repository
+                repo = self.username
+                workflows_url = f"{self.base_url}/{project}/_apis/git/repositories/{repo}/items?path=/.github/workflows&versionDescriptor.version={branch}&api-version=6.0"
+            elif "gitlab.com" in self.base_url:
+                # GitLab API
+                encoded_path = "%2Egithub%2Fworkflows"
+                workflows_url = f"{self.base_url}/api/v4/projects/{self.username}%2F{self.repository}/repository/tree?path={encoded_path}&ref={branch}"
+            elif "bitbucket.org" in self.base_url:
+                # Bitbucket API
+                workflows_url = f"{self.base_url}/2.0/repositories/{self.username}/{self.repository}/src/{branch}/.github/workflows"
+            else:
+                # Generic Git API - use GitHub style as default
+                workflows_url = f"{self.base_url}/repos/{self.username}/{self.repository}/contents/.github/workflows?ref={branch}"
+            
+            logger.info(f"Fetching workflows from: {workflows_url}")
+            
+            response = requests.get(workflows_url, headers=self.headers)
+            response.raise_for_status()
+            
+            # The response format varies between Git providers
+            workflows = []
+            
+            if "github.com" in self.base_url or "dev.azure.com" not in self.base_url and "gitlab.com" not in self.base_url and "bitbucket.org" not in self.base_url:
+                # GitHub API style response
+                files = response.json()
+                
+                if not isinstance(files, list):
+                    logger.warning(f"Expected a list of files but got: {type(files)}")
+                    return []
+                
+                for file_info in files:
+                    if not isinstance(file_info, dict) or 'name' not in file_info:
+                        continue
+                        
+                    if not (file_info['name'].endswith('.yml') or file_info['name'].endswith('.yaml')):
+                        continue
+                    
+                    # Fetch the file content
+                    file_url = file_info.get('url', None)
+                    if not file_url:
+                        file_url = f"{self.base_url}/repos/{self.username}/{self.repository}/contents/.github/workflows/{file_info['name']}?ref={branch}"
+                    
+                    file_response = requests.get(file_url, headers=self.headers)
+                    if file_response.status_code != 200:
+                        logger.error(f"Failed to fetch workflow file {file_info['name']}: {file_response.status_code}")
+                        continue
+                    
+                    file_data = file_response.json()
+                    if not isinstance(file_data, dict) or 'content' not in file_data:
+                        logger.error(f"Invalid file content response for {file_info['name']}")
+                        continue
+                    
+                    content = base64.b64decode(file_data['content']).decode('utf-8')
+                    
+                    # Analyze the workflow
+                    workflow_info = self.analyze_workflow(content)
+                    workflow = {
+                        'filename': file_info['name'],
+                        'name': workflow_info['name'],
+                        'description': workflow_info['description'],
+                        'on': workflow_info['triggers'],
+                        'actions': workflow_info['actions'],
+                        'environments': workflow_info['environments'],
+                        'inputs': workflow_info['inputs'],
+                        'jobs': workflow_info['jobs'],
+                        'steps': workflow_info['steps'],
+                        'raw_url': file_data.get('html_url', file_info.get('html_url', ''))
+                    }
+                    workflows.append(workflow)
+            
+            # For other Git providers, implement specific parsing logic as needed
+            # This is a simplified implementation that assumes GitHub API format
+            
+            return workflows
+            
+        except Exception as e:
+            logger.error(f"Error fetching workflows: {str(e)}")
+            return []
     
     @staticmethod
     def analyze_workflow(workflow_content: str) -> Dict:

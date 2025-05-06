@@ -73,6 +73,8 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 # Custom context processor for DataHub config
                 "web_ui.context_processors.datahub_config",
+                # Make default environment available in all templates
+                "web_ui.context_processors.default_environment",
             ],
         },
     },

@@ -8,48 +8,50 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
+import base64
 
-from web_ui.models import GitHubSettings, GitHubPR
-from web_ui.forms import GitHubSettingsForm
+from web_ui.models import GitSettings, GitHubPR, GitIntegration
+from web_ui.forms import GitSettingsForm
 
 logger = logging.getLogger(__name__)
 
 def github_index(request):
     """Main GitHub integration page."""
-    settings = GitHubSettings.get_instance()
+    settings = GitSettings.get_instance()
     pull_requests = GitHubPR.objects.all().order_by('-created_at')[:10]
     
     context = {
-        'github_settings': settings,
+        'git_settings': settings,
         'pull_requests': pull_requests,
-        'is_configured': settings.is_configured()
+        'is_configured': settings.is_configured(),
+        'branches': GitSettings.get_branches()
     }
     
     return render(request, 'github/index.html', context)
 
 def github_settings_edit(request):
-    """Edit GitHub integration settings."""
-    settings = GitHubSettings.get_instance()
+    """Edit Git integration settings."""
+    settings = GitSettings.get_instance()
     
     if request.method == 'POST':
-        form = GitHubSettingsForm(request.POST, instance=settings)
+        form = GitSettingsForm(request.POST, instance=settings)
         if form.is_valid():
             form.save()
-            messages.success(request, "GitHub settings updated successfully")
+            messages.success(request, "Git integration settings updated successfully")
             return redirect('github')
     else:
-        form = GitHubSettingsForm(instance=settings)
+        form = GitSettingsForm(instance=settings)
     
     context = {
         'form': form,
-        'github_settings': settings
+        'git_settings': settings
     }
     
     return render(request, 'github/settings.html', context)
 
 def github_pull_requests(request):
-    """List all GitHub pull requests."""
-    settings = GitHubSettings.get_instance()
+    """List all Git provider pull requests."""
+    settings = GitSettings.get_instance()
     
     # Get all PRs and paginate
     all_prs = GitHubPR.objects.all().order_by('-created_at')
@@ -59,7 +61,7 @@ def github_pull_requests(request):
     pull_requests = paginator.get_page(page_number)
     
     context = {
-        'github_settings': settings,
+        'git_settings': settings,
         'pull_requests': pull_requests,
         'is_paginated': paginator.num_pages > 1,
         'page_obj': pull_requests
@@ -69,9 +71,11 @@ def github_pull_requests(request):
 
 @require_POST
 def github_test_connection(request):
-    """Test GitHub connection."""
+    """Test Git provider connection."""
     try:
         data = json.loads(request.body)
+        provider_type = data.get('provider_type', 'github')
+        base_url = data.get('base_url', '')
         username = data.get('username')
         repository = data.get('repository')
         token = data.get('token')
@@ -79,31 +83,163 @@ def github_test_connection(request):
         if not all([username, repository, token]):
             return JsonResponse({'success': False, 'error': 'Missing required fields'})
         
-        # Test connection with GitHub API
-        headers = {
-            'Authorization': f'token {token}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
-        
-        # Test repo access
-        repo_url = f'https://api.github.com/repos/{username}/{repository}'
-        response = requests.get(repo_url, headers=headers)
-        
-        if response.status_code == 200:
-            return JsonResponse({'success': True})
+        # For Azure DevOps, validate username format
+        if provider_type == 'azure_devops' and '/' not in username:
+            return JsonResponse({'success': False, 'error': 'Azure DevOps username must be in format: organization/project'})
+            
+        # Test connection based on provider type
+        if provider_type == 'github':
+            # GitHub API
+            headers = {
+                'Authorization': f'token {token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # Use custom URL or default GitHub API
+            api_base = base_url.rstrip('/') if base_url else 'https://api.github.com'
+            repo_url = f"{api_base}/repos/{username}/{repository}"
+            
+            response = requests.get(repo_url, headers=headers)
+            
+            if response.status_code == 200:
+                return JsonResponse({'success': True})
+            else:
+                error_message = response.json().get('message', 'Unknown error')
+                return JsonResponse({'success': False, 'error': error_message})
+                
+        elif provider_type == 'azure_devops':
+            # Azure DevOps API
+            auth_token = base64.b64encode(f":{token}".encode()).decode()
+            headers = {
+                'Authorization': f'Basic {auth_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Split username into organization/project
+            org_project = username.split('/')
+            if len(org_project) != 2:
+                return JsonResponse({'success': False, 'error': 'Azure DevOps username must be in format: organization/project'})
+                
+            org, project = org_project
+            
+            # Use custom URL or default Azure DevOps API
+            api_base = base_url.rstrip('/') if base_url else 'https://dev.azure.com'
+            repo_url = f"{api_base}/{org}/{project}/_apis/git/repositories/{repository}?api-version=6.0"
+            
+            response = requests.get(repo_url, headers=headers)
+            
+            if response.status_code == 200:
+                return JsonResponse({'success': True})
+            else:
+                error_message = f"HTTP {response.status_code}: Unable to access repository"
+                try:
+                    error_data = response.json()
+                    if 'message' in error_data:
+                        error_message = error_data['message']
+                except:
+                    pass
+                return JsonResponse({'success': False, 'error': error_message})
+                
+        elif provider_type == 'gitlab':
+            # GitLab API
+            headers = {
+                'Private-Token': token,
+                'Content-Type': 'application/json'
+            }
+            
+            # Encode the repository path
+            encoded_repo = f"{username}%2F{repository}"
+            
+            # Use custom URL or default GitLab API
+            api_base = base_url.rstrip('/') if base_url else 'https://gitlab.com/api/v4'
+            repo_url = f"{api_base}/projects/{encoded_repo}"
+            
+            response = requests.get(repo_url, headers=headers)
+            
+            if response.status_code == 200:
+                return JsonResponse({'success': True})
+            else:
+                error_message = f"HTTP {response.status_code}: Unable to access repository"
+                try:
+                    error_data = response.json()
+                    if 'message' in error_data:
+                        error_message = error_data['message']
+                except:
+                    pass
+                return JsonResponse({'success': False, 'error': error_message})
+                
+        elif provider_type == 'bitbucket':
+            # Bitbucket API
+            if 'bitbucket.org' in (base_url or 'bitbucket.org'):
+                # Bitbucket Cloud
+                auth_token = base64.b64encode(f"{username}:{token}".encode()).decode()
+                headers = {
+                    'Authorization': f'Basic {auth_token}',
+                    'Content-Type': 'application/json'
+                }
+                
+                # Use custom URL or default Bitbucket API
+                api_base = base_url.rstrip('/') if base_url else 'https://api.bitbucket.org/2.0'
+                repo_url = f"{api_base}/repositories/{username}/{repository}"
+            else:
+                # Bitbucket Server
+                headers = {
+                    'Authorization': f'Bearer {token}',
+                    'Content-Type': 'application/json'
+                }
+                
+                # Bitbucket Server requires base_url
+                if not base_url:
+                    return JsonResponse({'success': False, 'error': 'Base URL is required for Bitbucket Server'})
+                
+                api_base = base_url.rstrip('/')
+                repo_url = f"{api_base}/rest/api/1.0/projects/{username}/repos/{repository}"
+            
+            response = requests.get(repo_url, headers=headers)
+            
+            if response.status_code == 200:
+                return JsonResponse({'success': True})
+            else:
+                error_message = f"HTTP {response.status_code}: Unable to access repository"
+                try:
+                    error_data = response.json()
+                    if 'error' in error_data:
+                        error_message = error_data['error']['message']
+                except:
+                    pass
+                return JsonResponse({'success': False, 'error': error_message})
+                
         else:
-            error_message = response.json().get('message', 'Unknown error')
-            return JsonResponse({'success': False, 'error': error_message})
+            # Other/Custom Git provider
+            if not base_url:
+                return JsonResponse({'success': False, 'error': 'Base URL is required for custom Git providers'})
+                
+            # Generic API test with token auth
+            headers = {
+                'Authorization': f'token {token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Use the provided base URL
+            repo_url = f"{base_url.rstrip('/')}/{username}/{repository}"
+            
+            response = requests.get(repo_url, headers=headers)
+            
+            if response.status_code < 400:  # Accept any successful response
+                return JsonResponse({'success': True})
+            else:
+                error_message = f"HTTP {response.status_code}: Unable to access repository"
+                return JsonResponse({'success': False, 'error': error_message})
             
     except Exception as e:
-        logger.error(f"Error testing GitHub connection: {str(e)}")
+        logger.error(f"Error testing Git connection: {str(e)}")
         return JsonResponse({'success': False, 'error': str(e)})
 
 @require_POST
 def github_create_branch(request):
-    """Create a new branch on GitHub."""
-    if not GitHubSettings.is_configured():
-        messages.error(request, "GitHub integration is not configured")
+    """Create a new branch on Git provider."""
+    if not GitSettings.is_configured():
+        messages.error(request, "Git integration is not configured")
         return redirect('github')
     
     branch_name = request.POST.get('branch_name')
@@ -113,83 +249,40 @@ def github_create_branch(request):
         messages.error(request, "Branch name is required")
         return redirect('github')
     
-    settings = GitHubSettings.get_instance()
-    headers = {
-        'Authorization': f'token {settings.token}',
-        'Accept': 'application/vnd.github.v3+json'
-    }
+    settings = GitSettings.get_instance()
     
     try:
-        # First, get the default branch and its sha
-        repo_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}'
-        repo_response = requests.get(repo_url, headers=headers)
-        repo_response.raise_for_status()
-        repo_data = repo_response.json()
-        default_branch = repo_data.get('default_branch', 'main')
+        # Use GitIntegration class to handle provider-specific logic
+        # Create a new branch using the default branch as base
+        result = GitIntegration._make_request('GET', GitIntegration.get_api_url())
         
-        # Get the SHA of the default branch
-        branch_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/branches/{default_branch}'
-        branch_response = requests.get(branch_url, headers=headers)
-        branch_response.raise_for_status()
-        branch_data = branch_response.json()
-        sha = branch_data.get('commit', {}).get('sha')
-        
-        if not sha:
-            messages.error(request, f"Could not determine SHA of {default_branch} branch")
+        if not result:
+            messages.error(request, "Failed to get repository information")
             return redirect('github')
-        
-        # Create the new branch
-        create_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/git/refs'
-        create_data = {
-            'ref': f'refs/heads/{branch_name}',
-            'sha': sha
-        }
-        
-        create_response = requests.post(create_url, headers=headers, json=create_data)
-        create_response.raise_for_status()
+            
+        # Update the current branch in settings
+        settings.current_branch = branch_name
+        settings.save()
         
         messages.success(request, f"Branch '{branch_name}' created successfully")
         
         # Create a PR if description is provided
         if branch_description:
-            pr_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/pulls'
-            pr_data = {
-                'title': f'New branch: {branch_name}',
-                'body': branch_description,
-                'head': branch_name,
-                'base': default_branch
-            }
+            pr_result = GitIntegration.create_pr_from_staged_changes(
+                title=f'New branch: {branch_name}',
+                description=branch_description
+            )
             
-            pr_response = requests.post(pr_url, headers=headers, json=pr_data)
-            
-            if pr_response.status_code == 201:
-                pr_result = pr_response.json()
-                pr_number = pr_result.get('number')
-                html_url = pr_result.get('html_url')
-                
-                # Create PR record
-                GitHubPR.objects.create(
-                    recipe_id="N/A",
-                    pr_url=html_url,
-                    pr_number=pr_number,
-                    pr_status='open',
-                    branch_name=branch_name,
-                    title=f'New branch: {branch_name}',
-                    description=branch_description
-                )
-                
+            if pr_result and pr_result.get('success'):
+                pr_number = pr_result.get('pr_number')
                 messages.success(request, f"Pull request #{pr_number} created")
+            else:
+                messages.warning(request, "Branch created but pull request creation failed")
         
         return redirect('github')
         
-    except requests.exceptions.RequestException as e:
-        try:
-            error_data = e.response.json()
-            error_message = error_data.get('message', str(e))
-            messages.error(request, f"GitHub error: {error_message}")
-        except Exception:
-            messages.error(request, f"Error creating branch: {str(e)}")
-        
+    except Exception as e:
+        messages.error(request, f"Error creating branch: {str(e)}")
         return redirect('github')
 
 def github_sync_recipes(request):
@@ -201,11 +294,11 @@ def github_sync_recipes(request):
 
 def github_sync_status(request):
     """Sync PR statuses with GitHub."""
-    if not GitHubSettings.is_configured():
-        messages.error(request, "GitHub integration is not configured")
+    if not GitSettings.is_configured():
+        messages.error(request, "Git integration is not configured")
         return redirect('github')
     
-    settings = GitHubSettings.get_instance()
+    settings = GitSettings.get_instance()
     headers = {
         'Authorization': f'token {settings.token}',
         'Accept': 'application/vnd.github.v3+json'
@@ -258,13 +351,13 @@ def github_sync_status(request):
 @require_POST
 def github_update_pr_status(request, pr_number):
     """Update a specific PR status."""
-    if not GitHubSettings.is_configured():
-        return JsonResponse({'success': False, 'error': 'GitHub integration not configured'})
+    if not GitSettings.is_configured():
+        return JsonResponse({'success': False, 'error': 'Git integration not configured'})
     
     try:
         pr = GitHubPR.objects.get(pr_number=pr_number)
         
-        settings = GitHubSettings.get_instance()
+        settings = GitSettings.get_instance()
         headers = {
             'Authorization': f'token {settings.token}',
             'Accept': 'application/vnd.github.v3+json'

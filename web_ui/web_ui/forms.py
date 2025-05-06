@@ -5,7 +5,7 @@ from django.conf import settings
 import json
 import yaml
 
-from .models import RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, GitHubSettings
+from .models import RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, GitSettings, Environment
 
 class RecipeForm(forms.Form):
     """Form for creating or editing a recipe."""
@@ -132,11 +132,16 @@ class EnvVarsInstanceForm(forms.Form):
                                 widget=forms.TextInput(attrs={'class': 'form-control'}))
     variables = forms.CharField(label="Environment Variables", required=True,
                              widget=forms.HiddenInput(attrs={'id': 'env_vars_instance_json'}))
+    environment = forms.ModelChoiceField(queryset=Environment.objects.all(), required=False)
     
     def __init__(self, *args, **kwargs):
         from .models import EnvVarsTemplate
         super().__init__(*args, **kwargs)
         self.fields['template'].queryset = EnvVarsTemplate.objects.all().order_by('name')
+        # Set initial environment to the default if it exists
+        default_env = Environment.get_default()
+        if default_env:
+            self.fields['environment'].initial = default_env.id
 
 class RecipeInstanceForm(forms.Form):
     """Form for creating or editing a recipe instance."""
@@ -163,22 +168,33 @@ class RecipeInstanceForm(forms.Form):
         required=False,
         label="Environment Variables Instance",
         widget=forms.Select(attrs={'class': 'form-control'})
-    ) 
+    )
+    environment = forms.ModelChoiceField(queryset=Environment.objects.all(), required=False)
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set initial environment to the default if it exists
+        default_env = Environment.get_default()
+        if default_env:
+            self.fields['environment'].initial = default_env.id
 
-class GitHubSettingsForm(forms.ModelForm):
-    """Form for GitHub integration settings."""
+class GitSettingsForm(forms.ModelForm):
+    """Form for Git integration settings."""
     
     class Meta:
-        model = GitHubSettings
-        fields = ['username', 'repository', 'token', 'enabled']
+        model = GitSettings
+        fields = ['provider_type', 'base_url', 'username', 'repository', 'token', 'enabled']
         widgets = {
             'token': forms.PasswordInput(render_value=True),
-            'username': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'GitHub username or organization'}),
+            'username': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter username or organization/project'}),
             'repository': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Repository name'}),
+            'base_url': forms.URLInput(attrs={'class': 'form-control', 'placeholder': 'https://api.github.com (GitHub), https://dev.azure.com (Azure DevOps), etc.'}),
         }
         help_texts = {
-            'token': 'GitHub Personal Access Token with repo scope',
-            'username': 'Your GitHub username or organization name',
-            'repository': 'The repository name (not the full URL)',
-            'enabled': 'Enable GitHub integration'
+            'token': 'Personal Access Token with repository/code access permissions',
+            'username': 'For GitHub: username or organization. For Azure DevOps: organization/project',
+            'repository': 'The repository name without the full URL',
+            'base_url': 'Leave empty for GitHub.com. For Azure DevOps or self-hosted instances, enter the base API URL',
+            'enabled': 'Enable Git integration',
+            'provider_type': 'Select your Git provider'
         } 

@@ -80,18 +80,24 @@
                         <div class="mb-3">
                             <label for="{{ form.template.id_for_label }}" class="form-label">Template</label>
                             {{ form.template }}
-                            {% if form.template.errors %}
-                            <div class="text-danger">
-                                {% for error in form.template.errors %}
-                                {{ error }}
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                            <div class="form-text">Select a template to base this instance on</div>
+                            <div id="templateHelp" class="form-text">Select the template to base this instance on</div>
                         </div>
 
                         <div class="mb-3">
-                            <label for="{{ form.recipe_type.id_for_label }}" class="form-label required">Recipe Type</label>
+                            <label for="{{ form.environment.id_for_label }}" class="form-label">Environment</label>
+                            <select name="environment" id="{{ form.environment.id_for_label }}" class="form-select">
+                                <option value="">-- Select Environment --</option>
+                                {% for env in environments %}
+                                    <option value="{{ env.id }}" {% if form.environment.value == env.id %}selected{% endif %}>
+                                        {{ env.name }}{% if env.is_default %} (Default){% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Select the environment this instance belongs to</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.recipe_type.id_for_label }}" class="form-label">Recipe Type</label>
                             {{ form.recipe_type }}
                             {% if form.recipe_type.errors %}
                             <div class="text-danger">

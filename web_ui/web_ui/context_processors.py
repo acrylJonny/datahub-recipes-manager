@@ -4,6 +4,7 @@ Context processors for the web UI.
 import os
 from django.conf import settings
 from dotenv import load_dotenv
+from web_ui.models import Environment
 
 def datahub_config(request):
     """
@@ -25,3 +26,17 @@ def datahub_config(request):
         'has_datahub_token': bool(datahub_token),
         'has_datahub_config': has_config,
     } 
+
+def default_environment(request):
+    """
+    Add the default environment to the template context.
+    """
+    try:
+        default_env = Environment.get_default()
+        return {
+            'default_environment': default_env,
+        }
+    except Exception:
+        return {
+            'default_environment': None,
+        } 

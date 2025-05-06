@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}GitHub Integration - DataHub Recipes Manager{% endblock %}
+{% block title %}Git Repository Integration - DataHub Recipes Manager{% endblock %}
 
 {% block content %}
 <style>
@@ -42,7 +42,7 @@
 </style>
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2">GitHub Integration</h1>
+        <h1 class="h2">Git Repository Integration</h1>
         <div>
             <a href="#" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#syncModal">
                 <i class="fas fa-sync me-1"></i> Sync Repository
@@ -64,12 +64,12 @@
         <div class="col-md-4">
             <div class="card mb-4">
                 <div class="card-header bg-light">
-                    <h5 class="card-title mb-0">GitHub Settings</h5>
+                    <h5 class="card-title mb-0">Git Repo Settings</h5>
                 </div>
                 <div class="card-body">
                     {% if github_settings.is_configured %}
                     <div class="alert alert-success">
-                        <i class="fas fa-check-circle me-2"></i> GitHub integration is configured and active
+                        <i class="fas fa-check-circle me-2"></i> Git integration is configured and active
                     </div>
                     <div class="mb-3">
                         <span class="fw-bold">Repository:</span>
@@ -111,12 +111,12 @@
                     </div>
                     {% else %}
                     <div class="alert alert-warning">
-                        <i class="fas fa-exclamation-triangle me-2"></i> GitHub integration is not configured
+                        <i class="fas fa-exclamation-triangle me-2"></i> Git integration is not configured
                     </div>
-                    <p>Configure GitHub integration to sync your recipes and create pull requests for changes.</p>
+                    <p>Configure Git integration to sync your recipes and create pull requests for changes.</p>
                     <div class="d-grid">
                         <a href="{% url 'github_settings_edit' %}" class="btn btn-primary">
-                            <i class="fas fa-cog me-1"></i> Configure GitHub
+                            <i class="fas fa-cog me-1"></i> Configure Git Repository
                         </a>
                     </div>
                     {% endif %}
@@ -125,7 +125,7 @@
 
             <div class="card mb-4">
                 <div class="card-header bg-light">
-                    <h5 class="card-title mb-0">GitHub Actions</h5>
+                    <h5 class="card-title mb-0">Git Actions</h5>
                 </div>
                 <div class="card-body">
                     <div class="d-grid">
@@ -141,7 +141,7 @@
                     <h5 class="card-title mb-0">Supported Resources</h5>
                 </div>
                 <div class="card-body">
-                    <p class="mb-2">The following resources can be added to GitHub PRs:</p>
+                    <p class="mb-2">The following resources can be added to Git PRs:</p>
                     <ul class="list-group">
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             Environment Variables
@@ -162,7 +162,7 @@
                     </ul>
                     <div class="mt-3">
                         <small class="text-muted">
-                            <i class="fas fa-info-circle me-1"></i> Use the "Add to GitHub PR" buttons on each resource's 
+                            <i class="fas fa-info-circle me-1"></i> Use the "Add to Git PR" buttons on each resource's 
                             edit page to stage changes for committing to the current branch.
                         </small>
                     </div>
@@ -287,14 +287,14 @@
                     {% else %}
                     <div class="py-5 text-center">
                         <div class="mb-3">
-                            <i class="fab fa-github fa-4x text-muted"></i>
+                            <i class="fab fa-git-alt fa-4x text-muted"></i>
                         </div>
                         <h4>No Pull Requests</h4>
                         <p class="text-muted">
                             {% if github_settings.is_configured %}
                             No pull requests have been created yet. Create or modify a recipe to start.
                             {% else %}
-                            Configure GitHub integration to create and track pull requests.
+                            Configure Git integration to create and track pull requests.
                             {% endif %}
                         </p>
                     </div>
@@ -348,7 +348,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p>This will synchronize the status of all pull requests with GitHub.</p>
+                <p>This will synchronize the status of all pull requests with the Git Repository.</p>
                 <p>Do you want to continue?</p>
             </div>
             <div class="modal-footer">
@@ -412,7 +412,7 @@
                     <input type="hidden" id="branch-to-delete" name="branch_name" value="">
                     <p>Are you sure you want to delete branch <strong id="branch-name-placeholder"></strong>?</p>
                     <div class="alert alert-danger">
-                        <i class="fas fa-exclamation-triangle me-2"></i> This action cannot be undone. The branch will be permanently deleted from GitHub.
+                        <i class="fas fa-exclamation-triangle me-2"></i> This action cannot be undone. The branch will be permanently deleted from the Git Repository.
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -420,6 +420,59 @@
                     <button type="submit" class="btn btn-danger">Delete Branch</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Revert Staged File Modal -->
+<div class="modal fade" id="revertStagedFileModal" tabindex="-1" aria-labelledby="revertStagedFileModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="revertStagedFileModalLabel">Revert Staged File</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'github_revert_staged_file' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" id="file-to-revert" name="file_path" value="">
+                    <p>Are you sure you want to revert staged changes for file: <strong id="file-path-placeholder"></strong>?</p>
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i> This action cannot be undone. The staged changes for this file will be permanently deleted.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Revert Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- File Diff Modal -->
+<div class="modal fade" id="fileDiffModal" tabindex="-1" aria-labelledby="fileDiffModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fileDiffModalLabel">File Diff</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 id="diff-file-path" class="mb-3"></h6>
+                <div id="diff-loading" class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading diff...</p>
+                </div>
+                <div id="diff-content" class="diff-container" style="display:none;">
+                </div>
+                <div id="diff-error" class="alert alert-danger mt-3" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -434,6 +487,134 @@
         const currentBranch = "{{ github_settings.current_branch|default:'main'|lower }}";
         const isProtectedBranch = (currentBranch === 'main' || currentBranch === 'master');
         
+        // Function to show file diff modal
+        function showFileDiff(filePath) {
+            const modal = document.getElementById('fileDiffModal');
+            if (!modal) {
+                console.error('File diff modal not found');
+                return;
+            }
+            
+            // Show the modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            // Update file path
+            const filePathElement = document.getElementById('diff-file-path');
+            if (filePathElement) {
+                filePathElement.textContent = filePath;
+            }
+            
+            // Show loading, hide content and error
+            const loadingElement = document.getElementById('diff-loading');
+            const contentElement = document.getElementById('diff-content');
+            const errorElement = document.getElementById('diff-error');
+            
+            if (loadingElement) loadingElement.style.display = 'block';
+            if (contentElement) contentElement.style.display = 'none';
+            if (errorElement) errorElement.style.display = 'none';
+            
+            // Fetch diff from API
+            fetch('{% url "github_file_diff" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    file_path: filePath,
+                    branch: currentBranch
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (loadingElement) loadingElement.style.display = 'none';
+                
+                if (data.success) {
+                    const diffContent = data.diff;
+                    
+                    if (!diffContent || diffContent.trim() === '') {
+                        if (errorElement) {
+                            errorElement.textContent = 'No differences found or file is new.';
+                            errorElement.style.display = 'block';
+                        }
+                        return;
+                    }
+                    
+                    // Format the diff
+                    const formattedDiff = formatDiff(diffContent);
+                    
+                    if (contentElement) {
+                        contentElement.innerHTML = formattedDiff;
+                        contentElement.style.display = 'block';
+                    }
+                } else {
+                    if (errorElement) {
+                        errorElement.textContent = data.error || 'Error fetching diff';
+                        errorElement.style.display = 'block';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching diff:', error);
+                if (loadingElement) loadingElement.style.display = 'none';
+                if (errorElement) {
+                    errorElement.textContent = 'Error: ' + error.message;
+                    errorElement.style.display = 'block';
+                }
+            });
+        }
+        
+        // Format diff with syntax highlighting
+        function formatDiff(diffText) {
+            const lines = diffText.split('\n');
+            let html = '';
+            
+            lines.forEach(line => {
+                if (line.startsWith('+') && !line.startsWith('+++')) {
+                    // Added line
+                    html += `<div class="diff-line diff-add">` + escapeHtml(line) + `</div>`;
+                } else if (line.startsWith('-') && !line.startsWith('---')) {
+                    // Removed line
+                    html += `<div class="diff-line diff-remove">` + escapeHtml(line) + `</div>`;
+                } else if (line.startsWith('@')) {
+                    // Header/hunk line
+                    html += `<div class="diff-line diff-header">` + escapeHtml(line) + `</div>`;
+                } else if (line.startsWith('+++') || line.startsWith('---')) {
+                    // File header line
+                    html += `<div class="diff-line diff-header">` + escapeHtml(line) + `</div>`;
+                } else {
+                    // Context line
+                    html += `<div class="diff-line diff-context">` + escapeHtml(line) + `</div>`;
+                }
+            });
+            
+            return html;
+        }
+        
+        // HTML escape helper
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Format file size helper
+        function formatFileSize(size) {
+            if (!size) return '';
+            
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let i = 0;
+            let fileSize = parseInt(size, 10) || 0;
+            
+            while (fileSize >= 1024 && i < units.length - 1) {
+                fileSize /= 1024;
+                i++;
+            }
+            
+            return `${fileSize.toFixed(1)} ${units[i]}`;
+        }
+        
         // Debug elements existence
         const ciWorkflowsLoading = document.getElementById('ci-workflows-loading');
         const ciWorkflowsContent = document.getElementById('ci-workflows-content');
@@ -445,77 +626,227 @@
             error: ciWorkflowsError ? 'found' : 'missing'
         });
         
+        // Function to show Create PR modal
+        function showCreatePrModal() {
+            const modal = document.getElementById('createPrModal');
+            if (!modal) {
+                console.error('Create PR modal not found');
+                return;
+            }
+            
+            // Get current branch
+            const currentBranch = "{{ github_settings.current_branch|default:'main' }}";
+            
+            // Set default PR title based on branch name
+            const prTitleInput = document.getElementById('pr-title');
+            if (prTitleInput) {
+                prTitleInput.value = `Changes from ${currentBranch}`;
+            }
+            
+            // Set default base branch to 'main' or first available branch that's not current
+            const prBaseSelect = document.getElementById('pr-base');
+            if (prBaseSelect) {
+                // Try to select 'main' by default
+                for (let i = 0; i < prBaseSelect.options.length; i++) {
+                    if (prBaseSelect.options[i].value === 'main' && prBaseSelect.options[i].value !== currentBranch) {
+                        prBaseSelect.selectedIndex = i;
+                        break;
+                    }
+                }
+                
+                // If main isn't available, select the first available option
+                if (prBaseSelect.selectedIndex === -1 || prBaseSelect.options[prBaseSelect.selectedIndex].disabled) {
+                    for (let i = 0; i < prBaseSelect.options.length; i++) {
+                        if (!prBaseSelect.options[i].disabled) {
+                            prBaseSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Show the modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+        }
+        
         // Fetch staged changes (diffs) for the current branch
         function loadStagedChanges() {
-            const section = document.getElementById('staged-changes-section');
-            const loading = document.getElementById('staged-changes-loading');
-            const content = document.getElementById('staged-changes-content');
-            const error = document.getElementById('staged-changes-error');
-            const branchDiffUrl = "{% url 'github_branch_diff' %}?head={{ github_settings.current_branch|default:'main' }}";
+            const stagedChangesLoading = document.getElementById('staged-changes-loading');
+            const stagedChangesContent = document.getElementById('staged-changes-content');
+            const stagedChangesError = document.getElementById('staged-changes-error');
             
-            fetch(branchDiffUrl)
-                .then(r => r.json())
-                .then(data => {
-                    loading.style.display = 'none';
-                    if (!data.success) {
-                        error.textContent = data.error || 'Failed to load staged changes.';
-                        error.classList.remove('d-none');
-                        return;
-                    }
-                    error.classList.add('d-none');
-                    if (data.files.length === 0) {
-                        content.innerHTML = '<div class="alert alert-info">No staged changes on this branch.</div>';
-                        content.style.display = '';
-                        return;
-                    }
-                    let html = '<ul class="list-group mb-3">';
-                    data.files.forEach(f => {
-                        html += `<li class="list-group-item">
-                            <strong>${f.filename}</strong> <span class="badge bg-secondary">${f.status}</span>
-                            <span class="text-success ms-2">+${f.additions}</span>
-                            <span class="text-danger ms-2">-${f.deletions}</span>
-                            <button class="btn btn-link btn-sm float-end" type="button" data-bs-toggle="collapse" data-bs-target="#diff-${btoa(f.filename)}" aria-expanded="false">Show Diff</button>
-                            <div class="collapse mt-2" id="diff-${btoa(f.filename)}">
-                                <div class="diff-container">${renderDiff(f.patch)}</div>
-                            </div>
-                        </li>`;
-                    });
-                    html += '</ul>';
-                    
-                    if (!isProtectedBranch) {
-                        html += '<button class="btn btn-success" id="review-create-pr-btn" data-bs-toggle="modal" data-bs-target="#createPrModal">Review & Create PR</button>';
-                    } else {
-                        html += '<div class="alert alert-warning mt-3"><i class="fas fa-lock me-2"></i>Direct changes to the main branch are not allowed. Please switch to a feature branch to make changes.</div>';
-                        html += '<button class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#createBranchModal"><i class="fas fa-code-branch me-1"></i>Create New Branch</button>';
-                    }
-                    
-                    content.innerHTML = html;
-                    content.style.display = '';
-
-                    // Populate the diff list in the modal as well
-                    document.getElementById('pr-diff-list').innerHTML = html;
-                })
-                .catch(e => {
-                    loading.style.display = 'none';
-                    error.textContent = 'Error loading staged changes.';
-                    error.classList.remove('d-none');
-                });
-        }
-
-        function renderDiff(patch) {
-            if (!patch) return '<span class="diff-context">(binary or no diff available)</span>';
-            const lines = patch.split('\n');
-            return lines.map(line => {
-                if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) {
-                    return `<span class="diff-line diff-header">${line.replace(/</g, '&lt;')}</span>`;
-                } else if (line.startsWith('+')) {
-                    return `<span class="diff-line diff-add">${line.replace(/</g, '&lt;')}</span>`;
-                } else if (line.startsWith('-')) {
-                    return `<span class="diff-line diff-remove">${line.replace(/</g, '&lt;')}</span>`;
-                } else {
-                    return `<span class="diff-line diff-context">${line.replace(/</g, '&lt;')}</span>`;
+            if (!stagedChangesLoading || !stagedChangesContent || !stagedChangesError) {
+                console.error('Staged changes elements not found');
+                return;
+            }
+            
+            // Show loading
+            stagedChangesLoading.style.display = 'block';
+            stagedChangesContent.style.display = 'none';
+            stagedChangesError.classList.add('d-none');
+            
+            // Fetch staged changes
+            fetch('{% url "github_branch_diff" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ branch: currentBranch })
+            })
+            .then(response => response.json())
+            .then(data => {
+                stagedChangesLoading.style.display = 'none';
+                
+                if (data.error) {
+                    stagedChangesError.classList.remove('d-none');
+                    stagedChangesError.textContent = data.error;
+                    return;
                 }
-            }).join('');
+                
+                const files = data.files || [];
+                
+                if (files.length === 0) {
+                    stagedChangesContent.style.display = 'block';
+                    stagedChangesContent.innerHTML = `
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-check-circle fa-3x mb-3"></i>
+                            <p>No staged changes found.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Build HTML for file list with revert button
+                let html = `
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>File Path</th>
+                                    <th>File Info</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                files.forEach(file => {
+                    // Extract file extension for badge
+                    const fileName = file.path.split('/').pop();
+                    const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : 'unknown';
+                    
+                    // Determine badge color by extension type
+                    let badgeColor = 'secondary';
+                    if (['yml', 'yaml'].includes(fileExt)) badgeColor = 'success';
+                    if (['json'].includes(fileExt)) badgeColor = 'primary';
+                    if (['py', 'js', 'ts'].includes(fileExt)) badgeColor = 'info';
+                    if (['md', 'txt'].includes(fileExt)) badgeColor = 'light text-dark';
+                    
+                    html += `
+                        <tr>
+                            <td>
+                                <a href="#" class="file-path-link" data-file-path="${file.path}">
+                                    ${file.path}
+                                </a>
+                            </td>
+                            <td>
+                                <span class="badge bg-${badgeColor}">${fileExt}</span>
+                                ${file.size ? `<small class="text-muted ms-2">${formatFileSize(file.size)}</small>` : ''}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary view-diff-btn me-2" 
+                                        data-file-path="${file.path}">
+                                    <i class="fas fa-code me-1"></i> View Diff
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger revert-file-btn" 
+                                        data-file-path="${file.path}" 
+                                        ${isProtectedBranch ? 'disabled' : ''}>
+                                    <i class="fas fa-undo me-1"></i> Revert
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end mt-3">
+                        <button id="create-pr-btn" class="btn btn-primary" ${isProtectedBranch ? 'disabled' : ''}>
+                            <i class="fas fa-code-branch me-1"></i> Create Pull Request
+                        </button>
+                    </div>
+                `;
+                
+                stagedChangesContent.innerHTML = html;
+                stagedChangesContent.style.display = 'block';
+                
+                // Add event listener for create PR button
+                const createPrBtn = document.getElementById('create-pr-btn');
+                if (createPrBtn) {
+                    createPrBtn.addEventListener('click', showCreatePrModal);
+                }
+                
+                // Add event listeners for revert buttons
+                const revertButtons = document.querySelectorAll('.revert-file-btn');
+                revertButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const filePath = this.getAttribute('data-file-path');
+                        showRevertFileModal(filePath);
+                    });
+                });
+                
+                // Add event listeners for view diff buttons
+                const viewDiffButtons = document.querySelectorAll('.view-diff-btn');
+                viewDiffButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const filePath = this.getAttribute('data-file-path');
+                        showFileDiff(filePath);
+                    });
+                });
+                
+                // Add event listeners for file path links
+                const filePathLinks = document.querySelectorAll('.file-path-link');
+                filePathLinks.forEach(link => {
+                    link.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const filePath = this.getAttribute('data-file-path');
+                        showFileDiff(filePath);
+                    });
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching staged changes:', error);
+                stagedChangesLoading.style.display = 'none';
+                stagedChangesError.classList.remove('d-none');
+                stagedChangesError.textContent = 'Error loading staged changes: ' + error.message;
+            });
+        }
+        
+        // Function to show the revert file modal
+        function showRevertFileModal(filePath) {
+            const modal = document.getElementById('revertStagedFileModal');
+            if (!modal) {
+                console.error('Revert modal not found');
+                return;
+            }
+            
+            // Set file path in the form
+            const fileToRevertInput = document.getElementById('file-to-revert');
+            const filePathPlaceholder = document.getElementById('file-path-placeholder');
+            
+            if (fileToRevertInput && filePathPlaceholder) {
+                fileToRevertInput.value = filePath;
+                filePathPlaceholder.textContent = filePath;
+            }
+            
+            // Show the modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
         }
 
         // Load CI workflows from the repository

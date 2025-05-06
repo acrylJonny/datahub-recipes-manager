@@ -4152,110 +4152,89 @@ def github_workflows_overview(request):
 @require_POST
 def policy_push_github(request, policy_id):
     """Push a policy to Git repository."""
-    # Add detailed logging for debugging
-    logger.info(f"Attempting to push policy to Git. Policy ID: {policy_id}")
-    
-    # Check if Git integration is configured
     if not GitSettings.is_configured():
-        logger.warning("Git integration not configured")
-        return JsonResponse({
-            'success': False, 
-            'error': 'Git integration is not configured. Please configure it in the settings.'
-        })
+        return JsonResponse({'success': False, 'error': 'Git integration is not configured'})
     
-    # Get DataHub client
-    client = get_datahub_client()
-    if not client or not client.test_connection():
-        logger.error("DataHub connection not available")
-        return JsonResponse({
-            'success': False,
-            'error': 'DataHub connection not available. Please check your connection settings.'
-        })
-
+    policy = get_object_or_404(Policy, id=policy_id)
+    
     try:
-        # First try to fetch policy from DataHub API
-        logger.info(f"Fetching policy with ID: '{policy_id}' from DataHub API")
-        datahub_policy = None
+        # Use the GitIntegration class to push the policy
+        settings = GitSettings.get_instance()
+        commit_message = f"Update policy: {policy.name}"
         
-        try:
-            # Try with the direct ID
-            datahub_policy = client.get_policy(policy_id)
-            
-            # If not found, try with URN format
-            if not datahub_policy and not policy_id.startswith('urn:'):
-                datahub_policy = client.get_policy(f"urn:li:policy:{policy_id}")
-                
-            if not datahub_policy:
-                logger.error(f"Policy with ID '{policy_id}' not found in DataHub")
-                return JsonResponse({
-                    'success': False,
-                    'error': f"Policy with ID '{policy_id}' not found in DataHub"
-                })
-        except Exception as e:
-            logger.error(f"Error fetching policy from DataHub: {str(e)}")
+        # Stage the policy to the git repo
+        git_integration = GitIntegration()
+        result = git_integration.push_to_git(policy, commit_message)
+        
+        if result and result.get('success'):
+            return JsonResponse({
+                'success': True,
+                'message': f'Policy "{policy.name}" staged for commit to branch {settings.current_branch}. You can create a PR from the Git Repository tab.',
+                'redirect_url': reverse('github')
+            })
+        else:
             return JsonResponse({
                 'success': False,
-                'error': f"Error fetching policy from DataHub: {str(e)}"
+                'error': f'Failed to stage policy "{policy.name}"'
             })
-        
-        # Convert the DataHub policy to a Django model instance for Git integration
-        policy = Policy(
-            id=policy_id,
-            name=datahub_policy.get('name', 'Unnamed Policy'),
-            description=datahub_policy.get('description', ''),
-            type=datahub_policy.get('type', 'METADATA'),
-            state=datahub_policy.get('state', 'ACTIVE'),
-            resources=json.dumps(datahub_policy.get('resources', [])),
-            privileges=json.dumps(datahub_policy.get('privileges', [])),
-            actors=json.dumps(datahub_policy.get('actors', {}))
-        )
-        
-        # Get Git settings
+    except Exception as e:
+        logger.error(f"Error pushing policy to Git: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@require_POST
+def env_vars_instance_push_github(request, instance_id):
+    """Add environment variables to GitHub PR."""
+    if not GitSettings.is_configured():
+        return JsonResponse({'success': False, 'error': 'GitHub integration not configured'})
+    
+    try:
+        # Get current branch
         settings = GitSettings.get_instance()
         current_branch = settings.current_branch or 'main'
         
         # Prevent pushing directly to main/master branch
         if current_branch.lower() in ['main', 'master']:
-            logger.warning(f"Attempted to push directly to {current_branch} branch")
             return JsonResponse({
                 'success': False, 
-                'error': 'Cannot push directly to the main/master branch. Please create and use a feature branch.'
+                'error': 'Cannot push directly to the main branch. Please create and use a feature branch.'
+            })
+            
+        # Get the environment variables instance
+        try:
+            env_instance = EnvVarsInstance.objects.get(id=instance_id)
+            logger.info(f"Found environment variable instance: {env_instance.name}")
+        except EnvVarsInstance.DoesNotExist:
+            logger.error(f"Environment variable instance with ID {instance_id} not found")
+            return JsonResponse({
+                'success': False,
+                'error': f"Environment variable instance with ID {instance_id} not found"
             })
         
-        # Create commit message
-        commit_message = f"Update policy: {policy.name}"
-        
-        # Stage the policy to the git repo
-        logger.info(f"Staging policy {policy.id} to Git branch {current_branch}")
-        git_integration = GitIntegration()
-        result = git_integration.push_to_git(policy, commit_message)
+        # Stage changes
+        github_integration = GitIntegration()
+        commit_message = f"Update environment variables: {env_instance.name}"
+        result = github_integration.push_to_git(env_instance, commit_message)
         
         if result and result.get('success'):
-            # Success response
-            logger.info(f"Successfully staged policy {policy.id} to Git branch {current_branch}")
+            logger.info(f"Successfully staged environment variables instance {env_instance.name} to GitHub")
             return JsonResponse({
                 'success': True,
-                'message': f'Policy "{policy.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
+                'message': f'Environment variables "{env_instance.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
                 'redirect_url': reverse('github')
             })
         else:
-            # Failed to stage changes
-            error_message = f'Failed to stage policy "{policy.name}"'
-            if isinstance(result, dict) and 'error' in result:
-                error_message += f": {result['error']}"
-            
-            logger.error(f"Failed to stage policy: {error_message}")
+            logger.error(f"Failed to stage environment variables instance {env_instance.name} to GitHub")
             return JsonResponse({
                 'success': False,
-                'error': error_message
+                'error': f'Failed to stage environment variables "{env_instance.name}"'
             })
+            
     except Exception as e:
-        # Log the error
-        logger.error(f"Error pushing policy to Git: {str(e)}", exc_info=True)
-        
-        # Send a user-friendly error message
+        logger.error(f"Error pushing environment variables to GitHub: {str(e)}")
         return JsonResponse({
             'success': False,
-            'error': f"An error occurred while pushing the policy: {str(e)}"
+            'error': str(e)
         })
-

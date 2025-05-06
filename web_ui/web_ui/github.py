@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from django.utils import timezone
 import requests
-from web_ui.models import GitHubSettings, GitHubPR
+from web_ui.models import GitSettings, GitHubPR
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class GitHubIntegration:
     def is_configured():
         """Check if GitHub integration is configured."""
         try:
-            settings = GitHubSettings.objects.first()
+            settings = GitSettings.objects.first()
             return settings is not None and settings.token and settings.repository
         except Exception as e:
             logger.error(f"Error checking GitHub configuration: {str(e)}")
@@ -29,7 +29,7 @@ class GitHubIntegration:
     @staticmethod
     def get_repo_url():
         """Get the repository URL based on settings."""
-        settings = GitHubSettings.objects.first()
+        settings = GitSettings.objects.first()
         if not settings:
             return None
         return f"https://github.com/{settings.username}/{settings.repository}"
@@ -37,7 +37,7 @@ class GitHubIntegration:
     @staticmethod
     def get_api_url(endpoint=""):
         """Get the GitHub API URL for the configured repository."""
-        settings = GitHubSettings.objects.first()
+        settings = GitSettings.objects.first()
         if not settings:
             return None
         base_url = f"https://api.github.com/repos/{settings.username}/{settings.repository}"
@@ -46,7 +46,7 @@ class GitHubIntegration:
     @staticmethod
     def get_headers():
         """Get the headers for GitHub API requests."""
-        settings = GitHubSettings.objects.first()
+        settings = GitSettings.objects.first()
         if not settings or not settings.token:
             return {}
         return {
@@ -99,7 +99,7 @@ class GitHubIntegration:
         if not cls.is_configured():
             return None
         
-        settings = GitHubSettings.objects.first()
+        settings = GitSettings.objects.first()
         headers = cls.get_headers()
         
         # Create a unique branch name

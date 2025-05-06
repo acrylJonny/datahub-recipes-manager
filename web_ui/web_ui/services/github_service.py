@@ -11,7 +11,7 @@ import requests
 from django.conf import settings
 from django.urls import reverse
 
-from web_ui.models import GitHubSettings, PullRequest
+from web_ui.models import GitSettings, PullRequest
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class GitHubService:
     """Service to handle GitHub API interactions"""
     
     def __init__(self):
-        self.settings = GitHubSettings.get_instance()
+        self.settings = GitSettings.get_instance()
         self.headers = {
             "Accept": "application/vnd.github.v3+json",
             "Authorization": f"token {self.settings.token}",

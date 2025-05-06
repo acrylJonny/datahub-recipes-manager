@@ -41,6 +41,55 @@ class Settings(models.Model):
     def __str__(self):
         return self.key
 
+class Environment(models.Model):
+    """Model for storing environments (dev, test, prod, etc.)."""
+    name = models.CharField(max_length=50, unique=True)
+    description = models.TextField(blank=True, null=True)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name_plural = "Environments"
+        ordering = ['name']
+    
+    def __str__(self):
+        return self.name
+    
+    def save(self, *args, **kwargs):
+        """Override save to ensure only one default environment."""
+        if self.is_default:
+            # Set all other environments to not be default
+            type(self).objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+    
+    @classmethod
+    def get_default(cls):
+        """Get the default environment, or create one if none exists."""
+        default = cls.objects.filter(is_default=True).first()
+        if not default:
+            # Check if 'prod' exists
+            prod = cls.objects.filter(name__iexact='prod').first()
+            if prod:
+                prod.is_default = True
+                prod.save()
+                return prod
+                
+            # Check if any environment exists
+            first = cls.objects.first()
+            if first:
+                first.is_default = True
+                first.save()
+                return first
+                
+            # Create a new default 'prod' environment
+            default = cls.objects.create(
+                name='prod',
+                description='Production Environment',
+                is_default=True
+            )
+        return default
+
 class LogEntry(models.Model):
     """Model for storing application logs."""
     LEVEL_CHOICES = (
@@ -378,7 +427,8 @@ class RecipeInstance(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     template = models.ForeignKey(RecipeTemplate, on_delete=models.CASCADE)
-    env_vars_instance = models.ForeignKey('EnvVarsInstance', on_delete=models.SET_NULL, null=True, blank=True)
+    env_vars_instance = models.ForeignKey('EnvVarsInstance', on_delete=models.SET_NULL, null=True, blank=True, related_name='recipes')
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='recipe_instances')
     datahub_urn = models.CharField(max_length=255, null=True, blank=True)  # Store the DataHub URN when deployed
     deployed = models.BooleanField(default=False)
     deployed_at = models.DateTimeField(null=True, blank=True)
@@ -508,6 +558,7 @@ class EnvVarsInstance(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     template = models.ForeignKey(EnvVarsTemplate, on_delete=models.SET_NULL, null=True, blank=True)
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='env_vars_instances')
     recipe_id = models.CharField(max_length=255, null=True, blank=True)  # Optional link to a recipe
     recipe_type = models.CharField(max_length=50, choices=RECIPE_TYPES)
     variables = models.TextField()  # JSON content with actual values, format: {"KEY": {"value": "actual_value", "isSecret": true/false}}
@@ -639,23 +690,40 @@ class GitHubPR(models.Model):
         }
         return colors.get(self.pr_status, 'secondary')
 
-class GitHubSettings(models.Model):
-    """Model to store GitHub integration settings"""
+class GitSettings(models.Model):
+    """Model to store Git integration settings for multiple providers"""
     
-    token = models.CharField(max_length=255, help_text="GitHub Personal Access Token")
-    username = models.CharField(max_length=100, help_text="GitHub username or organization")
-    repository = models.CharField(max_length=100, help_text="GitHub repository name")
-    current_branch = models.CharField(max_length=255, default="main", help_text="Current branch for GitHub operations")
+    PROVIDER_CHOICES = [
+        ('github', 'GitHub'),
+        ('azure_devops', 'Azure DevOps'),
+        ('gitlab', 'GitLab'),
+        ('bitbucket', 'Bitbucket'),
+        ('other', 'Other Git Provider')
+    ]
+    
+    provider_type = models.CharField(max_length=50, choices=PROVIDER_CHOICES, default='github',
+                                    help_text="Git provider type")
+    base_url = models.URLField(blank=True, null=True, 
+                              help_text="Base API URL (leave empty for GitHub.com, required for Azure DevOps or self-hosted instances)")
+    token = models.CharField(max_length=255, help_text="Personal Access Token")
+    username = models.CharField(max_length=100, help_text="Username, organization, or project name")
+    repository = models.CharField(max_length=100, help_text="Repository name")
+    current_branch = models.CharField(max_length=255, default="main", help_text="Current branch for Git operations")
     enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        verbose_name = "GitHub Settings"
-        verbose_name_plural = "GitHub Settings"
+        verbose_name = "Git Settings"
+        verbose_name_plural = "Git Settings"
     
     def __str__(self):
-        return f"GitHub: {self.username}/{self.repository}"
+        if self.provider_type == 'github':
+            return f"GitHub: {self.username}/{self.repository}"
+        elif self.provider_type == 'azure_devops':
+            return f"Azure DevOps: {self.username}/{self.repository}"
+        else:
+            return f"{self.provider_type.title()}: {self.username}/{self.repository}"
     
     @classmethod
     def get_instance(cls):
@@ -672,103 +740,191 @@ class GitHubSettings(models.Model):
     
     @classmethod
     def get_token(cls):
-        """Get the GitHub token from settings"""
+        """Get the Git token from settings"""
         settings = cls.get_instance()
         return settings.token if settings else ""
     
     @classmethod
     def get_username(cls):
-        """Get the GitHub username from settings"""
+        """Get the Git username from settings"""
         settings = cls.get_instance()
         return settings.username if settings else ""
     
     @classmethod
     def get_repository(cls):
-        """Get the GitHub repository from settings"""
+        """Get the Git repository from settings"""
         settings = cls.get_instance()
         return settings.repository if settings else ""
     
     @classmethod
+    def get_provider_type(cls):
+        """Get the Git provider type from settings"""
+        settings = cls.get_instance()
+        return settings.provider_type if settings else "github"
+    
+    @classmethod
+    def get_base_url(cls):
+        """Get the Git base URL from settings"""
+        settings = cls.get_instance()
+        return settings.base_url if settings else ""
+    
+    @classmethod
     def set_token(cls, token):
-        """Set the GitHub token in settings"""
+        """Set the Git token in settings"""
         settings = cls.get_instance()
         settings.token = token
         settings.save()
     
     @classmethod
     def set_username(cls, username):
-        """Set the GitHub username in settings"""
+        """Set the Git username in settings"""
         settings = cls.get_instance()
         settings.username = username
         settings.save()
     
     @classmethod
     def set_repository(cls, repository):
-        """Set the GitHub repository in settings"""
+        """Set the Git repository in settings"""
         settings = cls.get_instance()
         settings.repository = repository
         settings.save()
     
     @classmethod
     def is_configured(cls):
-        """Check if GitHub settings are properly configured"""
+        """Check if Git settings are properly configured"""
         settings = cls.get_instance()
         return settings.enabled and bool(settings.token and settings.username and settings.repository)
 
     @classmethod
     def get_branches(cls):
-        """Fetch all branches from GitHub."""
+        """Fetch all branches from Git repository."""
         settings = cls.get_instance()
         if not cls.is_configured():
             return []
 
-        headers = {
-            'Authorization': f'token {settings.token}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
+        # Use GitIntegration to fetch branches
+        return GitIntegration.get_branches()
 
-        try:
-            # Get all branches from GitHub
-            branches_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/branches'
-            response = requests.get(branches_url, headers=headers)
-            response.raise_for_status()
-            
-            # Extract branch names
-            branches = [branch['name'] for branch in response.json()]
-            return branches
-        except Exception as e:
-            logger.error(f"Error fetching branches: {str(e)}")
-            return []
-
-class GitHubIntegration:
-    """Helper class for GitHub operations."""
+class GitIntegration:
+    """Helper class for Git operations with multiple providers."""
     
     @classmethod
     def is_configured(cls):
-        """Check if GitHub integration is configured."""
-        settings = GitHubSettings.get_instance()
+        """Check if Git integration is configured."""
+        settings = GitSettings.get_instance()
         return settings and settings.is_configured()
     
     @classmethod
     def get_api_url(cls, endpoint=""):
-        """Get the GitHub API URL for the configured repository."""
-        settings = GitHubSettings.get_instance()
+        """Get the Git API URL for the configured repository."""
+        settings = GitSettings.get_instance()
         if not settings:
             return None
-        base_url = f"https://api.github.com/repos/{settings.username}/{settings.repository}"
-        return f"{base_url}{endpoint}" if endpoint else base_url
+            
+        provider = settings.provider_type
+        base_url = settings.base_url
+        
+        # Construct URL based on provider type
+        if provider == 'github':
+            # GitHub API
+            if base_url:
+                # GitHub Enterprise or custom URL
+                api_base = f"{base_url.rstrip('/')}/repos/{settings.username}/{settings.repository}"
+            else:
+                # GitHub.com
+                api_base = f"https://api.github.com/repos/{settings.username}/{settings.repository}"
+        elif provider == 'azure_devops':
+            # Azure DevOps API
+            org_project = settings.username.split('/')
+            if len(org_project) != 2:
+                logger.error(f"Invalid Azure DevOps username format: {settings.username}. Expected: organization/project")
+                return None
+                
+            org, project = org_project
+            if base_url:
+                # Custom Azure DevOps URL
+                api_base = f"{base_url.rstrip('/')}/{org}/{project}/_apis/git/repositories/{settings.repository}"
+            else:
+                # Default Azure DevOps URL
+                api_base = f"https://dev.azure.com/{org}/{project}/_apis/git/repositories/{settings.repository}"
+        elif provider == 'gitlab':
+            # GitLab API
+            if base_url:
+                # Self-hosted GitLab
+                api_base = f"{base_url.rstrip('/')}/api/v4/projects/{settings.username}%2F{settings.repository}"
+            else:
+                # GitLab.com
+                api_base = f"https://gitlab.com/api/v4/projects/{settings.username}%2F{settings.repository}"
+        elif provider == 'bitbucket':
+            # Bitbucket API
+            if base_url:
+                # Self-hosted Bitbucket
+                api_base = f"{base_url.rstrip('/')}/rest/api/1.0/projects/{settings.username}/repos/{settings.repository}"
+            else:
+                # Bitbucket.org
+                api_base = f"https://api.bitbucket.org/2.0/repositories/{settings.username}/{settings.repository}"
+        else:
+            # Custom/Other Git provider - use base_url as is
+            if not base_url:
+                logger.error(f"Base URL is required for provider type: {provider}")
+                return None
+            api_base = f"{base_url.rstrip('/')}"
+            
+        return f"{api_base}{endpoint}" if endpoint else api_base
     
     @classmethod
     def _make_request(cls, method, url, **kwargs):
-        """Make a request to the GitHub API."""
-        settings = GitHubSettings.get_instance()
+        """Make a request to the Git provider API."""
+        settings = GitSettings.get_instance()
         if not settings or not settings.token:
-            raise ValueError("GitHub token not configured")
+            raise ValueError("Git token not configured")
         
-        headers = {
-            'Authorization': f'token {settings.token}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
+        headers = {}
+        provider = settings.provider_type
+        
+        # Set authorization headers based on provider
+        if provider == 'github':
+            headers = {
+                'Authorization': f'token {settings.token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        elif provider == 'azure_devops':
+            # Azure DevOps uses Basic Auth with PAT
+            auth_token = base64.b64encode(f":{settings.token}".encode()).decode()
+            headers = {
+                'Authorization': f'Basic {auth_token}',
+                'Content-Type': 'application/json'
+            }
+            # Add api-version for Azure DevOps
+            if '?' in url:
+                url = f"{url}&api-version=6.0"
+            else:
+                url = f"{url}?api-version=6.0"
+        elif provider == 'gitlab':
+            headers = {
+                'Private-Token': settings.token,
+                'Content-Type': 'application/json'
+            }
+        elif provider == 'bitbucket':
+            if 'bitbucket.org' in url:
+                # Bitbucket Cloud uses OAuth or App passwords
+                auth_token = base64.b64encode(f"{settings.username}:{settings.token}".encode()).decode()
+                headers = {
+                    'Authorization': f'Basic {auth_token}',
+                    'Content-Type': 'application/json'
+                }
+            else:
+                # Bitbucket Server uses different auth
+                headers = {
+                    'Authorization': f'Bearer {settings.token}',
+                    'Content-Type': 'application/json'
+                }
+        else:
+            # Default to token in Authorization header
+            headers = {
+                'Authorization': f'token {settings.token}',
+                'Content-Type': 'application/json'
+            }
         
         if 'headers' in kwargs:
             headers.update(kwargs.pop('headers'))
@@ -778,55 +934,417 @@ class GitHubIntegration:
         return response
     
     @classmethod
+    def get_branches(cls):
+        """Fetch all branches from Git repository."""
+        settings = GitSettings.get_instance()
+        if not cls.is_configured():
+            return []
+            
+        provider = settings.provider_type
+        
+        try:
+            if provider == 'github':
+                # GitHub branches API
+                branches_url = cls.get_api_url('/branches')
+                response = cls._make_request('GET', branches_url)
+                return [branch['name'] for branch in response.json()]
+                
+            elif provider == 'azure_devops':
+                # Azure DevOps branches API
+                branches_url = cls.get_api_url('/refs')
+                # Add filter for branches only
+                if '?' in branches_url:
+                    branches_url += "&filter=heads/"
+                else:
+                    branches_url += "?filter=heads/"
+                    
+                response = cls._make_request('GET', branches_url)
+                # Format differs from GitHub
+                branches_data = response.json().get('value', [])
+                return [branch['name'].replace('refs/heads/', '') for branch in branches_data]
+                
+            elif provider == 'gitlab':
+                # GitLab branches API
+                branches_url = cls.get_api_url('/repository/branches')
+                response = cls._make_request('GET', branches_url)
+                return [branch['name'] for branch in response.json()]
+                
+            elif provider == 'bitbucket':
+                # Bitbucket branches API
+                if 'bitbucket.org' in cls.get_api_url():
+                    # Bitbucket Cloud
+                    branches_url = cls.get_api_url('/refs/branches')
+                else:
+                    # Bitbucket Server
+                    branches_url = cls.get_api_url('/branches')
+                    
+                response = cls._make_request('GET', branches_url)
+                # Format differs between Cloud and Server
+                if 'values' in response.json():
+                    # Bitbucket Cloud
+                    return [branch['name'] for branch in response.json()['values']]
+                else:
+                    # Bitbucket Server
+                    return [branch['displayId'] for branch in response.json()]
+            else:
+                logger.error(f"Unsupported Git provider: {provider}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error fetching branches: {str(e)}")
+            return []
+    
+    @classmethod
     def stage_changes(cls, instance_or_template, commit_message=None):
         """Stage changes on the current branch without creating a PR."""
         if not cls.is_configured():
-            logger.error("GitHub integration not configured")
+            logger.error("Git integration not configured")
             return None
         
         try:
-            # Export to YAML
+            # Create directories if they don't exist
+            base_dir = Path(__file__).parent.parent.parent
+            recipes_dir = base_dir / 'recipes'
+            templates_dir = recipes_dir / 'templates'
+            instances_dir = recipes_dir / 'instances'
+            policies_dir = base_dir / 'policies'
+            env_vars_dir = base_dir / 'params' / 'environments'
+            
+            # Create all necessary directories
+            for dir_path in [recipes_dir, templates_dir, instances_dir, policies_dir, env_vars_dir]:
+                dir_path.mkdir(parents=True, exist_ok=True)
+            
+            # Export to YAML/JSON based on object type
             if isinstance(instance_or_template, RecipeInstance):
-                file_path = instance_or_template.export_to_yaml()
+                logger.info(f"Exporting recipe instance: {instance_or_template.name}")
+                
+                # Get environment (default to 'prod' if not specified)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+                
+                # Create environment directory if it doesn't exist
+                env_dir = instances_dir / environment
+                env_dir.mkdir(exist_ok=True)
+                
+                # Create file with clean name (no spaces, lowercase)
+                instance_name = instance_or_template.name.replace(' ', '-').lower()
+                file_path = env_dir / f"{instance_name}.yml"
+                
+                # Export the instance
+                with open(file_path, 'w') as f:
+                    yaml.dump(instance_or_template.get_combined_content(), f, default_flow_style=False)
+                
                 pr_title = f"Update recipe instance: {instance_or_template.name}"
+                
             elif isinstance(instance_or_template, RecipeTemplate):
-                file_path = instance_or_template.export_to_yaml()
+                logger.info(f"Exporting recipe template: {instance_or_template.name}")
+                
+                # Create file with recipe type as name
+                file_path = templates_dir / f"{instance_or_template.recipe_type.lower()}.yml"
+                
+                # Get content as dict
+                content = instance_or_template.get_content()
+                
+                # Export the template
+                with open(file_path, 'w') as f:
+                    yaml.dump(content, f, default_flow_style=False)
+                    
                 pr_title = f"Update recipe template: {instance_or_template.name}"
+                
+            elif isinstance(instance_or_template, Policy):
+                logger.info(f"Exporting policy: {instance_or_template.name}")
+                
+                # Create file with clean name (no spaces, lowercase)
+                policy_name = instance_or_template.name.replace(' ', '_').lower()
+                file_path = policies_dir / f"{policy_name}.json"
+                
+                # Get policy data
+                policy_data = instance_or_template.to_dict()
+                
+                # Export the policy as JSON
+                try:
+                    with open(file_path, 'w') as f:
+                        json.dump(policy_data, f, indent=2)
+                    logger.info(f"Policy exported successfully to {file_path}")
+                except Exception as e:
+                    logger.error(f"Error exporting policy to JSON: {str(e)}")
+                    raise ValueError(f"Failed to export policy to JSON: {str(e)}")
+                    
+                pr_title = f"Update policy: {instance_or_template.name}"
+                
+            elif isinstance(instance_or_template, EnvVarsTemplate):
+                logger.info(f"Exporting environment variables template: {instance_or_template.name}")
+                
+                # Create file with clean name (no spaces, lowercase)
+                template_name = instance_or_template.recipe_type.lower()
+                file_path = env_vars_dir / f"{template_name}.yml"
+                
+                # Export the template
+                with open(file_path, 'w') as f:
+                    yaml.dump({
+                        'name': instance_or_template.name,
+                        'description': instance_or_template.description,
+                        'recipe_type': instance_or_template.recipe_type,
+                        'variables': instance_or_template.get_variables_dict()
+                    }, f, default_flow_style=False)
+                    
+                pr_title = f"Update environment variables template: {instance_or_template.name}"
+                
+            elif isinstance(instance_or_template, EnvVarsInstance):
+                logger.info(f"Exporting environment variables instance: {instance_or_template.name}")
+                
+                # Get environment (default to 'prod' if not specified)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+                
+                # Create environment directory if it doesn't exist
+                env_dir = env_vars_dir / environment
+                env_dir.mkdir(exist_ok=True)
+                
+                # Create file with clean name (no spaces, lowercase)
+                instance_name = instance_or_template.name.replace(' ', '-').lower()
+                file_path = env_dir / f"{instance_name}.yml"
+                
+                # Export the instance
+                with open(file_path, 'w') as f:
+                    yaml.dump({
+                        'name': instance_or_template.name,
+                        'description': instance_or_template.description,
+                        'recipe_type': instance_or_template.recipe_type,
+                        'variables': instance_or_template.get_variables_dict()
+                    }, f, default_flow_style=False)
+                    
+                pr_title = f"Update environment variables instance: {instance_or_template.name}"
+                
             else:
-                raise ValueError("Invalid object type")
+                err_msg = f"Invalid object type: {type(instance_or_template)}"
+                logger.error(err_msg)
+                raise ValueError(err_msg)
             
             if not commit_message:
                 commit_message = pr_title
             
             # Get current branch from settings
-            settings = GitHubSettings.get_instance()
+            settings = GitSettings.get_instance()
             current_branch = settings.current_branch
+            provider = settings.provider_type
             
             if not current_branch:
-                logger.error("No current branch selected in GitHub settings")
+                err_msg = "No current branch selected in Git settings"
+                logger.error(err_msg)
                 return None
             
             # Read file content
             with open(file_path, 'r') as f:
                 content = f.read()
             
-            # Upload file
-            content_url = cls.get_api_url(f"/contents/{file_path.relative_to(Path(__file__).parent.parent.parent)}")
-            data = {
-                'message': commit_message,
-                'content': base64.b64encode(content.encode()).decode(),
-                'branch': current_branch
-            }
+            logger.info(f"Uploading file to Git provider: {file_path}")
             
-            # Check if file exists
-            try:
-                response = cls._make_request('GET', content_url)
-                data['sha'] = response.json().get('sha')
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code != 404:
+            # Convert the file path to be relative to the repository root
+            repo_path = file_path.relative_to(base_dir)
+            logger.info(f"Repository path: {repo_path}")
+            
+            # Provider-specific file upload logic
+            if provider == 'github':
+                # GitHub file API
+                content_url = cls.get_api_url(f"/contents/{repo_path}")
+                logger.info(f"GitHub API URL: {content_url}")
+                
+                data = {
+                    'message': commit_message,
+                    'content': base64.b64encode(content.encode()).decode(),
+                    'branch': current_branch
+                }
+                
+                # Check if file exists
+                try:
+                    logger.info(f"Checking if file exists: {content_url}")
+                    response = cls._make_request('GET', content_url, params={'ref': current_branch})
+                    data['sha'] = response.json().get('sha')
+                    logger.info(f"File exists, updating with SHA: {data['sha']}")
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code != 404:
+                        logger.error(f"Error checking file existence: {e.response.status_code} {e.response.text}")
+                        raise
+                    logger.info("File does not exist, creating new file")
+                
+                try:
+                    response = cls._make_request('PUT', content_url, json=data)
+                    logger.info(f"File uploaded successfully: {response.status_code}")
+                except requests.exceptions.HTTPError as e:
+                    logger.error(f"Error uploading file: {e.response.status_code} {e.response.text}")
                     raise
-            
-            cls._make_request('PUT', content_url, json=data)
+                    
+            elif provider == 'azure_devops':
+                # Azure DevOps uses a different API for file operations
+                repo_id = None
+                
+                # First, get repository ID
+                repo_url = cls.get_api_url()
+                repo_response = cls._make_request('GET', repo_url)
+                repo_id = repo_response.json().get('id')
+                
+                if not repo_id:
+                    logger.error("Could not find repository ID")
+                    return None
+                
+                # Azure DevOps uses a different API structure
+                org_project = settings.username.split('/')
+                if len(org_project) != 2:
+                    logger.error(f"Invalid Azure DevOps username format: {settings.username}")
+                    return None
+                    
+                org, project = org_project
+                
+                # For Azure DevOps, first check if file exists to get its objectId
+                item_url = cls.get_api_url(f"/items?path={repo_path}&versionDescriptor.version={current_branch}")
+                file_exists = True
+                file_object_id = None
+                
+                try:
+                    item_response = cls._make_request('GET', item_url)
+                    file_object_id = item_response.json().get('objectId')
+                except requests.exceptions.HTTPError:
+                    file_exists = False
+                
+                # Create push data
+                push_url = cls.get_api_url(f"/pushes")
+                
+                push_data = {
+                    "refUpdates": [
+                        {
+                            "name": f"refs/heads/{current_branch}",
+                            "oldObjectId": file_object_id if file_exists else "0000000000000000000000000000000000000000"
+                        }
+                    ],
+                    "commits": [
+                        {
+                            "comment": commit_message,
+                            "changes": [
+                                {
+                                    "changeType": "edit" if file_exists else "add",
+                                    "item": {
+                                        "path": str(repo_path)
+                                    },
+                                    "newContent": {
+                                        "content": content,
+                                        "contentType": "rawtext"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+                
+                try:
+                    response = cls._make_request('POST', push_url, json=push_data)
+                    logger.info(f"File pushed successfully to Azure DevOps")
+                except requests.exceptions.HTTPError as e:
+                    logger.error(f"Error pushing file to Azure DevOps: {e}")
+                    raise
+                
+            elif provider == 'gitlab':
+                # GitLab file API
+                file_path_encoded = str(repo_path).replace('/', '%2F')
+                content_url = cls.get_api_url(f"/repository/files/{file_path_encoded}")
+                
+                data = {
+                    'branch': current_branch,
+                    'content': content,
+                    'commit_message': commit_message
+                }
+                
+                # Check if file exists
+                try:
+                    check_url = f"{content_url}?ref={current_branch}"
+                    cls._make_request('GET', check_url)
+                    # File exists, use PUT to update
+                    method = 'PUT'
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 404:
+                        # File doesn't exist, use POST to create
+                        method = 'POST'
+                    else:
+                        logger.error(f"Error checking file existence: {e}")
+                        raise
+                
+                try:
+                    response = cls._make_request(method, content_url, json=data)
+                    logger.info(f"File uploaded successfully to GitLab")
+                except requests.exceptions.HTTPError as e:
+                    logger.error(f"Error uploading file to GitLab: {e}")
+                    raise
+                    
+            elif provider == 'bitbucket':
+                # Bitbucket file API differs between Cloud and Server
+                if 'bitbucket.org' in cls.get_api_url():
+                    # Bitbucket Cloud
+                    content_url = cls.get_api_url(f"/src/{current_branch}/{repo_path}")
+                    
+                    # Bitbucket Cloud uses form data
+                    files = {
+                        'content': (str(repo_path), content)
+                    }
+                    data = {
+                        'message': commit_message
+                    }
+                    
+                    try:
+                        response = cls._make_request('POST', content_url, files=files, data=data)
+                        logger.info("File uploaded successfully to Bitbucket Cloud")
+                    except requests.exceptions.HTTPError as e:
+                        logger.error(f"Error uploading file to Bitbucket Cloud: {e}")
+                        raise
+                        
+                else:
+                    # Bitbucket Server
+                    content_url = cls.get_api_url(f"/browse/{repo_path}")
+                    
+                    # First check if file exists
+                    try:
+                        cls._make_request('GET', content_url)
+                        file_exists = True
+                    except requests.exceptions.HTTPError:
+                        file_exists = False
+                    
+                    # Bitbucket Server API for file operations
+                    branch_url = cls.get_api_url(f"/branches/{current_branch}")
+                    branch_response = cls._make_request('GET', branch_url)
+                    latest_commit = branch_response.json().get('latestCommit')
+                    
+                    if not latest_commit:
+                        logger.error("Could not get latest commit for branch")
+                        return None
+                    
+                    # Create commit data
+                    commit_url = cls.get_api_url(f"/commits")
+                    
+                    commit_data = {
+                        "message": commit_message,
+                        "parents": [latest_commit],
+                        "branch": current_branch,
+                        "files": [
+                            {
+                                "path": str(repo_path),
+                                "content": content,
+                                "operation": "MODIFY" if file_exists else "ADD"
+                            }
+                        ]
+                    }
+                    
+                    try:
+                        response = cls._make_request('POST', commit_url, json=commit_data)
+                        logger.info("File uploaded successfully to Bitbucket Server")
+                    except requests.exceptions.HTTPError as e:
+                        logger.error(f"Error uploading file to Bitbucket Server: {e}")
+                        raise
+            else:
+                logger.error(f"Unsupported Git provider: {provider}")
+                return None
             
             return {
                 'success': True,
@@ -843,51 +1361,245 @@ class GitHubIntegration:
     def create_pr_from_staged_changes(cls, title=None, description=None, base=None):
         """Create a PR from staged changes on the current branch."""
         if not cls.is_configured():
-            logger.error("GitHub integration not configured")
+            logger.error("Git integration not configured")
             return None
         
         try:
             # Get current branch from settings
-            settings = GitHubSettings.get_instance()
+            settings = GitSettings.get_instance()
             current_branch = settings.current_branch
+            provider = settings.provider_type
             
             if not current_branch:
-                logger.error("No current branch selected in GitHub settings")
+                logger.error("No current branch selected in Git settings")
                 return None
             
-            # Get default branch
-            api_url = cls.get_api_url()
-            response = cls._make_request('GET', api_url)
-            default_branch = response.json().get('default_branch', 'main')
-            base_branch = base or default_branch
-            
-            # Create PR
-            pr_url = cls.get_api_url("/pulls")
-            data = {
-                'title': title or f"Update from branch: {current_branch}",
-                'body': description or f"Changes from branch: {current_branch}",
-                'head': current_branch,
-                'base': base_branch
-            }
-            logger.info(f"Creating PR with data: {data}")
-            try:
+            # Get default branch based on provider
+            if provider == 'github':
+                # GitHub API
+                api_url = cls.get_api_url()
+                response = cls._make_request('GET', api_url)
+                default_branch = response.json().get('default_branch', 'main')
+                
+                # Create PR
+                pr_url = cls.get_api_url("/pulls")
+                data = {
+                    'title': title or f"Update from branch: {current_branch}",
+                    'body': description or f"Changes from branch: {current_branch}",
+                    'head': current_branch,
+                    'base': base or default_branch
+                }
+                
                 response = cls._make_request('POST', pr_url, json=data)
-            except requests.exceptions.HTTPError as e:
-                logger.error(f"GitHub PR creation failed: {e.response.status_code} {e.response.text}")
-                raise
-            pr_data = response.json()
-            
-            # Create PR record
-            pr = GitHubPR.objects.create(
-                recipe_id=current_branch,  # Using branch name as recipe_id for tracking
-                pr_url=pr_data.get('html_url'),
-                pr_number=pr_data.get('number'),
-                pr_status='open',
-                branch_name=current_branch,
-                title=data['title'],
-                description=data['body']
-            )
-            return pr
+                pr_data = response.json()
+                
+                pr_number = pr_data.get('number')
+                html_url = pr_data.get('html_url')
+                
+                # Create a record of the PR
+                pr = GitHubPR.objects.create(
+                    recipe_id="multiple",  # Generic ID for multi-resource PRs
+                    pr_url=html_url,
+                    pr_number=pr_number,
+                    branch_name=current_branch,
+                    title=title or f"Update from branch: {current_branch}",
+                    description=description or "",
+                    pr_status='open'
+                )
+                
+                return {
+                    'success': True,
+                    'pr_number': pr_number,
+                    'pr_url': html_url
+                }
+                
+            elif provider == 'azure_devops':
+                # Azure DevOps API
+                org_project = settings.username.split('/')
+                if len(org_project) != 2:
+                    logger.error(f"Invalid Azure DevOps username format: {settings.username}")
+                    return None
+                    
+                org, project = org_project
+                
+                # First get repo ID
+                repo_url = cls.get_api_url()
+                repo_response = cls._make_request('GET', repo_url)
+                repo_id = repo_response.json().get('id')
+                
+                if not repo_id:
+                    logger.error("Could not find repository ID")
+                    return None
+                
+                # Get default branch
+                repo_info = repo_response.json()
+                default_branch = repo_info.get('defaultBranch', 'refs/heads/main').replace('refs/heads/', '')
+                
+                # Azure DevOps uses a different endpoint for PRs
+                if settings.base_url:
+                    # Custom Azure DevOps URL
+                    pr_url = f"{settings.base_url.rstrip('/')}/{org}/{project}/_apis/git/repositories/{repo_id}/pullrequests"
+                else:
+                    # Default Azure DevOps URL
+                    pr_url = f"https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repo_id}/pullrequests"
+                
+                # Create PR data
+                pr_data = {
+                    "sourceRefName": f"refs/heads/{current_branch}",
+                    "targetRefName": f"refs/heads/{base or default_branch}",
+                    "title": title or f"Update from branch: {current_branch}",
+                    "description": description or f"Changes from branch: {current_branch}"
+                }
+                
+                # Add API version
+                if '?' in pr_url:
+                    pr_url = f"{pr_url}&api-version=6.0"
+                else:
+                    pr_url = f"{pr_url}?api-version=6.0"
+                
+                response = cls._make_request('POST', pr_url, json=pr_data)
+                result = response.json()
+                
+                pr_id = result.get('pullRequestId')
+                web_url = result.get('url')
+                
+                # Create a record of the PR
+                pr = GitHubPR.objects.create(
+                    recipe_id="multiple",  # Generic ID for multi-resource PRs
+                    pr_url=web_url,
+                    pr_number=pr_id,
+                    branch_name=current_branch,
+                    title=title or f"Update from branch: {current_branch}",
+                    description=description or "",
+                    pr_status='open'
+                )
+                
+                return {
+                    'success': True,
+                    'pr_number': pr_id,
+                    'pr_url': web_url
+                }
+                
+            elif provider == 'gitlab':
+                # GitLab API
+                repo_url = cls.get_api_url()
+                repo_response = cls._make_request('GET', repo_url)
+                default_branch = repo_response.json().get('default_branch', 'main')
+                
+                # Create PR (called Merge Request in GitLab)
+                mr_url = cls.get_api_url('/merge_requests')
+                
+                mr_data = {
+                    'source_branch': current_branch,
+                    'target_branch': base or default_branch,
+                    'title': title or f"Update from branch: {current_branch}",
+                    'description': description or f"Changes from branch: {current_branch}"
+                }
+                
+                response = cls._make_request('POST', mr_url, json=mr_data)
+                result = response.json()
+                
+                mr_id = result.get('iid')  # GitLab uses 'iid' for user-facing IDs
+                web_url = result.get('web_url')
+                
+                # Create a record of the PR
+                pr = GitHubPR.objects.create(
+                    recipe_id="multiple",  # Generic ID for multi-resource PRs
+                    pr_url=web_url,
+                    pr_number=mr_id,
+                    branch_name=current_branch,
+                    title=title or f"Update from branch: {current_branch}",
+                    description=description or "",
+                    pr_status='open'
+                )
+                
+                return {
+                    'success': True,
+                    'pr_number': mr_id,
+                    'pr_url': web_url
+                }
+                
+            elif provider == 'bitbucket':
+                # Bitbucket API differs between Cloud and Server
+                if 'bitbucket.org' in cls.get_api_url():
+                    # Bitbucket Cloud
+                    # Get default branch
+                    repo_url = cls.get_api_url()
+                    repo_response = cls._make_request('GET', repo_url)
+                    default_branch = repo_response.json().get('mainbranch', {}).get('name', 'main')
+                    
+                    # Create PR
+                    pr_url = cls.get_api_url('/pullrequests')
+                    
+                    pr_data = {
+                        'title': title or f"Update from branch: {current_branch}",
+                        'description': description or f"Changes from branch: {current_branch}",
+                        'source': {
+                            'branch': {
+                                'name': current_branch
+                            }
+                        },
+                        'destination': {
+                            'branch': {
+                                'name': base or default_branch
+                            }
+                        },
+                        'close_source_branch': False
+                    }
+                    
+                    response = cls._make_request('POST', pr_url, json=pr_data)
+                    result = response.json()
+                    
+                    pr_id = result.get('id')
+                    web_url = result.get('links', {}).get('html', {}).get('href')
+                    
+                else:
+                    # Bitbucket Server
+                    # Get default branch
+                    branches_url = cls.get_api_url('/branches/default')
+                    branches_response = cls._make_request('GET', branches_url)
+                    default_branch = branches_response.json().get('displayId', 'main')
+                    
+                    # Create PR
+                    pr_url = cls.get_api_url('/pull-requests')
+                    
+                    pr_data = {
+                        'title': title or f"Update from branch: {current_branch}",
+                        'description': description or f"Changes from branch: {current_branch}",
+                        'fromRef': {
+                            'id': f"refs/heads/{current_branch}"
+                        },
+                        'toRef': {
+                            'id': f"refs/heads/{base or default_branch}"
+                        }
+                    }
+                    
+                    response = cls._make_request('POST', pr_url, json=pr_data)
+                    result = response.json()
+                    
+                    pr_id = result.get('id')
+                    web_url = result.get('links', {}).get('self', [{}])[0].get('href')
+                
+                # Create a record of the PR (common for both Cloud and Server)
+                pr = GitHubPR.objects.create(
+                    recipe_id="multiple",  # Generic ID for multi-resource PRs
+                    pr_url=web_url,
+                    pr_number=pr_id,
+                    branch_name=current_branch,
+                    title=title or f"Update from branch: {current_branch}",
+                    description=description or "",
+                    pr_status='open'
+                )
+                
+                return {
+                    'success': True,
+                    'pr_number': pr_id,
+                    'pr_url': web_url
+                }
+                
+            else:
+                logger.error(f"Unsupported Git provider for PR creation: {provider}")
+                return None
             
         except Exception as e:
             error_msg = f"Error creating PR: {str(e)}"
@@ -895,19 +1607,46 @@ class GitHubIntegration:
             return None
     
     @classmethod
-    def push_to_github(cls, instance_or_template, commit_message=None):
-        """Stage changes and optionally create a PR."""
-        # First stage the changes
-        result = cls.stage_changes(instance_or_template, commit_message)
-        if not result:
+    def push_to_git(cls, instance_or_template, commit_message=None):
+        """Push changes to Git (stage changes only)."""
+        if not cls.is_configured():
+            logger.error("Git integration not configured")
             return None
         
-        # Return success without creating PR
-        return {
-            'success': True,
-            'branch': result['branch'],
-            'file_path': result['file_path']
-        }
+        # Only stage changes, don't create PR
+        result = cls.stage_changes(instance_or_template, commit_message)
+        if not result or not result.get('success'):
+            return None
+        
+        return result
+
+    @classmethod
+    def revert_staged_file(cls, file_path, branch=None):
+        """
+        Revert/delete a staged file from the repository
+        
+        Args:
+            file_path: Path to the file to revert
+            branch: Optional branch name (uses current branch if not specified)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        settings = GitSettings.get_instance()
+        if not settings or not cls.is_configured():
+            return False
+            
+        from web_ui.services.git_service import GitService
+        
+        # Initialize Git service
+        git_service = GitService()
+        
+        # Use branch from settings if not specified
+        if not branch:
+            branch = settings.current_branch or "main"
+            
+        # Revert the file
+        return git_service.revert_staged_file(file_path, branch)
 
 class Policy(models.Model):
     """Model for storing DataHub policies."""
@@ -943,36 +1682,60 @@ class Policy(models.Model):
     def to_dict(self):
         """Convert policy to a dictionary suitable for JSON/YAML export."""
         try:
-            resources = json.loads(self.resources)
-        except (json.JSONDecodeError, TypeError):
-            resources = []
-            
-        try:
-            privileges = json.loads(self.privileges)
-        except (json.JSONDecodeError, TypeError):
-            privileges = []
-            
-        try:
-            actors = json.loads(self.actors)
-        except (json.JSONDecodeError, TypeError):
-            actors = {}
-            
-        return {
-            "policy": {
-                "id": self.id,
-                "name": self.name,
-                "description": self.description or "",
-                "type": self.type,
-                "state": self.state,
-                "resources": resources,
-                "privileges": privileges,
-                "actors": actors
-            },
-            "metadata": {
-                "exported_at": datetime.now().isoformat(),
-                "exported_by": "datahub_recipes_manager"
+            # Safely parse resources JSON, using empty list as fallback
+            try:
+                resources = json.loads(self.resources) if self.resources and self.resources.strip() else []
+            except (json.JSONDecodeError, TypeError):
+                resources = []
+                
+            # Safely parse privileges JSON, using empty list as fallback
+            try:
+                privileges = json.loads(self.privileges) if self.privileges and self.privileges.strip() else []
+            except (json.JSONDecodeError, TypeError):
+                privileges = []
+                
+            # Safely parse actors JSON, using empty dict as fallback
+            try:
+                actors = json.loads(self.actors) if self.actors and self.actors.strip() else {}
+            except (json.JSONDecodeError, TypeError):
+                actors = {}
+                
+            return {
+                "policy": {
+                    "id": self.id,
+                    "name": self.name,
+                    "description": self.description or "",
+                    "type": self.type,
+                    "state": self.state,
+                    "resources": resources,
+                    "privileges": privileges,
+                    "actors": actors
+                },
+                "metadata": {
+                    "exported_at": datetime.now().isoformat(),
+                    "exported_by": "datahub_recipes_manager"
+                }
             }
-        }
+        except Exception as e:
+            logger.error(f"Error converting policy to dict: {str(e)}")
+            # Return a minimal valid structure if there's an error
+            return {
+                "policy": {
+                    "id": self.id,
+                    "name": self.name,
+                    "description": self.description or "",
+                    "type": self.type,
+                    "state": self.state,
+                    "resources": [],
+                    "privileges": [],
+                    "actors": {}
+                },
+                "metadata": {
+                    "exported_at": datetime.now().isoformat(),
+                    "exported_by": "datahub_recipes_manager",
+                    "error": "Error parsing some fields"
+                }
+            }
     
     def to_yaml(self, path=None):
         """

@@ -115,11 +115,13 @@ urlpatterns = [
     # GitHub integration
     path('github/', web_ui_views.github_index, name='github'),
     path('github/settings/', web_ui_views.github_settings_edit, name='github_settings_edit'),
+    path('github/settings/view/', web_ui_views.github_settings_view, name='github_settings'),
     path('github/pull-requests/', web_ui_views.github_pull_requests, name='github_pull_requests'),
     path('github/pull-requests/<int:pr_id>/', web_ui_views.github_pull_request_detail, name='github_pull_request_detail'),
     path('github/switch-branch/<path:branch_name>/', web_ui_views.github_switch_branch, name='github_switch_branch'),
     path('github/test-connection/', web_ui_views.github_test_connection, name='github_test_connection'),
     path('github/create-branch/', web_ui_views.github_create_branch, name='github_create_branch'),
+    path('github/branches/', web_ui_views.github_branches, name='github_branches'),
     path('github/delete-branch/', web_ui_views.github_delete_branch, name='github_delete_branch'),
     path('github/sync-recipes/', web_ui_views.github_sync_recipes, name='github_sync_recipes'),
     path('github/sync-status/', web_ui_views.github_sync_status, name='github_sync_status'),
@@ -127,7 +129,10 @@ urlpatterns = [
     path('github/delete-pr/<int:pr_id>/', web_ui_views.github_delete_pr, name='github_delete_pr'),
     path('github/create-pr/', web_ui_views.github_create_pr, name='github_create_pr'),
     path('github/branch-diff/', web_ui_views.github_branch_diff, name='github_branch_diff'),
+    path('github/file-diff/', web_ui_views.github_file_diff, name='github_file_diff'),
     path('github/workflows-overview/', web_ui_views.github_workflows_overview, name='github_workflows_overview'),
+    path('github/revert-staged-file/', web_ui_views.github_revert_staged_file, name='github_revert_staged_file'),
+    path('github/repo/', web_ui_views.github_repo_integration, name='github_repo'),
     
     # Recipe instance and template GitHub push endpoints
     path('recipe-instances/<int:instance_id>/push-github/', web_ui_views.recipe_instance_push_github, name='recipe_instance_push_github'),
@@ -136,6 +141,14 @@ urlpatterns = [
     # Policy and environment variables GitHub push endpoints
     path('policies/<str:policy_id>/push-github/', web_ui_views.policy_push_github, name='policy_push_github'),
     path('env-vars/instances/<int:instance_id>/push-github/', web_ui_views.env_vars_instance_push_github, name='env_vars_instance_push_github'),
+    path('env-vars/templates/<int:template_id>/push-github/', web_ui_views.env_vars_template_push_github, name='env_vars_template_push_github'),
+
+    # Environment management
+    path('environments/', web_ui_views.environments, name='environments'),
+    path('environments/create/', web_ui_views.environment_create, name='environment_create'),
+    path('environments/<int:env_id>/edit/', web_ui_views.environment_edit, name='environment_edit'),
+    path('environments/<int:env_id>/delete/', web_ui_views.environment_delete, name='environment_delete'),
+    path('environments/<int:env_id>/set-default/', web_ui_views.set_default_environment, name='set_default_environment'),
 ]
 
 # Add media files URL

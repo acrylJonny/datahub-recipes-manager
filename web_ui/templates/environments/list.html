@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+
+{% block title %}Environments - DataHub Recipes Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Environments</h1>
+            <p class="text-muted">Manage deployment environments (dev, test, prod, etc.)</p>
+        </div>
+        <div>
+            <a href="{% url 'environment_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> Create Environment
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Environments</h5>
+            {% if environments %}
+                <span class="badge bg-secondary">{{ environments|length }} environments</span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if environments %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Status</th>
+                                <th>Usage</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for env in environments %}
+                                <tr>
+                                    <td>
+                                        <span class="fw-bold text-decoration-none">
+                                            {{ env.name }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if env.description %}
+                                            {{ env.description }}
+                                        {% else %}
+                                            <span class="text-muted">No description</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if env.is_default %}
+                                            <span class="badge bg-success">Default</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-primary">{{ env.recipe_instances.count }} recipes</span>
+                                        <span class="badge bg-info">{{ env.env_vars_instances.count }} env vars</span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{% url 'environment_edit' env_id=env.id %}" class="btn btn-sm btn-outline-primary" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            {% if not env.is_default %}
+                                                <form method="post" action="{% url 'set_default_environment' env_id=env.id %}" class="d-inline">
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="btn btn-sm btn-outline-success" title="Set as Default">
+                                                        <i class="fas fa-star"></i>
+                                                    </button>
+                                                </form>
+                                                <a href="{% url 'environment_delete' env_id=env.id %}" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                    <i class="fas fa-trash"></i>
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-cloud fa-4x text-muted"></i>
+                    </div>
+                    <h4 class="text-muted">No environments found</h4>
+                    <p class="text-muted mb-4">
+                        Get started by creating your first environment.
+                    </p>
+                    <a href="{% url 'environment_create' %}" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Create Environment
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %} 

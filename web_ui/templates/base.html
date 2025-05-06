@@ -116,13 +116,18 @@
                             </ul>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link{% if request.path|slice:':10' == '/policies/' %} active{% endif %}" href="{% url 'policies' %}">
+                            <a class="nav-link{% if request.path == '/policies/' %} active{% endif %}" href="{% url 'policies' %}">
                                 <i class="fas fa-shield-alt fa-fw me-2"></i> Policies
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/environments/' %} active{% endif %}" href="{% url 'environments' %}">
+                                <i class="fas fa-server fa-fw me-2"></i> Environments
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="{% url 'github' %}">
-                                <i class="fab fa-github"></i> GitHub
+                                <i class="fab fa-git-alt"></i> Git Repository
                             </a>
                         </li>
                         <li class="nav-item">
@@ -139,6 +144,13 @@
                                 <span class="badge bg-danger d-inline-flex align-items-center"><i class="fas fa-exclamation-circle me-1"></i> Not Connected</span>
                             {% endif %}
                         </span>
+                        {% if default_environment %}
+                        <span class="navbar-text me-3">
+                            <span class="badge bg-info d-inline-flex align-items-center">
+                                <i class="fas fa-server me-1"></i> Env: {{ default_environment.name }}
+                            </span>
+                        </span>
+                        {% endif %}
                         <a href="{% url 'settings' %}" class="btn btn-outline-light btn-sm d-flex align-items-center">
                             <i class="fas fa-cog me-1"></i> Configure
                         </a>
