@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to run the DataHub Recipes Manager Web UI
+# Script to run the DataHub CI/CD Manager Web UI
 
 # Set the current directory to the script's directory
 cd "$(dirname "$0")"

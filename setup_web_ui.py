@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup script for the DataHub Recipes Manager Web UI.
+Setup script for the DataHub CI/CD Manager Web UI.
 This script initializes the Django application, creates necessary directories, 
 and provides instructions for running the web interface.
 """
@@ -193,7 +193,7 @@ def run_django_migrations():
 def main():
     """Main function to set up the web UI."""
     print("\n" + "=" * 80)
-    print(" DataHub Recipes Manager Web UI Setup ".center(80, "="))
+    print(" DataHub CI/CD Manager Web UI Setup ".center(80, "="))
     print("=" * 80 + "\n")
     
     check_python_version()

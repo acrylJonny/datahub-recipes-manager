@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% load custom_filters %}
 
-{% block title %}Environment Variable Instances - DataHub Recipes Manager{% endblock %}
+{% block title %}Environment Variable Instances - DataHub CI/CD Manager{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
+    {% csrf_token %}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Environment Variable Instances</h2>
         <div>
@@ -192,18 +193,21 @@
             button.html('<i class="fas fa-spinner fa-spin"></i>');
             button.prop('disabled', true);
             
+            // Get CSRF token from the page
+            const csrfToken = $('input[name="csrfmiddlewaretoken"]').val();
+            
             // Send AJAX request
             $.ajax({
                 url: "/env-vars/instances/" + instanceId + "/push-github/",
                 method: "POST",
                 headers: {
-                    'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
+                    'X-CSRFToken': csrfToken
                 },
                 success: function(response) {
                     if (response.success) {
                         // Create success alert
                         const alert = $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
-                            .append('<i class="fas fa-check-circle me-2"></i> Environment Variables Instance added to GitHub PR successfully!')
+                            .append('<i class="fas fa-check-circle me-2"></i> ' + (response.message || 'Environment Variables Instance added to GitHub PR successfully!'))
                             .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
                         
                         // Add the alert at the top of the page
@@ -214,11 +218,34 @@
                             alert.alert('close');
                         }, 5000);
                     } else {
-                        alert('Error: ' + (response.error || 'Failed to add to GitHub PR'));
+                        // Create error alert
+                        const errorMsg = response.error || 'Failed to add to GitHub PR';
+                        const alert = $('<div class="alert alert-danger alert-dismissible fade show" role="alert">')
+                            .append('<i class="fas fa-exclamation-circle me-2"></i> Error: ' + errorMsg)
+                            .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
+                        
+                        // Add the alert at the top of the page
+                        $('.container-fluid').prepend(alert);
+                        
+                        // Auto dismiss after 8 seconds
+                        setTimeout(function() {
+                            alert.alert('close');
+                        }, 8000);
                     }
                 },
                 error: function(xhr, status, error) {
-                    alert('Error: ' + error);
+                    // Create error alert for AJAX errors
+                    const alert = $('<div class="alert alert-danger alert-dismissible fade show" role="alert">')
+                        .append('<i class="fas fa-exclamation-circle me-2"></i> Error: ' + error)
+                        .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
+                    
+                    // Add the alert at the top of the page
+                    $('.container-fluid').prepend(alert);
+                    
+                    // Auto dismiss after 8 seconds
+                    setTimeout(function() {
+                        alert.alert('close');
+                    }, 8000);
                 },
                 complete: function() {
                     // Restore button state

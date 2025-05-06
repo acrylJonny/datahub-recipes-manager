@@ -565,7 +565,7 @@ If you encounter API compatibility issues:
 
 ## Web UI Interface
 
-The DataHub Recipes Manager now includes a powerful web-based user interface for managing your recipes, policies, and DataHub configurations through an intuitive dashboard.
+The DataHub CI/CD Manager now includes a powerful web-based user interface for managing your recipes, policies, and DataHub configurations through an intuitive dashboard.
 
 ### Web UI Features
 

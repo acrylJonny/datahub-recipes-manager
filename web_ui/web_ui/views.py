@@ -3102,13 +3102,12 @@ def github_create_pr(request):
         current_branch = settings.current_branch or 'main'
         
         # Prevent creating PRs directly from main/master branch
-        # Prevent pushing directly to main/master branch
         if current_branch.lower() in ['main', 'master']:
             return JsonResponse({
                 'success': False, 
-                'error': 'Cannot push directly to the main branch. Please create and use a feature branch.'
+                'error': 'Cannot create a PR directly from the main branch. Please create and use a feature branch.'
             })
-            
+        
         title = request.POST.get('title')
         description = request.POST.get('description')
         base = request.POST.get('base')
@@ -3122,8 +3121,8 @@ def github_create_pr(request):
         if pr:
             return JsonResponse({
                 'success': True,
-                'pr_url': pr.pr_url,
-                'message': f"Pull request #{pr.pr_number} created successfully"
+                'pr_url': pr['pr_url'],
+                'message': f"Pull request #{pr['pr_number']} created successfully"
             })
         else:
             return JsonResponse({
@@ -3167,21 +3166,29 @@ def env_vars_instance_push_github(request, instance_id):
             })
         
         # Use the GitIntegration class for consistency
-        github_integration = GitIntegration()
-        result = github_integration.push_to_git(env_instance)
+        logger.info(f"Pushing environment variables instance {env_instance.name} to Git")
+        result = GitIntegration.push_to_git(env_instance)
         
         if not result:
-            logger.error(f"Failed to push environment variables instance {env_instance.name} to GitHub")
+            logger.error(f"Failed to push environment variables instance {env_instance.name} to GitHub - received None result")
             return JsonResponse({
                 'success': False,
                 'error': 'Failed to push environment variables to GitHub'
             })
             
+        if not result.get('success', False):
+            error_msg = result.get('error', 'Unknown error')
+            logger.error(f"Failed to push environment variables instance {env_instance.name} to GitHub: {error_msg}")
+            return JsonResponse({
+                'success': False,
+                'error': error_msg
+            })
+            
         logger.info(f"Successfully pushed environment variables instance {env_instance.name} to GitHub")
         return JsonResponse({
             'success': True,
-            'branch': result['branch'],
-            'file_path': result['file_path'],
+            'branch': result.get('branch', current_branch),
+            'file_path': result.get('file_path', ''),
             'message': f"Environment variables for '{env_instance.name}' added to branch {current_branch}"
         })
             
@@ -3222,23 +3229,33 @@ def env_vars_template_push_github(request, template_id):
             })
         
         # Stage changes
-        github_integration = GitIntegration()
+        logger.info(f"Pushing environment variables template {env_template.name} to Git")
         commit_message = f"Update environment variables template: {env_template.name}"
-        result = github_integration.push_to_git(env_template, commit_message)
+        result = GitIntegration.push_to_git(env_template, commit_message)
         
-        if result and result.get('success'):
-            logger.info(f"Successfully staged environment variables template {env_template.name} to GitHub")
-            return JsonResponse({
-                'success': True,
-                'message': f'Environment variables template "{env_template.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
-                'redirect_url': reverse('github')
-            })
-        else:
-            logger.error(f"Failed to stage environment variables template {env_template.name} to GitHub")
+        if not result:
+            logger.error(f"Failed to push environment variables template {env_template.name} to GitHub - received None result")
             return JsonResponse({
                 'success': False,
-                'error': f'Failed to stage environment variables template "{env_template.name}"'
+                'error': 'Failed to push environment variables to GitHub'
             })
+            
+        if not result.get('success', False):
+            error_msg = result.get('error', 'Unknown error')
+            logger.error(f"Failed to push environment variables template {env_template.name} to GitHub: {error_msg}")
+            return JsonResponse({
+                'success': False,
+                'error': error_msg
+            })
+            
+        logger.info(f"Successfully pushed environment variables template {env_template.name} to GitHub")
+        return JsonResponse({
+            'success': True,
+            'branch': result.get('branch', current_branch),
+            'file_path': result.get('file_path', ''),
+            'message': f'Environment variables template "{env_template.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
+            'redirect_url': reverse('github')
+        })
             
     except Exception as e:
         logger.error(f"Error pushing environment variables template to GitHub: {str(e)}", exc_info=True)
@@ -4009,8 +4026,8 @@ def github_create_pr(request):
         if pr:
             return JsonResponse({
                 'success': True,
-                'pr_url': pr.pr_url,
-                'message': f"Pull request #{pr.pr_number} created successfully"
+                'pr_url': pr['pr_url'],
+                'message': f"Pull request #{pr['pr_number']} created successfully"
             })
         else:
             return JsonResponse({

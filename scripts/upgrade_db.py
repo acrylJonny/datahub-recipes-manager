@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Database upgrade script for DataHub Recipes Manager.
+Database upgrade script for DataHub CI/CD Manager.
 This script handles database migrations and upgrades when a new version is deployed.
 """
 

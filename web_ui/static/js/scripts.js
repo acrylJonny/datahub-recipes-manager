@@ -1,5 +1,5 @@
 /**
- * DataHub Recipes Manager - Common JavaScript functions
+ * DataHub CI/CD Manager - Common JavaScript functions
  */
 
 document.addEventListener('DOMContentLoaded', function() {

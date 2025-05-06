@@ -999,7 +999,7 @@ class GitIntegration:
         """Stage changes on the current branch without creating a PR."""
         if not cls.is_configured():
             logger.error("Git integration not configured")
-            return None
+            return {"success": False, "error": "Git integration not configured"}
         
         try:
             # Create directories if they don't exist
@@ -1070,7 +1070,7 @@ class GitIntegration:
                     logger.info(f"Policy exported successfully to {file_path}")
                 except Exception as e:
                     logger.error(f"Error exporting policy to JSON: {str(e)}")
-                    raise ValueError(f"Failed to export policy to JSON: {str(e)}")
+                    return {"success": False, "error": f"Failed to export policy to JSON: {str(e)}"}
                     
                 pr_title = f"Update policy: {instance_or_template.name}"
                 
@@ -1123,7 +1123,7 @@ class GitIntegration:
             else:
                 err_msg = f"Invalid object type: {type(instance_or_template)}"
                 logger.error(err_msg)
-                raise ValueError(err_msg)
+                return {"success": False, "error": err_msg}
             
             if not commit_message:
                 commit_message = pr_title
@@ -1136,7 +1136,7 @@ class GitIntegration:
             if not current_branch:
                 err_msg = "No current branch selected in Git settings"
                 logger.error(err_msg)
-                return None
+                return {"success": False, "error": err_msg}
             
             # Read file content
             with open(file_path, 'r') as f:
@@ -1169,7 +1169,7 @@ class GitIntegration:
                 except requests.exceptions.HTTPError as e:
                     if e.response.status_code != 404:
                         logger.error(f"Error checking file existence: {e.response.status_code} {e.response.text}")
-                        raise
+                        return {"success": False, "error": f"Error checking file existence: {e.response.status_code} {e.response.text}"}
                     logger.info("File does not exist, creating new file")
                 
                 try:
@@ -1177,7 +1177,7 @@ class GitIntegration:
                     logger.info(f"File uploaded successfully: {response.status_code}")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"Error uploading file: {e.response.status_code} {e.response.text}")
-                    raise
+                    return {"success": False, "error": f"Error uploading file: {e.response.status_code} {e.response.text}"}
                     
             elif provider == 'azure_devops':
                 # Azure DevOps uses a different API for file operations
@@ -1190,13 +1190,13 @@ class GitIntegration:
                 
                 if not repo_id:
                     logger.error("Could not find repository ID")
-                    return None
+                    return {"success": False, "error": "Could not find repository ID"}
                 
                 # Azure DevOps uses a different API structure
                 org_project = settings.username.split('/')
                 if len(org_project) != 2:
                     logger.error(f"Invalid Azure DevOps username format: {settings.username}")
-                    return None
+                    return {"success": False, "error": "Invalid Azure DevOps username format"}
                     
                 org, project = org_project
                 
@@ -1245,7 +1245,7 @@ class GitIntegration:
                     logger.info(f"File pushed successfully to Azure DevOps")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"Error pushing file to Azure DevOps: {e}")
-                    raise
+                    return {"success": False, "error": f"Error pushing file to Azure DevOps: {e}"}
                 
             elif provider == 'gitlab':
                 # GitLab file API
@@ -1270,14 +1270,14 @@ class GitIntegration:
                         method = 'POST'
                     else:
                         logger.error(f"Error checking file existence: {e}")
-                        raise
+                        return {"success": False, "error": f"Error checking file existence: {e}"}
                 
                 try:
                     response = cls._make_request(method, content_url, json=data)
                     logger.info(f"File uploaded successfully to GitLab")
                 except requests.exceptions.HTTPError as e:
                     logger.error(f"Error uploading file to GitLab: {e}")
-                    raise
+                    return {"success": False, "error": f"Error uploading file to GitLab: {e}"}
                     
             elif provider == 'bitbucket':
                 # Bitbucket file API differs between Cloud and Server
@@ -1298,7 +1298,7 @@ class GitIntegration:
                         logger.info("File uploaded successfully to Bitbucket Cloud")
                     except requests.exceptions.HTTPError as e:
                         logger.error(f"Error uploading file to Bitbucket Cloud: {e}")
-                        raise
+                        return {"success": False, "error": f"Error uploading file to Bitbucket Cloud: {e}"}
                         
                 else:
                     # Bitbucket Server
@@ -1318,7 +1318,7 @@ class GitIntegration:
                     
                     if not latest_commit:
                         logger.error("Could not get latest commit for branch")
-                        return None
+                        return {"success": False, "error": "Could not get latest commit for branch"}
                     
                     # Create commit data
                     commit_url = cls.get_api_url(f"/commits")
@@ -1341,10 +1341,10 @@ class GitIntegration:
                         logger.info("File uploaded successfully to Bitbucket Server")
                     except requests.exceptions.HTTPError as e:
                         logger.error(f"Error uploading file to Bitbucket Server: {e}")
-                        raise
+                        return {"success": False, "error": f"Error uploading file to Bitbucket Server: {e}"}
             else:
                 logger.error(f"Unsupported Git provider: {provider}")
-                return None
+                return {"success": False, "error": f"Unsupported Git provider: {provider}"}
             
             return {
                 'success': True,
@@ -1355,7 +1355,7 @@ class GitIntegration:
         except Exception as e:
             error_msg = f"Error staging changes: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return None
+            return {"success": False, "error": error_msg}
     
     @classmethod
     def create_pr_from_staged_changes(cls, title=None, description=None, base=None):
@@ -1611,14 +1611,23 @@ class GitIntegration:
         """Push changes to Git (stage changes only)."""
         if not cls.is_configured():
             logger.error("Git integration not configured")
-            return None
+            return {"success": False, "error": "Git integration not configured"}
         
         # Only stage changes, don't create PR
         result = cls.stage_changes(instance_or_template, commit_message)
-        if not result or not result.get('success'):
-            return None
+        if not result:
+            return {"success": False, "error": "Failed to stage changes"}
         
-        return result
+        # If result is already a dictionary with success field, return as is
+        if isinstance(result, dict) and 'success' in result:
+            return result
+        
+        # Otherwise, wrap the result in a success response
+        return {
+            "success": True,
+            "branch": result.get("branch", ""),
+            "file_path": result.get("file_path", "")
+        }
 
     @classmethod
     def revert_staged_file(cls, file_path, branch=None):
@@ -1647,6 +1656,124 @@ class GitIntegration:
             
         # Revert the file
         return git_service.revert_staged_file(file_path, branch)
+
+    @classmethod
+    def create_branch(cls, branch_name, base_branch='main'):
+        """Create a new branch in Git repository."""
+        if not cls.is_configured():
+            logger.error("Git integration not configured")
+            return False
+        
+        try:
+            # Get settings
+            settings = GitSettings.get_instance()
+            provider = settings.provider_type
+            
+            # First, get the reference to the base branch
+            if provider == 'github':
+                # GitHub API to get base branch reference
+                base_ref_url = cls.get_api_url(f"/git/refs/heads/{base_branch}")
+                response = cls._make_request('GET', base_ref_url)
+                base_ref = response.json()
+                base_sha = base_ref.get('object', {}).get('sha')
+                
+                if not base_sha:
+                    logger.error(f"Could not find SHA for base branch {base_branch}")
+                    return False
+                
+                # Create new reference
+                create_url = cls.get_api_url("/git/refs")
+                data = {
+                    'ref': f"refs/heads/{branch_name}",
+                    'sha': base_sha
+                }
+                
+                response = cls._make_request('POST', create_url, json=data)
+                return response.status_code in [201, 200]
+                
+            elif provider == 'azure_devops':
+                # For Azure DevOps, we'd use a different API
+                # Get repository ID first
+                repo_url = cls.get_api_url()
+                repo_response = cls._make_request('GET', repo_url)
+                repo_id = repo_response.json().get('id')
+                
+                if not repo_id:
+                    logger.error("Could not find repository ID")
+                    return False
+                
+                # Get the base branch information
+                base_branch_url = cls.get_api_url(f"/refs/heads/{base_branch}")
+                if '?' in base_branch_url:
+                    base_branch_url += "&api-version=6.0"
+                else:
+                    base_branch_url += "?api-version=6.0"
+                    
+                response = cls._make_request('GET', base_branch_url)
+                base_ref = response.json().get('value', [])
+                
+                if not base_ref or len(base_ref) == 0:
+                    logger.error(f"Could not find base branch {base_branch}")
+                    return False
+                    
+                base_sha = base_ref[0].get('objectId')
+                
+                # Create new branch
+                create_url = cls.get_api_url("/refs")
+                if '?' in create_url:
+                    create_url += "&api-version=6.0"
+                else:
+                    create_url += "?api-version=6.0"
+                    
+                data = {
+                    'name': f"refs/heads/{branch_name}",
+                    'newObjectId': base_sha,
+                    'oldObjectId': '0000000000000000000000000000000000000000'
+                }
+                
+                response = cls._make_request('POST', create_url, json=data)
+                return response.status_code in [201, 200]
+                
+            elif provider == 'gitlab':
+                # GitLab API
+                create_url = cls.get_api_url(f"/repository/branches")
+                data = {
+                    'branch': branch_name,
+                    'ref': base_branch
+                }
+                
+                response = cls._make_request('POST', create_url, json=data)
+                return response.status_code in [201, 200]
+                
+            elif provider == 'bitbucket':
+                # Bitbucket API
+                if 'bitbucket.org' in cls.get_api_url():
+                    # Bitbucket Cloud
+                    create_url = cls.get_api_url(f"/refs/branches")
+                    data = {
+                        'name': branch_name,
+                        'target': {
+                            'hash': base_branch
+                        }
+                    }
+                else:
+                    # Bitbucket Server
+                    create_url = cls.get_api_url(f"/branches")
+                    data = {
+                        'name': branch_name,
+                        'startPoint': base_branch
+                    }
+                    
+                response = cls._make_request('POST', create_url, json=data)
+                return response.status_code in [201, 200]
+                
+            else:
+                logger.error(f"Unsupported Git provider: {provider}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error creating branch: {str(e)}", exc_info=True)
+            return False
 
 class Policy(models.Model):
     """Model for storing DataHub policies."""

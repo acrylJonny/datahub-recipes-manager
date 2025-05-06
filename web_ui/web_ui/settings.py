@@ -143,7 +143,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# DataHub Recipes Manager specific settings
+# DataHub CI/CD Manager specific settings
 DATAHUB_CONFIG_FILE = os.path.join(BASE_DIR.parent, '.env')
 SCRIPTS_DIR = os.path.join(BASE_DIR.parent, 'scripts')
 TEMPLATES_DIR = os.path.join(BASE_DIR.parent, 'templates')
