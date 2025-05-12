@@ -52,7 +52,7 @@ except Exception as e:
 
 # If connection test passed, push a recipe
 echo "Pushing a test recipe to DataHub..."
-python scripts/push_recipe.py --instance recipes/instances/analytics-db.yml || {
+python scripts/push_recipe.py --instance recipes/instances/dev/analytics-db.yml || {
   echo "⚠️ Recipe push failed. This could be due to SDK compatibility issues."
   echo "The push functionality requires a specific DataHub SDK version."
   echo "This doesn't necessarily mean your setup is broken - you may need"

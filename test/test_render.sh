@@ -2,7 +2,9 @@
 # Test template rendering for instances
 cd "$(dirname "$0")/.." || exit  # Move to project root
 
-for instance in recipes/instances/*.yml; do
+# Test rendering recipes with different parameter sources
+echo "Rendering recipes from parameters..."
+for instance in recipes/instances/dev/*.yml; do
   echo "Testing render for $instance"
   template_type=$(grep "recipe_type" "$instance" | cut -d ":" -f2 | tr -d ' ')
   python -c "

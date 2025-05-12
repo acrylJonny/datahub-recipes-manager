@@ -57,7 +57,7 @@ fi
 echo -e "${GREEN}✅ PostgreSQL test data set up successfully${NC}"
 
 echo -e "${BLUE}===== TESTING PUSH RECIPE =====${NC}"
-python ../scripts/push_recipe.py --instance recipes/instances/analytics-db.yml
+python ../scripts/push_recipe.py --instance ../recipes/instances/dev/analytics-db.yml
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Recipe push failed${NC}"
     exit 1
@@ -88,17 +88,18 @@ fi
 echo -e "${GREEN}✅ Run recipe successful${NC}"
 
 echo -e "${BLUE}===== TESTING PATCH RECIPE =====${NC}"
-# Save the original file
-cp recipes/instances/analytics-db.yml recipes/instances/analytics-db.yml.bak
+# Back up the original file
+cp ../recipes/instances/dev/analytics-db.yml ../recipes/instances/dev/analytics-db.yml.bak
 
-# Modify the recipe to change the schedule
-sed -i '' 's/cron: "0 2 \* \* \*"/cron: "0 3 \* \* \*"/' recipes/instances/analytics-db.yml || sed -i 's/cron: "0 2 \* \* \*"/cron: "0 3 \* \* \*"/' recipes/instances/analytics-db.yml
+# Modify cron schedule
+echo "Updating cron schedule in recipe..."
+sed -i '' 's/cron: "0 2 \* \* \*"/cron: "0 3 \* \* \*"/' ../recipes/instances/dev/analytics-db.yml || sed -i 's/cron: "0 2 \* \* \*"/cron: "0 3 \* \* \*"/' ../recipes/instances/dev/analytics-db.yml
 
 # Push the modified recipe
 python ../scripts/patch_recipe.py --id analytics-database-prod --schedule "0 3 * * *"
 PATCH_STATUS=$?
-# Restore original file
-mv recipes/instances/analytics-db.yml.bak recipes/instances/analytics-db.yml
+# Clean up - restore original
+mv ../recipes/instances/dev/analytics-db.yml.bak ../recipes/instances/dev/analytics-db.yml
 if [ $PATCH_STATUS -ne 0 ]; then
     echo -e "${RED}❌ Recipe patch failed${NC}"
     exit 1
@@ -139,4 +140,21 @@ echo -e "${BLUE}===== CLEANUP =====${NC}"
 rm -rf ./pulled_recipes
 echo -e "${GREEN}✅ Test artifacts cleaned up${NC}"
 
-echo -e "${GREEN}=== All Tests Completed Successfully ✅ ===${NC}" 
+echo -e "${GREEN}=== All Tests Completed Successfully ✅ ===${NC}"
+
+# Create directory for test environment
+mkdir -p recipes/instances/dev
+
+cd "$(dirname "$0")" || exit
+
+# Step 1: Test recipe validation
+echo "=== Step 1: Testing Recipe Validation ==="
+echo "Checking template validation..."
+python ../scripts/validate_recipe.py --templates ../recipes/templates/*.yml
+echo "Checking instance validation..."
+python ../scripts/validate_recipe.py --instances ../recipes/instances/dev/*.yml 
+
+# Step 2: Push Recipe
+echo "=== Step 2: Testing Recipe Push ==="
+echo "Pushing recipe to DataHub..."
+python ../scripts/push_recipe.py --instance ../recipes/instances/dev/analytics-db.yml 

@@ -56,7 +56,7 @@ except Exception as e:
 "
 
 # If connection test passed, try to push a recipe
-echo "Pushing a test recipe to DataHub..."
-python scripts/push_recipe.py --instance recipes/instances/analytics-db.yml --create-secrets
+echo "Pushing a test recipe to DataHub with secret creation..."
+python scripts/push_recipe.py --instance recipes/instances/dev/analytics-db.yml --create-secrets
 
 echo "=== Deployment test complete ==="

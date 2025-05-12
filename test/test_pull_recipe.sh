@@ -98,7 +98,7 @@ except Exception as e:
 # If the source doesn't exist, create it
 if [ "$SOURCE_EXISTS" != "true" ]; then
   echo "Test recipe not found. Creating it first..."
-  python scripts/push_recipe.py --instance recipes/instances/analytics-db.yml
+  python scripts/push_recipe.py --instance recipes/instances/dev/analytics-db.yml
   if [ $? -ne 0 ]; then
     echo "⚠️ Failed to create test recipe. Aborting test."
     exit 1

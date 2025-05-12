@@ -80,7 +80,7 @@ except:
 
 if [ "$SOURCE_EXISTS" != "true" ]; then
   echo "Test source 'analytics-database-prod' not found. Creating it first..."
-  python scripts/push_recipe.py --instance recipes/instances/analytics-db.yml
+  python scripts/push_recipe.py --instance recipes/instances/dev/analytics-db.yml
   if [ $? -ne 0 ]; then
     echo "⚠️ Failed to create test source. Cannot proceed with patch test."
     exit 1

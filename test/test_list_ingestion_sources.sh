@@ -80,7 +80,7 @@ except:
 
 if [ "$SOURCE_EXISTS" != "true" ]; then
   echo "No test sources found. Creating one first..."
-  python scripts/push_recipe.py --instance recipes/instances/analytics-db.yml
+  python scripts/push_recipe.py --instance recipes/instances/dev/analytics-db.yml
   if [ $? -ne 0 ]; then
     echo "⚠️ Failed to create test source. Cannot proceed with list test."
     exit 1
