@@ -1088,11 +1088,12 @@ class GitIntegration:
             recipes_dir = base_dir / 'recipes'
             templates_dir = recipes_dir / 'templates'
             instances_dir = recipes_dir / 'instances'
+            params_dir = base_dir / 'params'
+            params_envs_dir = params_dir / 'environments'
             policies_dir = base_dir / 'policies'
-            env_vars_dir = base_dir / 'params' / 'environments'
             
             # Create all necessary directories
-            for dir_path in [recipes_dir, templates_dir, instances_dir, policies_dir, env_vars_dir]:
+            for dir_path in [recipes_dir, templates_dir, instances_dir, params_dir, params_envs_dir, policies_dir]:
                 dir_path.mkdir(parents=True, exist_ok=True)
             
             # Export to YAML/JSON based on object type
@@ -1100,10 +1101,14 @@ class GitIntegration:
                 # Recipe instance
                 instance = instance_or_template
                 
-                # Environment name from instance or default to 'dev'
+                # Get environment name from instance or default to 'dev'
                 env_name = 'dev'
                 if instance.environment:
                     env_name = instance.environment.name.lower()
+                
+                # Create environment directory if it doesn't exist
+                env_dir = instances_dir / env_name
+                env_dir.mkdir(exist_ok=True)
                 
                 # Create YAML content formatted for workflow scripts
                 yaml_content = {
@@ -1128,21 +1133,23 @@ class GitIntegration:
                 if instance.env_vars_instance and instance.env_vars_instance.has_secret_variables:
                     secret_refs = []
                     for key, var_info in instance.env_vars_instance.get_variables_dict().items():
-                        if var_info.get('is_secret', False):
+                        if var_info.get('isSecret', False):
                             secret_refs.append(key)
                     
                     if secret_refs:
                         yaml_content['secret_references'] = secret_refs
                 
+                # Create link to template and env vars instance
+                if instance.template:
+                    yaml_content['template_name'] = instance.template.name
+                if instance.env_vars_instance:
+                    yaml_content['env_vars_instance'] = instance.env_vars_instance.name
+                
                 # Convert to YAML
                 content = yaml.dump(yaml_content, default_flow_style=False, sort_keys=False)
                 
-                # Create environment directory if it doesn't exist
-                env_dir = instances_dir / env_name
-                env_dir.mkdir(exist_ok=True)
-                
                 # Create file with clean name (no spaces, lowercase)
-                instance_name = instance.name.replace(' ', '_').lower()
+                instance_name = instance.name.replace(' ', '-').lower()
                 file_path = env_dir / f"{instance_name}.yml"
                 
                 # Write the file content
@@ -1154,8 +1161,11 @@ class GitIntegration:
             elif isinstance(instance_or_template, RecipeTemplate):
                 logger.info(f"Exporting recipe template: {instance_or_template.name}")
                 
+                # Get recipe type as name
+                recipe_type = instance_or_template.recipe_type.lower()
+                
                 # Create file with recipe type as name
-                file_path = templates_dir / f"{instance_or_template.recipe_type.lower()}.yml"
+                file_path = templates_dir / f"{recipe_type}.yml"
                 
                 # Get content as dict
                 content = instance_or_template.get_content()
@@ -1200,47 +1210,159 @@ class GitIntegration:
             elif isinstance(instance_or_template, EnvVarsTemplate):
                 logger.info(f"Exporting environment variables template: {instance_or_template.name}")
                 
-                # Create file with clean name (no spaces, lowercase)
+                # Get environment (default to 'dev' if not specified)
+                env_name = 'dev'
+                
+                # Create environment directory if it doesn't exist
+                env_dir = templates_dir / env_name
+                env_dir.mkdir(exist_ok=True)
+                
+                # Create file with recipe type as name
                 template_name = instance_or_template.recipe_type.lower()
-                file_path = env_vars_dir / f"{template_name}.yml"
+                file_path = env_dir / f"{template_name}.yml"
+                
+                # Format the template variables for the YAML file
+                template_vars = instance_or_template.get_variables_dict()
+                content = {
+                    'name': instance_or_template.name,
+                    'description': instance_or_template.description or f"Template for {instance_or_template.recipe_type}",
+                    'recipe_type': instance_or_template.recipe_type,
+                    'source': {
+                        'type': instance_or_template.recipe_type,
+                        'config': {}
+                    }
+                }
+                
+                # Add variables as environment variable references in the config
+                for var_name, var_info in template_vars.items():
+                    content['source']['config'][var_info.get('key', var_name.lower())] = f"${{{var_name}}}"
                 
                 # Export the template
                 with open(file_path, 'w') as f:
-                    yaml.dump({
-                        'name': instance_or_template.name,
-                        'description': instance_or_template.description,
-                        'recipe_type': instance_or_template.recipe_type,
-                        'variables': instance_or_template.get_variables_dict()
-                    }, f, default_flow_style=False)
+                    yaml.dump(content, f, default_flow_style=False)
+                
+                # Create the variable definitions YAML in params/environments
+                params_env_dir = params_envs_dir / env_name
+                params_env_dir.mkdir(exist_ok=True)
+                
+                # Create variables definition file
+                vars_file_path = params_env_dir / f"{template_name}_vars.yml"
+                vars_content = {
+                    'name': f"{instance_or_template.name} Variables",
+                    'description': f"Environment variables for {instance_or_template.name}",
+                    'recipe_type': instance_or_template.recipe_type,
+                    'variables': {}
+                }
+                
+                # Add variable definitions
+                for var_name, var_info in template_vars.items():
+                    vars_content['variables'][var_name] = {
+                        'description': var_info.get('description', ''),
+                        'required': var_info.get('required', False),
+                        'is_secret': var_info.get('is_secret', False),
+                        'data_type': var_info.get('data_type', 'text'),
+                        'default_value': var_info.get('default_value', '')
+                    }
+                
+                # Write the variables definition file
+                with open(vars_file_path, 'w') as f:
+                    yaml.dump(vars_content, f, default_flow_style=False)
                     
                 pr_title = f"Update environment variables template: {instance_or_template.name}"
                 
             elif isinstance(instance_or_template, EnvVarsInstance):
                 logger.info(f"Exporting environment variables instance: {instance_or_template.name}")
                 
-                # Get environment (default to 'prod' if not specified)
+                # Get environment (default to 'dev' if not specified)
+                env_name = 'dev'
                 if instance_or_template.environment:
-                    environment = instance_or_template.environment.name.lower()
-                else:
-                    environment = Environment.get_default().name.lower()
+                    env_name = instance_or_template.environment.name.lower()
                 
                 # Create environment directory if it doesn't exist
-                env_dir = env_vars_dir / environment
-                env_dir.mkdir(exist_ok=True)
+                params_env_dir = params_envs_dir / env_name
+                params_env_dir.mkdir(exist_ok=True)
                 
                 # Create file with clean name (no spaces, lowercase)
                 instance_name = instance_or_template.name.replace(' ', '-').lower()
-                file_path = env_dir / f"{instance_name}.yml"
+                file_path = params_env_dir / f"{instance_name}.yml"
                 
-                # Export the instance
-                with open(file_path, 'w') as f:
-                    yaml.dump({
-                        'name': instance_or_template.name,
-                        'description': instance_or_template.description,
-                        'recipe_type': instance_or_template.recipe_type,
-                        'variables': instance_or_template.get_variables_dict()
-                    }, f, default_flow_style=False)
+                # Format the YAML content
+                variables_dict = instance_or_template.get_variables_dict()
+                yaml_content = {
+                    'name': instance_or_template.name,
+                    'description': instance_or_template.description or f"{instance_or_template.name} environment variables",
+                    'recipe_type': instance_or_template.recipe_type,
+                    'parameters': {},
+                    'secret_references': []
+                }
+                
+                # Add template reference if available
+                if instance_or_template.template:
+                    yaml_content['template'] = instance_or_template.template.name
+                
+                # Process each variable
+                for key, var_info in variables_dict.items():
+                    is_secret = var_info.get('isSecret', False)
+                    var_value = var_info.get('value', '')
                     
+                    if is_secret:
+                        yaml_content['secret_references'].append(key)
+                        # Create GitHub secret
+                        try:
+                            from web_ui.services.github_service import GitHubService
+                            github_service = GitHubService()
+                            if github_service.is_configured():
+                                # If environment exists in GitHub, create environment secret
+                                has_env = False
+                                try:
+                                    envs = github_service.get_environments()
+                                    env_names = [env.get('name', '').lower() for env in envs]
+                                    has_env = env_name.lower() in env_names
+                                except:
+                                    pass
+                                
+                                if has_env:
+                                    # Create environment secret
+                                    github_service.create_or_update_environment_secret(
+                                        env_name, key, var_value
+                                    )
+                                else:
+                                    # Create repository-level secret
+                                    github_service.create_or_update_secret(key, var_value)
+                                
+                                logger.info(f"Created GitHub secret: {key}")
+                        except Exception as e:
+                            logger.error(f"Failed to create GitHub secret: {str(e)}")
+                    else:
+                        # Non-secret variable goes in parameters
+                        yaml_content['parameters'][key] = var_value
+                
+                # Remove empty secret_references if there are none
+                if not yaml_content['secret_references']:
+                    del yaml_content['secret_references']
+                
+                # Write the file
+                with open(file_path, 'w') as f:
+                    yaml.dump(yaml_content, f, default_flow_style=False, sort_keys=False)
+                
+                # Also create an instance file in recipes/instances/[env] to link to this env vars instance
+                env_dir = instances_dir / env_name
+                env_dir.mkdir(exist_ok=True)
+                
+                # Create a minimal recipe instance file that references this env vars instance
+                instance_file_path = env_dir / f"{instance_name}-config.yml"
+                instance_yaml = {
+                    'name': f"{instance_or_template.name} Configuration",
+                    'description': f"Configuration using {instance_or_template.name} environment variables",
+                    'recipe_type': instance_or_template.recipe_type,
+                    'env_vars_instance': instance_or_template.name
+                }
+                
+                # Only create the instance file if it doesn't reference a specific recipe
+                if not instance_or_template.recipe_id:
+                    with open(instance_file_path, 'w') as f:
+                        yaml.dump(instance_yaml, f, default_flow_style=False)
+                
                 pr_title = f"Update environment variables instance: {instance_or_template.name}"
                 
             else:
@@ -1731,7 +1853,7 @@ class GitIntegration:
     
     @classmethod
     def push_to_git(cls, instance_or_template, commit_message=None):
-        """Push changes to Git (stage changes only)."""
+        """Stage changes to Git and create related GitHub secrets for environment variables."""
         if not cls.is_configured():
             logger.error("Git integration not configured")
             return {"success": False, "error": "Git integration not configured"}
@@ -1740,6 +1862,32 @@ class GitIntegration:
         result = cls.stage_changes(instance_or_template, commit_message)
         if not result:
             return {"success": False, "error": "Failed to stage changes"}
+        
+        # Create GitHub secrets for environment variables instance
+        if isinstance(result, dict) and result.get('success') and isinstance(instance_or_template, EnvVarsInstance):
+            try:
+                from web_ui.services.github_service import GitHubService
+                github_service = GitHubService()
+                
+                # Get environment name
+                environment = None
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name
+                
+                # Process secrets
+                variables = instance_or_template.get_variables_dict()
+                secret_result = github_service.create_secrets_from_env_vars(variables, environment)
+                
+                # Log results
+                if secret_result.get('created', 0) > 0:
+                    logger.info(f"Created {secret_result['created']} GitHub secrets")
+                    
+                if secret_result.get('failed', 0) > 0:
+                    logger.warning(f"Failed to create {secret_result['failed']} GitHub secrets")
+                    
+            except Exception as e:
+                logger.error(f"Error creating GitHub secrets: {str(e)}")
+                # Don't fail the whole operation if secret creation fails
         
         # If result is already a dictionary with success field, return as is
         if isinstance(result, dict) and 'success' in result:

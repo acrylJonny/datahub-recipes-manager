@@ -13,7 +13,7 @@ class WebUiConfig(AppConfig):
         Called when Django starts. Initialize settings from environment variables.
         """
         # Import here to avoid circular imports
-        from .models import AppSettings
+        from .models import AppSettings, Environment
         
         # Check for .env file
         env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '.env')
@@ -42,6 +42,8 @@ class WebUiConfig(AppConfig):
                                 AppSettings.set('datahub_url', value)
                             elif key == 'DATAHUB_TOKEN' and not AppSettings.get('datahub_token'):
                                 AppSettings.set('datahub_token', value)
+                            elif key == 'LOAD_REPOSITORY_DATA':
+                                AppSettings.set('load_repository_data', value)
                 
                 logger.info("Loaded settings from .env file")
             except Exception as e:
@@ -69,4 +71,32 @@ class WebUiConfig(AppConfig):
             ('debug_mode', False)
         ]:
             if AppSettings.get(key) is None:
-                AppSettings.set(key, 'true' if default else 'false') 
+                AppSettings.set(key, 'true' if default else 'false')
+        
+        # Load data from repository if requested or if there are no environments
+        # This block should only run once in the initialization process
+        # Skip this in management commands like migrate, shell, etc.
+        import sys
+        if not any(arg in sys.argv for arg in ['migrate', 'shell', 'collectstatic', 'makemigrations']):
+            try:
+                # Check if we should load data
+                should_load = AppSettings.get_bool('load_repository_data', False)
+                
+                # If auto load isn't enabled, check if we have any environments
+                if not should_load:
+                    # Import inside try block to handle case where tables don't exist yet
+                    from django.db import connection
+                    env_table_exists = 'web_ui_environment' in connection.introspection.table_names()
+                    if env_table_exists:
+                        # Only auto-load if there are no environments
+                        should_load = Environment.objects.count() == 0
+                
+                # Load data if needed
+                if should_load:
+                    logger.info("Starting repository data loader")
+                    # Lazy import to avoid circular import issues
+                    from .services.repo_loader import RepositoryLoader
+                    results = RepositoryLoader.load_all()
+                    logger.info(f"Repository data loaded: {results}")
+            except Exception as e:
+                logger.error(f"Error loading repository data: {str(e)}", exc_info=True) 

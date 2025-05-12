@@ -361,7 +361,7 @@ class EnvVarsInstanceForm(forms.Form):
     variables = forms.CharField(label="Environment Variables", required=True,
                              widget=forms.HiddenInput(attrs={'id': 'env_vars_instance_json'}))
     environment = forms.ModelChoiceField(queryset=Environment.objects.all(), required=False,
-                                       widget=forms.Select(attrs={'class': 'form-control'}))
+                                       widget=forms.Select(attrs={'class': 'form-select select2-enable'}))
     
     def __init__(self, *args, **kwargs):
         from .models import EnvVarsTemplate

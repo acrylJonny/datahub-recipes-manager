@@ -85,14 +85,7 @@
 
                         <div class="mb-3">
                             <label for="{{ form.environment.id_for_label }}" class="form-label">Environment</label>
-                            <select name="environment" id="{{ form.environment.id_for_label }}" class="form-select">
-                                <option value="">-- Select Environment --</option>
-                                {% for env in environments %}
-                                    <option value="{{ env.id }}" {% if form.environment.value == env.id %}selected{% endif %}>
-                                        {{ env.name }}{% if env.is_default %} (Default){% endif %}
-                                    </option>
-                                {% endfor %}
-                            </select>
+                            {{ form.environment }}
                             <div class="form-text">Select the environment this instance belongs to</div>
                         </div>
 
@@ -334,6 +327,8 @@
                         
                         // Set recipe type and make it disabled when template is selected
                         $("#" + recipeTypeField).val(response.recipe_type);
+                        // Trigger Select2 to update its display
+                        $("#" + recipeTypeField).trigger('change.select2');
                         $("#" + recipeTypeField).prop('disabled', true);
                         
                         // Generate fields for template variables

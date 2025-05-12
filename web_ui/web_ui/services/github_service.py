@@ -739,7 +739,8 @@ class GitHubService:
                 
         except Exception as e:
             logger.error(f"Exception deleting environment secret: {str(e)}")
-            return False 
+            return False
+    
     def create_environment(self, name: str, wait_timer: int = 0, reviewers: list = None, prevent_self_review: bool = False, protected_branches: bool = False) -> bool:
         """Create or update GitHub environment"""
         if not self.is_configured():
@@ -752,3 +753,83 @@ class GitHubService:
         except Exception as e:
             logger.error(f"Exception creating environment: {str(e)}")
             return False
+    
+    def create_secrets_from_env_vars(self, env_vars_dict: Dict, environment: str = None) -> Dict:
+        """
+        Create GitHub secrets from environment variables dictionary
+        
+        Args:
+            env_vars_dict: Dictionary of environment variables
+            environment: Optional environment name to create environment-specific secrets
+            
+        Returns:
+            Dict containing success status and counts of created secrets
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return {"success": False, "error": "GitHub integration not configured"}
+        
+        result = {
+            "success": True,
+            "created": 0,
+            "failed": 0,
+            "skipped": 0,
+            "environment": environment
+        }
+        
+        # First check if the environment exists (if specified)
+        has_environment = False
+        if environment:
+            try:
+                environments = self.get_environments()
+                env_names = [env.get("name", "").lower() for env in environments]
+                has_environment = environment.lower() in env_names
+                if not has_environment:
+                    logger.warning(f"Environment '{environment}' not found in GitHub. Secrets will be created at repository level.")
+                else:
+                    logger.info(f"Environment '{environment}' found in GitHub.")
+            except Exception as e:
+                logger.error(f"Error checking GitHub environments: {str(e)}")
+                has_environment = False
+        
+        # Process each environment variable
+        for key, var_info in env_vars_dict.items():
+            is_secret = var_info.get("isSecret", False)
+            value = var_info.get("value", "")
+            
+            # Skip if not a secret or value is empty
+            if not is_secret or not value:
+                result["skipped"] += 1
+                continue
+            
+            try:
+                # Create secret based on environment availability
+                if environment and has_environment:
+                    # Create environment-specific secret
+                    success = self.create_or_update_environment_secret(
+                        environment=environment,
+                        name=key,
+                        value=value
+                    )
+                else:
+                    # Create repository-level secret
+                    success = self.create_or_update_secret(
+                        name=key,
+                        value=value
+                    )
+                
+                if success:
+                    result["created"] += 1
+                    logger.info(f"Created GitHub secret: {key}")
+                else:
+                    result["failed"] += 1
+                    logger.error(f"Failed to create GitHub secret: {key}")
+            except Exception as e:
+                result["failed"] += 1
+                logger.error(f"Error creating GitHub secret '{key}': {str(e)}")
+        
+        # Update overall success status
+        if result["failed"] > 0:
+            result["success"] = False
+        
+        return result

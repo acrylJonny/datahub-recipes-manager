@@ -2404,30 +2404,20 @@ def env_vars_instance_create(request):
             # Get form data
             name = form.cleaned_data['name']
             description = form.cleaned_data.get('description', '')
-            template_id = form.cleaned_data['template']
+            template = form.cleaned_data['template']  # This is already the template object
             recipe_type = form.cleaned_data['recipe_type']
             variables = form.cleaned_data['variables']
-            environment_id = form.cleaned_data.get('environment')
-            
-            # Get template
-            template = EnvVarsTemplate.objects.get(id=template_id)
+            environment = form.cleaned_data.get('environment')  # This is already the Environment object
             
             # Create instance
             instance = EnvVarsInstance(
                 name=name,
                 description=description,
-                template=template,
+                template=template,  # Use the template object directly
                 recipe_type=recipe_type,
-                variables=variables
+                variables=variables,
+                environment=environment  # Use the environment object directly
             )
-            
-            # Add environment if selected
-            if environment_id:
-                try:
-                    environment = Environment.objects.get(id=environment_id)
-                    instance.environment = environment
-                except Environment.DoesNotExist:
-                    pass
             
             instance.save()
             messages.success(request, f"Environment variables instance '{name}' created successfully")
