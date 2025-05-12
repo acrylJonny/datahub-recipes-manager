@@ -82,6 +82,23 @@
                     </div>
                 </div>
                 
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_cron_schedule" class="form-label">Schedule (Cron Expression)</label>
+                        <input type="text" class="form-control" id="id_cron_schedule" name="cron_schedule" value="{{ form.cron_schedule.value|default:'0 0 * * *' }}" placeholder="0 0 * * *">
+                        <div class="form-text">Default: Daily at midnight (0 0 * * *)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="id_timezone" class="form-label">Timezone</label>
+                        <select class="form-select select2-enable" id="id_timezone" name="timezone">
+                            {% for value, text in form.fields.timezone.choices %}
+                            <option value="{{ value }}" {% if form.timezone.value == value or form.timezone.value|default:'' == '' and value == 'Etc/UTC' %}selected{% endif %}>{{ text }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Timezone for the cron schedule</div>
+                    </div>
+                </div>
+                
                 <div class="mb-3">
                     <label for="id_content" class="form-label">Recipe Content (YAML/JSON) <span class="text-danger">*</span></label>
                     

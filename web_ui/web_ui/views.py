@@ -1703,7 +1703,9 @@ def recipe_template_create(request):
                 description=form.cleaned_data['description'],
                 recipe_type=form.cleaned_data['recipe_type'],
                 content=form.cleaned_data['content'],
-                executor_id=form.cleaned_data.get('executor_id', 'default')
+                executor_id=form.cleaned_data.get('executor_id', 'default'),
+                cron_schedule=form.cleaned_data.get('cron_schedule', '0 0 * * *'),
+                timezone=form.cleaned_data.get('timezone', 'Etc/UTC')
             )
             
             # Handle tags
@@ -1734,6 +1736,8 @@ def recipe_template_edit(request, template_id):
             template.recipe_type = form.cleaned_data['recipe_type']
             template.content = form.cleaned_data['content']
             template.executor_id = form.cleaned_data.get('executor_id', 'default')
+            template.cron_schedule = form.cleaned_data.get('cron_schedule', '0 0 * * *')
+            template.timezone = form.cleaned_data.get('timezone', 'Etc/UTC')
             
             # Handle tags
             if form.cleaned_data['tags']:
@@ -1751,7 +1755,9 @@ def recipe_template_edit(request, template_id):
             'recipe_type': template.recipe_type,
             'content': template.content,
             'tags': template.tags,
-            'executor_id': template.executor_id
+            'executor_id': template.executor_id,
+            'cron_schedule': template.cron_schedule,
+            'timezone': template.timezone
         })
     
     return render(request, 'recipes/templates/edit.html', {
@@ -3215,11 +3221,20 @@ def env_vars_instance_push_github(request, instance_id):
             })
             
         logger.info(f"Successfully pushed environment variables instance {env_instance.name} to GitHub")
+        
+        # Get environment name for display (default to 'dev')
+        env_name = 'dev'
+        if env_instance.environment:
+            env_name = env_instance.environment.name
+            
+        # Get file name based on recipe type
+        file_name = f"{env_instance.recipe_type.lower()}.yml"
+        
         return JsonResponse({
             'success': True,
             'branch': result.get('branch', current_branch),
             'file_path': result.get('file_path', ''),
-            'message': f"Environment variables for '{env_instance.name}' added to branch {current_branch}"
+            'message': f"Environment variables for '{env_instance.name}' added to recipes/instances/{env_name}/{file_name} in branch {current_branch}"
         })
             
     except Exception as e:
@@ -3981,7 +3996,7 @@ def github_sync_all_policies(request):
 def github_revert_staged_file(request):
     """Revert/delete a staged file in the Git repository."""
     if request.method != 'POST':
-        return redirect('github')
+        return redirect('github_index')
         
     if not GitSettings.is_configured():
         messages.error(request, 'Git integration is not configured.')
@@ -3992,7 +4007,7 @@ def github_revert_staged_file(request):
     file_path = request.POST.get('file_path')
     if not file_path:
         messages.error(request, 'File path is required.')
-        return redirect('github')
+        return redirect('github_index')
         
     # Initialize Git service
     git_service = GitService()
@@ -4008,7 +4023,7 @@ def github_revert_staged_file(request):
     except Exception as e:
         messages.error(request, f'Error reverting staged changes: {str(e)}')
         
-    return redirect('github')
+    return redirect('github_index')
 
 @login_required
 def github_pull_request_detail(request, pr_id):
@@ -4803,35 +4818,25 @@ def recipe_instance_create(request):
             # Get form data
             name = form.cleaned_data['name']
             description = form.cleaned_data['description']
-            template_id = form.cleaned_data['template']
-            env_vars_instance_id = form.cleaned_data.get('env_vars_instance')
-            environment_id = form.cleaned_data.get('environment')
+            template = form.cleaned_data['template']  # This is a RecipeTemplate object, not an ID
+            env_vars_instance = form.cleaned_data.get('env_vars_instance')  # This is an EnvVarsInstance object or None
+            environment = form.cleaned_data.get('environment')  # This is an Environment object or None
+            cron_schedule = form.cleaned_data.get('cron_schedule') or '0 0 * * *'
+            timezone = form.cleaned_data.get('timezone') or 'UTC'
+            debug_mode = form.cleaned_data.get('debug_mode', False)
             
-            # Get models
-            template = RecipeTemplate.objects.get(id=template_id)
-            env_vars_instance = None
-            if env_vars_instance_id:
-                try:
-                    env_vars_instance = EnvVarsInstance.objects.get(id=env_vars_instance_id)
-                except EnvVarsInstance.DoesNotExist:
-                    pass
-                    
             # Create recipe instance
             instance = RecipeInstance(
                 name=name,
                 description=description,
-                template=template,
-                env_vars_instance=env_vars_instance
+                template=template,  # Use the object directly
+                env_vars_instance=env_vars_instance,  # Use the object directly
+                environment=environment,  # Use the object directly
+                cron_schedule=cron_schedule,
+                timezone=timezone,
+                debug_mode=debug_mode
             )
             
-            # Add environment if selected
-            if environment_id:
-                try:
-                    environment = Environment.objects.get(id=environment_id)
-                    instance.environment = environment
-                except Environment.DoesNotExist:
-                    pass
-                    
             instance.save()
             
             messages.success(request, f"Recipe instance '{name}' created successfully")
