@@ -1,0 +1,487 @@
+{% extends 'base.html' %}
+
+{% block title %}Recipes - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Manage Ingestion Recipes</h1>
+        <div>
+            <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-scroll me-1"></i> Recipe Templates
+            </a>
+            <a href="{% url 'recipe_create' %}" class="btn btn-primary ms-2">
+                <i class="fas fa-plus me-1"></i> Create New Recipe
+            </a>
+            <a href="{% url 'recipe_import' %}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-file-import me-1"></i> Import Recipe
+            </a>
+            <a href="{% url 'export_all_recipes' %}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-file-export me-1"></i> Export All Recipes
+            </a>
+        </div>
+    </div>
+
+    {% if not connection.connected %}
+        <div class="alert alert-warning" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Not connected to DataHub. Please check your connection settings.
+            <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+        </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="card mb-4">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">All Recipes</h5>
+            <div class="d-flex">
+                <div class="input-group">
+                    <input type="text" id="recipe-search" class="form-control form-control-sm me-2" 
+                           placeholder="Filter recipes..." value="">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clear-filter">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="ms-2">
+                    <a href="{% url 'recipes' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if recipes %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Schedule</th>
+                                <th>Status</th>
+                                <th width="25%">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for recipe in recipes %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'recipe_edit' recipe.urn %}" class="text-decoration-none">
+                                            {{ recipe.name }}
+                                        </a>
+                                    </td>
+                                    <td><code>{{ recipe.id|default:"N/A" }}</code></td>
+                                    <td class="align-middle">
+                                        <span class="badge bg-info d-flex align-items-center justify-content-center" style="width: fit-content">
+                                            {{ recipe.type }}
+                                        </span>
+                                    </td>
+                                    <td class="align-middle">
+                                        {% if recipe.formatted_schedule %}
+                                            <span class="badge bg-info d-flex align-items-center justify-content-center" style="width: fit-content">
+                                                {{ recipe.formatted_schedule }}
+                                            </span>
+                                        {% else %}
+                                            <span class="text-muted">None</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if recipe.is_active %}
+                                            <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{% url 'recipe_edit' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this recipe">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <a href="{% url 'recipe_download' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Download this recipe">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                            <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Save this recipe as a template">
+                                                <i class="fas fa-copy"></i>
+                                            </a>
+                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}" {% if recipe.id|slice:':4' == 'cli-' %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Cannot run CLI-created recipes from the UI" tabindex="0"{% else %}data-bs-toggle="tooltip" title="Run this recipe now"{% endif %}>
+                                                <i class="fas fa-play"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}" data-bs-toggle="modal" data-bs-target="#deleteRecipeModal" title="Delete this recipe">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                {% if is_paginated %}
+                    <div class="d-flex justify-content-center mt-3">
+                        <nav aria-label="Page navigation">
+                            <ul class="pagination">
+                                {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="First">
+                                            <span aria-hidden="true">&laquo;&laquo;</span>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Previous">
+                                            <span aria-hidden="true">&laquo;</span>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Next">
+                                            <span aria-hidden="true">&raquo;</span>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Last">
+                                            <span aria-hidden="true">&raquo;&raquo;</span>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="py-5 text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-code fa-4x text-muted"></i>
+                    </div>
+                    {% if request.GET.search %}
+                        <h4>No recipes found matching "{{ request.GET.search }}"</h4>
+                        <p class="text-muted">Try a different search term or <a href="{% url 'recipes' %}">view all recipes</a>.</p>
+                    {% else %}
+                        <h4>No recipes available</h4>
+                        <p class="text-muted">Create your first recipe to get started.</p>
+                        <a href="{% url 'recipe_create' %}" class="btn btn-primary mt-2">
+                            <i class="fas fa-plus me-1"></i> Create New Recipe
+                        </a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete Recipe Modal -->
+<div class="modal fade" id="deleteRecipeModal" tabindex="-1" aria-labelledby="deleteRecipeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteRecipeModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the recipe <strong id="delete-recipe-name"></strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-recipe-form" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get CSRF token
+        function getCSRFToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return value;
+                }
+            }
+            return null;
+        }
+        
+        // Handle delete recipe modal
+        const deleteModal = document.getElementById('deleteRecipeModal');
+        if (deleteModal) {
+            // Set up the modal data when opened
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const recipeId = button.getAttribute('data-recipe-id');
+                const recipeName = button.getAttribute('data-recipe-name');
+                
+                document.getElementById('delete-recipe-name').textContent = recipeName;
+                const deleteForm = document.getElementById('delete-recipe-form');
+                deleteForm.setAttribute('data-recipe-id', recipeId);
+                deleteForm.action = `/recipes/delete/${encodeURIComponent(recipeId)}/`;
+            });
+            
+            // Handle form submission with AJAX
+            document.getElementById('delete-recipe-form').addEventListener('submit', function(event) {
+                event.preventDefault();
+                
+                const recipeId = this.getAttribute('data-recipe-id');
+                const deleteButton = this.querySelector('button[type="submit"]');
+                const originalText = deleteButton.innerHTML;
+                
+                // Disable button and show spinner
+                deleteButton.disabled = true;
+                deleteButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Deleting...';
+                
+                // Send AJAX request to delete recipe
+                fetch(this.action, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken(),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide modal
+                    const modalInstance = bootstrap.Modal.getInstance(deleteModal);
+                    modalInstance.hide();
+                    
+                    if (data.success) {
+                        // Show success message and refresh the page
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Recipe deleted successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Show toast and reload page after a short delay
+                        const bsToast = new bootstrap.Toast(toast, { delay: 2000 });
+                        bsToast.show();
+                        
+                        // Reload the page after the toast is shown
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        // Re-enable button
+                        deleteButton.disabled = false;
+                        deleteButton.innerHTML = originalText;
+                        
+                        // Show error message
+                        alert(`Error: ${data.error || 'Failed to delete recipe'}`);
+                    }
+                })
+                .catch(error => {
+                    // Re-enable button
+                    deleteButton.disabled = false;
+                    deleteButton.innerHTML = originalText;
+                    
+                    // Hide modal
+                    const modalInstance = bootstrap.Modal.getInstance(deleteModal);
+                    modalInstance.hide();
+                    
+                    // Show error message
+                    alert(`Error: ${error.message || 'Failed to delete recipe'}`);
+                });
+            });
+        }
+        
+        // Handle run recipe buttons
+        const runButtons = document.querySelectorAll('.run-recipe-btn');
+        runButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const recipeId = this.getAttribute('data-recipe-id');
+                
+                // Disable button and show spinner
+                this.disabled = true;
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+                
+                // Send AJAX request to run recipe
+                fetch(`/recipes/run/${recipeId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken(),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    
+                    // Show notification
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Recipe started successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to run recipe'}`);
+                    }
+                })
+                .catch(error => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    
+                    // Show error
+                    alert(`Error: ${error.message || 'Failed to run recipe'}`);
+                });
+            });
+        });
+        
+        // Auto-refresh functionality
+        function setupAutoRefresh() {
+            const refreshRate = "{{ refresh_rate|default:60 }}";
+            const refreshRateNum = parseInt(refreshRate, 10);
+            if (refreshRateNum > 0) {
+                setTimeout(function() {
+                    window.location.reload();
+                }, refreshRateNum * 1000);
+            }
+        }
+        
+        // Initialize auto-refresh
+        setupAutoRefresh();
+        
+        // Client-side filtering functionality
+        const searchInput = document.getElementById('recipe-search');
+        const clearFilterButton = document.getElementById('clear-filter');
+        const recipeRows = document.querySelectorAll('tbody tr');
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', filterRecipes);
+            
+            // Clear filter button
+            if (clearFilterButton) {
+                clearFilterButton.addEventListener('click', function() {
+                    searchInput.value = '';
+                    filterRecipes();
+                });
+            }
+        }
+        
+        function filterRecipes() {
+            const searchTerm = searchInput.value.toLowerCase();
+            
+            recipeRows.forEach(row => {
+                const name = row.querySelector('td:first-child').textContent.toLowerCase();
+                const id = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+                const type = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+                const schedule = row.querySelector('td:nth-child(4)').textContent.toLowerCase();
+                
+                // Show row if any field contains the search term
+                if (name.includes(searchTerm) || 
+                    id.includes(searchTerm) || 
+                    type.includes(searchTerm) || 
+                    schedule.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Check if any rows are visible
+            const visibleRows = Array.from(recipeRows).filter(row => row.style.display !== 'none');
+            const noResultsMessage = document.getElementById('no-results-message');
+            
+            // Create or show/hide no results message
+            if (visibleRows.length === 0) {
+                if (!noResultsMessage) {
+                    const tableBody = document.querySelector('tbody');
+                    const container = tableBody.parentElement.parentElement;
+                    const message = document.createElement('div');
+                    message.id = 'no-results-message';
+                    message.className = 'py-4 text-center';
+                    message.innerHTML = `
+                        <i class="fas fa-search fa-2x text-muted mb-2"></i>
+                        <h5 class="text-muted">No recipes match your filter</h5>
+                        <button id="clear-filter-inline" class="btn btn-sm btn-outline-secondary mt-2">
+                            <i class="fas fa-times me-1"></i> Clear Filter
+                        </button>
+                    `;
+                    container.appendChild(message);
+                    
+                    document.getElementById('clear-filter-inline').addEventListener('click', function() {
+                        searchInput.value = '';
+                        filterRecipes();
+                    });
+                }
+            } else if (noResultsMessage) {
+                noResultsMessage.style.display = 'none';
+            }
+        }
+        
+        // Enable Bootstrap tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+            new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+</script>
+{% endblock %} 

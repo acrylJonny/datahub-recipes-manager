@@ -1,0 +1,205 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}DataHub CI/CD Manager{% endblock %}</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
+    <link rel="shortcut icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Custom Styles -->
+    <style>
+        :root {
+            --datahub-primary: #0072b1;
+            --datahub-secondary: #6c757d;
+            --datahub-success: #28a745;
+            --datahub-warning: #ffc107;
+            --datahub-danger: #dc3545;
+        }
+        
+        .sidebar {
+            min-height: calc(100vh - 56px);
+            background-color: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+        }
+        
+        .sidebar .nav-link {
+            color: #333;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .sidebar .nav-link:hover {
+            background-color: #e9ecef;
+        }
+        
+        .sidebar .nav-link.active {
+            background-color: var(--datahub-primary);
+            color: white;
+        }
+        
+        .navbar-brand img {
+            height: 30px;
+            margin-right: 0.5rem;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        
+        .status-connected {
+            background-color: var(--datahub-success);
+        }
+        
+        .status-disconnected {
+            background-color: var(--datahub-danger);
+        }
+    </style>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="{% url 'dashboard' %}">
+                    <img src="{% static 'images/favicon.png' %}" alt="DataHub Logo" height="30" class="me-2">DataHub CI/CD Manager
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                        aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/dashboard/' %} active{% endif %}" href="{% url 'dashboard' %}">
+                                <i class="fas fa-tachometer-alt fa-fw me-2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle{% if request.path|slice:':9' == '/recipes/' or request.path|slice:':16' == '/recipe-instances' %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-file-code fa-fw me-2"></i> Recipes
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/recipes/' %} active{% endif %}" href="{% url 'recipes' %}">
+                                        <i class="fas fa-list fa-fw me-2"></i> All Recipes
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/recipe-instances/' %} active{% endif %}" href="{% url 'recipe_instances' %}">
+                                        <i class="fas fa-cubes fa-fw me-2"></i> Recipe Instances
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/recipe-templates/' %} active{% endif %}" href="{% url 'recipe_templates' %}">
+                                        <i class="fas fa-scroll fa-fw me-2"></i> Recipe Templates
+                                    </a>
+                                </li>
+                            </ul>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/policies/' %} active{% endif %}" href="{% url 'policies' %}">
+                                <i class="fas fa-shield-alt fa-fw me-2"></i> Policies
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/environments/' %} active{% endif %}" href="{% url 'environments' %}">
+                                <i class="fas fa-server fa-fw me-2"></i> Environments
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'github_index' %}">
+                                <i class="fab fa-git-alt"></i> Git Repository
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.path == '/logs/' %} active{% endif %}" href="{% url 'logs' %}">
+                                <i class="fas fa-clipboard-list fa-fw me-2"></i> Logs
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="d-flex">
+                        <span class="navbar-text me-3">
+                            {% if request.session.datahub_connected %}
+                                <span class="badge bg-success d-inline-flex align-items-center"><i class="fas fa-check-circle me-1"></i> Connected</span>
+                            {% else %}
+                                <span class="badge bg-danger d-inline-flex align-items-center"><i class="fas fa-exclamation-circle me-1"></i> Not Connected</span>
+                            {% endif %}
+                        </span>
+                        {% if default_environment %}
+                        <span class="navbar-text me-3">
+                            <span class="badge bg-info d-inline-flex align-items-center">
+                                <i class="fas fa-server me-1"></i> Env: {{ default_environment.name }}
+                            </span>
+                        </span>
+                        {% endif %}
+                        <a href="{% url 'settings' %}" class="btn btn-outline-light btn-sm d-flex align-items-center">
+                            <i class="fas fa-cog me-1"></i> Configure
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+    
+    <main class="py-4">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer class="footer mt-auto py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">DataHub CI/CD Manager &copy; {% now "Y" %}</span>
+            <div class="mt-2">
+                <a href="https://datahub.com/" target="_blank" class="text-muted text-decoration-none me-3">
+                    <i class="fas fa-globe me-1"></i> DataHub Project
+                </a>
+                <a href="https://github.com/datahub-project/datahub" target="_blank" class="text-muted text-decoration-none">
+                    <i class="fab fa-github me-1"></i> GitHub
+                </a>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Custom JS -->
+    <script src="{% static 'js/scripts.js' %}"></script>
+    <!-- Initialize tooltips -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize all tooltips
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"], [title]:not([data-bs-toggle="modal"]):not([data-bs-toggle="tab"])'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            
+            // Re-initialize tooltips after AJAX content is loaded
+            document.addEventListener('ajax-content-loaded', function() {
+                var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"], [title]:not([data-bs-toggle="modal"]):not([data-bs-toggle="tab"])'));
+                var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            });
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html> 

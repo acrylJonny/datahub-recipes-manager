@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+
+{% block title %}Environment Variable Templates - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Environment Variable Templates</h1>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">All Templates</h5>
+            <div class="d-flex">
+                <form action="{% url 'env_vars_templates' %}" method="GET" class="d-flex">
+                    <input type="text" name="search" class="form-control form-control-sm me-2" 
+                           placeholder="Search templates..." value="{{ request.GET.search }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </form>
+                <div class="ms-2">
+                    <a href="{% url 'env_vars_templates' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if templates %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Recipe Type</th>
+                                <th>Description</th>
+                                <th>Tags</th>
+                                <th>Updated</th>
+                                <th width="15%">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for template in templates %}
+                                <tr>
+                                    <td>{{ template.name }}</td>
+                                    <td><span class="badge bg-secondary">{{ template.recipe_type }}</span></td>
+                                    <td>{{ template.description|default:"-" }}</td>
+                                    <td>
+                                        {% for tag in template.get_tags_list %}
+                                            <span class="badge bg-info me-1">{{ tag }}</span>
+                                        {% empty %}
+                                            -
+                                        {% endfor %}
+                                    </td>
+                                    <td>{{ template.updated_at|date:"Y-m-d H:i" }}</td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <button type="button" class="btn btn-sm btn-outline-primary use-template" 
+                                                    data-template-id="{{ template.id }}" title="Use Template">
+                                                <i class="fas fa-download"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-danger delete-template" 
+                                                    data-bs-toggle="modal" data-bs-target="#deleteTemplateModal"
+                                                    data-template-id="{{ template.id }}" data-template-name="{{ template.name }}" 
+                                                    title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <div class="mb-3">
+                        <i class="fas fa-clipboard-list fa-4x text-muted"></i>
+                    </div>
+                    <h4>No environment variable templates available</h4>
+                    <p class="text-muted">Templates are created when editing recipes.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete Template Modal -->
+<div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTemplateModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the template <strong id="delete-template-name"></strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-template-form" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle delete template modal
+        const deleteModal = document.getElementById('deleteTemplateModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const templateId = button.getAttribute('data-template-id');
+                const templateName = button.getAttribute('data-template-name');
+                
+                document.getElementById('delete-template-name').textContent = templateName;
+                document.getElementById('delete-template-form').action = `/env-vars-templates/delete/${templateId}/`;
+            });
+        }
+        
+        // Handle use template buttons
+        document.querySelectorAll('.use-template').forEach(button => {
+            button.addEventListener('click', function() {
+                const templateId = this.getAttribute('data-template-id');
+                alert('This functionality is available when editing a recipe.');
+            });
+        });
+    });
+</script>
+{% endblock %} 

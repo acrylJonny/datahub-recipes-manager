@@ -1,0 +1,499 @@
+{% extends 'base.html' %}
+
+{% block title %}Deploy Recipe Template -DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipes' %}">Recipes</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipe_templates' %}">Templates</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipe_template_detail' template_id=template.id %}">{{ template.name }}</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Deploy</li>
+            </ol>
+        </nav>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Deploy Template: {{ template.name }}</h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Template
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Deployment Configuration</h5>
+            <span class="badge bg-primary">{{ template.recipe_type }}</span>
+        </div>
+        <div class="card-body">
+            <form method="post" id="deployForm">
+                {% csrf_token %}
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_recipe_name" class="form-label">Recipe Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="id_recipe_name" name="recipe_name" value="{{ form.recipe_name.value|default:'' }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="id_recipe_id" class="form-label">Recipe ID <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="id_recipe_id" name="recipe_id" value="{{ form.recipe_id.value|default:'' }}" required>
+                        <div class="form-text">Unique identifier for this recipe instance</div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_schedule_cron" class="form-label">Schedule (Cron Expression)</label>
+                        <input type="text" class="form-control" id="id_schedule_cron" name="schedule_cron" value="{{ form.schedule_cron.value|default:'' }}" placeholder="0 0 * * *">
+                        <div class="form-text">Leave empty for manually triggered recipes</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="id_schedule_timezone" class="form-label">Timezone</label>
+                        <input type="text" class="form-control" id="id_schedule_timezone" name="schedule_timezone" value="{{ form.schedule_timezone.value|default:'UTC' }}" placeholder="UTC">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_description" class="form-label">Description</label>
+                    <textarea class="form-control" id="id_description" name="description" rows="3">{{ form.description.value|default:'' }}</textarea>
+                </div>
+
+                <!-- Environment Variables Section -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-cogs me-2"></i> Environment Variables
+                        </h5>
+                        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#loadEnvVarsInstanceModal">
+                            <i class="fa fa-download me-1"></i> Load from Instance
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Set values for environment variables used in this template. Mark sensitive values as "Secret" to mask them.
+                            You can load values from an environment variable instance using the button above.
+                        </div>
+                        
+                        <div id="env-vars-container">
+                            <!-- Variables will be loaded here -->
+                            <div class="text-center py-3" id="loading-vars">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2">Loading environment variables...</p>
+                            </div>
+                            <div id="no-vars-message" style="display: none;" class="text-center py-3">
+                                <p class="text-muted">No environment variables found in this template.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Hidden input to store environment variables as JSON -->
+                        {{ form.environment_variables }}
+                    </div>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    This will create a new recipe in DataHub using the template content.
+                </div>
+                
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-rocket me-1"></i> Deploy to DataHub
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Load Environment Variables Instance Modal -->
+<div class="modal fade" id="loadEnvVarsInstanceModal" tabindex="-1" aria-labelledby="loadEnvVarsInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="loadEnvVarsInstanceModalLabel">Load Environment Variables Instance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="instanceSearchInput" placeholder="Search instances...">
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover" id="envVarsInstancesTable">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Recipe Type</th>
+                                <th>Description</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Will be populated via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="noInstancesMessage" class="text-center py-3 d-none">
+                    <p class="text-muted">No environment variable instances found.</p>
+                </div>
+                <div id="loadingInstances" class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Template content to extract environment variables
+    let templateContent = `{{ template.content|escapejs }}`;
+    const envVarsContainer = document.getElementById('env-vars-container');
+    const loadingIndicator = document.getElementById('loading-vars');
+    const noVarsMessage = document.getElementById('no-vars-message');
+    const envVarsInput = document.getElementById('env_vars_json');
+    const envVarsData = {};
+    
+    // Load environment variables instance modal
+    const loadInstancesModal = new bootstrap.Modal(document.getElementById('loadEnvVarsInstanceModal'));
+    
+    // Extract environment variables from the template
+    setTimeout(() => {
+        // Parse template content to detect environment variables
+        const envVars = extractEnvironmentVariables(templateContent);
+        
+        if (envVars.length === 0) {
+            loadingIndicator.style.display = 'none';
+            noVarsMessage.style.display = 'block';
+        } else {
+            loadingIndicator.style.display = 'none';
+            renderEnvironmentVariables(envVars);
+        }
+    }, 500);
+    
+    // Function to extract environment variables from template
+    function extractEnvironmentVariables(content) {
+        const envVars = [];
+        const regex = /\${([^}]+)}/g;
+        let match;
+        
+        try {
+            // Handle both JSON and YAML formats
+            if (content.trim().startsWith('{')) {
+                // Already JSON
+            } else {
+                // Try to convert to JSON for easier processing
+                try {
+                    const jsyaml = window.jsyaml;
+                    if (jsyaml) {
+                        const obj = jsyaml.load(content);
+                        content = JSON.stringify(obj);
+                    }
+                } catch (e) {
+                    console.error('Error parsing YAML:', e);
+                }
+            }
+            
+            // Find all ${VAR} occurrences
+            while ((match = regex.exec(content)) !== null) {
+                const varName = match[1];
+                if (!envVars.includes(varName)) {
+                    envVars.push(varName);
+                }
+            }
+        } catch (e) {
+            console.error('Error extracting environment variables:', e);
+        }
+        
+        return envVars;
+    }
+    
+    // Function to render environment variables UI
+    function renderEnvironmentVariables(variables) {
+        let html = '';
+        
+        html += '<div class="table-responsive">';
+        html += '<table class="table table-striped">';
+        html += '<thead>';
+        html += '<tr>';
+        html += '<th>Variable Name</th>';
+        html += '<th>Value</th>';
+        html += '<th>Secret</th>';
+        html += '</tr>';
+        html += '</thead>';
+        html += '<tbody>';
+        
+        variables.forEach((varName, index) => {
+            // Initialize the variable data
+            envVarsData[varName] = {
+                value: '',
+                isSecret: false
+            };
+            
+            html += `<tr data-var="${varName}">`;
+            html += `<td><code>${varName}</code></td>`;
+            html += `<td><input type="text" class="form-control env-var-value" data-var="${varName}" placeholder="Enter value"></td>`;
+            html += `<td>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input secret-toggle" type="checkbox" role="switch" id="secret_${index}" data-var="${varName}">
+                        <label class="form-check-label" for="secret_${index}">
+                            <i class="fas fa-lock text-muted"></i>
+                        </label>
+                    </div>
+                </td>`;
+            html += '</tr>';
+        });
+        
+        html += '</tbody>';
+        html += '</table>';
+        html += '</div>';
+        
+        envVarsContainer.innerHTML = html;
+        
+        // Add event listeners
+        document.querySelectorAll('.env-var-value').forEach(input => {
+            input.addEventListener('input', updateEnvironmentVariables);
+        });
+        
+        document.querySelectorAll('.secret-toggle').forEach(toggle => {
+            toggle.addEventListener('change', function() {
+                const varName = this.getAttribute('data-var');
+                envVarsData[varName].isSecret = this.checked;
+                updateEnvironmentVariables();
+                
+                // Update visual indicator for secret fields
+                const inputField = document.querySelector(`.env-var-value[data-var="${varName}"]`);
+                if (this.checked) {
+                    inputField.setAttribute('type', 'password');
+                } else {
+                    inputField.setAttribute('type', 'text');
+                }
+            });
+        });
+        
+        // Initial update
+        updateEnvironmentVariables();
+    }
+    
+    // Function to update the hidden input with environment variables data
+    function updateEnvironmentVariables() {
+        document.querySelectorAll('.env-var-value').forEach(input => {
+            const varName = input.getAttribute('data-var');
+            envVarsData[varName].value = input.value;
+        });
+        
+        envVarsInput.value = JSON.stringify(envVarsData);
+    }
+    
+    // Form submission
+    document.getElementById('deployForm').addEventListener('submit', function(e) {
+        // Make sure the environment variables are updated before submission
+        updateEnvironmentVariables();
+    });
+    
+    // Load the environment variables instances when the modal is shown
+    const loadEnvVarsInstanceModal = document.getElementById('loadEnvVarsInstanceModal');
+    if (loadEnvVarsInstanceModal) {
+        loadEnvVarsInstanceModal.addEventListener('show.bs.modal', function() {
+            loadEnvironmentVariablesInstances();
+        });
+    }
+    
+    // Function to load environment variables instances
+    function loadEnvironmentVariablesInstances() {
+        const tableBody = document.querySelector('#envVarsInstancesTable tbody');
+        const loadingElement = document.getElementById('loadingInstances');
+        const noInstancesMessage = document.getElementById('noInstancesMessage');
+        
+        // Show loading
+        loadingElement.classList.remove('d-none');
+        noInstancesMessage.classList.add('d-none');
+        tableBody.innerHTML = '';
+        
+        // Fetch instances
+        fetch('/env-vars/instances/list/', {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Hide loading
+            loadingElement.classList.add('d-none');
+            
+            if (data.instances && data.instances.length > 0) {
+                // Filter instances to match the recipe type
+                const recipeType = '{{ template.recipe_type }}';
+                const filteredInstances = data.instances.filter(instance => 
+                    instance.recipe_type === recipeType || instance.recipe_type === '');
+                
+                if (filteredInstances.length > 0) {
+                    // Populate table
+                    let html = '';
+                    
+                    filteredInstances.forEach(instance => {
+                        html += `<tr>
+                            <td>${instance.name}</td>
+                            <td><span class="badge bg-secondary">${instance.recipe_type}</span></td>
+                            <td>${instance.description || ''}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-primary load-instance" 
+                                        data-instance-id="${instance.id}">
+                                    <i class="fas fa-download me-1"></i> Load
+                                </button>
+                            </td>
+                        </tr>`;
+                    });
+                    
+                    tableBody.innerHTML = html;
+                    
+                    // Add event listeners to load buttons
+                    document.querySelectorAll('.load-instance').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const instanceId = this.getAttribute('data-instance-id');
+                            loadInstanceById(instanceId);
+                        });
+                    });
+                } else {
+                    // Show no instances message
+                    noInstancesMessage.classList.remove('d-none');
+                }
+            } else {
+                // Show no instances message
+                noInstancesMessage.classList.remove('d-none');
+            }
+        })
+        .catch(error => {
+            loadingElement.classList.add('d-none');
+            noInstancesMessage.classList.remove('d-none');
+            console.error('Error loading instances:', error);
+        });
+    }
+    
+    // Function to load an instance by ID
+    function loadInstanceById(instanceId) {
+        fetch(`/env-vars/instances/${instanceId}/json/`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.instance) {
+                // Map instance variables to envVarsData format
+                const instanceVars = data.instance.variables;
+                
+                // For each variable in our environment, find a matching one in the instance
+                for (const varName in envVarsData) {
+                    if (instanceVars[varName]) {
+                        envVarsData[varName].value = instanceVars[varName].value || '';
+                        envVarsData[varName].isSecret = instanceVars[varName].is_secret || false;
+                    }
+                }
+                
+                // Update the UI
+                document.querySelectorAll('.env-var-value').forEach(input => {
+                    const varName = input.getAttribute('data-var');
+                    if (envVarsData[varName]) {
+                        input.value = envVarsData[varName].value;
+                        
+                        // Update the secret toggle
+                        const toggle = document.querySelector(`.secret-toggle[data-var="${varName}"]`);
+                        if (toggle) {
+                            toggle.checked = envVarsData[varName].isSecret;
+                            
+                            // Update input type
+                            if (envVarsData[varName].isSecret) {
+                                input.setAttribute('type', 'password');
+                            } else {
+                                input.setAttribute('type', 'text');
+                            }
+                        }
+                    }
+                });
+                
+                // Update the hidden input
+                updateEnvironmentVariables();
+                
+                // Close the modal
+                loadInstancesModal.hide();
+                
+                // Show success message
+                alert(`Environment variables loaded from instance "${data.instance.name}" successfully!`);
+            } else {
+                alert('Error loading instance: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
+        });
+    }
+    
+    // Search functionality for instances
+    const instanceSearchInput = document.getElementById('instanceSearchInput');
+    if (instanceSearchInput) {
+        instanceSearchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const rows = document.querySelectorAll('#envVarsInstancesTable tbody tr');
+            
+            rows.forEach(row => {
+                const name = row.cells[0].textContent.toLowerCase();
+                const type = row.cells[1].textContent.toLowerCase();
+                const description = row.cells[2].textContent.toLowerCase();
+                
+                if (name.includes(searchTerm) || type.includes(searchTerm) || 
+                    description.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    }
+    
+    // Helper function to get CSRF token
+    function getCsrfToken() {
+        return document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    }
+});
+</script>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+    .env-var-value[type="password"] {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+</style>
+{% endblock %} 

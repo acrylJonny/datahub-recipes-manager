@@ -18,11 +18,7 @@ from utils.datahub_api import DataHubClient
 
 
 def update_ingestion_schedule(
-        server: str,
-        token: str,
-        source_id: str,
-        cron: str,
-        timezone: str
+    server: str, token: str, source_id: str, cron: str, timezone: str
 ) -> bool:
     """
     Update the schedule of a DataHub ingestion source using the SDK
@@ -59,10 +55,12 @@ def update_ingestion_schedule(
 
 def main():
     parser = argparse.ArgumentParser(description="Update DataHub ingestion schedule")
-    parser.add_argument('--source-id', required=True, help='Source ID to update')
-    parser.add_argument('--cron', required=True, help='Cron expression for the schedule')
-    parser.add_argument('--timezone', default='UTC', help='Timezone for the schedule')
-    parser.add_argument('--env-file', help='Path to .env file for secrets')
+    parser.add_argument("--source-id", required=True, help="Source ID to update")
+    parser.add_argument(
+        "--cron", required=True, help="Cron expression for the schedule"
+    )
+    parser.add_argument("--timezone", default="UTC", help="Timezone for the schedule")
+    parser.add_argument("--env-file", help="Path to .env file for secrets")
 
     args = parser.parse_args()
 
@@ -73,11 +71,13 @@ def main():
     # Get DataHub configuration from environment variables
     datahub_config = {
         "server": os.environ.get("DATAHUB_GMS_URL", ""),
-        "token": os.environ.get("DATAHUB_TOKEN", "")
+        "token": os.environ.get("DATAHUB_TOKEN", ""),
     }
 
     if not datahub_config["server"] or not datahub_config["token"]:
-        raise ValueError("DATAHUB_GMS_URL and DATAHUB_TOKEN environment variables must be set")
+        raise ValueError(
+            "DATAHUB_GMS_URL and DATAHUB_TOKEN environment variables must be set"
+        )
 
     # Update schedule
     result = update_ingestion_schedule(
@@ -85,7 +85,7 @@ def main():
         token=datahub_config["token"],
         source_id=args.source_id,
         cron=args.cron,
-        timezone=args.timezone
+        timezone=args.timezone,
     )
 
     return 0

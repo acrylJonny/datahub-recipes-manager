@@ -57,5 +57,5 @@ web_ui/staticfiles/
 web_ui/media/
 web_ui/logs/
 
-# Local policy files
-policies/*.json 
+# Local Workflow Analysis
+workflow_analysis.md

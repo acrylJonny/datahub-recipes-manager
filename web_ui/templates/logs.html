@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+
+{% block title %}Logs - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Application Logs</h1>
+        <div>
+            <span class="badge bg-secondary me-2">
+                <i class="fas fa-cog me-1"></i> Log Level: {{ configured_level }}
+            </span>
+            <a href="{% url 'settings' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-cog me-1"></i> Settings
+            </a>
+            <a href="#" class="btn btn-outline-danger ms-2" data-bs-toggle="modal" data-bs-target="#clearLogsModal">
+                <i class="fas fa-trash me-1"></i> Clear Logs
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Filters</h5>
+        </div>
+        <div class="card-body">
+            <form action="{% url 'logs' %}" method="GET" class="row g-3">
+                <div class="col-md-3">
+                    <label for="level" class="form-label">Log Level</label>
+                    <select class="form-select" id="level" name="level">
+                        <option value="">All Levels</option>
+                        {% for level in log_levels %}
+                            <option value="{{ level }}" {% if current_level == level %}selected{% endif %}>{{ level }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="source" class="form-label">Source</label>
+                    <select class="form-select" id="source" name="source">
+                        <option value="">All Sources</option>
+                        {% for source in sources %}
+                            <option value="{{ source }}" {% if current_source == source %}selected{% endif %}>{{ source }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="date" class="form-label">Date</label>
+                    <input type="date" class="form-control" id="date" name="date" value="{{ date_filter }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="search" class="form-label">Search</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="search" name="search" 
+                               placeholder="Search messages..." value="{{ search_query }}">
+                        <button class="btn btn-outline-secondary" type="submit">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-12 mt-3">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-filter me-1"></i> Apply Filters
+                    </button>
+                    <a href="{% url 'logs' %}" class="btn btn-outline-secondary ms-2">
+                        <i class="fas fa-undo me-1"></i> Clear Filters
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Logs Table -->
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Log Entries</h5>
+            <div>
+                <span class="badge bg-primary">{{ logs.paginator.count }} entries</span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if logs %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 180px;">Timestamp</th>
+                                <th style="width: 100px;">Level</th>
+                                <th style="width: 150px;">Source</th>
+                                <th>Message</th>
+                                <th style="width: 80px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in logs %}
+                                <tr>
+                                    <td>{{ log.timestamp|date:"Y-m-d H:i:s" }}</td>
+                                    <td>
+                                        <span class="badge bg-{% if log.level == 'DEBUG' %}secondary{% elif log.level == 'INFO' %}info{% elif log.level == 'WARNING' %}warning{% elif log.level == 'ERROR' %}danger{% elif log.level == 'CRITICAL' %}dark{% endif %}">
+                                            {{ log.level }}
+                                        </span>
+                                    </td>
+                                    <td><code>{{ log.source }}</code></td>
+                                    <td>{{ log.message }}</td>
+                                    <td>
+                                        {% if log.details %}
+                                            <button type="button" class="btn btn-sm btn-outline-info" 
+                                                    data-bs-toggle="modal" data-bs-target="#logDetailsModal{{ log.id }}">
+                                                <i class="fas fa-info-circle"></i>
+                                            </button>
+                                            
+                                            <!-- Log Details Modal -->
+                                            <div class="modal fade" id="logDetailsModal{{ log.id }}" tabindex="-1" aria-labelledby="logDetailsModalLabel{{ log.id }}" aria-hidden="true">
+                                                <div class="modal-dialog modal-lg">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <h5 class="modal-title" id="logDetailsModalLabel{{ log.id }}">Log Details</h5>
+                                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            <div class="mb-3">
+                                                                <strong>Timestamp:</strong> {{ log.timestamp|date:"Y-m-d H:i:s" }}
+                                                            </div>
+                                                            <div class="mb-3">
+                                                                <strong>Level:</strong> 
+                                                                <span class="badge bg-{% if log.level == 'DEBUG' %}secondary{% elif log.level == 'INFO' %}info{% elif log.level == 'WARNING' %}warning{% elif log.level == 'ERROR' %}danger{% elif log.level == 'CRITICAL' %}dark{% endif %}">
+                                                                    {{ log.level }}
+                                                                </span>
+                                                            </div>
+                                                            <div class="mb-3">
+                                                                <strong>Source:</strong> {{ log.source }}
+                                                            </div>
+                                                            <div class="mb-3">
+                                                                <strong>Message:</strong>
+                                                                <p>{{ log.message }}</p>
+                                                            </div>
+                                                            <div>
+                                                                <strong>Details:</strong>
+                                                                <pre class="bg-light p-3 mt-2"><code>{{ log.details }}</code></pre>
+                                                            </div>
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                {% if logs.paginator.num_pages > 1 %}
+                    <div class="d-flex justify-content-center mt-3 mb-3">
+                        <nav aria-label="Log pagination">
+                            <ul class="pagination">
+                                {% if logs.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if current_level %}&level={{ current_level }}{% endif %}{% if current_source %}&source={{ current_source }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}" aria-label="First">
+                                            <span aria-hidden="true">&laquo;&laquo;</span>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ logs.previous_page_number }}{% if current_level %}&level={{ current_level }}{% endif %}{% if current_source %}&source={{ current_source }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}" aria-label="Previous">
+                                            <span aria-hidden="true">&laquo;</span>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for num in logs.paginator.page_range %}
+                                    {% if logs.number == num %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ num }}</span>
+                                        </li>
+                                    {% elif num > logs.number|add:'-3' and num < logs.number|add:'3' %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ num }}{% if current_level %}&level={{ current_level }}{% endif %}{% if current_source %}&source={{ current_source }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}">{{ num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if logs.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ logs.next_page_number }}{% if current_level %}&level={{ current_level }}{% endif %}{% if current_source %}&source={{ current_source }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}" aria-label="Next">
+                                            <span aria-hidden="true">&raquo;</span>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ logs.paginator.num_pages }}{% if current_level %}&level={{ current_level }}{% endif %}{% if current_source %}&source={{ current_source }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}{% if date_filter %}&date={{ date_filter }}{% endif %}" aria-label="Last">
+                                            <span aria-hidden="true">&raquo;&raquo;</span>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="text-center py-5">
+                    <div class="mb-3">
+                        <i class="fas fa-clipboard-list fa-4x text-muted"></i>
+                    </div>
+                    <h4>No logs found</h4>
+                    {% if current_level or current_source or search_query or date_filter %}
+                        <p class="text-muted">No logs match your filter criteria.</p>
+                        <a href="{% url 'logs' %}" class="btn btn-outline-secondary mt-2">
+                            <i class="fas fa-undo me-1"></i> Clear Filters
+                        </a>
+                    {% else %}
+                        <p class="text-muted">The application has not generated any logs yet.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Clear Logs Modal -->
+<div class="modal fade" id="clearLogsModal" tabindex="-1" aria-labelledby="clearLogsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clearLogsModalLabel">Confirm Clear Logs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to clear all logs? This action cannot be undone.</p>
+                
+                <form id="clearLogsForm" action="{% url 'logs' %}" method="POST">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="clear_logs">
+                    
+                    <div class="mb-3">
+                        <label for="clearLogLevel" class="form-label">Level to Clear:</label>
+                        <select class="form-select" id="clearLogLevel" name="clear_level">
+                            <option value="">All Levels</option>
+                            {% for level in log_levels %}
+                                <option value="{{ level }}">{{ level }} and below</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="clearBeforeDate" class="form-label">Clear Before:</label>
+                        <input type="date" class="form-control" id="clearBeforeDate" name="clear_before_date">
+                        <div class="form-text">Leave empty to clear all logs regardless of date.</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="clearLogsForm" class="btn btn-danger">Clear Logs</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

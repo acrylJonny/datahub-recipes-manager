@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+
+{% block title %}{{ instance.name }} - Environment Variable Instance{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{% url 'env_vars_instances' %}">Environment Variable Instances</a></li>
+                <li class="breadcrumb-item active">{{ instance.name }}</li>
+            </ol>
+        </nav>
+        <div>
+            <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-primary">
+                <i class="fa fa-edit me-1"></i> Edit Instance
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-md-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <!-- Instance Details -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fa fa-info-circle me-2"></i> Instance Details
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Name</label>
+                        <p>{{ instance.name }}</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Template</label>
+                        <p>
+                            {% if instance.template %}
+                            <span class="badge bg-secondary">{{ instance.template.name }}</span>
+                            {% else %}
+                            <span class="text-muted">No template</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Recipe Type</label>
+                        <p>{{ instance.get_recipe_type_display }}</p>
+                    </div>
+                    
+                    {% if instance.tenant %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Tenant</label>
+                        <p>{{ instance.tenant }}</p>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Description</label>
+                        <p>{{ instance.description|default:"No description provided."|linebreaks }}</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Created</label>
+                        <p>{{ instance.created_at|date:"F j, Y, g:i a" }}</p>
+                    </div>
+                    
+                    <div>
+                        <label class="form-label fw-bold">Last Updated</label>
+                        <p>{{ instance.updated_at|date:"F j, Y, g:i a" }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Environment Variables -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fa fa-key me-2"></i> Environment Variables
+                    </h5>
+                    <span class="badge bg-primary">{{ variables|length }}</span>
+                </div>
+                <div class="card-body">
+                    {% if variables %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Key</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for key, value in variables.items %}
+                                <tr>
+                                    <td class="fw-bold text-nowrap">{{ key }}</td>
+                                    <td>
+                                        {% if value.isSecret %}
+                                        <span class="text-muted">
+                                            <i class="fa fa-lock me-1"></i> [Hidden]
+                                        </span>
+                                        {% else %}
+                                        {{ value.value }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="fa fa-key fa-2x text-muted mb-2"></i>
+                        <p class="text-muted">No environment variables defined for this instance.</p>
+                        <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-sm btn-outline-primary">
+                            <i class="fa fa-plus me-1"></i> Add Variables
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Associated Recipes -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fa fa-list me-2"></i> Associated Recipes
+                    </h5>
+                    <span class="badge bg-secondary">{{ recipes|length }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if recipes %}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Schedule</th>
+                                    <th>Status</th>
+                                    <th>Last Updated</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for recipe in recipes %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'recipe_detail' recipe.id %}" class="text-decoration-none fw-bold">
+                                            {{ recipe.name }}
+                                        </a>
+                                    </td>
+                                    <td>{{ recipe.get_type_display }}</td>
+                                    <td>
+                                        {% if recipe.schedule %}
+                                        <span class="badge bg-info">
+                                            <i class="fa fa-clock me-1"></i> {{ recipe.schedule }}
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Manual</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if recipe.status == 'active' %}
+                                        <span class="badge bg-success"><i class="fa fa-check-circle me-1"></i> Active</span>
+                                        {% elif recipe.status == 'inactive' %}
+                                        <span class="badge bg-warning text-dark"><i class="fa fa-pause-circle me-1"></i> Inactive</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary"><i class="fa fa-question-circle me-1"></i> {{ recipe.status|title }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ recipe.updated_at|date:"M d, Y H:i" }}</td>
+                                    <td class="text-end">
+                                        <a href="{% url 'recipe_detail' recipe.id %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fa fa-eye"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="fa fa-code fa-2x text-muted mb-2"></i>
+                        <p class="text-muted">No recipes are using this environment variable instance.</p>
+                        <a href="{% url 'recipes' %}" class="btn btn-sm btn-outline-primary">
+                            <i class="fa fa-list me-1"></i> View All Recipes
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Danger Zone -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fa fa-exclamation-triangle me-2"></i> Danger Zone
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6>Delete This Environment Variable Instance</h6>
+                            <p class="text-muted mb-0">
+                                Once deleted, this environment variable instance will be removed from all associated recipes.
+                                This action cannot be undone.
+                            </p>
+                        </div>
+                        <button type="button" class="btn btn-outline-danger" 
+                                data-bs-toggle="modal" data-bs-target="#deleteModal"
+                                data-instance-id="{{ instance.id }}"
+                                data-instance-name="{{ instance.name }}"
+                                data-recipe-count="{{ recipes|length }}">
+                            Delete Instance
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the instance "<span id="instanceName"></span>"?</p>
+                <div id="recipeWarning" class="alert alert-warning d-none">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    This instance is used by <strong><span id="recipeCount"></span> recipes</strong>. 
+                    Deleting it will remove these environment variables from the associated recipes.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{% url 'env_vars_instance_delete' instance.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete Instance</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // Configure delete modal
+        $('#deleteModal').on('show.bs.modal', function(event) {
+            const button = $(event.relatedTarget);
+            const instanceName = button.data('instance-name');
+            const recipeCount = button.data('recipe-count');
+            
+            // Update modal content
+            $('#instanceName').text(instanceName);
+            
+            // Show warning if instance has associated recipes
+            if (recipeCount > 0) {
+                $('#recipeCount').text(recipeCount);
+                $('#recipeWarning').removeClass('d-none');
+            } else {
+                $('#recipeWarning').addClass('d-none');
+            }
+        });
+    });
+</script>
+{% endblock %} 

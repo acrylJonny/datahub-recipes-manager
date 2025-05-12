@@ -1,0 +1,287 @@
+{% extends 'base.html' %}
+
+{% block title %}Recipes - DataHub CI/CD Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .recipe-actions .dropdown-toggle::after {
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h2 mb-0">Recipes</h1>
+        <p class="text-muted">Manage your DataHub ingestion recipes</p>
+    </div>
+    <div>
+        <a href="{% url 'recipe_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i> Create Recipe
+        </a>
+        <a href="{% url 'recipe_import' %}" class="btn btn-outline-secondary ms-2">
+            <i class="fas fa-file-import me-1"></i> Import
+        </a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label for="search" class="form-label">Search</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" id="search" name="search" 
+                           placeholder="Search by name or description" value="{{ request.GET.search|default:'' }}">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label for="status" class="form-label">Status</label>
+                <select class="form-select" id="status" name="status">
+                    <option value="">All Statuses</option>
+                    <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="sort" class="form-label">Sort By</label>
+                <select class="form-select" id="sort" name="sort">
+                    <option value="name" {% if request.GET.sort == 'name' %}selected{% endif %}>Name</option>
+                    <option value="updated_at" {% if request.GET.sort == 'updated_at' or not request.GET.sort %}selected{% endif %}>Last Updated</option>
+                    <option value="status" {% if request.GET.sort == 'status' %}selected{% endif %}>Status</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Recipes List -->
+{% if recipes %}
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Schedule</th>
+                        <th>Status</th>
+                        <th>Last Updated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for recipe in recipes %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'recipe_detail' recipe.id %}" class="text-decoration-none">
+                                {{ recipe.name }}
+                            </a>
+                            {% if recipe.description %}
+                            <div class="text-muted small text-truncate" style="max-width: 250px;">
+                                {{ recipe.description }}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>{{ recipe.type }}</td>
+                        <td>
+                            {% if recipe.schedule %}
+                            <span class="badge bg-light text-dark">
+                                <i class="far fa-clock me-1"></i>{{ recipe.schedule }}
+                            </span>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if recipe.status == 'active' %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span title="{{ recipe.updated_at|date:'Y-m-d H:i:s' }}">
+                                {{ recipe.updated_at|date:"M d, Y" }}
+                            </span>
+                        </td>
+                        <td class="recipe-actions">
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                        id="dropdownMenuButton{{ recipe.id }}" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-ellipsis-v"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownMenuButton{{ recipe.id }}">
+                                    <li>
+                                        <a class="dropdown-item" href="{% url 'recipe_detail' recipe.id %}">
+                                            <i class="fas fa-eye me-2 text-primary"></i> View
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item" href="{% url 'recipe_edit' recipe.id %}">
+                                            <i class="fas fa-edit me-2 text-info"></i> Edit
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item" href="{% url 'recipe_run' recipe.id %}">
+                                            <i class="fas fa-play me-2 text-success"></i> Run Now
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item" href="{% url 'recipe_export' recipe.id %}">
+                                            <i class="fas fa-file-export me-2 text-primary"></i> Export
+                                        </a>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <form action="{% url 'recipe_toggle' recipe.id %}" method="post" class="d-inline">
+                                            {% csrf_token %}
+                                            <button type="submit" class="dropdown-item">
+                                                {% if recipe.status == 'active' %}
+                                                <i class="fas fa-toggle-off me-2 text-warning"></i> Deactivate
+                                                {% else %}
+                                                <i class="fas fa-toggle-on me-2 text-success"></i> Activate
+                                                {% endif %}
+                                            </button>
+                                        </form>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item text-danger" href="#" data-bs-toggle="modal" 
+                                           data-bs-target="#deleteRecipeModal" data-recipe-id="{{ recipe.id }}" 
+                                           data-recipe-name="{{ recipe.name }}">
+                                            <i class="fas fa-trash-alt me-2"></i> Delete
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if is_paginated %}
+<nav aria-label="Recipe pagination" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?page=1&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" aria-label="First">
+                <span aria-hidden="true">&laquo;&laquo;</span>
+            </a>
+        </li>
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <li class="page-item active"><a class="page-link" href="#">{{ num }}</a></li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ num }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}">{{ num }}</a>
+            </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}&{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}" aria-label="Last">
+                <span aria-hidden="true">&raquo;&raquo;</span>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-5">
+    <div class="mb-4">
+        <i class="fas fa-clipboard-list fa-4x text-muted"></i>
+    </div>
+    <h4 class="text-muted">No recipes found</h4>
+    <p class="text-muted mb-4">
+        {% if request.GET %}
+        No recipes match your filter criteria.
+        <a href="{% url 'recipe_list' %}" class="btn btn-outline-secondary mt-2">
+            <i class="fas fa-times me-1"></i> Clear Filters
+        </a>
+        {% else %}
+        Get started by creating your first DataHub ingestion recipe.
+        {% endif %}
+    </p>
+    {% if not request.GET %}
+    <a href="{% url 'recipe_create' %}" class="btn btn-primary">
+        <i class="fas fa-plus me-1"></i> Create Recipe
+    </a>
+    <a href="{% url 'recipe_import' %}" class="btn btn-outline-secondary ms-2">
+        <i class="fas fa-file-import me-1"></i> Import Recipe
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Delete Recipe Modal -->
+<div class="modal fade" id="deleteRecipeModal" tabindex="-1" aria-labelledby="deleteRecipeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteRecipeModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete recipe <strong id="deleteRecipeNamePlaceholder"></strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteRecipeForm" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set up delete modal
+        const deleteModal = document.getElementById('deleteRecipeModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const recipeId = button.getAttribute('data-recipe-id');
+                const recipeName = button.getAttribute('data-recipe-name');
+                
+                const deleteForm = document.getElementById('deleteRecipeForm');
+                const nameDisplay = document.getElementById('deleteRecipeNamePlaceholder');
+                
+                deleteForm.action = "{% url 'recipe_delete' 0 %}".replace('0', recipeId);
+                nameDisplay.textContent = recipeName;
+            });
+        }
+    });
+</script>
+{% endblock %} 

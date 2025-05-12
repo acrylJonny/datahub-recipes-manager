@@ -173,7 +173,10 @@ SCHEDULE_TIMEZONE="UTC"
 EOL
 
 echo "=== Creating PostgreSQL recipe template ==="
+mkdir -p configs
+mkdir -p params
 mkdir -p recipes/templates
+mkdir -p recipes/instances/dev
 cat > recipes/templates/postgres.yml << EOL
 source:
   type: postgres
@@ -200,7 +203,7 @@ EOL
 
 echo "=== Creating PostgreSQL recipe instance ==="
 mkdir -p recipes/instances
-cat > recipes/instances/analytics-db.yml << EOL
+cat > recipes/instances/dev/analytics-db.yml << EOL
 # Instance-specific parameters for the Analytics Database
 recipe_id: analytics-database-prod
 recipe_type: postgres

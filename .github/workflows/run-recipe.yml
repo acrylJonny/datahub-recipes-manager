@@ -14,7 +14,7 @@ on:
         type: choice
         options:
           - dev
-          - test
+          - staging
           - prod
 
 jobs:

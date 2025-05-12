@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Environment Variable Instances - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    {% csrf_token %}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Environment Variable Instances</h2>
+        <div>
+            <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary" data-bs-toggle="tooltip" title="Create a new environment variables instance">
+                <i class="fa fa-plus me-1"></i> New Instance
+            </a>
+        </div>
+    </div>
+    
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-md-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Manage Environment Variable Instances</h5>
+            <span class="badge bg-primary">{{ instances|length }}</span>
+        </div>
+        <div class="card-body">
+            {% if instances %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Template</th>
+                            <th>Recipe Type</th>
+                            <th>Variables</th>
+                            <th>Recipes</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for instance in instances %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'env_vars_instance_detail' instance.id %}" class="fw-bold text-decoration-none">
+                                    {{ instance.name }}
+                                </a>
+                                {% if instance.description %}
+                                <div class="text-muted small text-truncate" style="max-width: 200px;" title="{{ instance.description }}">
+                                    {{ instance.description }}
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ instance.template.name }}</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-info">{{ instance.get_recipe_type_display }}</span>
+                            </td>
+                            <td>
+                                <!-- Show total variable count -->
+                                <span class="badge bg-primary" title="Total variables">{{ instance.get_variables_dict|length }}</span>
+                                
+                                <!-- Add data attribute for JS processing -->
+                                <span class="variable-container" 
+                                      data-instance-id="{{ instance.id }}" 
+                                      data-variables="{{ instance.get_variables_dict|safe }}"></span>
+                            </td>
+                            <td>
+                                <span class="badge bg-success">{{ instance.recipes.count }}</span>
+                            </td>
+                            <td>
+                                <span title="{{ instance.created_at }}">{{ instance.created_at|date:"M d, Y" }}</span>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="View details of this environment variables instance">
+                                        <i class="fa fa-eye"></i>
+                                    </a>
+                                    <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" data-bs-toggle="tooltip" title="Edit this environment variables instance">
+                                        <i class="fa fa-edit"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-outline-primary add-to-git-pr" 
+                                           data-instance-id="{{ instance.id }}" data-bs-toggle="tooltip" title="Add this environment variables instance to Git repository for version control">
+                                        <i class="fab fa-github"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger" 
+                                           data-bs-toggle="modal" 
+                                           data-bs-target="#deleteInstanceModal" 
+                                           data-instance-id="{{ instance.id }}"
+                                           data-instance-name="{{ instance.name }}"
+                                           data-recipe-count="{{ instance.recipes.count }}"
+                                           title="Delete this environment variables instance">
+                                        <i class="fa fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fa fa-list fa-3x text-muted mb-3"></i>
+                <h4>No Environment Variable Instances</h4>
+                <p class="text-muted">Create your first environment variable instance to manage variables across recipes.</p>
+                <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary mt-2" data-bs-toggle="tooltip" title="Create a new environment variables instance">
+                    <i class="fa fa-plus me-1"></i> Create New Instance
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete Instance Modal -->
+<div class="modal fade" id="deleteInstanceModal" tabindex="-1" aria-labelledby="deleteInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteInstanceModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    Are you sure you want to delete the instance <strong id="instanceNamePlaceholder"></strong>?
+                </div>
+                <div id="recipeWarning" class="alert alert-danger d-none">
+                    <i class="fa fa-exclamation-circle me-2"></i>
+                    This instance is currently used by <strong id="recipeCountPlaceholder"></strong> recipes.
+                    Deleting it will remove these environment variables from those recipes.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-bs-toggle="tooltip" title="Cancel deletion and return to the list">Cancel</button>
+                <form id="deleteInstanceForm" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger" data-bs-toggle="tooltip" title="Permanently delete this environment variables instance">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // Process variable counts for secret variables
+        $('.variable-container').each(function() {
+            try {
+                const variables = $(this).data('variables');
+                let secretCount = 0;
+                
+                Object.values(variables).forEach(val => {
+                    if (val.isSecret) {
+                        secretCount++;
+                    }
+                });
+                
+                if (secretCount > 0) {
+                    const secretBadge = $('<span class="badge bg-warning ms-1" title="Secret variables"></span>')
+                        .text(secretCount + ' ')
+                        .append('<i class="fa fa-lock"></i>');
+                    $(this).parent().append(secretBadge);
+                }
+            } catch (e) {
+                console.error("Error processing variables:", e);
+            }
+        });
+        
+        // Configure delete modal when shown
+        $('#deleteInstanceModal').on('show.bs.modal', function (event) {
+            const button = $(event.relatedTarget);
+            const instanceId = button.data('instance-id');
+            const instanceName = button.data('instance-name');
+            const recipeCount = button.data('recipe-count');
+            
+            // Update modal content
+            $('#instanceNamePlaceholder').text(instanceName);
+            
+            // Show recipe warning if applicable
+            if (recipeCount > 0) {
+                $('#recipeWarning').removeClass('d-none');
+                $('#recipeCountPlaceholder').text(recipeCount);
+            } else {
+                $('#recipeWarning').addClass('d-none');
+            }
+            
+            // Set the form action using the correct URL pattern
+            $('#deleteInstanceForm').attr('action', "{% url 'env_vars_instance_delete' 0 %}".replace('0', instanceId));
+        });
+        
+        // Handle "Add to Git PR" buttons
+        $('.add-to-git-pr').on('click', function() {
+            const instanceId = $(this).data('instance-id');
+            const button = $(this);
+            
+            // Show loading state
+            const originalHTML = button.html();
+            button.html('<i class="fas fa-spinner fa-spin"></i>');
+            button.prop('disabled', true);
+            
+            // Get CSRF token from the page
+            const csrfToken = $('input[name="csrfmiddlewaretoken"]').val();
+            
+            // Send AJAX request
+            $.ajax({
+                url: "/env-vars/instances/" + instanceId + "/push-github/",
+                method: "POST",
+                headers: {
+                    'X-CSRFToken': csrfToken
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Create success alert
+                        const alert = $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
+                            .append('<i class="fas fa-check-circle me-2"></i> ' + (response.message || 'Environment Variables Instance added to GitHub PR successfully!'))
+                            .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
+                        
+                        // Add the alert at the top of the page
+                        $('.container-fluid').prepend(alert);
+                        
+                        // Auto dismiss after 5 seconds
+                        setTimeout(function() {
+                            alert.alert('close');
+                        }, 5000);
+                    } else {
+                        // Create error alert
+                        const errorMsg = response.error || 'Failed to add to GitHub PR';
+                        const alert = $('<div class="alert alert-danger alert-dismissible fade show" role="alert">')
+                            .append('<i class="fas fa-exclamation-circle me-2"></i> Error: ' + errorMsg)
+                            .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
+                        
+                        // Add the alert at the top of the page
+                        $('.container-fluid').prepend(alert);
+                        
+                        // Auto dismiss after 8 seconds
+                        setTimeout(function() {
+                            alert.alert('close');
+                        }, 8000);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    // Create error alert for AJAX errors
+                    const alert = $('<div class="alert alert-danger alert-dismissible fade show" role="alert">')
+                        .append('<i class="fas fa-exclamation-circle me-2"></i> Error: ' + error)
+                        .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
+                    
+                    // Add the alert at the top of the page
+                    $('.container-fluid').prepend(alert);
+                    
+                    // Auto dismiss after 8 seconds
+                    setTimeout(function() {
+                        alert.alert('close');
+                    }, 8000);
+                },
+                complete: function() {
+                    // Restore original button state
+                    button.html(originalHTML);
+                    button.prop('disabled', false);
+                }
+            });
+        });
+    });
+</script>
+{% endblock %} 

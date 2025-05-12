@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: datahub-recipes-manager
+    expose:
+      - "8000"
+    volumes:
+      - app-data:/app/data
+      - app-recipes:/app/recipes
+      - app-templates:/app/templates
+    environment:
+      - DEBUG=False
+      - DATABASE_URL=sqlite:////app/data/recipes_manager.db
+      - SECRET_KEY=${SECRET_KEY}
+      - DATAHUB_URL=${DATAHUB_URL}
+      - DATAHUB_TOKEN=${DATAHUB_TOKEN}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - nginx
+
+  nginx:
+    image: nginx:alpine
+    container_name: datahub-recipes-manager-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/logs:/var/log/nginx
+    restart: unless-stopped
+    depends_on:
+      - app
+
+volumes:
+  app-data:
+    driver: local
+  app-recipes:
+    driver: local
+  app-templates:
+    driver: local 

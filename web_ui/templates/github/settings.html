@@ -1,0 +1,369 @@
+{% extends 'base.html' %}
+
+{% block title %}Git Integration Settings - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Git Integration Settings</h1>
+            <p class="text-muted">Configure Git integration for recipe version control (GitHub, Azure DevOps, GitLab, etc.)</p>
+        </div>
+        <a href="{% url 'github_index' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Git Dashboard
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Git Integration Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="form-check form-switch mb-4">
+                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" 
+                                  {% if form.enabled.value %}checked{% endif %}>
+                            <label class="form-check-label" for="enabled">Enable Git Integration</label>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="provider_type" class="form-label">Git Provider <span class="text-danger">*</span></label>
+                            <select class="form-select" id="provider_type" name="provider_type" required>
+                                <option value="github" {% if form.provider_type.value == 'github' %}selected{% endif %}>GitHub</option>
+                                <option value="azure_devops" {% if form.provider_type.value == 'azure_devops' %}selected{% endif %}>Azure DevOps</option>
+                                <option value="gitlab" {% if form.provider_type.value == 'gitlab' %}selected{% endif %}>GitLab</option>
+                                <option value="bitbucket" {% if form.provider_type.value == 'bitbucket' %}selected{% endif %}>Bitbucket</option>
+                                <option value="other" {% if form.provider_type.value == 'other' %}selected{% endif %}>Other Git Provider</option>
+                            </select>
+                            <div class="form-text">Select your Git provider.</div>
+                        </div>
+                        
+                        <div class="mb-3" id="baseUrlContainer">
+                            <label for="base_url" class="form-label">Base API URL</label>
+                            <input type="url" class="form-control" id="base_url" name="base_url" 
+                                   value="{{ form.base_url.value|default:'' }}">
+                            <div class="form-text">
+                                Leave empty for GitHub.com, GitLab.com, or Bitbucket.org. 
+                                For self-hosted instances or Azure DevOps, provide the base URL (e.g., https://dev.azure.com).
+                            </div>
+                            {% if form.base_url.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.base_url.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username/Organization <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="username" name="username" 
+                                   value="{{ form.username.value|default:'' }}" required>
+                            <div class="form-text provider-help github">
+                                Your GitHub username or organization name.
+                            </div>
+                            <div class="form-text provider-help azure_devops d-none">
+                                For Azure DevOps, use the format: <strong>organization/project</strong>
+                            </div>
+                            <div class="form-text provider-help gitlab d-none">
+                                Your GitLab username or group name.
+                            </div>
+                            <div class="form-text provider-help bitbucket d-none">
+                                Your Bitbucket workspace or project key.
+                            </div>
+                            <div class="form-text provider-help other d-none">
+                                Username or organization name for your Git provider.
+                            </div>
+                            {% if form.username.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.username.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="repository" class="form-label">Repository Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="repository" name="repository" 
+                                   value="{{ form.repository.value|default:'' }}" required>
+                            <div class="form-text">Name of the repository where recipes will be stored (e.g., datahub-recipes). Do not include the full URL.</div>
+                            {% if form.repository.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.repository.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="token" class="form-label">Personal Access Token <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="token" name="token" 
+                                       value="{{ form.token.value|default:'' }}" required>
+                                <button class="btn btn-outline-secondary" type="button" id="toggleToken">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                            <div class="form-text provider-help github">
+                                GitHub Personal Access Token with 'repo' scope. 
+                                <a href="https://github.com/settings/tokens/new" target="_blank">
+                                    Create a new token <i class="fas fa-external-link-alt ms-1 small"></i>
+                                </a>
+                            </div>
+                            <div class="form-text provider-help azure_devops d-none">
+                                Azure DevOps Personal Access Token with 'Code (Read & Write)' scope.
+                                <a href="https://dev.azure.com/_usersSettings/tokens" target="_blank">
+                                    Create a new token <i class="fas fa-external-link-alt ms-1 small"></i>
+                                </a>
+                            </div>
+                            <div class="form-text provider-help gitlab d-none">
+                                GitLab Personal Access Token with 'api' scope.
+                                <a href="https://gitlab.com/-/profile/personal_access_tokens" target="_blank">
+                                    Create a new token <i class="fas fa-external-link-alt ms-1 small"></i>
+                                </a>
+                            </div>
+                            <div class="form-text provider-help bitbucket d-none">
+                                Bitbucket App Password with 'Repositories (Read & Write)' permission.
+                                <a href="https://bitbucket.org/account/settings/app-passwords/" target="_blank">
+                                    Create a new app password <i class="fas fa-external-link-alt ms-1 small"></i>
+                                </a>
+                            </div>
+                            <div class="form-text provider-help other d-none">
+                                Personal Access Token with repository read/write permissions.
+                            </div>
+                            {% if form.token.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.token.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Save Settings
+                            </button>
+                            <button type="button" class="btn btn-outline-success" id="testConnection">
+                                <i class="fas fa-plug me-1"></i> Test Connection
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">About Git Integration</h5>
+                </div>
+                <div class="card-body">
+                    <p>Integrating with a Git provider allows you to:</p>
+                    <ul>
+                        <li>Version control your DataHub recipes</li>
+                        <li>Track changes through pull requests</li>
+                        <li>Collaborate with team members on recipe changes</li>
+                        <li>Automate deployment with CI/CD pipelines</li>
+                    </ul>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        The personal access token is stored securely and is only used to interact with your Git repository.
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card provider-info github">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">GitHub Token Setup</h5>
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li>Go to <a href="https://github.com/settings/tokens" target="_blank">GitHub Settings > Developer settings > Personal access tokens</a></li>
+                        <li>Click "Generate new token"</li>
+                        <li>Give it a descriptive name (e.g., "DataHub CI/CD Manager")</li>
+                        <li>Select at least the <strong>repo</strong> scope</li>
+                        <li>Click "Generate token" and copy the token</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="card provider-info azure_devops d-none">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Azure DevOps Token Setup</h5>
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li>Go to <a href="https://dev.azure.com/_usersSettings/tokens" target="_blank">Azure DevOps > User Settings > Personal access tokens</a></li>
+                        <li>Click "New Token"</li>
+                        <li>Give it a descriptive name</li>
+                        <li>Set an expiration date</li>
+                        <li>Select <strong>Code > Read & Write</strong> scope</li>
+                        <li>Click "Create" and copy the token</li>
+                    </ol>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-info-circle me-2"></i>
+                        For Azure DevOps, the username should be in format: <strong>organization/project</strong>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card provider-info gitlab d-none">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">GitLab Token Setup</h5>
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li>Go to <a href="https://gitlab.com/-/profile/personal_access_tokens" target="_blank">GitLab > User Settings > Access Tokens</a></li>
+                        <li>Enter a name for the token</li>
+                        <li>Set an expiration date (optional)</li>
+                        <li>Select <strong>api</strong> scope</li>
+                        <li>Click "Create personal access token" and copy the token</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="card provider-info bitbucket d-none">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Bitbucket App Password Setup</h5>
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li>Go to <a href="https://bitbucket.org/account/settings/app-passwords/" target="_blank">Bitbucket > Personal Settings > App passwords</a></li>
+                        <li>Click "Create app password"</li>
+                        <li>Give it a descriptive name</li>
+                        <li>Select <strong>Repositories > Read & Write</strong> permissions</li>
+                        <li>Click "Create" and copy the app password</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Toggle password visibility
+        const toggleToken = document.getElementById('toggleToken');
+        const tokenInput = document.getElementById('token');
+        
+        if (toggleToken) {
+            toggleToken.addEventListener('click', function() {
+                const type = tokenInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                tokenInput.setAttribute('type', type);
+                
+                // Change the eye icon
+                const icon = this.querySelector('i');
+                icon.classList.toggle('fa-eye');
+                icon.classList.toggle('fa-eye-slash');
+            });
+        }
+        
+        // Provider selection handling
+        const providerSelect = document.getElementById('provider_type');
+        const baseUrlContainer = document.getElementById('baseUrlContainer');
+        const providerHelp = document.querySelectorAll('.provider-help');
+        const providerInfo = document.querySelectorAll('.provider-info');
+        
+        function updateProviderInfo() {
+            const selectedProvider = providerSelect.value;
+            
+            // Update help text visibility
+            providerHelp.forEach(el => {
+                if (el.classList.contains(selectedProvider)) {
+                    el.classList.remove('d-none');
+                } else {
+                    el.classList.add('d-none');
+                }
+            });
+            
+            // Update provider info cards
+            providerInfo.forEach(el => {
+                if (el.classList.contains(selectedProvider)) {
+                    el.classList.remove('d-none');
+                } else {
+                    el.classList.add('d-none');
+                }
+            });
+            
+            // Show/hide base URL field based on provider
+            if (selectedProvider === 'github' || selectedProvider === 'gitlab' || selectedProvider === 'bitbucket') {
+                baseUrlContainer.classList.add('d-none');
+            } else {
+                baseUrlContainer.classList.remove('d-none');
+            }
+        }
+        
+        if (providerSelect) {
+            // Initial update
+            updateProviderInfo();
+            
+            // Update on change
+            providerSelect.addEventListener('change', updateProviderInfo);
+        }
+        
+        // Test connection
+        const testConnectionBtn = document.getElementById('testConnection');
+        
+        if (testConnectionBtn) {
+            testConnectionBtn.addEventListener('click', function() {
+                // Disable button and show spinner
+                this.disabled = true;
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Testing...';
+                
+                // Get current form values
+                const provider = document.getElementById('provider_type').value;
+                const baseUrl = document.getElementById('base_url').value;
+                const username = document.getElementById('username').value;
+                const repository = document.getElementById('repository').value;
+                const token = document.getElementById('token').value;
+                
+                // Send AJAX request to test connection
+                fetch('{% url "github_test_connection" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('input[name="csrfmiddlewaretoken"]').value
+                    },
+                    body: JSON.stringify({
+                        provider_type: provider,
+                        base_url: baseUrl,
+                        username: username,
+                        repository: repository,
+                        token: token
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    
+                    if (data.success) {
+                        alert(`Connection successful! ${provider.charAt(0).toUpperCase() + provider.slice(1)} integration is working properly.`);
+                    } else {
+                        alert(`Connection failed: ${data.error || 'Unknown error'}`);
+                    }
+                })
+                .catch(error => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    alert(`Error: ${error.message || 'Failed to test connection'}`);
+                });
+            });
+        }
+    });
+</script>
+{% endblock %} 

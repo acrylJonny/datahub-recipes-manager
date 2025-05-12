@@ -1,0 +1,434 @@
+{% extends 'base.html' %}
+
+{% block title %}
+{% if form.instance.id %}Edit Policy - {{ form.instance.name }}{% else %}Create New Policy{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-section {
+        margin-bottom: 2rem;
+    }
+    .badge-pill-removable {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .badge-pill-removable .remove-btn {
+        margin-left: 0.5rem;
+        font-size: 0.7rem;
+        cursor: pointer;
+    }
+    .selected-items-container {
+        margin-top: 0.75rem;
+    }
+    .error-feedback {
+        width: 100%;
+        margin-top: 0.25rem;
+        font-size: 0.875em;
+        color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- Header -->
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'policy_list' %}">Policies</a></li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    {% if form.instance.id %}Edit{{ form.instance.name }}{% else %}Create Policy{% endif %}
+                </li>
+            </ol>
+        </nav>
+        <h1 class="h2 mb-0">
+            {% if form.instance.id %}Edit Policy: {{ form.instance.name }}{% else %}Create New Policy{% endif %}
+        </h1>
+    </div>
+
+    <!-- Form -->
+    <form method="post" id="policyForm">
+        {% csrf_token %}
+        
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+            {{ error }}
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        <div class="row">
+            <div class="col-md-8">
+                <!-- Basic Information Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Basic Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label required">Name</label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                            <div class="error-feedback">
+                                {% for error in form.name.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                            <div class="error-feedback">
+                                {% for error in form.description.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <div class="form-text">Briefly describe the purpose of this policy.</div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.type.id_for_label }}" class="form-label required">Type</label>
+                                    {{ form.type }}
+                                    {% if form.type.errors %}
+                                    <div class="error-feedback">
+                                        {% for error in form.type.errors %}
+                                        {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.state.id_for_label }}" class="form-label required">State</label>
+                                    {{ form.state }}
+                                    {% if form.state.errors %}
+                                    <div class="error-feedback">
+                                        {% for error in form.state.errors %}
+                                        {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Privileges Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Privileges</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <p class="text-muted">Define what operations are allowed by this policy.</p>
+                            
+                            <div class="row">
+                                <div class="col-md-5">
+                                    <label for="privilege-type" class="form-label">Type</label>
+                                    <select id="privilege-type" class="form-select">
+                                        <option value="view">View</option>
+                                        <option value="edit">Edit</option>
+                                        <option value="create">Create</option>
+                                        <option value="delete">Delete</option>
+                                        <option value="manage">Manage</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-5">
+                                    <label for="privilege-value" class="form-label">Name</label>
+                                    <input type="text" id="privilege-value" class="form-control" placeholder="Enter privilege name">
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button type="button" id="add-privilege" class="btn btn-outline-primary w-100">Add</button>
+                                </div>
+                            </div>
+                            
+                            <div id="privileges-container" class="selected-items-container">
+                                {% if form.privileges.value %}
+                                {% for privilege in form.privileges.value %}
+                                <span class="badge bg-primary badge-pill-removable" data-type="{{ privilege.type }}" data-value="{{ privilege.name }}">
+                                    {{ privilege.type }}: {{ privilege.name }}
+                                    <span class="remove-btn" onclick="removePrivilege(this)">&times;</span>
+                                    <input type="hidden" name="privileges" value='{"type":"{{ privilege.type }}","name":"{{ privilege.name }}"}'>
+                                </span>
+                                {% endfor %}
+                                {% endif %}
+                            </div>
+                            
+                            {% if form.privileges.errors %}
+                            <div class="error-feedback">
+                                {% for error in form.privileges.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <!-- Resources Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Resources</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <p class="text-muted">Define what resources this policy applies to.</p>
+                            
+                            <div class="mb-3">
+                                <label for="resource-type" class="form-label">Type</label>
+                                <select id="resource-type" class="form-select">
+                                    <option value="dataset">Dataset</option>
+                                    <option value="dashboard">Dashboard</option>
+                                    <option value="chart">Chart</option>
+                                    <option value="tag">Tag</option>
+                                    <option value="glossary_term">Glossary Term</option>
+                                    <option value="all">All</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="resource-value" class="form-label">Name</label>
+                                <input type="text" id="resource-value" class="form-control" placeholder="Resource name or pattern">
+                            </div>
+                            
+                            <button type="button" id="add-resource" class="btn btn-outline-primary w-100">Add Resource</button>
+                            
+                            <div id="resources-container" class="selected-items-container">
+                                {% if form.resources.value %}
+                                {% for resource in form.resources.value %}
+                                <span class="badge bg-info badge-pill-removable" data-type="{{ resource.type }}" data-value="{{ resource.name }}">
+                                    {{ resource.type }}: {{ resource.name }}
+                                    <span class="remove-btn" onclick="removeResource(this)">&times;</span>
+                                    <input type="hidden" name="resources" value='{"type":"{{ resource.type }}","name":"{{ resource.name }}"}'>
+                                </span>
+                                {% endfor %}
+                                {% endif %}
+                            </div>
+                            
+                            {% if form.resources.errors %}
+                            <div class="error-feedback">
+                                {% for error in form.resources.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Actors Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Actors</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <p class="text-muted">Define who this policy applies to.</p>
+                            
+                            <div class="mb-3">
+                                <label for="actor-type" class="form-label">Type</label>
+                                <select id="actor-type" class="form-select">
+                                    <option value="user">User</option>
+                                    <option value="group">Group</option>
+                                    <option value="role">Role</option>
+                                    <option value="all">All</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="actor-value" class="form-label">Name</label>
+                                <input type="text" id="actor-value" class="form-control" placeholder="Actor name or pattern">
+                            </div>
+                            
+                            <button type="button" id="add-actor" class="btn btn-outline-primary w-100">Add Actor</button>
+                            
+                            <div id="actors-container" class="selected-items-container">
+                                {% if form.actors.value %}
+                                {% for actor in form.actors.value %}
+                                <span class="badge bg-success badge-pill-removable" data-type="{{ actor.type }}" data-value="{{ actor.name }}">
+                                    {{ actor.type }}: {{ actor.name }}
+                                    <span class="remove-btn" onclick="removeActor(this)">&times;</span>
+                                    <input type="hidden" name="actors" value='{"type":"{{ actor.type }}","name":"{{ actor.name }}"}'>
+                                </span>
+                                {% endfor %}
+                                {% endif %}
+                            </div>
+                            
+                            {% if form.actors.errors %}
+                            <div class="error-feedback">
+                                {% for error in form.actors.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Form Actions -->
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        {% if form.instance.id %}Update Policy{% else %}Create Policy{% endif %}
+                    </button>
+                    <a href="{% url 'policy_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize form fields with Bootstrap styles
+        document.querySelectorAll('input[type="text"], input[type="number"], textarea, select').forEach(function(element) {
+            if (!element.classList.contains('form-control') && !element.classList.contains('form-select')) {
+                if (element.tagName === 'SELECT') {
+                    element.classList.add('form-select');
+                } else {
+                    element.classList.add('form-control');
+                }
+            }
+        });
+        
+        // Add privilege handler
+        document.getElementById('add-privilege').addEventListener('click', function() {
+            const type = document.getElementById('privilege-type').value;
+            const value = document.getElementById('privilege-value').value.trim();
+            
+            if (value) {
+                addPrivilege(type, value);
+                document.getElementById('privilege-value').value = '';
+            }
+        });
+        
+        // Add resource handler
+        document.getElementById('add-resource').addEventListener('click', function() {
+            const type = document.getElementById('resource-type').value;
+            const value = document.getElementById('resource-value').value.trim();
+            
+            if (value) {
+                addResource(type, value);
+                document.getElementById('resource-value').value = '';
+            }
+        });
+        
+        // Add actor handler
+        document.getElementById('add-actor').addEventListener('click', function() {
+            const type = document.getElementById('actor-type').value;
+            const value = document.getElementById('actor-value').value.trim();
+            
+            if (value) {
+                addActor(type, value);
+                document.getElementById('actor-value').value = '';
+            }
+        });
+    });
+    
+    function addPrivilege(type, value) {
+        const container = document.getElementById('privileges-container');
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-primary badge-pill-removable';
+        badge.setAttribute('data-type', type);
+        badge.setAttribute('data-value', value);
+        
+        const displayText = document.createTextNode(`${type}: ${value}`);
+        badge.appendChild(displayText);
+        
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'remove-btn';
+        removeBtn.innerHTML = '&times;';
+        removeBtn.onclick = function() { removePrivilege(this); };
+        badge.appendChild(removeBtn);
+        
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'privileges';
+        hiddenInput.value = JSON.stringify({type: type, name: value});
+        badge.appendChild(hiddenInput);
+        
+        container.appendChild(badge);
+    }
+    
+    function removePrivilege(button) {
+        const badge = button.parentNode;
+        badge.parentNode.removeChild(badge);
+    }
+    
+    function addResource(type, value) {
+        const container = document.getElementById('resources-container');
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-info badge-pill-removable';
+        badge.setAttribute('data-type', type);
+        badge.setAttribute('data-value', value);
+        
+        const displayText = document.createTextNode(`${type}: ${value}`);
+        badge.appendChild(displayText);
+        
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'remove-btn';
+        removeBtn.innerHTML = '&times;';
+        removeBtn.onclick = function() { removeResource(this); };
+        badge.appendChild(removeBtn);
+        
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'resources';
+        hiddenInput.value = JSON.stringify({type: type, name: value});
+        badge.appendChild(hiddenInput);
+        
+        container.appendChild(badge);
+    }
+    
+    function removeResource(button) {
+        const badge = button.parentNode;
+        badge.parentNode.removeChild(badge);
+    }
+    
+    function addActor(type, value) {
+        const container = document.getElementById('actors-container');
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-success badge-pill-removable';
+        badge.setAttribute('data-type', type);
+        badge.setAttribute('data-value', value);
+        
+        const displayText = document.createTextNode(`${type}: ${value}`);
+        badge.appendChild(displayText);
+        
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'remove-btn';
+        removeBtn.innerHTML = '&times;';
+        removeBtn.onclick = function() { removeActor(this); };
+        badge.appendChild(removeBtn);
+        
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'actors';
+        hiddenInput.value = JSON.stringify({type: type, name: value});
+        badge.appendChild(hiddenInput);
+        
+        container.appendChild(badge);
+    }
+    
+    function removeActor(button) {
+        const badge = button.parentNode;
+        badge.parentNode.removeChild(badge);
+    }
+</script>
+{% endblock %} 

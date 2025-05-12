@@ -1,0 +1,386 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Policy - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'policies' %}">Policies</a></li>
+                <li class="breadcrumb-item active" aria-current="page">{% if is_local %}Create Local Policy{% else %}Create Policy{% endif %}</li>
+            </ol>
+        </nav>
+    </div>
+
+    {% if not connected and not is_local %}
+        <div class="alert alert-warning" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Not connected to DataHub. Please check your connection settings.
+            <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+        </div>
+    {% endif %}
+    
+    {% if is_local %}
+        <div class="alert alert-info" role="alert">
+            <i class="fas fa-info-circle me-2"></i>
+            You are creating a <strong>local policy</strong>. This policy will be stored in the local database only and will not be sent to DataHub.
+            You can deploy it to DataHub later or add it to a GitHub PR.
+        </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <h1 class="h2 mb-4">{% if is_local %}Create New Local Policy{% else %}Create New Policy{% endif %}</h1>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Policy Details</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" id="policyForm" class="needs-validation" novalidate>
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="policyName" class="form-label">Policy Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="policyName" name="policy_name" required 
+                                   value="{{ form.policy_name.value|default:'' }}"
+                                   placeholder="Enter policy name">
+                            <div class="invalid-feedback">Please provide a policy name.</div>
+                        </div>
+                        
+                        {% if is_local %}
+                        <div class="mb-3">
+                            <label for="policyId" class="form-label">Policy ID</label>
+                            <input type="text" class="form-control" id="policyId" name="policy_id" 
+                                   value="{{ form.policy_id.value|default:'' }}"
+                                   placeholder="Auto-generated if left empty">
+                            <div class="form-text">Leave empty to auto-generate a unique ID.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="policyEnvironment" class="form-label">Environment</label>
+                            <select class="form-select" id="policyEnvironment" name="environment">
+                                <option value="">None</option>
+                                {% for env in environments %}
+                                <option value="{{ env.id }}">{{ env.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Environment is used for GitHub PR organization.</div>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="policyType" class="form-label">Type <span class="text-danger">*</span></label>
+                                <select class="form-select" id="policyType" name="policy_type" required>
+                                    <option value="" selected disabled>Select policy type...</option>
+                                    <option value="METADATA" {% if form.policy_type.value == 'METADATA' %}selected{% endif %}>Metadata</option>
+                                    <option value="PLATFORM" {% if form.policy_type.value == 'PLATFORM' %}selected{% endif %}>Platform</option>
+                                </select>
+                                <div class="invalid-feedback">Please select a policy type.</div>
+                                <div class="form-text">
+                                    <i class="fas fa-info-circle me-1"></i> 
+                                    Metadata policies control access to entities. Platform policies control access to platform features.
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <label for="policyState" class="form-label">State <span class="text-danger">*</span></label>
+                                <select class="form-select" id="policyState" name="policy_state" required>
+                                    <option value="" selected disabled>Select policy state...</option>
+                                    <option value="ACTIVE" {% if form.policy_state.value == 'ACTIVE' %}selected{% endif %}>Active</option>
+                                    <option value="INACTIVE" {% if form.policy_state.value == 'INACTIVE' %}selected{% endif %}>Inactive</option>
+                                </select>
+                                <div class="invalid-feedback">Please select a policy state.</div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="policyDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="policyDescription" name="description" rows="3" 
+                                     placeholder="Enter policy description (optional)">{{ form.description.value|default:'' }}</textarea>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="policyResources" class="form-label">Resources <span class="text-danger">*</span></label>
+                            <div id="resourcesEditor" class="json-editor"></div>
+                            <input type="hidden" id="resourcesInput" name="policy_resources" required>
+                            <div class="invalid-feedback" id="resourcesError">Please define at least one resource.</div>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i> 
+                                Define the resources this policy applies to.
+                                <button type="button" class="btn btn-sm btn-link p-0 ms-1" data-bs-toggle="tooltip" 
+                                       title="Resources are the entities or platform features that this policy controls access to.">
+                                    <i class="fas fa-question-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="policyPrivileges" class="form-label">Privileges <span class="text-danger">*</span></label>
+                            <div id="privilegesEditor" class="json-editor"></div>
+                            <input type="hidden" id="privilegesInput" name="policy_privileges" required>
+                            <div class="invalid-feedback" id="privilegesError">Please define at least one privilege.</div>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i> 
+                                Define the privileges granted by this policy.
+                                <button type="button" class="btn btn-sm btn-link p-0 ms-1" data-bs-toggle="tooltip" 
+                                       title="Privileges are the specific actions that actors can perform on the resources.">
+                                    <i class="fas fa-question-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="policyActors" class="form-label">Actors <span class="text-danger">*</span></label>
+                            <div id="actorsEditor" class="json-editor"></div>
+                            <input type="hidden" id="actorsInput" name="policy_actors" required>
+                            <div class="invalid-feedback" id="actorsError">Please define at least one actor.</div>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i> 
+                                Define the actors (users or groups) this policy applies to.
+                                <button type="button" class="btn btn-sm btn-link p-0 ms-1" data-bs-toggle="tooltip" 
+                                       title="Actors are the users or groups that are granted the privileges on the resources.">
+                                    <i class="fas fa-question-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between mt-4">
+                            <a href="{% url 'policies' %}{% if is_local %}?tab=local{% endif %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times me-1"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary" id="saveButton">
+                                <i class="fas fa-save me-1"></i> {% if is_local %}Create Local Policy{% else %}Create Policy{% endif %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Policy Guidelines</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Resources Format</h6>
+                    <p class="small">Resources should be defined as an array of objects with the following structure:</p>
+                    <pre class="bg-light p-2 rounded small">
+[
+  {
+    "type": "dataset",
+    "resources": [
+      "urn:li:dataset:(urn:li:dataPlatform:snowflake,example,PROD)"
+    ]
+  }
+]</pre>
+                    
+                    <h6 class="mt-3">Privileges Format</h6>
+                    <p class="small">Privileges should be defined as an array of strings:</p>
+                    <pre class="bg-light p-2 rounded small">
+[
+  "VIEW_ENTITY_PAGE", 
+  "EDIT_ENTITY_TAGS"
+]</pre>
+                    
+                    <h6 class="mt-3">Actors Format</h6>
+                    <p class="small">Actors should be defined as an array of objects:</p>
+                    <pre class="bg-light p-2 rounded small">
+[
+  {
+    "type": "USER",
+    "identity": "urn:li:corpuser:johndoe"
+  },
+  {
+    "type": "GROUP", 
+    "identity": "urn:li:corpGroup:data_team"
+  }
+]</pre>
+                    
+                    <div class="alert alert-info mt-3 mb-0">
+                        <i class="fas fa-info-circle me-2"></i>
+                        For more information on DataHub policies, see the 
+                        <a href="https://datahubproject.io/docs/authorization/policies" target="_blank" class="alert-link">
+                            DataHub documentation
+                        </a>.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .json-editor {
+        height: 150px;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        padding: 0.375rem 0.75rem;
+        background-color: #fff;
+    }
+    
+    .json-editor.is-invalid {
+        border-color: #dc3545;
+        padding-right: calc(1.5em + 0.75rem);
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23dc3545'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23dc3545' stroke='none'/%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right calc(0.375em + 0.1875rem) center;
+        background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+    }
+    
+    .invalid-feedback {
+        display: none;
+    }
+    
+    /* Override for the JSON editor */
+    .ace_editor {
+        font-family: monospace !important;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.15.2/ace.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        // Initialize JSON editors
+        const resourcesEditor = initJsonEditor('resourcesEditor', [
+            {
+                "type": "dataset",
+                "resources": [
+                    "urn:li:dataset:(urn:li:dataPlatform:hive,example,PROD)"
+                ]
+            }
+        ]);
+        
+        const privilegesEditor = initJsonEditor('privilegesEditor', [
+            "VIEW_ENTITY_PAGE",
+            "EDIT_ENTITY_TAGS"
+        ]);
+        
+        const actorsEditor = initJsonEditor('actorsEditor', [
+            {
+                "type": "USER",
+                "identity": "urn:li:corpuser:johndoe"
+            }
+        ]);
+        
+        // Form validation
+        const form = document.getElementById('policyForm');
+        const resourcesInput = document.getElementById('resourcesInput');
+        const privilegesInput = document.getElementById('privilegesInput');
+        const actorsInput = document.getElementById('actorsInput');
+        
+        form.addEventListener('submit', function(event) {
+            let isValid = true;
+            
+            // Get values from Ace editors
+            const resourcesValue = resourcesEditor.getValue();
+            const privilegesValue = privilegesEditor.getValue();
+            const actorsValue = actorsEditor.getValue();
+            
+            // Validate JSON format and set input values
+            try {
+                resourcesInput.value = resourcesValue;
+                const resourcesJson = JSON.parse(resourcesValue);
+                if (!Array.isArray(resourcesJson)) {
+                    throw new Error('Resources must be an array');
+                }
+                document.getElementById('resourcesEditor').classList.remove('is-invalid');
+                document.getElementById('resourcesError').style.display = 'none';
+            } catch (e) {
+                document.getElementById('resourcesEditor').classList.add('is-invalid');
+                document.getElementById('resourcesError').textContent = 'Invalid JSON format for resources: ' + e.message;
+                document.getElementById('resourcesError').style.display = 'block';
+                isValid = false;
+            }
+            
+            try {
+                privilegesInput.value = privilegesValue;
+                const privilegesJson = JSON.parse(privilegesValue);
+                if (!Array.isArray(privilegesJson)) {
+                    throw new Error('Privileges must be an array');
+                }
+                document.getElementById('privilegesEditor').classList.remove('is-invalid');
+                document.getElementById('privilegesError').style.display = 'none';
+            } catch (e) {
+                document.getElementById('privilegesEditor').classList.add('is-invalid');
+                document.getElementById('privilegesError').textContent = 'Invalid JSON format for privileges: ' + e.message;
+                document.getElementById('privilegesError').style.display = 'block';
+                isValid = false;
+            }
+            
+            try {
+                actorsInput.value = actorsValue;
+                JSON.parse(actorsValue);  // Can be array or object depending on policy type
+                document.getElementById('actorsEditor').classList.remove('is-invalid');
+                document.getElementById('actorsError').style.display = 'none';
+            } catch (e) {
+                document.getElementById('actorsEditor').classList.add('is-invalid');
+                document.getElementById('actorsError').textContent = 'Invalid JSON format for actors: ' + e.message;
+                document.getElementById('actorsError').style.display = 'block';
+                isValid = false;
+            }
+            
+            // Standard form validation
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+                isValid = false;
+            }
+            
+            if (!isValid) {
+                event.preventDefault();
+                form.classList.add('was-validated');
+            } else {
+                // Ensure the hidden form fields have the JSON values
+                console.log('Resources:', resourcesInput.value);
+                console.log('Privileges:', privilegesInput.value);
+                console.log('Actors:', actorsInput.value);
+            }
+        });
+        
+        // Function to initialize JSON editor
+        function initJsonEditor(elementId, defaultValue) {
+            const editor = ace.edit(elementId);
+            editor.setTheme("ace/theme/chrome");
+            editor.session.setMode("ace/mode/json");
+            editor.setOptions({
+                fontSize: "12pt",
+                showPrintMargin: false,
+                showGutter: true,
+                highlightActiveLine: true,
+                wrap: true
+            });
+            
+            // Set initial content
+            editor.setValue(JSON.stringify(defaultValue, null, 2), -1);
+            
+            return editor;
+        }
+    });
+</script>
+{% endblock %} 

@@ -7,4 +7,4 @@ echo "Running validation from $(pwd)"
 python scripts/validate_recipe.py --templates recipes/templates/*.yml
 
 # Validate recipe instances
-python scripts/validate_recipe.py --instances recipes/instances/*.yml
+python scripts/validate_recipe.py --instances recipes/instances/dev/*.yml

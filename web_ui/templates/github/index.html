@@ -1,0 +1,1139 @@
+{% extends 'base.html' %}
+
+{% block title %}Git Repository Integration - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<style>
+    .diff-container { font-family: monospace; font-size: 0.95em; background: #f8f9fa; border-radius: 4px; overflow-x: auto; }
+    .diff-line { white-space: pre; display: block; padding: 0 8px; }
+    .diff-add { background: #e6ffed; color: #22863a; }
+    .diff-remove { background: #ffeef0; color: #b31d28; }
+    .diff-header { background: #f1f8ff; color: #0366d6; font-weight: bold; }
+    .diff-context { color: #6a737d; }
+    .workflow-filename { 
+        font-size: 0.85em; 
+        color: #6c757d; 
+        font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 6px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+    }
+    .workflow-item {
+        border-left: 4px solid transparent;
+        transition: all 0.2s ease;
+    }
+    .workflow-item:hover {
+        border-left-color: #0d6efd;
+        background-color: #f8f9fa;
+    }
+    .workflow-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 8px;
+    }
+    .workflow-meta {
+        margin-top: 8px;
+        color: #666;
+        font-size: 0.9em;
+    }
+</style>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">Git Repository Integration</h1>
+        <div>
+            <a href="#" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#syncModal">
+                <i class="fas fa-sync me-1"></i> Sync Repository
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row">
+        <!-- Left column for settings -->
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Git Repo Settings</h5>
+                </div>
+                <div class="card-body">
+                    {% if github_settings.is_configured %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i> Git integration is configured and active
+                    </div>
+                    <div class="mb-3">
+                        <span class="fw-bold">Repository:</span>
+                        <a href="https://github.com/{{ github_settings.username }}/{{ github_settings.repository }}" target="_blank" class="ms-2">
+                            {{ github_settings.username }}/{{ github_settings.repository }}
+                            <i class="fas fa-external-link-alt ms-1 small"></i>
+                        </a>
+                    </div>
+                    <div class="mb-3">
+                        <span class="fw-bold">Current Branch:</span>
+                        <div class="dropdown d-inline-block ms-2">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="branchDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                {{ github_settings.current_branch|default:"main" }}
+                            </button>
+                            <ul class="dropdown-menu" aria-labelledby="branchDropdown">
+                                {% for branch in branches %}
+                                <li>
+                                    <div class="d-flex align-items-center">
+                                        <a class="dropdown-item flex-grow-1{% if branch == github_settings.current_branch %} active{% endif %}" 
+                                           href="{% url 'github_switch_branch' branch %}">
+                                            {{ branch }}
+                                        </a>
+                                        {% if branch != github_settings.current_branch and branch != 'main' and branch != 'master' %}
+                                        <button type="button" class="btn btn-sm text-danger me-2 delete-branch-btn" 
+                                                data-branch="{{ branch }}" data-bs-toggle="modal" data-bs-target="#deleteBranchModal">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="d-grid">
+                        <a href="{% url 'github_settings' %}" class="btn btn-outline-primary">
+                            <i class="fas fa-cog me-1"></i> Edit Settings
+                        </a>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i> Git integration is not configured
+                    </div>
+                    <p>Configure Git integration to sync your recipes and create pull requests for changes.</p>
+                    <div class="d-grid">
+                        <a href="{% url 'github_settings' %}" class="btn btn-primary">
+                            <i class="fas fa-cog me-1"></i> Configure Git Repository
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Git Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid">
+                        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createBranchModal">
+                            <i class="fas fa-code-branch me-1"></i> Create New Branch
+                        </button>
+                    </div>
+                    
+                    <div class="d-grid mt-2">
+                        <a href="{% url 'github_secrets' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-key me-1"></i> Manage Repository Secrets
+                        </a>
+                    </div>
+                    
+                    <div class="d-grid mt-2">
+                        <a href="{% url 'github_environments' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-cogs me-1"></i> Manage Environments
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Supported Resources</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-2">The following resources can be added to Git PRs:</p>
+                    <ul class="list-group">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Environment Variables
+                            <span class="badge bg-success rounded-pill">YAML</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Recipe Instances
+                            <span class="badge bg-success rounded-pill">YAML</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Recipe Templates
+                            <span class="badge bg-success rounded-pill">YAML</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Policies
+                            <span class="badge bg-info rounded-pill">JSON</span>
+                        </li>
+                    </ul>
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i> Use the "Add to Git PR" buttons on each resource's 
+                            edit page to stage changes for committing to the current branch.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right column for pull requests -->
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">CI Workflows</h5>
+                    <div class="d-flex align-items-center">
+                        <div class="input-group me-2" style="width: 250px;">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" id="workflow-filter" class="form-control form-control-sm" placeholder="Filter workflows...">
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary me-2" id="toggleWorkflowsBtn" data-bs-toggle="collapse" data-bs-target="#ci-workflows-section">
+                            <i class="fas fa-eye me-1"></i> <span>Show</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" id="refresh-workflows-btn">
+                            <i class="fas fa-sync-alt me-1"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="collapse" id="ci-workflows-section">
+                    <div class="card-body">
+                        <div id="ci-workflows-loading" class="text-center text-muted">
+                            <span class="spinner-border spinner-border-sm"></span> Loading workflows...
+                        </div>
+                        <div id="ci-workflows-content" style="display:none;"></div>
+                        <div id="ci-workflows-error" class="alert alert-danger d-none"></div>
+                        
+                        <!-- Fallback content if JavaScript fails -->
+                        <noscript>
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i> JavaScript is required to load workflow information.
+                            </div>
+                        </noscript>
+                    </div>
+                </div>
+            </div>
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Staged Changes (Current Branch)</h5>
+                </div>
+                <div class="card-body" id="staged-changes-section">
+                    {% if github_settings.current_branch == 'main' or github_settings.current_branch == 'master' %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i> 
+                        <strong>Protected Branch:</strong> Direct changes to the {{ github_settings.current_branch }} branch are not allowed. 
+                        Please create a new branch for your changes and submit a pull request.
+                    </div>
+                    {% endif %}
+                    <div id="staged-changes-loading" class="text-center text-muted">
+                        <span class="spinner-border spinner-border-sm"></span> Loading staged changes...
+                    </div>
+                    <div id="staged-changes-content" style="display:none;"></div>
+                    <div id="staged-changes-error" class="alert alert-danger d-none"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Pull Requests</h5>
+                    <a href="{% url 'github_pull_requests' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-external-link-alt me-1"></i> View All
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    {% if pull_requests %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Title</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pr in pull_requests %}
+                                <tr>
+                                    <td>#{{ pr.pr_number }}</td>
+                                    <td>
+                                        <a href="{{ pr.pr_url }}" target="_blank" class="text-decoration-none">
+                                            {{ pr.title }}
+                                            <i class="fas fa-external-link-alt ms-1 small"></i>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        {% if pr.description %}
+                                            {{ pr.description|truncatechars:120 }}
+                                        {% else %}
+                                            <span class="text-muted">No description</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-{{ pr.get_status_display_color }}">
+                                            {{ pr.get_pr_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>{{ pr.created_at|date:"M d, Y" }}</td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{{ pr.pr_url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <button class="btn btn-sm btn-outline-secondary update-status-btn" 
+                                                    data-pr-id="{{ pr.id }}" data-pr-number="{{ pr.pr_number }}">
+                                                <i class="fas fa-sync-alt"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="py-5 text-center">
+                        <div class="mb-3">
+                            <i class="fab fa-git-alt fa-4x text-muted"></i>
+                        </div>
+                        <h4>No Pull Requests</h4>
+                        <p class="text-muted">
+                            {% if github_settings.is_configured %}
+                            No pull requests have been created yet. Create or modify a recipe to start.
+                            {% else %}
+                            Configure Git integration to create and track pull requests.
+                            {% endif %}
+                        </p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Branch Modal -->
+<div class="modal fade" id="createBranchModal" tabindex="-1" aria-labelledby="createBranchModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createBranchModalLabel">Create New Branch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'github_create_branch' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="branch_name" class="form-label">Branch Name</label>
+                        <input type="text" class="form-control" id="branch_name" name="branch_name" 
+                               placeholder="feature/my-new-feature" required>
+                        <div class="form-text">
+                            Branch will be created from the main branch.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="branch_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="branch_description" name="branch_description" 
+                                  rows="3" placeholder="Describe the purpose of this branch"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Branch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Sync Modal -->
+<div class="modal fade" id="syncModal" tabindex="-1" aria-labelledby="syncModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="syncModalLabel">Sync with Repository</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>This will synchronize the status of all pull requests with the Git Repository.</p>
+                <p>Do you want to continue?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <a href="{% url 'github_sync_status' %}" class="btn btn-primary">Sync Now</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Review & Create PR Modal -->
+<div class="modal fade" id="createPrModal" tabindex="-1" aria-labelledby="createPrModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createPrModalLabel">Review & Create Pull Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="create-pr-form">
+                <div class="modal-body">
+                    <div id="pr-diff-list"></div>
+                    <div class="mb-3 mt-4">
+                        <label for="pr-title" class="form-label">PR Title</label>
+                        <input type="text" class="form-control" id="pr-title" name="title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="pr-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="pr-description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="pr-base" class="form-label">Base Branch</label>
+                        <select class="form-select" id="pr-base" name="base">
+                            {% for branch in branches %}
+                            <option value="{{ branch }}" {% if branch == github_settings.current_branch %}disabled{% endif %}>{{ branch }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The branch you want to merge into (usually 'main').</div>
+                    </div>
+                    <div id="pr-create-error" class="alert alert-danger d-none"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Pull Request</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Delete Branch Modal -->
+<div class="modal fade" id="deleteBranchModal" tabindex="-1" aria-labelledby="deleteBranchModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteBranchModalLabel">Delete Branch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'github_delete_branch' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" id="branch-to-delete" name="branch_name" value="">
+                    <p>Are you sure you want to delete branch <strong id="branch-name-placeholder"></strong>?</p>
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i> This action cannot be undone. The branch will be permanently deleted from the Git Repository.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Delete Branch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Revert Staged File Modal -->
+<div class="modal fade" id="revertStagedFileModal" tabindex="-1" aria-labelledby="revertStagedFileModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="revertStagedFileModalLabel">Revert Staged File</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'github_revert_staged_file' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" id="file-to-revert" name="file_path" value="">
+                    <p>Are you sure you want to revert staged changes for file: <strong id="file-path-placeholder"></strong>?</p>
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i> This action cannot be undone. The staged changes for this file will be permanently deleted.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Revert Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- File Diff Modal -->
+<div class="modal fade" id="fileDiffModal" tabindex="-1" aria-labelledby="fileDiffModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fileDiffModalLabel">File Diff</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 id="diff-file-path" class="mb-3"></h6>
+                <div id="diff-loading" class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading diff...</p>
+                </div>
+                <div id="diff-content" class="diff-container" style="display:none;">
+                </div>
+                <div id="diff-error" class="alert alert-danger mt-3" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM content loaded');
+        
+        // Check if current branch is protected
+        const currentBranch = "{{ github_settings.current_branch|default:'main'|lower }}";
+        const isProtectedBranch = (currentBranch === 'main' || currentBranch === 'master');
+        
+        // Function to show file diff modal
+        function showFileDiff(filePath) {
+            const modal = document.getElementById('fileDiffModal');
+            if (!modal) {
+                console.error('File diff modal not found');
+                return;
+            }
+            
+            // Show the modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            // Update file path
+            const filePathElement = document.getElementById('diff-file-path');
+            if (filePathElement) {
+                filePathElement.textContent = filePath;
+            }
+            
+            // Show loading, hide content and error
+            const loadingElement = document.getElementById('diff-loading');
+            const contentElement = document.getElementById('diff-content');
+            const errorElement = document.getElementById('diff-error');
+            
+            if (loadingElement) loadingElement.style.display = 'block';
+            if (contentElement) contentElement.style.display = 'none';
+            if (errorElement) errorElement.style.display = 'none';
+            
+            // Fetch diff from API
+            fetch('{% url "github_file_diff" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    file_path: filePath,
+                    branch: currentBranch
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (loadingElement) loadingElement.style.display = 'none';
+                
+                if (data.success) {
+                    const diffContent = data.diff;
+                    
+                    if (!diffContent || diffContent.trim() === '') {
+                        if (errorElement) {
+                            errorElement.textContent = 'No differences found or file is new.';
+                            errorElement.style.display = 'block';
+                        }
+                        return;
+                    }
+                    
+                    // Format the diff
+                    const formattedDiff = formatDiff(diffContent);
+                    
+                    if (contentElement) {
+                        contentElement.innerHTML = formattedDiff;
+                        contentElement.style.display = 'block';
+                    }
+                } else {
+                    if (errorElement) {
+                        errorElement.textContent = data.error || 'Error fetching diff';
+                        errorElement.style.display = 'block';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching diff:', error);
+                if (loadingElement) loadingElement.style.display = 'none';
+                if (errorElement) {
+                    errorElement.textContent = 'Error: ' + error.message;
+                    errorElement.style.display = 'block';
+                }
+            });
+        }
+        
+        // Format diff with syntax highlighting
+        function formatDiff(diffText) {
+            const lines = diffText.split('\n');
+            let html = '';
+            
+            lines.forEach(line => {
+                if (line.startsWith('+') && !line.startsWith('+++')) {
+                    // Added line
+                    html += `<div class="diff-line diff-add">` + escapeHtml(line) + `</div>`;
+                } else if (line.startsWith('-') && !line.startsWith('---')) {
+                    // Removed line
+                    html += `<div class="diff-line diff-remove">` + escapeHtml(line) + `</div>`;
+                } else if (line.startsWith('@')) {
+                    // Header/hunk line
+                    html += `<div class="diff-line diff-header">` + escapeHtml(line) + `</div>`;
+                } else if (line.startsWith('+++') || line.startsWith('---')) {
+                    // File header line
+                    html += `<div class="diff-line diff-header">` + escapeHtml(line) + `</div>`;
+                } else {
+                    // Context line
+                    html += `<div class="diff-line diff-context">` + escapeHtml(line) + `</div>`;
+                }
+            });
+            
+            return html;
+        }
+        
+        // HTML escape helper
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Format file size helper
+        function formatFileSize(size) {
+            if (!size) return '';
+            
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let i = 0;
+            let fileSize = parseInt(size, 10) || 0;
+            
+            while (fileSize >= 1024 && i < units.length - 1) {
+                fileSize /= 1024;
+                i++;
+            }
+            
+            return `${fileSize.toFixed(1)} ${units[i]}`;
+        }
+        
+        // Debug elements existence
+        const ciWorkflowsLoading = document.getElementById('ci-workflows-loading');
+        const ciWorkflowsContent = document.getElementById('ci-workflows-content');
+        const ciWorkflowsError = document.getElementById('ci-workflows-error');
+        
+        console.log('CI Workflows Elements:', {
+            loading: ciWorkflowsLoading ? 'found' : 'missing',
+            content: ciWorkflowsContent ? 'found' : 'missing',
+            error: ciWorkflowsError ? 'found' : 'missing'
+        });
+        
+        // Function to show Create PR modal
+        function showCreatePrModal() {
+            const modal = document.getElementById('createPrModal');
+            if (!modal) {
+                console.error('Create PR modal not found');
+                return;
+            }
+            
+            // Get current branch
+            const currentBranch = "{{ github_settings.current_branch|default:'main' }}";
+            
+            // Set default PR title based on branch name
+            const prTitleInput = document.getElementById('pr-title');
+            if (prTitleInput) {
+                prTitleInput.value = `Changes from ${currentBranch}`;
+            }
+            
+            // Set default base branch to 'main' or first available branch that's not current
+            const prBaseSelect = document.getElementById('pr-base');
+            if (prBaseSelect) {
+                // Try to select 'main' by default
+                for (let i = 0; i < prBaseSelect.options.length; i++) {
+                    if (prBaseSelect.options[i].value === 'main' && prBaseSelect.options[i].value !== currentBranch) {
+                        prBaseSelect.selectedIndex = i;
+                        break;
+                    }
+                }
+                
+                // If main isn't available, select the first available option
+                if (prBaseSelect.selectedIndex === -1 || prBaseSelect.options[prBaseSelect.selectedIndex].disabled) {
+                    for (let i = 0; i < prBaseSelect.options.length; i++) {
+                        if (!prBaseSelect.options[i].disabled) {
+                            prBaseSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Show the modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+        }
+        
+        // Fetch staged changes (diffs) for the current branch
+        function loadStagedChanges() {
+            const stagedChangesLoading = document.getElementById('staged-changes-loading');
+            const stagedChangesContent = document.getElementById('staged-changes-content');
+            const stagedChangesError = document.getElementById('staged-changes-error');
+            
+            if (!stagedChangesLoading || !stagedChangesContent || !stagedChangesError) {
+                console.error('Staged changes elements not found');
+                return;
+            }
+            
+            // Show loading
+            stagedChangesLoading.style.display = 'block';
+            stagedChangesContent.style.display = 'none';
+            stagedChangesError.classList.add('d-none');
+            
+            // Fetch staged changes
+            fetch('{% url "github_branch_diff" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ branch: currentBranch })
+            })
+            .then(response => response.json())
+            .then(data => {
+                stagedChangesLoading.style.display = 'none';
+                
+                if (data.error) {
+                    stagedChangesError.classList.remove('d-none');
+                    stagedChangesError.textContent = data.error;
+                    return;
+                }
+                
+                const files = data.files || [];
+                
+                if (files.length === 0) {
+                    stagedChangesContent.style.display = 'block';
+                    stagedChangesContent.innerHTML = `
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-check-circle fa-3x mb-3"></i>
+                            <p>No staged changes found.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Build HTML for file list with revert button
+                let html = `
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>File Path</th>
+                                    <th>File Info</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                files.forEach(file => {
+                    // Extract file extension for badge
+                    const fileName = file.path.split('/').pop();
+                    const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : 'unknown';
+                    
+                    // Determine badge color by extension type
+                    let badgeColor = 'secondary';
+                    if (['yml', 'yaml'].includes(fileExt)) badgeColor = 'success';
+                    if (['json'].includes(fileExt)) badgeColor = 'primary';
+                    if (['py', 'js', 'ts'].includes(fileExt)) badgeColor = 'info';
+                    if (['md', 'txt'].includes(fileExt)) badgeColor = 'light text-dark';
+                    
+                    html += `
+                        <tr>
+                            <td>
+                                <a href="#" class="file-path-link" data-file-path="${file.path}">
+                                    ${file.path}
+                                </a>
+                            </td>
+                            <td>
+                                <span class="badge bg-${badgeColor}">${fileExt}</span>
+                                ${file.size ? `<small class="text-muted ms-2">${formatFileSize(file.size)}</small>` : ''}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary view-diff-btn me-2" 
+                                        data-file-path="${file.path}">
+                                    <i class="fas fa-code me-1"></i> View Diff
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger revert-file-btn" 
+                                        data-file-path="${file.path}" 
+                                        ${isProtectedBranch ? 'disabled' : ''}>
+                                    <i class="fas fa-undo me-1"></i> Revert
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end mt-3">
+                        <button id="create-pr-btn" class="btn btn-primary" ${isProtectedBranch ? 'disabled' : ''}>
+                            <i class="fas fa-code-branch me-1"></i> Create Pull Request
+                        </button>
+                    </div>
+                `;
+                
+                stagedChangesContent.innerHTML = html;
+                stagedChangesContent.style.display = 'block';
+                
+                // Add event listener for create PR button
+                const createPrBtn = document.getElementById('create-pr-btn');
+                if (createPrBtn) {
+                    createPrBtn.addEventListener('click', showCreatePrModal);
+                }
+                
+                // Add event listeners for revert buttons
+                const revertButtons = document.querySelectorAll('.revert-file-btn');
+                revertButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const filePath = this.getAttribute('data-file-path');
+                        showRevertFileModal(filePath);
+                    });
+                });
+                
+                // Add event listeners for view diff buttons
+                const viewDiffButtons = document.querySelectorAll('.view-diff-btn');
+                viewDiffButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const filePath = this.getAttribute('data-file-path');
+                        showFileDiff(filePath);
+                    });
+                });
+                
+                // Add event listeners for file path links
+                const filePathLinks = document.querySelectorAll('.file-path-link');
+                filePathLinks.forEach(link => {
+                    link.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const filePath = this.getAttribute('data-file-path');
+                        showFileDiff(filePath);
+                    });
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching staged changes:', error);
+                stagedChangesLoading.style.display = 'none';
+                stagedChangesError.classList.remove('d-none');
+                stagedChangesError.textContent = 'Error loading staged changes: ' + error.message;
+            });
+        }
+        
+        // Function to show the revert file modal
+        function showRevertFileModal(filePath) {
+            const modal = document.getElementById('revertStagedFileModal');
+            if (!modal) {
+                console.error('Revert modal not found');
+                return;
+            }
+            
+            // Set file path in the form
+            const fileToRevertInput = document.getElementById('file-to-revert');
+            const filePathPlaceholder = document.getElementById('file-path-placeholder');
+            
+            if (fileToRevertInput && filePathPlaceholder) {
+                fileToRevertInput.value = filePath;
+                filePathPlaceholder.textContent = filePath;
+            }
+            
+            // Show the modal
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+        }
+
+        // Load CI workflows from the repository
+        function loadCIWorkflows() {
+            const loadingElement = document.getElementById('ci-workflows-loading');
+            const contentElement = document.getElementById('ci-workflows-content');
+            const errorElement = document.getElementById('ci-workflows-error');
+            
+            if (!loadingElement || !contentElement || !errorElement) {
+                console.error('Could not find workflow DOM elements');
+                return;
+            }
+            
+            loadingElement.style.display = 'block';
+            contentElement.style.display = 'none';
+            errorElement.classList.add('d-none');
+            
+            const branch = "{{ github_settings.current_branch|default:'main' }}";
+            console.log('Loading workflows for branch:', branch);
+            
+            // Add timestamp to prevent caching
+            fetch(`{% url 'github_workflows_overview' %}?ref=${branch}&_=${Date.now()}`)
+                .then(response => {
+                    console.log('Workflow response status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Workflow data received:', data);
+                    loadingElement.style.display = 'none';
+                    
+                    if (data.success) {
+                        if (data.workflows && data.workflows.length > 0) {
+                            window.workflowsData = data.workflows; // Store for filtering
+                            renderWorkflows(data.workflows);
+                        } else {
+                            console.log('No workflows found');
+                            contentElement.innerHTML = '<div class="alert alert-info">No workflow files found in the repository.</div>';
+                            contentElement.style.display = 'block';
+                        }
+                    } else {
+                        console.error('Error loading workflows:', data.error);
+                        errorElement.textContent = data.error || 'Unknown error loading workflows';
+                        errorElement.classList.remove('d-none');
+                    }
+                })
+                .catch(error => {
+                    console.error('Fetch error:', error);
+                    loadingElement.style.display = 'none';
+                    errorElement.textContent = `Error: ${error.message}`;
+                    errorElement.classList.remove('d-none');
+                });
+        }
+        
+        // Render workflows with the given data
+        function renderWorkflows(workflows) {
+            const contentElement = document.getElementById('ci-workflows-content');
+            if (!contentElement) return;
+            
+            let html = '<div class="list-group">';
+            
+            workflows.forEach(workflow => {
+                // Format workflows with more details
+                const triggers = Array.isArray(workflow.on) 
+                    ? workflow.on.join(', ') 
+                    : (typeof workflow.on === 'string' ? workflow.on : 'manual');
+                    
+                const environments = Array.isArray(workflow.environments) && workflow.environments.length > 0
+                    ? `<div class="mt-1"><span class="badge bg-secondary">Environments:</span> ${workflow.environments.join(', ')}</div>`
+                    : '';
+                
+                // Show job and step counts
+                const jobsInfo = `<span class="badge bg-info">${workflow.jobs} job${workflow.jobs !== 1 ? 's' : ''}</span> <span class="badge bg-secondary">${workflow.steps} step${workflow.steps !== 1 ? 's' : ''}</span>`;
+                
+                // Complexity badge
+                const complexityColors = {
+                    1: 'success', 2: 'success', 3: 'success', 
+                    4: 'info', 5: 'info', 6: 'info',
+                    7: 'warning', 8: 'warning', 9: 'danger', 10: 'danger'
+                };
+                const complexityColor = complexityColors[workflow.complexity_score] || 'secondary';
+                const complexityBadge = workflow.complexity_score 
+                    ? `<span class="badge bg-${complexityColor} ms-2">Complexity: ${workflow.complexity_score}/10</span>` 
+                    : '';
+                
+                // Estimated time badge
+                const estimatedTime = workflow.estimated_time 
+                    ? `<span class="badge bg-info ms-2">Est. Time: ${workflow.estimated_time}</span>` 
+                    : '';
+                
+                // Actions used
+                const actions = Array.isArray(workflow.actions) && workflow.actions.length > 0
+                    ? `<div class="mt-1 small"><span class="badge bg-light text-dark">Actions:</span> ${workflow.actions.join(', ')}</div>`
+                    : '';
+                
+                // Permissions insights
+                let permissionsBadge = '';
+                if (workflow.permissions && workflow.permissions.sensitive_permissions && workflow.permissions.sensitive_permissions.length > 0) {
+                    permissionsBadge = `<span class="badge bg-warning ms-2" title="${workflow.permissions.sensitive_permissions.join(', ')}">Requires elevated permissions</span>`;
+                }
+                
+                // Dependencies insight
+                let dependenciesInfo = '';
+                if (workflow.dependencies && workflow.dependencies.length > 0) {
+                    dependenciesInfo = `<div class="mt-1 small"><span class="badge bg-secondary">Sequential Jobs:</span> ${workflow.dependencies.length} dependencies</div>`;
+                }
+                
+                html += `
+                    <div class="list-group-item list-group-item-action workflow-item" data-filename="${workflow.filename}" data-name="${workflow.name}">
+                        <div class="d-flex w-100 justify-content-between align-items-center">
+                            <h5 class="mb-1">
+                                ${workflow.name} 
+                                <span class="workflow-filename">${workflow.filename}</span>
+                            </h5>
+                            <a href="${workflow.raw_url}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                                View <i class="fas fa-external-link-alt ms-1"></i>
+                            </a>
+                        </div>
+                        <p class="mb-1">${workflow.description}</p>
+                        <div class="workflow-badges">
+                            <span class="badge bg-primary">Trigger: ${triggers}</span>
+                            ${complexityBadge}
+                            ${estimatedTime}
+                            ${permissionsBadge}
+                        </div>
+                        <div class="workflow-meta">
+                            ${jobsInfo}
+                            ${environments}
+                            ${dependenciesInfo}
+                            ${actions}
+                        </div>
+                    </div>`;
+            });
+            
+            html += '</div>';
+            contentElement.innerHTML = html;
+            contentElement.style.display = 'block';
+        }
+        
+        // Filter workflows based on search input
+        function filterWorkflows() {
+            if (!window.workflowsData) return;
+            
+            const searchTerm = document.getElementById('workflow-filter').value.toLowerCase();
+            
+            if (!searchTerm) {
+                // If search is empty, show all workflows
+                renderWorkflows(window.workflowsData);
+                return;
+            }
+            
+            // Filter workflows that match the search term
+            const filteredWorkflows = window.workflowsData.filter(workflow => 
+                workflow.name.toLowerCase().includes(searchTerm) || 
+                workflow.description.toLowerCase().includes(searchTerm) ||
+                workflow.filename.toLowerCase().includes(searchTerm) ||
+                (Array.isArray(workflow.actions) && workflow.actions.some(action => 
+                    action.toLowerCase().includes(searchTerm))) ||
+                (Array.isArray(workflow.on) && workflow.on.some(trigger => 
+                    trigger.toLowerCase().includes(searchTerm)))
+            );
+            
+            renderWorkflows(filteredWorkflows);
+        }
+        
+        // Set up event handlers for delete branch buttons
+        document.querySelectorAll('.delete-branch-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const branchName = this.getAttribute('data-branch');
+                document.getElementById('branch-to-delete').value = branchName;
+                document.getElementById('branch-name-placeholder').textContent = branchName;
+            });
+        });
+        
+        // Set up event handler for create PR form
+        const createPrForm = document.getElementById('create-pr-form');
+        if (createPrForm) {
+            createPrForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const formData = new FormData(this);
+                
+                fetch("{% url 'github_create_pr' %}", {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = "{% url 'github_index' %}";
+                    } else {
+                        const errorElement = document.getElementById('pr-create-error');
+                        errorElement.textContent = data.error || 'Unknown error creating PR';
+                        errorElement.classList.remove('d-none');
+                    }
+                })
+                .catch(error => {
+                    const errorElement = document.getElementById('pr-create-error');
+                    errorElement.textContent = 'Error submitting form: ' + error.message;
+                    errorElement.classList.remove('d-none');
+                });
+            });
+        }
+        
+        // Update PR status buttons
+        document.querySelectorAll('.update-status-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const prNumber = this.getAttribute('data-pr-number');
+                const button = this;
+                
+                button.disabled = true;
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                
+                fetch(`/github/pr/${prNumber}/update-status/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': '{{ csrf_token }}',
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    button.disabled = false;
+                    button.innerHTML = '<i class="fas fa-sync-alt"></i>';
+                    
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        alert('Error updating PR status: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    button.disabled = false;
+                    button.innerHTML = '<i class="fas fa-sync-alt"></i>';
+                    alert('Error: ' + error.message);
+                });
+            });
+        });
+        
+        // Document-ready event may be fired twice, let's add a debug message
+        console.log('Loading initial data...');
+        
+        // Set up event handler for workflow filter
+        const workflowFilter = document.getElementById('workflow-filter');
+        if (workflowFilter) {
+            workflowFilter.addEventListener('input', filterWorkflows);
+        }
+        
+        // Set up event handler for refresh workflows button
+        const refreshWorkflowsBtn = document.getElementById('refresh-workflows-btn');
+        if (refreshWorkflowsBtn) {
+            refreshWorkflowsBtn.addEventListener('click', function() {
+                loadCIWorkflows();
+            });
+        }
+        
+        // Set up event handler for toggle workflows button
+        const toggleWorkflowsBtn = document.getElementById('toggleWorkflowsBtn');
+        const workflowsSection = document.getElementById('ci-workflows-section');
+        
+        if (toggleWorkflowsBtn && workflowsSection) {
+            // Update button text when collapse state changes
+            workflowsSection.addEventListener('shown.bs.collapse', function() {
+                toggleWorkflowsBtn.innerHTML = '<i class="fas fa-eye-slash me-1"></i> <span>Hide</span>';
+            });
+            
+            workflowsSection.addEventListener('hidden.bs.collapse', function() {
+                toggleWorkflowsBtn.innerHTML = '<i class="fas fa-eye me-1"></i> <span>Show</span>';
+            });
+        }
+        
+        // Load initial data
+        loadCIWorkflows();
+        loadStagedChanges();
+    });
+</script>
+{% endblock %}

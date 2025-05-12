@@ -67,7 +67,9 @@ fi
 
 # Use a known recipe ID and example files for testing
 TEST_SOURCE_ID="analytics-database-prod"
-TEST_RECIPE="../recipes/instances/analytics-db.yml"
+# Define paths relative to the test directory
+TEST_DIR=$(pwd)
+TEST_RECIPE="../recipes/instances/dev/analytics-db.yml"
 # Generate a unique schedule for testing
 HOUR=$(( RANDOM % 23 ))
 MINUTE=$(( RANDOM % 59 ))

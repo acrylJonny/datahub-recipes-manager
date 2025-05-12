@@ -1,0 +1,882 @@
+{% extends 'base.html' %}
+
+{% block title %}Recipe Templates - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Hidden form to ensure CSRF token is available -->
+    <form id="csrf-form" style="display:none">
+        {% csrf_token %}
+    </form>
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Recipe Templates</h1>
+            <p class="text-muted">Reusable recipe templates for DataHub ingestion</p>
+        </div>
+        <div>
+            <a href="{% url 'recipes' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left me-1"></i> Back to Recipes
+            </a>
+            <a href="{% url 'recipe_template_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> Create Template
+            </a>
+            <a href="{% url 'recipe_template_import' %}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-file-import me-1"></i> Import Template
+            </a>
+            <a href="{% url 'export_all_templates' %}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-file-export me-1"></i> Export All Templates
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Filters</h5>
+        </div>
+        <div class="card-body">
+            <form action="{% url 'recipe_templates' %}" method="get" class="row">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                        <input type="text" class="form-control" name="search" placeholder="Search templates..." value="{{ search_query|default:'' }}">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <select class="form-select" name="tag">
+                        <option value="">All Tags</option>
+                        {% for tag in all_tags %}
+                            <option value="{{ tag }}" {% if tag_filter == tag %}selected{% endif %}>{{ tag }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Apply</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Template/Environment Variables/Instance Tabs -->
+    <ul class="nav nav-tabs mb-4" id="recipeTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates-panel" 
+                    type="button" role="tab" aria-controls="templates-panel" aria-selected="true">
+                <i class="fas fa-folder me-1"></i> Recipes
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="env-vars-tab" data-bs-toggle="tab" data-bs-target="#env-vars-panel" 
+                    type="button" role="tab" aria-controls="env-vars-panel" aria-selected="false">
+                <i class="fas fa-key me-1"></i> Environment Variables
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="instances-tab" data-bs-toggle="tab" data-bs-target="#instances-panel" 
+                    type="button" role="tab" aria-controls="instances-panel" aria-selected="false">
+                <i class="fas fa-file-code me-1"></i> Instances
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content">
+        <!-- Templates Tab Panel -->
+        <div class="tab-pane fade" id="templates-panel" role="tabpanel" aria-labelledby="templates-tab">
+            <!-- Templates List -->
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Recipe Templates</h5>
+                    {% if templates %}
+                        <span class="badge bg-secondary">{{ templates|length }} templates</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if templates %}
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Recipe Type</th>
+                                        <th>Tags</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for template in templates %}
+                                        <tr>
+                                            <td>
+                                                <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="fw-bold text-decoration-none">
+                                                    {{ template.name }}
+                                                </a>
+                                                {% if template.description %}
+                                                    <div class="text-muted small text-truncate" style="max-width: 300px;" title="{{ template.description }}">
+                                                        {{ template.description|truncatechars:100 }}
+                                                    </div>
+                                                {% endif %}
+                                            </td>
+                                            <td><span class="badge bg-primary">{{ template.recipe_type }}</span></td>
+                                            <td>
+                                                {% if template.tags %}
+                                                    {% for tag in template.get_tags_list %}
+                                                        <a href="{% url 'recipe_templates' %}?tag={{ tag }}" class="badge bg-light text-dark text-decoration-none">
+                                                            #{{ tag }}
+                                                        </a>
+                                                    {% endfor %}
+                                                {% else %}
+                                                    <span class="text-muted">No tags</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ template.created_at|date:"M d, Y" }}</td>
+                                            <td>
+                                                <div class="btn-group">
+                                                    <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="View the template details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <a href="{% url 'recipe_template_edit' template_id=template.id %}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Edit this recipe template">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                    <a href="{% url 'recipe_template_deploy' template_id=template.id %}" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" title="Deploy this template to DataHub">
+                                                        <i class="fas fa-rocket"></i>
+                                                    </a>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                            data-template-id="{{ template.id }}" data-bs-toggle="tooltip" title="Add this template to Git repository for version control">
+                                                        <i class="fab fa-github"></i>
+                                                    </button>
+                                                    <a href="{% url 'recipe_template_delete' template_id=template.id %}" class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Delete this recipe template">
+                                                        <i class="fas fa-trash"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-5">
+                            <div class="mb-4">
+                                <i class="fas fa-folder-open fa-4x text-muted"></i>
+                            </div>
+                            <h4 class="text-muted">No templates found</h4>
+                            <p class="text-muted mb-4">
+                                {% if search_query or tag_filter %}
+                                    No templates match your filter criteria.
+                                    <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary mt-2">
+                                        <i class="fas fa-times me-1"></i> Clear Filters
+                                    </a>
+                                {% else %}
+                                    Get started by creating your first recipe template.
+                                {% endif %}
+                            </p>
+                            {% if not search_query and not tag_filter %}
+                                <a href="{% url 'recipe_template_create' %}" class="btn btn-primary">
+                                    <i class="fas fa-plus me-1"></i> Create Template
+                                </a>
+                                <a href="{% url 'recipe_template_import' %}" class="btn btn-outline-secondary ms-2">
+                                    <i class="fas fa-file-import me-1"></i> Import Template
+                                </a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Environment Variables Tab Panel -->
+        <div class="tab-pane fade" id="env-vars-panel" role="tabpanel" aria-labelledby="env-vars-tab">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Environment Variable Templates</h5>
+                    <div>
+                        <a href="{% url 'env_vars_template_create' %}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Template
+                        </a>
+                        <a href="{% url 'env_vars_templates' %}" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="fas fa-external-link-alt me-1"></i> View All
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p>Environment variable templates define sets of variables required by specific types of recipe templates.</p>
+                    <div id="env-vars-templates-list">
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading templates...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Environment Variable Instances</h5>
+                    <div>
+                        <a href="{% url 'env_vars_instance_create' %}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Instance
+                        </a>
+                        <a href="{% url 'env_vars_instances' %}" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="fas fa-external-link-alt me-1"></i> View All
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if env_vars_instances %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Recipe Type</th>
+                                    <th>Variables</th>
+                                    <th>Recipes</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for instance in env_vars_instances %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'env_vars_instance_detail' instance.id %}" class="fw-bold text-decoration-none">
+                                            {{ instance.name }}
+                                        </a>
+                                        {% if instance.description %}
+                                        <div class="text-muted small text-truncate" style="max-width: 200px;" title="{{ instance.description }}">
+                                            {{ instance.description }}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if instance.template %}
+                                        <span class="badge bg-secondary">{{ instance.template.name }}</span>
+                                        {% else %}
+                                        <span class="text-muted">None</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ instance.get_recipe_type_display }}</span>
+                                    </td>
+                                    <td>
+                                        {% with variables=instance.get_variables_dict %}
+                                            {% with total_count=variables|length %}
+                                                <span class="badge bg-primary" title="Total variables">{{ total_count }}</span>
+                                                {% with secret_count=0 %}
+                                                    {% for value in variables.values %}
+                                                        {% if value.isSecret %}
+                                                            {% with secret_count=secret_count|add:1 %}{% endwith %}
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                    {% if secret_count > 0 %}
+                                                        <span class="badge bg-warning ms-1" title="Secret variables">{{ secret_count }} <i class="fa fa-lock"></i></span>
+                                                    {% endif %}
+                                                {% endwith %}
+                                            {% endwith %}
+                                        {% endwith %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-success">{{ instance.recipes.count }}</span>
+                                    </td>
+                                    <td>
+                                        <span title="{{ instance.created_at }}">{{ instance.created_at|date:"M d, Y" }}</span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="View details">
+                                                <i class="fa fa-eye"></i>
+                                            </a>
+                                            <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" data-bs-toggle="tooltip" title="Edit instance">
+                                                <i class="fa fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-outline-primary add-env-instance-to-git-pr" 
+                                                   data-instance-id="{{ instance.id }}"
+                                                   data-bs-toggle="tooltip" title="Add to Git PR">
+                                                <i class="fab fa-github"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger" 
+                                                   data-bs-toggle="modal" 
+                                                   data-bs-target="#deleteInstanceModal" 
+                                                   data-instance-id="{{ instance.id }}"
+                                                   data-instance-name="{{ instance.name }}"
+                                                   data-recipe-count="{{ instance.recipes.count }}"
+                                                   title="Delete this environment variable instance">
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fa fa-key fa-3x text-muted mb-3"></i>
+                        <h4>No Environment Variable Instances</h4>
+                        <p class="text-muted">Create your first environment variable instance to manage variables across recipes.</p>
+                        <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary mt-2">
+                            <i class="fa fa-plus me-1"></i> Create New Instance
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Instances Tab Panel -->
+        <div class="tab-pane fade" id="instances-panel" role="tabpanel" aria-labelledby="instances-tab">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Recipe Instances</h5>
+                    <div>
+                        <a href="{% url 'recipe_instance_create' %}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Instance
+                        </a>
+                        <a href="{% url 'recipe_instances' %}" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="fas fa-external-link-alt me-1"></i> View All
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p>Recipe instances are the actual deployed recipes in your DataHub environment.</p>
+                    
+                    {% if recipe_instances %}
+                    <div class="table-responsive mt-3">
+                        <table class="table table-hover table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Environment</th>
+                                    <th>Deployed</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for instance in recipe_instances %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'recipe_instance_edit' instance.id %}" class="fw-bold text-decoration-none">
+                                            {{ instance.name }}
+                                        </a>
+                                        {% if instance.description %}<div class="small text-muted">{{ instance.description|truncatechars:100 }}</div>{% endif %}
+                                    </td>
+                                    <td>{{ instance.template.name }}</td>
+                                    <td>{{ instance.env_vars_instance.name|default:"—" }}</td>
+                                    <td>
+                                        {% if instance.deployed %}
+                                        <span class="badge bg-success">Deployed</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Staging</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this recipe instance">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-primary add-recipe-instance-to-git-pr" 
+                                                   data-instance-id="{{ instance.id }}" data-bs-toggle="tooltip" title="Add this recipe instance to Git repository">
+                                                <i class="fab fa-github"></i>
+                                            </button>
+                                                    {% if instance.deployed %}
+                                                    <a href="{% url 'recipe_instance_redeploy' instance.id %}" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" title="Redeploy this recipe instance">
+                                                        <i class="fas fa-sync"></i>
+                                                    </a>
+                                                    {% else %}
+                                                    <a href="{% url 'recipe_instance_deploy' instance.id %}" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" title="Deploy this recipe instance to DataHub">
+                                                        <i class="fas fa-upload"></i>
+                                                    </a>
+                                                    {% endif %}
+                                            <a href="{% url 'recipe_instance_delete' instance.id %}" class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Delete this recipe instance">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info mt-3">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Create a recipe instance by combining a template with environment variables.
+                    </div>
+                    
+                    <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
+                        <a href="{% url 'recipe_instance_create' %}" class="btn btn-primary">
+                            <i class="fas fa-plus me-1"></i> Create Recipe Instance
+                        </a>
+                        <a href="{% url 'recipe_instances' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-list me-1"></i> View All Recipe Instances
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Instance Modal -->
+<div class="modal fade" id="deleteInstanceModal" tabindex="-1" aria-labelledby="deleteInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteInstanceModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    Are you sure you want to delete the instance <strong id="instanceNamePlaceholder"></strong>?
+                </div>
+                <div id="recipeWarning" class="alert alert-danger d-none">
+                    <i class="fa fa-exclamation-circle me-2"></i>
+                    This instance is currently used by <strong id="recipeCountPlaceholder"></strong> recipes.
+                    Deleting it will remove these environment variables from those recipes.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteInstanceForm" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Environment Variable Template Modal -->
+<div class="modal fade" id="deleteEnvTemplateModal" tabindex="-1" aria-labelledby="deleteEnvTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteEnvTemplateModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    Are you sure you want to delete the template <strong id="envTemplateNamePlaceholder"></strong>?
+                </div>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteEnvTemplateForm" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Function to initialize tooltips
+        function initTooltips() {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        }
+
+        // Initialize tooltips on page load
+        initTooltips();
+        
+        // Delete template modal
+        const deleteModal = document.getElementById('deleteTemplateModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const templateId = button.getAttribute('data-template-id');
+                const templateName = button.getAttribute('data-template-name');
+                
+                document.getElementById('delete-template-name').textContent = templateName;
+                document.getElementById('delete-template-form').action = `/recipe-templates/${templateId}/delete/`;
+            });
+        }
+        
+        // Handle "Add to Git PR" buttons for recipe templates
+        const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
+        addToGitPrButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const templateId = this.getAttribute('data-template-id');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Send POST request to add template to GitHub PR
+                fetch(`/recipe-templates/${templateId}/push-github/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Template added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add template to GitHub PR'}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error}`);
+                })
+                .finally(() => {
+                    // Restore button state
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
+                });
+            });
+        });
+        
+        // Load environment variable templates
+        function loadEnvVarsTemplates() {
+            const templatesContainer = document.getElementById('env-vars-templates-list');
+            
+            fetch('/env-vars/templates/list/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.templates && data.templates.length > 0) {
+                        let html = '<div class="table-responsive">';
+                        html += '<table class="table table-hover table-striped">';
+                        html += '<thead><tr><th>Name</th><th>Recipe Type</th><th>Tags</th><th>Variables</th><th>Created</th><th>Actions</th></tr></thead>';
+                        html += '<tbody>';
+                        
+                        data.templates.forEach(template => {
+                            html += `<tr>
+                                <td>
+                                    <a href="/env-vars/templates/${template.id}/details/" class="fw-bold text-decoration-none">
+                                        ${template.name}
+                                    </a>
+                                    ${template.description ? `<p class="text-muted small mb-0">${template.description.substring(0, 100)}${template.description.length > 100 ? '...' : ''}</p>` : ''}
+                                </td>
+                                <td><span class="badge bg-primary">${template.recipe_type}</span></td>
+                                <td>
+                                    ${template.tags ? 
+                                        template.tags.split(',').map(tag => 
+                                            `<span class="badge bg-light text-dark">#${tag.trim()}</span>`
+                                        ).join(' ') : 
+                                        '<span class="text-muted">No tags</span>'}
+                                </td>
+                                <td>${template.variable_count} variable${template.variable_count !== 1 ? 's' : ''}</td>
+                                <td>${new Date(template.created_at).toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric'})}</td>
+                                <td>
+                                    <div class="btn-group">
+                                        <a href="/env-vars/templates/${template.id}/edit/" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this environment variable template">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary add-env-template-to-git-pr" 
+                                                data-template-id="${template.id}" data-bs-toggle="tooltip" title="Add this template to Git repository for version control">
+                                            <i class="fab fa-github"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger delete-env-template" 
+                                                data-template-id="${template.id}" 
+                                                data-template-name="${template.name}"
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#deleteEnvTemplateModal" title="Delete this environment variable template">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>`;
+                        });
+                        
+                        html += '</tbody></table></div>';
+                        templatesContainer.innerHTML = html;
+                        
+                        // Attach event handlers to the newly created buttons
+                        attachEnvTemplateButtonHandlers();
+                        
+                        // Initialize tooltips for the dynamically loaded content
+                        initTooltips();
+                    } else {
+                        templatesContainer.innerHTML = `
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                No environment variable templates found. Create your first template to get started.
+                            </div>
+                            
+                            <div class="d-grid gap-2 col-md-6 mx-auto mt-4">
+                                <a href="{% url 'env_vars_template_create' %}" class="btn btn-primary">
+                                    <i class="fas fa-plus me-1"></i> Create Environment Variable Template
+                                </a>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading templates:', error);
+                    templatesContainer.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Failed to load environment variable templates. Please try again.
+                        </div>
+                    `;
+                });
+        }
+        
+        // Function to attach event handlers to env template buttons
+        function attachEnvTemplateButtonHandlers() {
+            // Handle delete buttons
+            document.querySelectorAll('.delete-env-template').forEach(button => {
+                button.addEventListener('click', function() {
+                    const templateId = this.getAttribute('data-template-id');
+                    const templateName = this.getAttribute('data-template-name');
+                    
+                    document.getElementById('envTemplateNamePlaceholder').textContent = templateName;
+                    const deleteForm = document.getElementById('deleteEnvTemplateForm');
+                    deleteForm.action = `/env-vars/templates/delete/${templateId}/`;
+                    
+                    // Ensure CSRF token is present
+                    let csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                    let existingTokenInput = deleteForm.querySelector('input[name=csrfmiddlewaretoken]');
+                    
+                    if (existingTokenInput) {
+                        existingTokenInput.value = csrfToken;
+                    } else {
+                        let tokenInput = document.createElement('input');
+                        tokenInput.type = 'hidden';
+                        tokenInput.name = 'csrfmiddlewaretoken';
+                        tokenInput.value = csrfToken;
+                        deleteForm.prepend(tokenInput);
+                    }
+                });
+            });
+            
+            // Handle "Add to Git PR" buttons
+            document.querySelectorAll('.add-env-template-to-git-pr').forEach(button => {
+                button.addEventListener('click', function() {
+                    const templateId = this.getAttribute('data-template-id');
+                    
+                    // Show loading state
+                    const originalHTML = this.innerHTML;
+                    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    this.disabled = true;
+                    
+                    // Send POST request to add template to GitHub PR
+                    fetch(`/env-vars/templates/${templateId}/push-github/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Create a toast notification
+                            const toast = document.createElement('div');
+                            toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                            toast.setAttribute('role', 'alert');
+                            toast.setAttribute('aria-live', 'assertive');
+                            toast.setAttribute('aria-atomic', 'true');
+                            toast.innerHTML = `
+                                <div class="d-flex">
+                                    <div class="toast-body">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        Environment variable template added to GitHub PR successfully!
+                                    </div>
+                                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                                </div>
+                            `;
+                            document.body.appendChild(toast);
+                            
+                            // Initialize and show the toast
+                            const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                            bsToast.show();
+                            
+                            // Remove toast from DOM after it's hidden
+                            toast.addEventListener('hidden.bs.toast', function() {
+                                toast.remove();
+                            });
+                        } else {
+                            alert(`Error: ${data.error || 'Failed to add template to GitHub PR'}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error adding template to GitHub PR:', error);
+                        alert(`Error: ${error.message || 'Failed to add template to GitHub PR'}`);
+                    })
+                    .finally(() => {
+                        // Restore button state
+                        this.innerHTML = originalHTML;
+                        this.disabled = false;
+                    });
+                });
+            });
+        }
+        
+        // Load env vars templates when the tab is shown
+        const envVarsTab = document.getElementById('env-vars-tab');
+        if (envVarsTab) {
+            envVarsTab.addEventListener('shown.bs.tab', function() {
+                loadEnvVarsTemplates();
+            });
+        }
+        
+        // Add event handlers for instance deletion
+        const deleteInstanceModal = document.getElementById('deleteInstanceModal');
+        if (deleteInstanceModal) {
+            deleteInstanceModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const instanceId = button.getAttribute('data-instance-id');
+                const instanceName = button.getAttribute('data-instance-name');
+                const recipeCount = parseInt(button.getAttribute('data-recipe-count') || '0');
+                
+                document.getElementById('instanceNamePlaceholder').textContent = instanceName;
+                
+                // Show warning if recipes are using this instance
+                const recipeWarning = document.getElementById('recipeWarning');
+                if (recipeCount > 0) {
+                    document.getElementById('recipeCountPlaceholder').textContent = recipeCount;
+                    recipeWarning.classList.remove('d-none');
+                } else {
+                    recipeWarning.classList.add('d-none');
+                }
+                
+                // Set form action
+                document.getElementById('deleteInstanceForm').action = `/env-vars/instances/delete/${instanceId}/`;
+            });
+        }
+        
+        // Add event handlers for recipe instance GitHub PR buttons
+        document.querySelectorAll('.add-recipe-instance-to-git-pr, .add-env-instance-to-git-pr').forEach(button => {
+            button.addEventListener('click', function() {
+                const instanceId = this.getAttribute('data-instance-id');
+                const isRecipeInstance = this.classList.contains('add-recipe-instance-to-git-pr');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Determine the endpoint
+                const endpoint = isRecipeInstance 
+                    ? `/recipe-instances/${instanceId}/push-github/` 
+                    : `/env-vars/instances/${instanceId}/push-github/`;
+                
+                // Send POST request
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    ${isRecipeInstance ? 'Recipe' : 'Environment variable'} instance added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add instance to GitHub PR'}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error adding instance to GitHub PR:', error);
+                    alert(`Error: ${error.message || 'Failed to add instance to GitHub PR'}`);
+                })
+                .finally(() => {
+                    // Restore button state
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
+                });
+            });
+        });
+
+        // Get the active tab from session storage or default to 'templates'
+        const activeTab = sessionStorage.getItem('recipeTemplatesActiveTab');
+        
+        // Only restore tab state if there was a previously saved state
+        if (activeTab) {
+            const tabElement = document.getElementById(`${activeTab}-tab`);
+            if (tabElement) {
+                const tab = new bootstrap.Tab(tabElement);
+                tab.show();
+            }
+        }
+        
+        // Store the active tab when changed
+        document.querySelectorAll('#recipeTabs button').forEach(button => {
+            button.addEventListener('shown.bs.tab', function(event) {
+                const tabId = event.target.id.replace('-tab', '');
+                sessionStorage.setItem('recipeTemplatesActiveTab', tabId);
+            });
+        });
+    });
+</script>
+{% endblock %}

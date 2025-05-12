@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+
+{% block title %}Connection Settings - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Connection Settings</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="display-5 mb-0">DataHub Connection Settings</h1>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Connection Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="gms_url" class="form-label">DataHub GMS URL</label>
+                        <input type="url" class="form-control" id="gms_url" name="gms_url" 
+                               placeholder="http://localhost:8080" 
+                               value="{{ settings.gms_url }}" required>
+                        <div class="form-text">
+                            The URL of your DataHub GMS server. This is typically the base URL with port 8080.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="token" class="form-label">Personal Access Token (Optional)</label>
+                        <input type="password" class="form-control" id="token" name="token" 
+                               placeholder="Enter your personal access token" 
+                               value="{{ settings.token }}">
+                        <div class="form-text">
+                            If your DataHub instance requires authentication, enter your personal access token here.
+                            Leave blank to connect without authentication (if your DataHub instance allows it).
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>Save Settings
+                        </button>
+                        <a href="{% url 'connection_status' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Connection Status
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Help</h5>
+            </div>
+            <div class="card-body">
+                <h6>Finding your DataHub GMS URL</h6>
+                <p>
+                    The DataHub GMS URL is the address of your DataHub server's metadata service.
+                    For local installations, this is typically <code>http://localhost:8080</code>.
+                </p>
+                
+                <hr>
+                
+                <h6>Creating a Personal Access Token</h6>
+                <p>
+                    To create a Personal Access Token (PAT):
+                </p>
+                <ol>
+                    <li>Log in to your DataHub UI</li>
+                    <li>Click on your profile picture in the top right</li>
+                    <li>Select "Settings"</li>
+                    <li>Click on "Personal Access Tokens"</li>
+                    <li>Click "Create a new token" and follow the instructions</li>
+                </ol>
+                <p>
+                    <strong>Note:</strong> Save your token securely! You won't be able to view it again after creation.
+                </p>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Current Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    {% if connection_status.connected %}
+                    <div class="flex-shrink-0 me-3">
+                        <span class="badge bg-success p-2">
+                            <i class="fas fa-check fa-lg"></i>
+                        </span>
+                    </div>
+                    <div>
+                        <h5 class="mb-1">Connected</h5>
+                        <p class="mb-0 text-muted small">Connection is active</p>
+                    </div>
+                    {% else %}
+                    <div class="flex-shrink-0 me-3">
+                        <span class="badge bg-danger p-2">
+                            <i class="fas fa-times fa-lg"></i>
+                        </span>
+                    </div>
+                    <div>
+                        <h5 class="mb-1">Not Connected</h5>
+                        <p class="mb-0 text-muted small">Update settings to connect</p>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="d-grid">
+                    <a href="{% url 'connection_status' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-external-link-alt me-2"></i>View Details
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

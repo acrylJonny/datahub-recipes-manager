@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Delete Environment Variable Instance - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'env_vars_instances' %}">Environment Variable Instances</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'env_vars_instance_detail' instance.id %}">{{ instance.name }}</a></li>
+                <li class="breadcrumb-item active">Delete</li>
+            </ol>
+        </nav>
+    </div>
+
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5 class="card-title mb-0">
+                <i class="fa fa-exclamation-triangle me-2"></i> Delete Environment Variable Instance
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning">
+                <i class="fa fa-exclamation-circle me-2"></i>
+                <strong>Warning:</strong> You are about to delete the environment variable instance <strong>{{ instance.name }}</strong>.
+            </div>
+            
+            {% if instance.recipes.exists %}
+            <div class="alert alert-danger">
+                <i class="fa fa-exclamation-triangle me-2"></i>
+                <strong>Caution:</strong> This instance is currently used by {{ instance.recipes.count }} recipes.
+                Deleting it will remove these environment variables from those recipes.
+            </div>
+            {% endif %}
+            
+            <p>
+                This action cannot be undone. If you proceed, all environment variables defined in this instance
+                will be deleted.
+            </p>
+            
+            <form method="post" class="mt-4">
+                {% csrf_token %}
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-secondary">
+                        <i class="fa fa-arrow-left me-1"></i> Cancel
+                    </a>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fa fa-trash me-1"></i> Delete Environment Variable Instance
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -1,0 +1,226 @@
+{% extends 'base.html' %}
+
+{% block title %}Environment Variable Templates - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Environment Variable Templates</h1>
+            <p class="text-muted">Templates for defining required environment variables in recipes</p>
+        </div>
+        <div>
+            <a href="{% url 'env_vars_template_create' %}" class="btn btn-primary" data-bs-toggle="tooltip" title="Create a new environment variable template">
+                <i class="fas fa-plus me-1"></i> Create Template
+            </a>
+            <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary ms-2" data-bs-toggle="tooltip" title="Return to recipe templates page">
+                <i class="fas fa-scroll me-1"></i> Back to Recipe Templates
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Environment Variable Templates</h5>
+            {% if templates %}
+                <span class="badge bg-secondary">{{ templates|length }} templates</span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if templates %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Recipe Type</th>
+                                <th>Tags</th>
+                                <th>Variables</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for template in templates %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'env_vars_template_edit' template.id %}" class="fw-bold text-decoration-none">
+                                            {{ template.name }}
+                                        </a>
+                                        {% if template.description %}
+                                            <p class="text-muted small mb-0">{{ template.description|truncatechars:100 }}</p>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="badge bg-primary">{{ template.recipe_type }}</span></td>
+                                    <td>
+                                        {% if template.tags %}
+                                            {% for tag in template.get_tags_list %}
+                                                <span class="badge bg-light text-dark">#{{ tag }}</span>
+                                            {% endfor %}
+                                        {% else %}
+                                            <span class="text-muted">No tags</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% with vars_dict=template.get_variables_dict %}
+                                            {{ vars_dict.keys|length }} variable{{ vars_dict.keys|length|pluralize }}
+                                        {% endwith %}
+                                    </td>
+                                    <td>{{ template.created_at|date:"M d, Y" }}</td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{% url 'env_vars_template_edit' template.id %}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this environment variable template">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-primary add-env-template-to-git-pr" 
+                                                   data-template-id="{{ template.id }}" data-bs-toggle="tooltip" title="Add this template to Git repository for version control">
+                                                <i class="fab fa-github"></i>
+                                            </button>
+                                            <a href="#" class="btn btn-sm btn-outline-danger delete-template-btn" 
+                                               data-bs-toggle="modal" data-bs-target="#deleteTemplateModal"
+                                               data-template-id="{{ template.id }}" data-template-name="{{ template.name }}"
+                                               data-bs-original-title="Delete this environment variable template">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-key fa-4x text-muted"></i>
+                    </div>
+                    <h4 class="text-muted">No templates available</h4>
+                    <p class="text-muted mb-4">Create your first environment variable template to get started.</p>
+                    <a href="{% url 'env_vars_template_create' %}" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Create Template
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete Template Modal -->
+<div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTemplateModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the template <strong id="delete-template-name"></strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Cancel deletion and return to the list">Cancel</button>
+                <form id="delete-template-form" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger" title="Permanently delete this environment variable template">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+
+        // Delete template modal
+        const deleteModal = document.getElementById('deleteTemplateModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const templateId = button.getAttribute('data-template-id');
+                const templateName = button.getAttribute('data-template-name');
+                
+                document.getElementById('delete-template-name').textContent = templateName;
+                document.getElementById('delete-template-form').action = `/env-vars/templates/delete/${templateId}/`;
+            });
+        }
+
+        // Handle "Add to Git PR" buttons
+        document.querySelectorAll('.add-env-template-to-git-pr').forEach(button => {
+            button.addEventListener('click', function() {
+                const templateId = this.getAttribute('data-template-id');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Send POST request to add template to GitHub PR
+                fetch(`/env-vars/templates/${templateId}/push-github/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Environment variable template added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add template to GitHub PR'}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error adding template to GitHub PR:', error);
+                    alert(`Error: ${error.message || 'Failed to add template to GitHub PR'}`);
+                })
+                .finally(() => {
+                    // Restore button state
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
+                });
+            });
+        });
+    });
+</script>
+{% endblock %} 

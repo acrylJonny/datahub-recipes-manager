@@ -86,7 +86,7 @@ class DataHubRestClient:
         # If we have a datahubgraph client available, use it
         if self.graph is not None:
             try:
-                logger.debug(f"Executing GraphQL via datahubgraph SDK: {query[:100]}...")
+                logger.debug(f"Executing GraphQL via datahubgraph SDK: {query} with variables: {variables}")
                 result = self.graph.execute_graphql(query, variables)
                 
                 if isinstance(result, dict) and "data" in result:
@@ -140,7 +140,31 @@ class DataHubRestClient:
                 headers=self.headers,
                 timeout=10
             )
-            return response.status_code == 200
+            if response.status_code != 200:
+                logger.error(f"Failed to access config endpoint: {response.status_code}")
+                return False
+
+            # Try to list recipes to check permissions
+            try:
+                sources = self.list_ingestion_sources()
+                if not isinstance(sources, list):
+                    logger.error("Failed to list ingestion sources: Invalid response format")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to list ingestion sources: {str(e)}")
+                return False
+
+            # Try to list policies to check permissions
+            try:
+                policies = self.list_policies()
+                if not isinstance(policies, list):
+                    logger.error("Failed to list policies: Invalid response format")
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to list policies: {str(e)}")
+                return False
+
+            return True
         except Exception as e:
             logger.error(f"Error testing connection: {str(e)}")
             return False
@@ -1050,7 +1074,7 @@ class DataHubRestClient:
                             # Try to parse as JSON, with fallback to raw string
                             try:
                                 recipe = json.loads(recipe_str)
-                                self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)[:100]}...")
+                                self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)}")
                             except json.JSONDecodeError:
                                 self.logger.warning(f"Could not parse recipe JSON for {source_id}, treating as raw string")
                                 # If it's not valid JSON, treat it as a raw string
@@ -1096,7 +1120,7 @@ class DataHubRestClient:
                 self.logger.debug(f"Successfully retrieved ingestion source via OpenAPI v3: {source_id}")
                 try:
                     data = response.json()
-                    self.logger.debug(f"OpenAPI v3 response: {json.dumps(data)[:200]}...")
+                    self.logger.debug(f"OpenAPI v3 response: {json.dumps(data)}")
                     
                     # Extract source info from the OpenAPI v3 format
                     # The structure has nested dataHubIngestionSourceInfo.value
@@ -1142,7 +1166,7 @@ class DataHubRestClient:
                 except Exception as e:
                     self.logger.warning(f"Error processing OpenAPI v3 response for {source_id}: {str(e)}")
             else:
-                self.logger.warning(f"OpenAPI v3 GET failed: {response.status_code} - {response.text[:100]}")
+                self.logger.warning(f"OpenAPI v3 GET failed: {response.status_code} - {response.text}")
                 
             # Try all available sources endpoint as last resort
             try:
@@ -1987,7 +2011,7 @@ class DataHubRestClient:
                     self.logger.info(f"Successfully triggered ingestion using {endpoint['description']}")
                     return True
                     
-                self.logger.debug(f"Endpoint {endpoint['url']} returned {response.status_code}: {response.text[:100]}")
+                self.logger.debug(f"Endpoint {endpoint['url']} returned {response.status_code}: {response.text}")
             except Exception as e:
                 self.logger.debug(f"Error with {endpoint['description']}: {str(e)}")
                 
@@ -2388,6 +2412,12 @@ class DataHubRestClient:
         # Prepare input for GraphQL
         graphql_input = policy_data.copy()
         
+        # Important: Remove 'id' field from GraphQL input since it's not part of PolicyUpdateInput
+        # This is a key difference between GraphQL and REST API schemas
+        if 'id' in graphql_input:
+            policy_id = graphql_input.pop('id')
+            self.logger.info(f"Removed 'id' field from GraphQL input (value: {policy_id})")
+        
         # Ensure resources is properly formatted as a dict with filter if it's a list
         if "resources" in graphql_input and isinstance(graphql_input["resources"], list):
             # Convert list format to the expected structure with filter.criteria
@@ -2462,7 +2492,8 @@ class DataHubRestClient:
                 # Check for schema validation errors specifically
                 schema_validation_errors = [
                     e for e in error_messages 
-                    if "Unknown type 'PolicyUpdateInput'" in e or "Validation error" in e
+                    if "Unknown type 'PolicyUpdateInput'" in e or "Validation error" in e 
+                    or "contains a field name" in e  # Additional error pattern to catch
                 ]
                 
                 if schema_validation_errors:
@@ -2488,7 +2519,8 @@ class DataHubRestClient:
                 headers['Authorization'] = f'Bearer {self.token}'
             
             # Format the request according to the OpenAPI v3 specification
-            policy_id = policy_data.get("name", "").lower().replace(" ", "-")
+            # Use explicit ID from original policy_data if available, otherwise fallback to name
+            policy_id = policy_data.get("id") or policy_data.get("name", "").lower().replace(" ", "-")
             if not policy_id:
                 policy_id = str(uuid.uuid4())
             
@@ -2544,7 +2576,8 @@ class DataHubRestClient:
                 request_body[0]["dataHubPolicyInfo"]["value"]["actors"] = policy_data["actors"]
             
             response = requests.post(url, headers=headers, json=request_body)
-            if response.status_code in (200, 201):
+            # A 202 status is common for successfully accepted requests
+            if response.status_code in (200, 201, 202):
                 self.logger.info(f"Successfully created policy {policy_data.get('name')} via OpenAPI v3")
                 
                 # Return a simplified policy object that matches the GraphQL response format
@@ -2555,6 +2588,21 @@ class DataHubRestClient:
                 }
                 return created_policy
             else:
+                # Check if the response indicates success despite non-200 status
+                try:
+                    resp_json = response.json()
+                    # Some DataHub versions return a list of objects on success
+                    if isinstance(resp_json, list) and len(resp_json) > 0 and "urn" in resp_json[0]:
+                        self.logger.info(f"Policy created successfully despite status code {response.status_code}")
+                        created_policy = {
+                            **policy_data,
+                            "urn": resp_json[0]["urn"],
+                            "id": policy_id
+                        }
+                        return created_policy
+                except:
+                    pass
+                
                 self.logger.error(f"Failed to create policy via OpenAPI v3: {response.status_code} - {response.text}")
         except Exception as e:
             self.logger.error(f"Error creating policy via REST API: {str(e)}")

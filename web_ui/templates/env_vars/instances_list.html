@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Environment Variable Instances - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Environment Variable Instances</h2>
+        <div>
+            <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary me-2">
+                <i class="fa fa-layer-group me-1"></i> Manage Templates
+            </a>
+            <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary">
+                <i class="fa fa-plus me-1"></i> New Instance
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-md-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if datahub_connection_error %}
+    <div class="alert alert-warning mb-4">
+        <i class="fa fa-exclamation-triangle me-2"></i>
+        <strong>Warning:</strong> Cannot connect to DataHub. Some functionality may be limited.
+    </div>
+    {% endif %}
+
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fa fa-list me-2"></i> All Instances
+                    </h5>
+                    <form class="d-flex" method="get">
+                        <div class="input-group">
+                            <input type="text" name="search" class="form-control" placeholder="Search instances..." value="{{ search_query|default:'' }}">
+                            <button class="btn btn-outline-secondary" type="submit">
+                                <i class="fa fa-search"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-body p-0">
+                    {% if instances %}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Recipe Type</th>
+                                    <th>Recipes Count</th>
+                                    <th>Created</th>
+                                    <th>Last Updated</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for instance in instances %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'env_vars_instance_detail' instance.id %}" class="text-decoration-none fw-bold">
+                                            {{ instance.name }}
+                                        </a>
+                                        {% if instance.tenant %}
+                                        <span class="badge bg-info ms-2">{{ instance.tenant }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'env_vars_template_detail' instance.template.id %}" class="text-decoration-none">
+                                            {{ instance.template.name }}
+                                        </a>
+                                    </td>
+                                    <td>{{ instance.get_recipe_type_display }}</td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ instance.recipes.count }}</span>
+                                    </td>
+                                    <td>{{ instance.created_at|date:"M d, Y" }}</td>
+                                    <td>{{ instance.updated_at|date:"M d, Y H:i" }}</td>
+                                    <td class="text-end">
+                                        <div class="btn-group">
+                                            <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                <i class="fa fa-eye"></i>
+                                            </a>
+                                            <a href="{% url 'edit_env_vars_instance' instance.id %}" class="btn btn-sm btn-outline-secondary" title="Edit Instance">
+                                                <i class="fa fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" title="Delete Instance"
+                                                    data-bs-toggle="modal" data-bs-target="#deleteModal"
+                                                    data-instance-id="{{ instance.id }}"
+                                                    data-instance-name="{{ instance.name }}"
+                                                    data-recipe-count="{{ instance.recipes.count }}">
+                                                <i class="fa fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    {% if is_paginated %}
+                    <div class="pagination-container p-3 d-flex justify-content-between align-items-center">
+                        <span class="text-muted">
+                            Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ paginator.count }} instances
+                        </span>
+                        <nav>
+                            <ul class="pagination mb-0">
+                                {% if page_obj.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}" aria-label="First">
+                                        <i class="fa fa-angle-double-left"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}" aria-label="Previous">
+                                        <i class="fa fa-angle-left"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                                
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                    <li class="page-item active"><a class="page-link" href="#">{{ num }}</a></li>
+                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}">{{ num }}</a>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if page_obj.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}" aria-label="Next">
+                                        <i class="fa fa-angle-right"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}" aria-label="Last">
+                                        <i class="fa fa-angle-double-right"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                    {% endif %}
+                    
+                    {% else %}
+                    <div class="text-center py-5">
+                        <div class="mb-3">
+                            <i class="fa fa-cube fa-3x text-muted"></i>
+                        </div>
+                        <h4 class="text-muted">No Environment Variable Instances Found</h4>
+                        <p>
+                            {% if search_query %}
+                            No instances match your search query "<strong>{{ search_query }}</strong>".
+                            <a href="{% url 'env_vars_instances' %}" class="btn btn-sm btn-outline-secondary mt-2">
+                                <i class="fa fa-times me-1"></i> Clear Search
+                            </a>
+                            {% else %}
+                            You haven't created any environment variable instances yet.
+                            <a href="{% url 'env_vars_instance_create' %}" class="btn btn-sm btn-primary mt-2">
+                                <i class="fa fa-plus me-1"></i> Create First Instance
+                            </a>
+                            {% endif %}
+                        </p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the instance "<span id="instanceName"></span>"?</p>
+                <div id="recipeWarning" class="alert alert-warning d-none">
+                    <i class="fa fa-exclamation-triangle me-2"></i>
+                    This instance is used by <strong><span id="recipeCount"></span> recipes</strong>. 
+                    Deleting it will remove these environment variables from the associated recipes.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteForm" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete Instance</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // Configure delete modal
+        $('#deleteModal').on('show.bs.modal', function(event) {
+            const button = $(event.relatedTarget);
+            const instanceId = button.data('instance-id');
+            const instanceName = button.data('instance-name');
+            const recipeCount = button.data('recipe-count');
+            
+            // Update modal content
+            $('#instanceName').text(instanceName);
+            $('#deleteForm').attr('action', '/env-vars/instances/' + instanceId + '/delete/');
+            
+            // Show warning if instance has associated recipes
+            if (recipeCount > 0) {
+                $('#recipeCount').text(recipeCount);
+                $('#recipeWarning').removeClass('d-none');
+            } else {
+                $('#recipeWarning').addClass('d-none');
+            }
+        });
+    });
+</script>
+{% endblock %} 

@@ -1,0 +1,219 @@
+{% extends 'base.html' %}
+
+{% block title %}Run Script: {{ script.name }} - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'script_list' %}">Scripts</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Run {{ script.name }}</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="display-5 mb-0">Run {{ script.name }}</h1>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Script Parameters</h5>
+            </div>
+            <div class="card-body">
+                {% if script.parameters %}
+                <form method="post" id="runScriptForm">
+                    {% csrf_token %}
+                    
+                    {% for param in script.parameters %}
+                    <div class="mb-3">
+                        <label for="{{ param.name }}" class="form-label">
+                            {{ param.label }}
+                            {% if param.required %}
+                            <span class="text-danger">*</span>
+                            {% endif %}
+                        </label>
+                        
+                        {% if param.type == 'text' %}
+                        <input type="text" class="form-control" id="{{ param.name }}" name="{{ param.name }}"
+                               placeholder="{{ param.placeholder }}" 
+                               {% if param.required %}required{% endif %}
+                               {% if param.default %}value="{{ param.default }}"{% endif %}>
+                        
+                        {% elif param.type == 'textarea' %}
+                        <textarea class="form-control" id="{{ param.name }}" name="{{ param.name }}" rows="5"
+                                  placeholder="{{ param.placeholder }}" 
+                                  {% if param.required %}required{% endif %}
+                                  >{% if param.default %}{{ param.default }}{% endif %}</textarea>
+                        
+                        {% elif param.type == 'select' %}
+                        <select class="form-select" id="{{ param.name }}" name="{{ param.name }}"
+                                {% if param.required %}required{% endif %}>
+                            <option value="" disabled {% if not param.default %}selected{% endif %}>Select an option</option>
+                            {% for option in param.options %}
+                            <option value="{{ option.value }}" {% if param.default == option.value %}selected{% endif %}>
+                                {{ option.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        
+                        {% elif param.type == 'file' %}
+                        <input type="file" class="form-control" id="{{ param.name }}" name="{{ param.name }}"
+                               {% if param.required %}required{% endif %}>
+                        
+                        {% elif param.type == 'checkbox' %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="{{ param.name }}" name="{{ param.name }}"
+                                   {% if param.default %}checked{% endif %}>
+                            <label class="form-check-label" for="{{ param.name }}">
+                                {{ param.description }}
+                            </label>
+                        </div>
+                        
+                        {% elif param.type == 'radio' %}
+                        <div>
+                            {% for option in param.options %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="{{ param.name }}" 
+                                       id="{{ param.name }}_{{ option.value }}" value="{{ option.value }}"
+                                       {% if param.default == option.value %}checked{% endif %}
+                                       {% if param.required %}required{% endif %}>
+                                <label class="form-check-label" for="{{ param.name }}_{{ option.value }}">
+                                    {{ option.label }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        
+                        {% if param.description %}
+                        <div class="form-text text-muted">{{ param.description }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-play me-2"></i>Run Script
+                        </button>
+                        <a href="{% url 'script_list' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Scripts
+                        </a>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>This script doesn't have any configurable parameters.
+                </div>
+                <div class="d-grid gap-2">
+                    <form method="post" id="runScriptForm">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-play me-2"></i>Run Script
+                        </button>
+                    </form>
+                    <a href="{% url 'script_list' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>Back to Scripts
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Script Information</h5>
+            </div>
+            <div class="card-body">
+                <dl>
+                    <dt>Name</dt>
+                    <dd>{{ script.name }}</dd>
+                    
+                    <dt>Category</dt>
+                    <dd>
+                        <span class="badge bg-secondary">{{ script.category|title }}</span>
+                    </dd>
+                    
+                    <dt>Description</dt>
+                    <dd>
+                        {% if script.description %}
+                        {{ script.description }}
+                        {% else %}
+                        <span class="text-muted">No description available</span>
+                        {% endif %}
+                    </dd>
+                    
+                    {% if script.last_run %}
+                    <dt>Last Run</dt>
+                    <dd>
+                        <span title="{{ script.last_run.timestamp }}">
+                            {{ script.last_run.timestamp|timesince }} ago
+                        </span>
+                        <span class="badge 
+                            {% if script.last_run.status == 'success' %}
+                                bg-success
+                            {% elif script.last_run.status == 'failed' %}
+                                bg-danger
+                            {% else %}
+                                bg-secondary
+                            {% endif %}
+                        ">
+                            {{ script.last_run.status }}
+                        </span>
+                    </dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Recent Runs</h5>
+            </div>
+            <div class="card-body">
+                {% if script.recent_runs %}
+                <ul class="list-group list-group-flush">
+                    {% for run in script.recent_runs %}
+                    <li class="list-group-item p-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small title="{{ run.timestamp }}">
+                                {{ run.timestamp|timesince }} ago
+                            </small>
+                            <span class="badge 
+                                {% if run.status == 'success' %}
+                                    bg-success
+                                {% elif run.status == 'failed' %}
+                                    bg-danger
+                                {% else %}
+                                    bg-secondary
+                                {% endif %}
+                            ">
+                                {{ run.status }}
+                            </span>
+                        </div>
+                        <div class="mt-1">
+                            <a href="{% url 'script_result' run_id=run.id %}" class="btn btn-sm btn-outline-secondary">
+                                View Results
+                            </a>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center text-muted py-3">
+                    <i class="fas fa-history fa-2x mb-2"></i>
+                    <p class="mb-0">No recent runs</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

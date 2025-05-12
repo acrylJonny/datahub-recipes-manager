@@ -18,6 +18,7 @@ from datahub.metadata.schema_classes import (
 )
 from datahub.configuration.common import ConfigModel
 
+
 # Define a complete Config class for compatibility with the latest SDK
 class DataHubConfig(ConfigModel):
     server: str
@@ -30,6 +31,7 @@ class DataHubConfig(ConfigModel):
     client_certificate_path: Optional[str] = None
     disable_ssl_verification: bool = False
     max_threads: int = 1
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +49,14 @@ class DataHubClient:
             server_url: DataHub GMS server URL
             token: DataHub authentication token (optional)
         """
-        self.server_url = server_url.rstrip('/')
+        self.server_url = server_url.rstrip("/")
         self.token = token
-        
+
         # Create a complete config object for DataHubGraph
         config = DataHubConfig(
-            server=self.server_url,
-            token=self.token,
-            timeout_sec=30,
-            retry_max_times=3
+            server=self.server_url, token=self.token, timeout_sec=30, retry_max_times=3
         )
-        
+
         # Initialize the graph client
         try:
             # Latest SDK version approach
@@ -70,16 +69,16 @@ class DataHubClient:
             raise Exception(f"Could not initialize DataHub client. Error: {str(e)}")
 
     def create_ingestion_source(
-            self,
-            recipe: Dict[str, Any],
-            name: str,
-            source_type: str,
-            schedule_interval: str = "0 0 * * *",
-            timezone: str = "UTC",
-            executor_id: str = "default",
-            source_id: Optional[str] = None,
-            debug_mode: bool = False,
-            extra_args: Optional[Dict[str, Any]] = None
+        self,
+        recipe: Dict[str, Any],
+        name: str,
+        source_type: str,
+        schedule_interval: str = "0 0 * * *",
+        timezone: str = "UTC",
+        executor_id: str = "default",
+        source_id: Optional[str] = None,
+        debug_mode: bool = False,
+        extra_args: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Create a DataHub ingestion source using the SDK
@@ -134,7 +133,9 @@ class DataHubClient:
                     aspect_type=DataHubIngestionSourceInfoClass,
                 )
                 if existing_source:
-                    logger.info(f"Ingestion source {source_urn} already exists, updating it")
+                    logger.info(
+                        f"Ingestion source {source_urn} already exists, updating it"
+                    )
                     # Update the existing source
                     self.graph.update_aspect(
                         entity_urn=source_urn,
@@ -254,10 +255,7 @@ class DataHubClient:
             return []
 
     def update_ingestion_schedule(
-            self,
-            source_id: str,
-            schedule_interval: str,
-            timezone: str = "UTC"
+        self, source_id: str, schedule_interval: str, timezone: str = "UTC"
     ) -> bool:
         """
         Update the schedule of an ingestion source
@@ -318,11 +316,7 @@ class DataHubClient:
             }
             """
 
-            variables = {
-                "input": {
-                    "ingestionSourceUrn": source_urn
-                }
-            }
+            variables = {"input": {"ingestionSourceUrn": source_urn}}
 
             result = self.graph.execute_graphql(query, variables)
 
@@ -351,9 +345,7 @@ class DataHubClient:
             }
             """
 
-            variables = {
-                "urn": source_urn
-            }
+            variables = {"urn": source_urn}
 
             result = self.graph.execute_graphql(query, variables)
 

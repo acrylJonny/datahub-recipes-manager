@@ -1,0 +1,429 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Recipe Template - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipes' %}">Recipes</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipe_templates' %}">Templates</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Create Template</li>
+            </ol>
+        </nav>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2">{% if imported %}Import{% else %}Create{% endif %} Recipe Template</h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Templates
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Template Information</h5>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_name" class="form-label">Template Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="id_name" name="name" value="{{ form.name.value|default:'' }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="id_recipe_type" class="form-label">Recipe Type <span class="text-danger">*</span></label>
+                        <select class="form-select select2-enable" id="id_recipe_type" name="recipe_type" required>
+                            {% for value, text in form.fields.recipe_type.choices %}
+                            <option value="{{ value }}" {% if form.recipe_type.value == value %}selected{% endif %}>{{ text }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" class="form-control mt-2" id="id_recipe_type_other" name="recipe_type_other" 
+                               placeholder="Enter custom recipe type" style="display:none;">
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="id_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="id_description" name="description" rows="3">{{ form.description.value|default:'' }}</textarea>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <label for="id_tags" class="form-label">Tags</label>
+                        <input type="text" class="form-control" id="id_tags" name="tags" value="{{ form.tags.value|default:'' }}">
+                        <div class="form-text">Enter comma-separated tags (e.g., database,extraction,warehouse)</div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_executor_id" class="form-label">Executor ID</label>
+                        <input type="text" class="form-control" id="id_executor_id" name="executor_id" value="{{ form.executor_id.value|default:'default' }}">
+                        <div class="form-text">The executor ID to use when deploying this recipe to DataHub</div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_cron_schedule" class="form-label">Schedule (Cron Expression)</label>
+                        <input type="text" class="form-control" id="id_cron_schedule" name="cron_schedule" value="{{ form.cron_schedule.value|default:'0 0 * * *' }}" placeholder="0 0 * * *">
+                        <div class="form-text">Default: Daily at midnight (0 0 * * *)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="id_timezone" class="form-label">Timezone</label>
+                        <select class="form-select select2-enable" id="id_timezone" name="timezone">
+                            {% for value, text in form.fields.timezone.choices %}
+                            <option value="{{ value }}" {% if form.timezone.value == value or form.timezone.value|default:'' == '' and value == 'Etc/UTC' %}selected{% endif %}>{{ text }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Timezone for the cron schedule</div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="id_content" class="form-label">Recipe Content (YAML/JSON) <span class="text-danger">*</span></label>
+                    
+                    <!-- Simple Recipe Editor Implementation -->
+                    <div class="card recipe-editor-box mb-2">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="m-0 fw-bold"><i class="fas fa-code me-2"></i>Recipe Definition</h6>
+                            <div>
+                                <div class="btn-group btn-group-sm me-2" role="group">
+                                    <input type="radio" class="btn-check" name="format" id="yamlFormat" value="yaml" {% if form.content.value and not form.content.value|slice:":1" == '{' %}checked{% endif %}>
+                                    <label class="btn btn-outline-secondary" for="yamlFormat">YAML</label>
+                                    
+                                    <input type="radio" class="btn-check" name="format" id="jsonFormat" value="json" {% if form.content.value and form.content.value|slice:":1" == '{' %}checked{% endif %}>
+                                    <label class="btn btn-outline-secondary" for="jsonFormat">JSON</label>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="formatButton">
+                                    <i class="fas fa-code me-1"></i> Format
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <textarea id="id_content" name="content" rows="20" required class="d-none">{{ form.content.value|default:'' }}</textarea>
+                            <div id="editor-container" class="fill-height"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Save Template</button>
+                </div>
+            </form>
+            {% if instance %}
+            <div class="mt-3">
+                <button id="gitPrBtn" class="btn btn-outline-primary w-100">
+                    <i class="fab fa-github me-1"></i> Add to GitHub PR
+                </button>
+            </div>
+            <script>
+                document.getElementById('gitPrBtn').addEventListener('click', function() {
+                    fetch("{% url 'recipe_template_push_github' instance.id %}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('Template added to GitHub PR successfully!');
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    })
+                    .catch(error => {
+                        alert('Error: ' + error);
+                    });
+                });
+            </script>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .fill-height {
+        height: 100%;
+    }
+    
+    .recipe-editor-box {
+        margin-bottom: 1rem;
+    }
+    
+    #recipe_textarea {
+        width: 100%;
+        min-height: 300px;
+        font-family: Monaco, Menlo, "Ubuntu Mono", Consolas, source-code-pro, monospace;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        padding: 0.8rem;
+        border: none;
+        white-space: pre;
+        overflow-wrap: normal;
+        overflow-x: auto;
+    }
+    
+    /* Fix z-index issues with dropdowns */
+    .higher-z-index {
+        z-index: 9999 !important;
+    }
+    
+    .select2-container {
+        z-index: 1050; /* Set default z-index */
+    }
+    
+    .select2-container--open {
+        z-index: 9999 !important; /* Ensure open dropdowns appear above other elements */
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<!-- Select2 -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup recipe editor first
+        setupRecipeEditor();
+        
+        // Then initialize Select2 for dropdowns
+        setTimeout(() => {
+            $('.select2-enable').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                dropdownCssClass: 'higher-z-index'
+            }).on('select2:open', function() {
+                // Ensure dropdown appears above other elements
+                document.querySelector('.select2-container--open').style.zIndex = 9999;
+            });
+        }, 100);
+        
+        // Handle the "other" option for recipe type
+        setupRecipeTypeOtherField();
+    });
+    
+    function setupRecipeTypeOtherField() {
+        const recipeTypeSelect = document.getElementById('id_recipe_type');
+        const recipeTypeOther = document.getElementById('id_recipe_type_other');
+
+        // Initially hide/show based on current value
+        if (recipeTypeSelect && recipeTypeOther) {
+            if (recipeTypeSelect.value === 'other') {
+                recipeTypeOther.style.display = 'block';
+            } else {
+                recipeTypeOther.style.display = 'none';
+            }
+            
+            // Update on change
+            recipeTypeSelect.addEventListener('change', function() {
+                if (this.value === 'other') {
+                    recipeTypeOther.style.display = 'block';
+                    recipeTypeOther.focus();
+                } else {
+                    recipeTypeOther.style.display = 'none';
+                }
+            });
+        }
+    }
+    
+    function setupRecipeEditor() {
+        // Replace the original textarea with a simpler one for our editor
+        const originalTextarea = document.getElementById('id_content');
+        if (!originalTextarea) return;
+        
+        // Store the original content for reset functionality
+        const originalContent = originalTextarea.value || '';
+        const isJsonOriginal = originalContent.trim().startsWith('{');
+        
+        // Create a new textarea in a container
+        const editorDiv = document.getElementById('editor-container');
+        if (!editorDiv) return;  // Exit if container not found
+        
+        // Clear any existing content in the editor container
+        editorDiv.innerHTML = '';
+        
+        const newTextarea = document.createElement('textarea');
+        newTextarea.id = 'recipe_textarea';
+        newTextarea.className = 'form-control-plaintext fill-height';
+        newTextarea.value = originalContent;
+        newTextarea.placeholder = 'Enter your recipe template definition in YAML or JSON format';
+        newTextarea.style.resize = 'none';
+        
+        // Add the textarea to the container
+        editorDiv.appendChild(newTextarea);
+        
+        // Improved auto-resize function
+        function autoResizeTextarea() {
+            // Reset the height to auto so we can get the actual scrollHeight
+            newTextarea.style.height = 'auto';
+            
+            // Set the height to scrollHeight to fit all content
+            const newHeight = Math.max(300, newTextarea.scrollHeight + 10);
+            newTextarea.style.height = newHeight + 'px';
+            
+            // Ensure resize handle is disabled
+            newTextarea.style.resize = 'none';
+            
+            // Update parent container heights if needed
+            if (editorDiv) {
+                editorDiv.style.minHeight = newHeight + 'px';
+            }
+        }
+        
+        // Reset function to restore original content
+        function resetContent() {
+            // Set format radio button based on original content
+            if (isJsonOriginal) {
+                document.getElementById('jsonFormat').checked = true;
+            } else {
+                document.getElementById('yamlFormat').checked = true;
+            }
+            
+            // Restore content
+            newTextarea.value = originalContent;
+            originalTextarea.value = originalContent;
+            
+            // Resize after content change
+            setTimeout(autoResizeTextarea, 10);
+        }
+        
+        // Create a reset button and add it to the toolbar
+        const formatButton = document.getElementById('formatButton');
+        if (formatButton) {
+            const resetButton = document.createElement('button');
+            resetButton.type = 'button';
+            resetButton.className = 'btn btn-sm btn-outline-secondary ms-2';
+            resetButton.innerHTML = '<i class="fas fa-undo me-1"></i> Reset';
+            resetButton.addEventListener('click', resetContent);
+            
+            // Add reset button after format button
+            formatButton.parentNode.appendChild(resetButton);
+        }
+        
+        // Initial resize with a slight delay to ensure content is rendered
+        setTimeout(autoResizeTextarea, 10);
+        
+        // Resize on input
+        newTextarea.addEventListener('input', function() {
+            originalTextarea.value = this.value;
+            autoResizeTextarea();
+        });
+        
+        // Disable resize attempts via the DOM
+        newTextarea.addEventListener('mousedown', function(e) {
+            const rect = newTextarea.getBoundingClientRect();
+            const isInResizeArea = 
+                e.clientX > rect.right - 20 && 
+                e.clientY > rect.bottom - 20;
+                
+            if (isInResizeArea) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+        
+        // Format toggle handling
+        document.querySelectorAll('input[name="format"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const format = this.value;
+                const content = newTextarea.value;
+                
+                try {
+                    let newContent = content;
+                    
+                    // Convert between formats
+                    if (format === 'json' && !content.trim().startsWith('{')) {
+                        const obj = jsyaml.load(content);
+                        newContent = JSON.stringify(obj, null, 2);
+                    } else if (format === 'yaml' && content.trim().startsWith('{')) {
+                        const obj = JSON.parse(content);
+                        newContent = jsyaml.dump(obj);
+                    }
+                    
+                    newTextarea.value = newContent;
+                    originalTextarea.value = newContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error changing format:', e);
+                    alert('Error changing format. Please check your syntax.');
+                }
+            });
+        });
+        
+        // Format button handler
+        if (formatButton) {
+            formatButton.addEventListener('click', function() {
+                const format = document.querySelector('input[name="format"]:checked').value;
+                
+                try {
+                    const content = newTextarea.value;
+                    let formattedContent = content;
+                    
+                    if (format === 'json') {
+                        const obj = JSON.parse(content);
+                        formattedContent = JSON.stringify(obj, null, 2);
+                    } else {
+                        const obj = jsyaml.load(content);
+                        formattedContent = jsyaml.dump(obj);
+                    }
+                    
+                    newTextarea.value = formattedContent;
+                    originalTextarea.value = formattedContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error formatting:', e);
+                    alert('Error formatting code. Please check your syntax.');
+                }
+            });
+        }
+        
+        // Update form on submission
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', function() {
+                originalTextarea.value = newTextarea.value;
+            });
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            setTimeout(autoResizeTextarea, 10);
+        });
+        
+        // Run the resize one more time after a delay to catch any edge cases
+        setTimeout(autoResizeTextarea, 200);
+    }
+</script>
+{% endblock %} 

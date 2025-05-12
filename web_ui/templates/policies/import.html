@@ -1,0 +1,373 @@
+{% extends 'base.html' %}
+
+{% block title %}Import Policy - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'policies' %}">Policies</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Import Policy</li>
+            </ol>
+        </nav>
+    </div>
+
+    {% if not request.session.datahub_connected %}
+        <div class="alert alert-warning" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Not connected to DataHub. Please check your connection settings.
+            <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+        </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <h1 class="h2 mb-4">Import Policy</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Upload Policy File</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data" id="policyImportForm">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="policyFile" class="form-label">Policy JSON File</label>
+                            <input type="file" class="form-control" id="policyFile" name="policy_file" accept=".json" required>
+                            <div class="form-text">Upload a DataHub policy JSON file.</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="validateOnly" name="validate_only">
+                            <label class="form-check-label" for="validateOnly">Validate only (do not import)</label>
+                            <div class="form-text">Check this option to validate the policy file without importing it.</div>
+                        </div>
+                        
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="overwrite" name="overwrite">
+                            <label class="form-check-label" for="overwrite">Overwrite if policy ID exists</label>
+                            <div class="form-text">Check this option to update an existing policy with the same ID.</div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'policies' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-1"></i> Back to Policies
+                            </a>
+                            <button type="submit" class="btn btn-primary" id="importButton">
+                                <i class="fas fa-upload me-1"></i> <span id="submitButtonText">Import Policy</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Usage Guidelines</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Policy File Format</h6>
+                    <p>The policy file should be a valid JSON file exported from DataHub or created according to the DataHub policy schema.</p>
+                    
+                    <h6>Required Fields</h6>
+                    <ul>
+                        <li><strong>type</strong>: METADATA or PLATFORM</li>
+                        <li><strong>name</strong>: Policy name</li>
+                        <li><strong>state</strong>: ACTIVE or INACTIVE</li>
+                        <li><strong>resources</strong>: Array of resource objects</li>
+                        <li><strong>privileges</strong>: Array of privilege strings</li>
+                        <li><strong>actors</strong>: Array of actor objects</li>
+                    </ul>
+                    
+                    <h6>Validation</h6>
+                    <p>The "Validate only" option allows you to check if your policy JSON is valid without actually importing it into DataHub.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Policy Preview</h5>
+                    <span class="badge bg-secondary" id="previewStatus">No file selected</span>
+                </div>
+                <div class="card-body">
+                    <div id="noFileSelected" class="text-center py-5">
+                        <i class="fas fa-file-upload fa-4x text-muted mb-3"></i>
+                        <h5>No policy file selected</h5>
+                        <p class="text-muted">Upload a policy JSON file to preview its contents here.</p>
+                    </div>
+                    
+                    <div id="filePreview" class="d-none">
+                        <div class="mb-3">
+                            <h6>Basic Information</h6>
+                            <dl class="row mb-0">
+                                <dt class="col-sm-3">Policy ID</dt>
+                                <dd class="col-sm-9" id="preview-id"><code>-</code></dd>
+                                
+                                <dt class="col-sm-3">Name</dt>
+                                <dd class="col-sm-9" id="preview-name">-</dd>
+                                
+                                <dt class="col-sm-3">Type</dt>
+                                <dd class="col-sm-9" id="preview-type">-</dd>
+                                
+                                <dt class="col-sm-3">State</dt>
+                                <dd class="col-sm-9" id="preview-state">-</dd>
+                                
+                                <dt class="col-sm-3">Description</dt>
+                                <dd class="col-sm-9" id="preview-description">-</dd>
+                            </dl>
+                        </div>
+                        
+                        <ul class="nav nav-tabs" id="previewTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="preview-resources-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#preview-resources" type="button" role="tab" 
+                                        aria-controls="preview-resources" aria-selected="true">
+                                    Resources
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="preview-privileges-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#preview-privileges" type="button" role="tab" 
+                                        aria-controls="preview-privileges" aria-selected="false">
+                                    Privileges
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="preview-actors-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#preview-actors" type="button" role="tab" 
+                                        aria-controls="preview-actors" aria-selected="false">
+                                    Actors
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="preview-raw-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#preview-raw" type="button" role="tab" 
+                                        aria-controls="preview-raw" aria-selected="false">
+                                    Raw JSON
+                                </button>
+                            </li>
+                        </ul>
+                        <div class="tab-content pt-3" id="previewTabsContent">
+                            <div class="tab-pane fade show active" id="preview-resources" role="tabpanel" aria-labelledby="preview-resources-tab">
+                                <div class="json-content" id="preview-resources-json"></div>
+                            </div>
+                            <div class="tab-pane fade" id="preview-privileges" role="tabpanel" aria-labelledby="preview-privileges-tab">
+                                <div class="json-content" id="preview-privileges-json"></div>
+                            </div>
+                            <div class="tab-pane fade" id="preview-actors" role="tabpanel" aria-labelledby="preview-actors-tab">
+                                <div class="json-content" id="preview-actors-json"></div>
+                            </div>
+                            <div class="tab-pane fade" id="preview-raw" role="tabpanel" aria-labelledby="preview-raw-tab">
+                                <div class="json-content" id="preview-raw-json"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="fileError" class="d-none text-center py-5">
+                        <i class="fas fa-exclamation-circle fa-4x text-danger mb-3"></i>
+                        <h5>Invalid Policy File</h5>
+                        <p class="text-danger mb-2" id="errorMessage">Unable to parse the JSON file.</p>
+                        <div class="alert alert-danger" id="errorDetails"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .json-content {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 0.25rem;
+        padding: 1rem;
+        max-height: 400px;
+        overflow-y: auto;
+        font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.875rem;
+        white-space: pre-wrap;
+    }
+    
+    pre.json-content {
+        margin-bottom: 0;
+    }
+    
+    .tab-pane .json-content {
+        max-height: 300px;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/highlight.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const fileInput = document.getElementById('policyFile');
+        const validateCheckbox = document.getElementById('validateOnly');
+        const submitButton = document.getElementById('importButton');
+        const submitButtonText = document.getElementById('submitButtonText');
+        const previewStatus = document.getElementById('previewStatus');
+        
+        const noFileSelected = document.getElementById('noFileSelected');
+        const filePreview = document.getElementById('filePreview');
+        const fileError = document.getElementById('fileError');
+        
+        // Elements for preview
+        const previewId = document.getElementById('preview-id');
+        const previewName = document.getElementById('preview-name');
+        const previewType = document.getElementById('preview-type');
+        const previewState = document.getElementById('preview-state');
+        const previewDescription = document.getElementById('preview-description');
+        
+        const previewResourcesJson = document.getElementById('preview-resources-json');
+        const previewPrivilegesJson = document.getElementById('preview-privileges-json');
+        const previewActorsJson = document.getElementById('preview-actors-json');
+        const previewRawJson = document.getElementById('preview-raw-json');
+        
+        const errorMessage = document.getElementById('errorMessage');
+        const errorDetails = document.getElementById('errorDetails');
+        
+        // Update button text based on validation checkbox
+        validateCheckbox.addEventListener('change', function() {
+            submitButtonText.textContent = this.checked ? 'Validate Policy' : 'Import Policy';
+        });
+        
+        // Handle file selection and preview
+        fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                resetPreview();
+                return;
+            }
+            
+            if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+                showError('The selected file is not a JSON file.', 'Please select a valid JSON file containing a DataHub policy.');
+                return;
+            }
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    const policy = JSON.parse(content);
+                    
+                    // Validate policy structure
+                    if (!validatePolicyStructure(policy)) {
+                        showError('Invalid policy structure', 'The file does not contain a valid DataHub policy schema.');
+                        return;
+                    }
+                    
+                    // Update preview
+                    showPreview(policy);
+                    
+                } catch (error) {
+                    showError('Failed to parse JSON file', error.message);
+                }
+            };
+            
+            reader.onerror = function() {
+                showError('Error reading file', 'There was an error reading the file. Please try again.');
+            };
+            
+            reader.readAsText(file);
+        });
+        
+        // Reset preview to initial state
+        function resetPreview() {
+            noFileSelected.classList.remove('d-none');
+            filePreview.classList.add('d-none');
+            fileError.classList.add('d-none');
+            previewStatus.textContent = 'No file selected';
+            previewStatus.className = 'badge bg-secondary';
+        }
+        
+        // Display error in preview area
+        function showError(message, details) {
+            noFileSelected.classList.add('d-none');
+            filePreview.classList.add('d-none');
+            fileError.classList.remove('d-none');
+            
+            errorMessage.textContent = message;
+            errorDetails.textContent = details;
+            
+            previewStatus.textContent = 'Error';
+            previewStatus.className = 'badge bg-danger';
+        }
+        
+        // Display policy preview
+        function showPreview(policy) {
+            noFileSelected.classList.add('d-none');
+            filePreview.classList.remove('d-none');
+            fileError.classList.add('d-none');
+            
+            // Update basic information
+            previewId.textContent = policy.id || '-';
+            previewName.textContent = policy.name || '-';
+            
+            // Update type with badge
+            const type = policy.type || '-';
+            const typeClass = type === 'METADATA' ? 'primary' : (type === 'PLATFORM' ? 'secondary' : 'info');
+            previewType.innerHTML = `<span class="badge bg-${typeClass}">${type}</span>`;
+            
+            // Update state with badge
+            const state = policy.state || '-';
+            const stateClass = state === 'ACTIVE' ? 'success' : 'warning';
+            previewState.innerHTML = `<span class="badge bg-${stateClass}">${state}</span>`;
+            
+            previewDescription.textContent = policy.description || 'No description provided';
+            
+            // Format JSON displays with syntax highlighting
+            formatJsonElement(previewResourcesJson, policy.resources || []);
+            formatJsonElement(previewPrivilegesJson, policy.privileges || []);
+            formatJsonElement(previewActorsJson, policy.actors || []);
+            formatJsonElement(previewRawJson, policy);
+            
+            previewStatus.textContent = 'Valid';
+            previewStatus.className = 'badge bg-success';
+        }
+        
+        // Format and highlight JSON content
+        function formatJsonElement(element, json) {
+            const formatted = JSON.stringify(json, null, 2);
+            element.textContent = formatted;
+            hljs.highlightElement(element);
+        }
+        
+        // Basic validation of policy structure
+        function validatePolicyStructure(policy) {
+            // Check for required fields
+            if (!policy.type || !policy.name || !policy.state) {
+                return false;
+            }
+            
+            // Check for arrays
+            if (!Array.isArray(policy.resources) || 
+                !Array.isArray(policy.privileges) || 
+                !Array.isArray(policy.actors)) {
+                return false;
+            }
+            
+            return true;
+        }
+    });
+</script>
+{% endblock %} 

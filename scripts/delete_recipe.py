@@ -50,9 +50,9 @@ def delete_ingestion_source(server: str, token: str, source_id: str) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Delete DataHub ingestion recipes")
-    parser.add_argument('--source-id', required=True, help='Source ID to delete')
-    parser.add_argument('--env-file', help='Path to .env file for secrets')
-    parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
+    parser.add_argument("--source-id", required=True, help="Source ID to delete")
+    parser.add_argument("--env-file", help="Path to .env file for secrets")
+    parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
 
     args = parser.parse_args()
 
@@ -66,16 +66,20 @@ def main():
     # Get DataHub configuration from environment variables
     datahub_config = {
         "server": os.environ.get("DATAHUB_GMS_URL", ""),
-        "token": os.environ.get("DATAHUB_TOKEN", "")
+        "token": os.environ.get("DATAHUB_TOKEN", ""),
     }
 
     if not datahub_config["server"] or not datahub_config["token"]:
-        raise ValueError("DATAHUB_GMS_URL and DATAHUB_TOKEN environment variables must be set")
+        raise ValueError(
+            "DATAHUB_GMS_URL and DATAHUB_TOKEN environment variables must be set"
+        )
 
     # Confirm deletion unless --force is specified
     if not args.force:
-        confirm = input(f"Are you sure you want to delete ingestion source {args.source_id}? [y/N] ")
-        if confirm.lower() not in ['y', 'yes']:
+        confirm = input(
+            f"Are you sure you want to delete ingestion source {args.source_id}? [y/N] "
+        )
+        if confirm.lower() not in ["y", "yes"]:
             print("Deletion cancelled")
             return 0
 
@@ -83,7 +87,7 @@ def main():
     success = delete_ingestion_source(
         server=datahub_config["server"],
         token=datahub_config["token"],
-        source_id=args.source_id
+        source_id=args.source_id,
     )
 
     return 0 if success else 1

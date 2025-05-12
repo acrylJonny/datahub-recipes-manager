@@ -1,0 +1,332 @@
+{% extends 'base.html' %}
+
+{% block title %}Pull Requests - GitHub Integration - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">GitHub Pull Requests</h1>
+            <p class="text-muted">Manage all pull requests for your recipes</p>
+        </div>
+        <div>
+            <a href="{% url 'github_index' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left me-1"></i> Back to GitHub
+            </a>
+            <a href="{% url 'github_sync_status' %}" class="btn btn-outline-primary">
+                <i class="fas fa-sync me-1"></i> Sync PR Status
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">All Pull Requests</h5>
+            <div class="input-group" style="width: 250px;">
+                <input type="text" id="pr-search" class="form-control form-control-sm" 
+                       placeholder="Filter pull requests...">
+                <button class="btn btn-sm btn-outline-secondary" id="clear-filter">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if pull_requests %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>Recipe</th>
+                            <th>Branch</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pr in pull_requests %}
+                        <tr>
+                            <td>#{{ pr.pr_number }}</td>
+                            <td>
+                                <a href="{{ pr.pr_url }}" target="_blank" class="text-decoration-none">
+                                    {{ pr.title }}
+                                    <i class="fas fa-external-link-alt ms-1 small"></i>
+                                </a>
+                            </td>
+                            <td>
+                                {% if pr.recipe_id %}
+                                <a href="{% url 'recipe_edit' recipe_id=pr.recipe_id %}" class="text-decoration-none">
+                                    {{ pr.recipe_id }}
+                                </a>
+                                {% else %}
+                                <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ pr.branch_name }}</code></td>
+                            <td>
+                                <span class="badge bg-{{ pr.get_status_display_color }}">
+                                    {{ pr.get_pr_status_display }}
+                                </span>
+                            </td>
+                            <td>{{ pr.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ pr.updated_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <a href="{{ pr.pr_url }}" target="_blank" class="btn btn-sm btn-outline-primary" title="View on GitHub">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-secondary update-status-btn" 
+                                            data-pr-id="{{ pr.id }}" data-pr-number="{{ pr.pr_number }}" title="Update Status">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger delete-pr-btn" 
+                                            data-pr-id="{{ pr.id }}" data-pr-number="{{ pr.pr_number }}" title="Delete Record"
+                                            data-bs-toggle="modal" data-bs-target="#deletePRModal">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            {% if is_paginated %}
+            <div class="d-flex justify-content-center mt-3 mb-3">
+                <nav aria-label="Page navigation">
+                    <ul class="pagination">
+                        {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page=1" aria-label="First">
+                                    <span aria-hidden="true">&laquo;&laquo;</span>
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}" aria-label="Previous">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+                        {% endif %}
+                        
+                        {% for num in page_obj.paginator.page_range %}
+                            {% if page_obj.number == num %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ num }}</span>
+                                </li>
+                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}" aria-label="Next">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}" aria-label="Last">
+                                    <span aria-hidden="true">&raquo;&raquo;</span>
+                                </a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+            
+            {% else %}
+            <div class="py-5 text-center">
+                <div class="mb-3">
+                    <i class="fab fa-github fa-4x text-muted"></i>
+                </div>
+                <h4>No Pull Requests</h4>
+                <p class="text-muted">
+                    {% if github_settings.is_configured %}
+                    No pull requests have been created yet. Create or modify a recipe to start.
+                    {% else %}
+                    Configure GitHub integration to create and track pull requests.
+                    <a href="{% url 'github_settings' %}" class="btn btn-sm btn-primary mt-2">
+                        <i class="fas fa-cog me-1"></i> Configure GitHub
+                    </a>
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete PR Modal -->
+<div class="modal fade" id="deletePRModal" tabindex="-1" aria-labelledby="deletePRModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deletePRModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the record for pull request <strong id="delete-pr-number"></strong>?</p>
+                <p class="text-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    This will only remove the record from this application, not from GitHub.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-pr-form" method="POST" action="{% url 'github_delete_pr' 0 %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Delete Record</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle delete PR modal
+        const deleteModal = document.getElementById('deletePRModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const prId = button.getAttribute('data-pr-id');
+                const prNumber = button.getAttribute('data-pr-number');
+                
+                document.getElementById('delete-pr-number').textContent = '#' + prNumber;
+                document.getElementById('delete-pr-form').action = document.getElementById('delete-pr-form').action.replace('0', prId);
+            });
+        }
+        
+        // Handle update status buttons
+        const updateStatusButtons = document.querySelectorAll('.update-status-btn');
+        updateStatusButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const prId = this.getAttribute('data-pr-id');
+                const prNumber = this.getAttribute('data-pr-number');
+                
+                // Disable button and show spinner
+                this.disabled = true;
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+                
+                // Send AJAX request to update PR status
+                fetch(`/github/pull-requests/${prNumber}/update/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('input[name="csrfmiddlewaretoken"]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to update PR status'}`);
+                    }
+                })
+                .catch(error => {
+                    // Re-enable button and restore original content
+                    this.disabled = false;
+                    this.innerHTML = originalHTML;
+                    alert(`Error: ${error.message || 'Failed to update PR status'}`);
+                });
+            });
+        });
+        
+        // Client-side filtering functionality
+        const searchInput = document.getElementById('pr-search');
+        const clearFilterButton = document.getElementById('clear-filter');
+        const prRows = document.querySelectorAll('tbody tr');
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', filterPRs);
+            
+            // Clear filter button
+            if (clearFilterButton) {
+                clearFilterButton.addEventListener('click', function() {
+                    searchInput.value = '';
+                    filterPRs();
+                });
+            }
+        }
+        
+        function filterPRs() {
+            const searchTerm = searchInput.value.toLowerCase();
+            
+            prRows.forEach(row => {
+                const id = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
+                const title = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+                const recipe = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+                const branch = row.querySelector('td:nth-child(4)').textContent.toLowerCase();
+                const status = row.querySelector('td:nth-child(5)').textContent.toLowerCase();
+                
+                // Show row if any field contains the search term
+                if (id.includes(searchTerm) || 
+                    title.includes(searchTerm) || 
+                    recipe.includes(searchTerm) || 
+                    branch.includes(searchTerm) ||
+                    status.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Check if any rows are visible
+            const visibleRows = Array.from(prRows).filter(row => row.style.display !== 'none');
+            const noResultsMessage = document.getElementById('no-results-message');
+            
+            // Create or show/hide no results message
+            if (visibleRows.length === 0) {
+                if (!noResultsMessage) {
+                    const tableBody = document.querySelector('tbody');
+                    const container = tableBody.parentElement.parentElement;
+                    const message = document.createElement('div');
+                    message.id = 'no-results-message';
+                    message.className = 'py-4 text-center';
+                    message.innerHTML = `
+                        <i class="fas fa-search fa-2x text-muted mb-2"></i>
+                        <h5 class="text-muted">No pull requests match your filter</h5>
+                        <button id="clear-filter-inline" class="btn btn-sm btn-outline-secondary mt-2">
+                            <i class="fas fa-times me-1"></i> Clear Filter
+                        </button>
+                    `;
+                    container.appendChild(message);
+                    
+                    document.getElementById('clear-filter-inline').addEventListener('click', function() {
+                        searchInput.value = '';
+                        filterPRs();
+                    });
+                } else {
+                    noResultsMessage.style.display = 'block';
+                }
+            } else if (noResultsMessage) {
+                noResultsMessage.style.display = 'none';
+            }
+        }
+    });
+</script>
+{% endblock %} 
