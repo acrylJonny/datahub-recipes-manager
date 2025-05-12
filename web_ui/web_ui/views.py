@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, FileResponse, Http404
 from django.contrib import messages
 from django.views.decorators.http import require_POST
 from django.urls import reverse
@@ -20,6 +20,9 @@ from django.core.paginator import Paginator
 import requests
 from django.views.decorators.csrf import csrf_exempt
 import base64
+import time
+from random import randint
+import uuid
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -448,6 +451,35 @@ def recipe_delete(request, recipe_id):
         messages.error(request, f"Error deleting recipe: {str(e)}")
         return redirect('recipes')
 
+def extract_recipe_id(recipe_id):
+    """
+    Extract the ID from a recipe ID or recipe dictionary
+    
+    Args:
+        recipe_id: A string ID or dictionary containing recipe information
+    
+    Returns:
+        str: The extracted ID as a string
+    """
+    # If it's a string, use it directly
+    if isinstance(recipe_id, str):
+        return recipe_id
+        
+    # If it's a dict, extract the ID
+    if isinstance(recipe_id, dict):
+        # Try to get the ID directly
+        if 'id' in recipe_id:
+            return recipe_id['id']
+            
+        # Try to get the ID from the URN
+        if 'urn' in recipe_id and isinstance(recipe_id['urn'], str):
+            urn = recipe_id['urn']
+            if urn.startswith('urn:li:dataHubIngestionSource:'):
+                return urn.split(':')[-1]
+    
+    # Return as-is if we couldn't extract anything
+    return recipe_id
+
 def recipe_run(request, recipe_id):
     """Run a recipe immediately."""
     client = get_datahub_client()
@@ -462,24 +494,101 @@ def recipe_run(request, recipe_id):
         messages.error(request, "Not connected to DataHub")
         return redirect('recipes')
     
+    # Validate recipe_id
+    if not recipe_id or recipe_id == '':
+        error_msg = "Empty or missing recipe ID"
+        if is_ajax:
+            return JsonResponse({'success': False, 'error': error_msg})
+        messages.error(request, error_msg)
+        return redirect('recipes')
+    
     try:
         # Make sure we're always sending a POST for the actual run action
         if is_post or is_ajax:
-            result = client.trigger_ingestion(recipe_id)
-            if result:
+            # Extract just the ID string if recipe_id is a dict
+            actual_id = recipe_id
+            if isinstance(recipe_id, dict):
+                if 'id' in recipe_id:
+                    actual_id = recipe_id['id']
+                elif 'urn' in recipe_id:
+                    # Extract ID from URN if available
+                    urn = recipe_id['urn']
+                    if urn and urn.startswith('urn:li:dataHubIngestionSource:'):
+                        actual_id = urn.split(':')[-1]
+            
+            # Check for empty ID after processing
+            if not actual_id or actual_id == '':
+                error_msg = "Empty or missing recipe ID after processing"
                 if is_ajax:
-                    return JsonResponse({'success': True, 'execution_id': result})
+                    return JsonResponse({'success': False, 'error': error_msg})
+                messages.error(request, error_msg)
+                return redirect('recipes')
+                
+            # Create the source URN with the ID
+            source_urn = f"urn:li:dataHubIngestionSource:{actual_id}"
+            
+            # Create GraphQL mutation following the test_run_now.py pattern
+            mutation = """
+            mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
+              createIngestionExecutionRequest(input: $input)
+            }
+            """
+            
+            variables = {"input": {"ingestionSourceUrn": source_urn}}
+            
+            # Execute the GraphQL mutation
+            execution_request_urn = None
+            success = False
+            result = None
+            
+            try:
+                if hasattr(client, 'graph'):
+                    result = client.graph.execute_graphql(mutation, variables)
+                    if result and isinstance(result, dict) and "data" in result and "createIngestionExecutionRequest" in result["data"]:
+                        execution_request_urn = result["data"]["createIngestionExecutionRequest"]
+                        success = bool(execution_request_urn)
+                    elif result and isinstance(result, dict) and "errors" in result:
+                        error_msg = f"GraphQL error: {result['errors'][0].get('message', 'Unknown error')}"
+                        logging.error(f"GraphQL error when running recipe {actual_id}: {error_msg}")
+                        if is_ajax:
+                            return JsonResponse({'success': False, 'error': error_msg})
+                        messages.error(request, error_msg)
+                        return redirect('recipes')
+                else:
+                    # Fall back to client.trigger_ingestion if no graph client available
+                    success = client.trigger_ingestion(actual_id)
+            except Exception as e:
+                error_msg = f"Error executing GraphQL: {str(e)}"
+                logging.error(f"Exception when running recipe {actual_id}: {error_msg}")
+                if is_ajax:
+                    return JsonResponse({'success': False, 'error': error_msg})
+                messages.error(request, error_msg)
+                return redirect('recipes')
+            
+            if success:
+                if is_ajax:
+                    response_data = {'success': True}
+                    if execution_request_urn:
+                        response_data['execution_id'] = execution_request_urn
+                    return JsonResponse(response_data)
                 messages.success(request, "Recipe execution started successfully!")
                 return redirect('recipes')
             else:
+                error_msg = "Failed to trigger ingestion"
+                # Only check result if it's defined and is a dictionary
+                if result and isinstance(result, dict) and "errors" in result and result["errors"]:
+                    error_details = result["errors"][0].get('message', '') if result["errors"] else ''
+                    error_msg = f"Error: {error_details}" if error_details else error_msg
+                
                 if is_ajax:
-                    return JsonResponse({'success': False, 'error': 'Failed to trigger ingestion'})
-                messages.error(request, "Failed to run recipe")
+                    return JsonResponse({'success': False, 'error': error_msg})
+                messages.error(request, error_msg)
                 return redirect('recipes')
         else:
             # If it's a GET request, just redirect to recipes
             return redirect('recipes')
     except Exception as e:
+        logging.exception(f"Unexpected error in recipe_run: {str(e)}")
         if is_ajax:
             return JsonResponse({'success': False, 'error': str(e)})
         messages.error(request, f"Error running recipe: {str(e)}")
@@ -512,165 +621,293 @@ def recipe_download(request, recipe_id):
     return response
 
 def policies(request):
-    """List all policies."""
+    """List all policies from DataHub."""
     client = get_datahub_client()
-    policies_list = []
-    connected = False
+    connected = client and client.test_connection()
     
-    if client and client.test_connection():
-        connected = True
-        try:
-            all_policies = client.list_policies(limit=100)
+    try:
+        # Get policies from DataHub
+        server_policies = []
+        if connected:
+            server_policies = client.list_policies()
             
-            # Process each policy to ensure it has an ID
-            for policy in all_policies:
-                # If no ID but has URN, extract ID from URN
-                if not policy.get('id') and policy.get('urn'):
-                    # Extract ID from URN (format: urn:li:policy:<id>)
-                    parts = policy.get('urn').split(':')
+            # Format policy data for display
+            for policy in server_policies:
+                # Extract ID from URN if needed
+                if 'urn' in policy and not policy.get('id'):
+                    parts = policy['urn'].split(':')
                     if len(parts) >= 4:
                         policy['id'] = parts[3]
-                
-                # Only include policies with an ID (either original or extracted)
-                if policy.get('id'):
-                    policies_list.append(policy)
-                    
-        except Exception as e:
-            messages.error(request, f"Error fetching policies: {str(e)}")
-    else:
-        messages.warning(request, "Not connected to DataHub")
+        
+        # Get local policies from database
+        local_policies = Policy.objects.all().order_by('name')
+        local_policies_count = local_policies.count()
+        
+        # Default active tab
+        active_tab = request.GET.get('tab', 'server')
+            
+        return render(request, 'policies/list.html', {
+            'title': 'DataHub Policies',
+            'connected': connected,
+            'policies': server_policies,
+            'local_policies': local_policies,
+            'local_policies_count': local_policies_count,
+            'active_tab': active_tab
+        })
     
-    # Get refresh rate from settings
-    refresh_rate = AppSettings.get_int('refresh_rate', 60)
-    
-    return render(request, 'policies/list.html', {
-        'title': 'Policies',
-        'policies': policies_list,
-        'connected': connected,
-        'refresh_rate': refresh_rate
-    })
+    except Exception as e:
+        messages.error(request, f"Error retrieving policies: {str(e)}")
+        logger.error(f"Error retrieving policies: {str(e)}", exc_info=True)
+        return render(request, 'policies/list.html', {
+            'title': 'DataHub Policies',
+            'connected': connected,
+            'policies': [],
+            'local_policies': [],
+            'local_policies_count': 0
+        })
 
 def policy_create(request):
     """Create a new policy."""
+    # Check if creating a local policy
+    is_local = request.GET.get('local', 'false').lower() in ('true', 't', 'yes', 'y', '1')
+    
+    # Only require DataHub connection for non-local policies
+    client = None
+    if not is_local:
+        client = get_datahub_client()
+        if not client or not client.test_connection():
+            messages.warning(request, "Not connected to DataHub. Please check your connection settings.")
+            return redirect('policies')
+    
     if request.method == 'POST':
         form = PolicyForm(request.POST)
         if form.is_valid():
-            client = get_datahub_client()
-            if client and client.test_connection():
-                try:
-                    # Parse JSON fields
-                    try:
-                        resources = json.loads(form.cleaned_data['policy_resources'] or '[]')
-                        privileges = json.loads(form.cleaned_data['policy_privileges'] or '[]')
-                        actors = json.loads(form.cleaned_data['policy_actors'] or '[]')
-                    except Exception as e:
-                        messages.error(request, f"Invalid JSON format: {str(e)}")
-                        return render(request, 'policies/create.html', {'form': form})
-                    
-                    # Create policy data structure
-                    policy_data = {
-                        'name': form.cleaned_data['policy_name'],
-                        'description': form.cleaned_data['description'],
-                        'type': form.cleaned_data['policy_type'],
-                        'state': form.cleaned_data['policy_state'],
-                        'resources': resources,
-                        'privileges': privileges,
-                        'actors': actors
-                    }
-                    
-                    # Create the policy
-                    result = client.create_policy(policy_data)
-                    
-                    if result:
-                        messages.success(request, "Policy created successfully")
-                        return redirect('policies')
-                    else:
-                        messages.error(request, "Failed to create policy")
-                except Exception as e:
-                    messages.error(request, f"Error creating policy: {str(e)}")
-            else:
-                messages.error(request, "Not connected to DataHub")
-    else:
-        form = PolicyForm()
-    
-    return render(request, 'policies/create.html', {'form': form})
-
-def policy_edit(request, policy_id):
-    """Edit a policy."""
-    client = get_datahub_client()
-    policy = None
-    
-    if not client or not client.test_connection():
-        messages.warning(request, "Not connected to DataHub")
-        return redirect('policies')
-    
-    try:
-        # First try to fetch by ID directly
-        policy = client.get_policy(policy_id)
-        
-        # If not found, try with URN format
-        if not policy and not policy_id.startswith('urn:'):
-            policy = client.get_policy(f"urn:li:policy:{policy_id}")
+            policy_id = form.cleaned_data.get('policy_id')
             
-        if not policy:
-            messages.error(request, f"Policy with ID {policy_id} not found")
-            return redirect('policies')
-        
-        # Get the policy ID from URN if needed
-        actual_policy_id = policy.get('id')
-        if not actual_policy_id and policy.get('urn'):
-            # Extract ID from URN (format: urn:li:policy:<id>)
-            parts = policy.get('urn').split(':')
-            if len(parts) >= 4:
-                actual_policy_id = parts[3]
-                policy['id'] = actual_policy_id
+            if not policy_id and is_local:
+                # Generate a random ID for local policies if not provided
+                policy_id = f"local-policy-{uuid.uuid4().hex[:8]}"
             
-        if request.method == 'POST':
-            # Process form data
-            updated_policy = {
-                'id': actual_policy_id,
-                'name': request.POST.get('name'),
-                'description': request.POST.get('description', ''),
-                'type': request.POST.get('type'),
-                'state': request.POST.get('state'),
+            policy_data = {
+                'id': policy_id,
+                'name': form.cleaned_data['policy_name'],
+                'description': form.cleaned_data.get('description', ''),
+                'type': form.cleaned_data['policy_type'],
+                'state': form.cleaned_data['policy_state']
             }
             
             # Handle JSON fields
             for field in ['resources', 'privileges', 'actors']:
                 try:
-                    json_str = request.POST.get(f'{field}_json', '[]')
-                    updated_policy[field] = json.loads(json_str)
-                except json.JSONDecodeError:
-                    messages.error(request, f"Invalid JSON in {field} field")
-                    return render(request, 'policies/edit.html', {
-                        'title': 'Edit Policy',
-                        'policy': policy
+                    json_data = form.cleaned_data.get(f'policy_{field}', '[]')
+                    if json_data:
+                        json.loads(json_data)  # Validate JSON
+                    policy_data[field] = json_data
+                except Exception as e:
+                    messages.error(request, f"Invalid JSON in {field} field: {str(e)}")
+                    return render(request, 'policies/create.html', {
+                        'title': 'Create Policy',
+                        'form': form,
+                        'is_local': is_local,
+                        'environments': Environment.objects.all()
                     })
             
-            # Update the policy
-            try:
-                result = client.update_policy(actual_policy_id, updated_policy)
-                if result:
-                    messages.success(request, f"Policy '{updated_policy['name']}' updated successfully")
-                    return redirect('policy_view', policy_id=actual_policy_id)
-                else:
-                    messages.error(request, "Failed to update policy")
-            except Exception as e:
-                messages.error(request, f"Error updating policy: {str(e)}")
-                logger.error(f"Error updating policy: {str(e)}")
-    except Exception as e:
-        messages.error(request, f"Error retrieving policy: {str(e)}")
-        logger.error(f"Error retrieving policy: {str(e)}")
-        return redirect('policies')
+            if is_local:
+                # Create a local policy record
+                try:
+                    # Get environment if specified
+                    environment_id = request.POST.get('environment')
+                    environment = None
+                    if environment_id:
+                        try:
+                            environment = Environment.objects.get(id=environment_id)
+                        except Environment.DoesNotExist:
+                            pass
+                    
+                    # Create the Policy model instance
+                    Policy.objects.create(
+                        id=policy_data['id'],
+                        name=policy_data['name'],
+                        description=policy_data['description'],
+                        type=policy_data['type'],
+                        state=policy_data['state'],
+                        resources=policy_data.get('resources', '[]'),
+                        privileges=policy_data.get('privileges', '[]'),
+                        actors=policy_data.get('actors', '{}'),
+                        environment=environment
+                    )
+                    
+                    messages.success(request, f"Local policy '{policy_data['name']}' created successfully")
+                    return redirect('policies')
+                except Exception as e:
+                    messages.error(request, f"Error creating local policy: {str(e)}")
+                    logger.error(f"Error creating local policy: {str(e)}", exc_info=True)
+            else:
+                # Create a policy in DataHub
+                try:
+                    result = client.create_policy(policy_data)
+                    if result:
+                        messages.success(request, f"Policy '{policy_data['name']}' created successfully")
+                        return redirect('policies')
+                    else:
+                        messages.error(request, "Failed to create policy")
+                except Exception as e:
+                    messages.error(request, f"Error creating policy: {str(e)}")
+                    logger.error(f"Error creating policy: {str(e)}", exc_info=True)
+    else:
+        form = PolicyForm()
     
-    # Format JSON fields for display in form
-    for field in ['resources', 'privileges', 'actors']:
-        if field in policy and policy[field]:
-            policy[f"{field}_json"] = json.dumps(policy[field], indent=2)
+    return render(request, 'policies/create.html', {
+        'title': 'Create Policy',
+        'form': form,
+        'is_local': is_local,
+        'environments': Environment.objects.all()
+    })
+
+def policy_edit(request, policy_id):
+    """Edit a policy."""
+    # First, check if it's a local policy
+    try:
+        policy = Policy.objects.get(id=policy_id)
+        is_local = True
+    except Policy.DoesNotExist:
+        is_local = False
+        policy = None
+    
+    # If not a local policy, try to get from DataHub
+    if not is_local:
+        client = get_datahub_client()
+        if not client or not client.test_connection():
+            messages.warning(request, "Not connected to DataHub. Please check your connection settings.")
+            return redirect('policies')
+        
+        try:
+            policy_data = client.get_policy(policy_id)
+            if not policy_data:
+                messages.error(request, f"Policy with ID {policy_id} not found")
+                return redirect('policies')
+        except Exception as e:
+            messages.error(request, f"Error retrieving policy: {str(e)}")
+            return redirect('policies')
+    
+    if request.method == 'POST':
+        form = PolicyForm(request.POST)
+        if form.is_valid():
+            if is_local:
+                # Update local policy
+                try:
+                    # Get environment if specified
+                    environment_id = request.POST.get('environment')
+                    environment = None
+                    if environment_id:
+                        try:
+                            environment = Environment.objects.get(id=environment_id)
+                        except Environment.DoesNotExist:
+                            pass
+                    
+                    # Update policy fields
+                    policy.name = form.cleaned_data['policy_name']
+                    policy.description = form.cleaned_data.get('description', '')
+                    policy.type = form.cleaned_data['policy_type']
+                    policy.state = form.cleaned_data['policy_state']
+                    
+                    # Handle JSON fields
+                    policy.resources = form.cleaned_data.get('policy_resources', '[]')
+                    policy.privileges = form.cleaned_data.get('policy_privileges', '[]')
+                    policy.actors = form.cleaned_data.get('policy_actors', '{}')
+                    
+                    # Set environment
+                    policy.environment = environment
+                    
+                    policy.save()
+                    
+                    messages.success(request, f"Local policy '{policy.name}' updated successfully")
+                    return redirect('policies')
+                except Exception as e:
+                    messages.error(request, f"Error updating local policy: {str(e)}")
+                    logger.error(f"Error updating local policy: {str(e)}", exc_info=True)
+            else:
+                # Update a policy in DataHub
+                try:
+                    # Prepare policy data for DataHub
+                    policy_data = {
+                        'id': policy_id,
+                        'name': form.cleaned_data['policy_name'],
+                        'description': form.cleaned_data.get('description', ''),
+                        'type': form.cleaned_data['policy_type'],
+                        'state': form.cleaned_data['policy_state']
+                    }
+                    
+                    # Handle JSON fields
+                    try:
+                        resources = json.loads(form.cleaned_data.get('policy_resources', '[]'))
+                        privileges = json.loads(form.cleaned_data.get('policy_privileges', '[]'))
+                        actors = json.loads(form.cleaned_data.get('policy_actors', '{}'))
+                        
+                        policy_data['resources'] = resources
+                        policy_data['privileges'] = privileges
+                        policy_data['actors'] = actors
+                    except Exception as e:
+                        messages.error(request, f"Invalid JSON format: {str(e)}")
+                        return render(request, 'policies/edit.html', {
+                            'title': 'Edit Policy',
+                            'form': form,
+                            'policy': policy_data,
+                            'is_local': is_local,
+                            'environments': Environment.objects.all()
+                        })
+                    
+                    # Update the policy in DataHub
+                    result = client.update_policy(policy_id, policy_data)
+                    if result:
+                        messages.success(request, f"Policy '{policy_data['name']}' updated successfully")
+                        return redirect('policies')
+                    else:
+                        messages.error(request, "Failed to update policy")
+                except Exception as e:
+                    messages.error(request, f"Error updating policy: {str(e)}")
+                    logger.error(f"Error updating policy: {str(e)}", exc_info=True)
+    else:
+        # Initialize form with policy data
+        if is_local:
+            initial_data = {
+                'policy_id': policy.id,
+                'policy_name': policy.name,
+                'description': policy.description,
+                'policy_type': policy.type,
+                'policy_state': policy.state,
+                'policy_resources': policy.resources,
+                'policy_privileges': policy.privileges,
+                'policy_actors': policy.actors
+            }
+        else:
+            # Convert DataHub policy to form data
+            initial_data = {
+                'policy_id': policy_data.get('id', ''),
+                'policy_name': policy_data.get('name', ''),
+                'description': policy_data.get('description', ''),
+                'policy_type': policy_data.get('type', ''),
+                'policy_state': policy_data.get('state', '')
+            }
+            
+            # Handle JSON fields
+            if 'resources' in policy_data:
+                initial_data['policy_resources'] = json.dumps(policy_data['resources'], indent=2)
+            
+            if 'privileges' in policy_data:
+                initial_data['policy_privileges'] = json.dumps(policy_data['privileges'], indent=2)
+            
+            if 'actors' in policy_data:
+                initial_data['policy_actors'] = json.dumps(policy_data['actors'], indent=2)
+        
+        form = PolicyForm(initial=initial_data)
     
     return render(request, 'policies/edit.html', {
         'title': 'Edit Policy',
-        'policy': policy
+        'form': form,
+        'policy': policy or policy_data,
+        'is_local': is_local,
+        'environments': Environment.objects.all()
     })
 
 def policy_import(request):
@@ -867,6 +1104,7 @@ def export_all_recipes(request):
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect('recipes')
+    
     
     try:
         # Create a temporary directory for recipes
@@ -1231,6 +1469,10 @@ def logs(request):
     # Get unique sources for the filter dropdown
     sources = LogEntry.objects.values_list('source', flat=True).distinct()
     
+    # Create some test data for debugging the expand/collapse functionality
+    test_message_short = "This is a short message."
+    test_message_long = "This is a very long message that exceeds 200 characters. " * 10  # Repeat to make it long
+    
     return render(request, 'logs.html', {
         'title': 'Logs',
         'logs': logs_page,
@@ -1302,7 +1544,7 @@ def generate_test_logs():
     
     # Generate logs with random timestamps in the last 7 days
     now = timezone.now()
-    for i in range(100):  # Generate 100 test log entries
+    for i in range(100):
         # Random timestamp in the last 7 days
         timestamp = now - timedelta(
             days=random.randint(0, 7),
@@ -1779,7 +2021,7 @@ def recipe_save_as_template(request, recipe_id):
         form = RecipeTemplateForm(request.POST)
         
         if form.is_valid():
-            from .models import RecipeTemplate, EnvVarsInstance
+            from .models import RecipeTemplate, EnvVarsTemplate, EnvVarsInstance
             import re
             
             # Create the template
@@ -1803,7 +2045,7 @@ def recipe_save_as_template(request, recipe_id):
             regex = r'\${([^}]+)}'
             matches = re.findall(regex, form.cleaned_data['content'])
             
-            # Create environment variables dictionary
+            # Create environment variables dictionary for the template
             for var_name in matches:
                 # Determine if it looks like a secret based on name
                 is_secret = any(keyword in var_name.lower() for keyword in ['password', 'secret', 'key', 'token', 'auth'])
@@ -1835,24 +2077,38 @@ def recipe_save_as_template(request, recipe_id):
                     # If we can't extract the value, leave it blank
                     pass
                 
+                # Format for EnvVarsTemplate - different structure than EnvVarsInstance
                 env_vars[var_name] = {
-                    "value": value,
-                    "is_required": True,
-                    "is_secret": is_secret
+                    "description": f"Extracted from {recipe_name}",
+                    "required": True,
+                    "is_secret": is_secret,
+                    "data_type": "text",
+                    "default_value": value
                 }
             
-            # Only create environment variables instance if we have variables
+            # Only create environment variables template if we have variables
             if env_vars:
                 try:
-                    # Create a matching environment variables instance
-                    env_vars_instance = EnvVarsInstance(
+                    # Create a matching environment variables template
+                    env_vars_template = EnvVarsTemplate(
                         name=f"{template.name} Variables",
-                        description=f"Environment variables extracted from {recipe_name}",
+                        description=f"Environment variables template extracted from {recipe_name}",
                         recipe_type=template.recipe_type,
                         variables=json.dumps(env_vars)
                     )
+                    env_vars_template.save()
+                    messages.success(request, f"Created environment variables template '{env_vars_template.name}' with {len(env_vars)} variables")
+                    
+                    # Also create an instance from the template
+                    env_vars_instance = EnvVarsInstance(
+                        name=f"{template.name} Variables Instance",
+                        description=f"Environment variables for {recipe_name}",
+                        template=env_vars_template,
+                        recipe_type=template.recipe_type,
+                        variables=json.dumps({k: {"value": v.get("default_value", ""), "isSecret": v.get("is_secret", False)} for k, v in env_vars.items()})
+                    )
                     env_vars_instance.save()
-                    messages.success(request, f"Created environment variables instance '{env_vars_instance.name}' with {len(env_vars)} variables")
+                    messages.success(request, f"Created environment variables instance '{env_vars_instance.name}'")
                     
                     # Also create a recipe instance linking them
                     from .models import RecipeInstance
@@ -1865,7 +2121,7 @@ def recipe_save_as_template(request, recipe_id):
                     instance.save()
                     messages.success(request, f"Created recipe instance '{instance.name}'")
                 except Exception as e:
-                    messages.warning(request, f"Could not create environment variables instance: {str(e)}")
+                    messages.warning(request, f"Could not create environment variables template: {str(e)}")
             
             messages.success(request, f"Recipe saved as template '{template.name}' successfully")
             return redirect('recipe_templates')
@@ -2034,6 +2290,9 @@ def env_vars_template_create(request):
     """Create a new environment variables template."""
     template_exists = EnvVarsTemplate.objects.count() > 0
     
+    # Get all environments
+    environments = Environment.objects.all().order_by('name')
+    
     if request.method == "POST":
         form = EnvVarsTemplateForm(request.POST)
         if form.is_valid():
@@ -2041,19 +2300,28 @@ def env_vars_template_create(request):
             messages.success(request, f"Template '{template.name}' created successfully.")
             return redirect('env_vars_templates')
     else:
-        form = EnvVarsTemplateForm()
-        
+        # Create an initial value with sample variable structure to help with debugging
+        initial_data = {
+            'variables': '{}'
+        }
+        form = EnvVarsTemplateForm(initial=initial_data)
+    
     return render(request, 'env_vars/template_form.html', {
         'form': form,
+        'environments': environments,
         'is_new': True,
+        'variables': '{}',
         'title': 'Create Environment Variables Template',
-        'template_exists': template_exists,
         'data_types': EnvVarsTemplate.DATA_TYPES,
     })
 
+@login_required
 def env_vars_template_edit(request, template_id):
-    """Edit an environment variables template."""
+    """Edit an existing environment variables template."""
     template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    # Get all environments
+    environments = Environment.objects.all().order_by('name')
     
     if request.method == "POST":
         form = EnvVarsTemplateForm(request.POST, instance=template)
@@ -2062,14 +2330,49 @@ def env_vars_template_edit(request, template_id):
             messages.success(request, f"Template '{template.name}' updated successfully.")
             return redirect('env_vars_templates')
     else:
-        form = EnvVarsTemplateForm(instance=template)
+        # Create initial data with the template's existing variables
+        variables_dict = template.get_variables_dict()
+        initial_data = {
+            'variables': json.dumps(variables_dict)
+        }
+        form = EnvVarsTemplateForm(instance=template, initial=initial_data)
         
+    # Get variables as a clean JSON string with no HTML escaping issues
     variables = template.get_variables_dict()
+    
+    # Convert variables from {name: props} to {id: {key: name, ...props}}
+    # This format is expected by the template's JavaScript
+    display_variables = {}
+    for var_name, var_props in variables.items():
+        var_id = f"var_{int(time.time())}_{randint(1000, 9999)}"
+        display_variables[var_id] = {
+            'key': var_name,
+            'description': var_props.get('description', ''),
+            'required': var_props.get('required', False),
+            'is_secret': var_props.get('is_secret', False),
+            'data_type': var_props.get('data_type', 'text'),
+            'default_value': var_props.get('default_value', '')
+        }
+    
+    # Log the variables for debugging
+    print(f"Template variables for template {template_id}: {variables}")
+    print(f"Display variables for template {template_id}: {display_variables}")
+    
+    # Generate a direct script tag that initializes variables as a global JavaScript object
+    script_tag = f"""
+    <script type="text/javascript">
+        window.templateVariables = {json.dumps(display_variables)};
+        console.log("Variables initialized from server:", window.templateVariables);
+    </script>
+    """
     
     return render(request, 'env_vars/template_form.html', {
         'form': form,
         'template': template,
-        'variables': variables,
+        'variables': json.dumps(display_variables),
+        'variables_json': json.dumps(display_variables),  # Add this to match instance_form approach
+        'script_init': script_tag,
+        'environments': environments,
         'is_new': False,
         'title': f'Edit Environment Variables Template: {template.name}',
         'data_types': EnvVarsTemplate.DATA_TYPES,
@@ -2092,9 +2395,7 @@ def env_vars_instance_create(request):
     environments = Environment.objects.all().order_by('name')
     
     if request.method == 'POST':
-        # Get recipe types from models for form validation
-        from .models import RECIPE_TYPES
-        form = EnvVarsInstanceForm(request.POST, recipe_types=RECIPE_TYPES)
+        form = EnvVarsInstanceForm(request.POST)
         
         if form.is_valid():
             # Get form data
@@ -2130,9 +2431,7 @@ def env_vars_instance_create(request):
             return redirect('env_vars_instances')
             
     else:
-        # Get recipe types from models for form
-        from .models import RECIPE_TYPES
-        form = EnvVarsInstanceForm(recipe_types=RECIPE_TYPES)
+        form = EnvVarsInstanceForm()
     
     return render(request, 'env_vars/instance_form.html', {
         'form': form,
@@ -2143,276 +2442,6 @@ def env_vars_instance_create(request):
     })
 
 @login_required
-def env_vars_instance_edit(request, instance_id):
-    """Edit an existing environment variables instance."""
-    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
-    
-    if request.method == 'POST':
-        form = EnvVarsInstanceForm(request.POST)
-        if form.is_valid():
-            # Update instance
-            instance.name = form.cleaned_data['name']
-            instance.description = form.cleaned_data['description']
-            instance.template = form.cleaned_data['template']
-            instance.recipe_type = form.cleaned_data['recipe_type']
-            instance.variables = form.cleaned_data['variables']
-            instance.save()
-
-            messages.success(request, f"Environment variables instance '{instance.name}' updated successfully")
-            return redirect('env_vars_instances')
-        else:
-            messages.error(request, "Please correct the errors below")
-    else:
-        form = EnvVarsInstanceForm(initial={
-            'name': instance.name,
-            'description': instance.description,
-            'template': instance.template,
-            'recipe_type': instance.recipe_type,
-            'variables': instance.variables,
-        })
-    
-    return render(request, 'env_vars/instance_form.html', {
-        'form': form,
-        'instance': instance,
-        'title': f'Edit Environment Variables Instance: {instance.name}',
-        'is_new': False
-    })
-
-@login_required
-def env_vars_instance_delete(request, instance_id):
-    """Delete an environment variables instance."""
-    print(f"Deleting environment variables instance with ID: {instance_id}")
-    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
-    print(f"Found instance: {instance.name} (ID: {instance.id})")
-    
-    if request.method == 'POST':
-        print(f"Processing POST request to delete instance {instance.id}")
-        instance_name = instance.name
-        try:
-            instance.delete()
-            print(f"Instance {instance_name} deleted successfully")
-            messages.success(request, f"Environment variables instance '{instance_name}' deleted successfully")
-        except Exception as e:
-            print(f"Error deleting instance: {str(e)}")
-            messages.error(request, f"Error deleting instance: {str(e)}")
-        return redirect('env_vars_instances')
-    else:
-        print(f"Received non-POST request: {request.method}")
-    
-    return render(request, 'env_vars/instance_confirm_delete.html', {'instance': instance})
-
-@login_required
-def env_vars_instance_detail(request, instance_id):
-    """View details of an environment variables instance."""
-    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
-    variables = instance.get_variables_dict()
-    
-    return render(request, 'env_vars/instance_detail.html', {
-        'instance': instance,
-        'variables': variables,
-    })
-
-@login_required
-def env_vars_template_details(request, template_id):
-    """Get the details of an environment variables template as JSON."""
-    template = get_object_or_404(EnvVarsTemplate, id=template_id)
-    
-    variables = template.get_variables_dict()
-    
-    # Convert to a list of variables with key, description, required, is_secret fields
-    variables_list = []
-    for key, details in variables.items():
-        variables_list.append({
-            'key': key,
-            'description': details.get('description', ''),
-            'required': details.get('required', False),
-            'is_secret': details.get('is_secret', False),
-            'default_value': details.get('default_value', ''),
-            'data_type': details.get('data_type', 'text')
-        })
-    
-    response_data = {
-        'id': template.id,
-        'name': template.name,
-        'description': template.description,
-        'recipe_type': template.recipe_type,
-        'variables': variables_list
-    }
-    
-    return JsonResponse(response_data)
-
-@login_required
-def env_vars_template_list(request):
-    """Get a list of all environment variables templates as JSON."""
-    templates = EnvVarsTemplate.objects.all().order_by('name')
-    
-    templates_list = [{
-        'id': template.id,
-        'name': template.name,
-        'recipe_type': template.recipe_type,
-        'description': template.description,
-        'tags': template.get_tags_list(),
-        'variable_count': len(template.get_variables_dict())
-    } for template in templates]
-    
-    return JsonResponse({'templates': templates_list})
-
-@login_required
-def env_vars_template_get(request, template_id):
-    """Get a specific environment variables template as JSON."""
-    template = get_object_or_404(EnvVarsTemplate, id=template_id)
-    
-    response_data = {
-        'id': template.id,
-        'name': template.name,
-        'description': template.description,
-        'recipe_type': template.recipe_type,
-        'variables': template.get_variables_dict(),
-        'tags': template.get_tags_list(),
-        'created_at': template.created_at.isoformat(),
-        'updated_at': template.updated_at.isoformat()
-    }
-    
-    return JsonResponse(response_data)
-
-@login_required
-def env_vars_template_delete(request, template_id):
-    """Delete an environment variables template."""
-    template = get_object_or_404(EnvVarsTemplate, id=template_id)
-    
-    # Check if template is in use by any instances
-    instances_using_template = EnvVarsInstance.objects.filter(template=template).count()
-    
-    if request.method == 'POST':
-        template_name = template.name
-        template.delete()
-        messages.success(request, f"Environment variables template '{template_name}' deleted successfully")
-        return redirect('env_vars_templates')
-    
-    return render(request, 'env_vars/template_confirm_delete.html', {
-        'template': template,
-        'instances_count': instances_using_template
-    })
-
-@login_required
-def env_vars_instance_list(request):
-    """Get a list of all environment variables instances as JSON."""
-    instances = EnvVarsInstance.objects.all().order_by('name')
-    
-    instances_list = [{
-        'id': instance.id,
-        'name': instance.name,
-        'recipe_type': instance.recipe_type,
-        'description': instance.description,
-        'template_id': instance.template.id if instance.template else None,
-        'template_name': instance.template.name if instance.template else None,
-        'variable_count': len(instance.get_variables_dict())
-    } for instance in instances]
-    
-    return JsonResponse({'instances': instances_list})
-
-@login_required
-def env_vars_instance_json(request, instance_id):
-    """Get a specific environment variables instance as JSON."""
-    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
-    
-    response_data = {
-        'success': True,
-        'instance': {
-            'id': instance.id,
-            'name': instance.name,
-            'description': instance.description,
-            'recipe_type': instance.recipe_type,
-            'template_id': instance.template.id if instance.template else None,
-            'template_name': instance.template.name if instance.template else None,
-            'variables': instance.get_variables_dict(),
-            'created_at': instance.created_at.isoformat(),
-            'updated_at': instance.updated_at.isoformat()
-        }
-    }
-    
-    return JsonResponse(response_data) 
-
-def recipe_instances(request):
-    """List all recipe instances."""
-    instances = RecipeInstance.objects.all().order_by('-updated_at')
-    
-    # Group by deployment status
-    deployed = instances.filter(deployed=True)
-    staging = instances.filter(deployed=False)
-    
-    return render(request, 'recipes/instances.html', {
-        'title': 'Recipe Instances',
-        'deployed': deployed, 
-        'staging': staging
-    })
-
-@login_required
-def recipe_instance_create(request):
-    """Create a new recipe instance."""
-    
-    # Get all recipe templates
-    templates = RecipeTemplate.objects.all().order_by('name')
-    
-    # Get all environment variable instances
-    env_vars_instances = EnvVarsInstance.objects.all().order_by('name')
-    
-    # Get all environments
-    environments = Environment.objects.all().order_by('name')
-    
-    if request.method == 'POST':
-        form = RecipeInstanceForm(request.POST)
-        
-        if form.is_valid():
-            # Get form data
-            name = form.cleaned_data['name']
-            description = form.cleaned_data['description']
-            template_id = form.cleaned_data['template']
-            env_vars_instance_id = form.cleaned_data.get('env_vars_instance')
-            environment_id = form.cleaned_data.get('environment')
-            
-            # Get models
-            template = RecipeTemplate.objects.get(id=template_id)
-            env_vars_instance = None
-            if env_vars_instance_id:
-                try:
-                    env_vars_instance = EnvVarsInstance.objects.get(id=env_vars_instance_id)
-                except EnvVarsInstance.DoesNotExist:
-                    pass
-                    
-            # Create recipe instance
-            instance = RecipeInstance(
-                name=name,
-                description=description,
-                template=template,
-                env_vars_instance=env_vars_instance
-            )
-            
-            # Add environment if selected
-            if environment_id:
-                try:
-                    environment = Environment.objects.get(id=environment_id)
-                    instance.environment = environment
-                except Environment.DoesNotExist:
-                    pass
-                    
-            instance.save()
-            
-            messages.success(request, f"Recipe instance '{name}' created successfully")
-            return redirect('recipe_instances')
-            
-    else:
-        form = RecipeInstanceForm()
-    
-    return render(request, 'recipes/instance_form.html', {
-        'form': form,
-        'templates': templates,
-        'env_vars_instances': env_vars_instances,
-        'environments': environments,
-        'is_new': True,
-        'title': 'Create Recipe Instance'
-    })
-
 def recipe_instance_edit(request, instance_id):
     """Edit an existing recipe instance."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
@@ -2444,6 +2473,7 @@ def recipe_instance_edit(request, instance_id):
         'is_new': False
     })
 
+@login_required
 def recipe_instance_delete(request, instance_id):
     """Delete a recipe instance."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
@@ -2457,6 +2487,7 @@ def recipe_instance_delete(request, instance_id):
     
     return render(request, 'recipes/instance_confirm_delete.html', {'instance': instance})
 
+@login_required
 def recipe_instance_deploy(request, instance_id):
     """Deploy a recipe instance to DataHub."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
@@ -2532,134 +2563,59 @@ def recipe_instance_undeploy(request, instance_id):
                     logger.info(f"Recipe '{instance.name}' deleted from DataHub using URN: {instance.datahub_urn}")
             except Exception as e:
                 logger.warning(f"Failed to delete recipe using URN: {str(e)}")
-            
-            # Second try - If the first attempt failed, try with the recipe ID
-            if not deletion_succeeded:
-                try:
-                    recipe_id = instance.get_recipe_id()
-                    if recipe_id:
-                        result = client.delete_ingestion_source(recipe_id)
-                        if result:
-                            deletion_succeeded = True
-                            logger.info(f"Recipe '{instance.name}' deleted from DataHub using recipe ID: {recipe_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete recipe using recipe ID: {str(e)}")
-        else:
-            messages.warning(request, "Recipe instance does not have a DataHub URN. It may not be deployed.")
         
-        # Always mark as undeployed locally, even if DataHub deletion failed
+        if not deletion_succeeded and instance.datahub_id:
+            # Second try - delete using the ID
+            try:
+                result = client.delete_ingestion_source_by_id(instance.datahub_id)
+                if result:
+                    deletion_succeeded = True
+                    logger.info(f"Recipe '{instance.name}' deleted from DataHub using ID: {instance.datahub_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete recipe using ID: {str(e)}")
+        
+        # Update the instance status regardless of whether deletion succeeded
         instance.deployed = False
-        instance.deployed_at = None
-        
-        # If the force_undeploy flag is set or the deletion succeeded, clear the URN
-        if deletion_succeeded or request.POST.get('force_undeploy'):
-            instance.datahub_urn = ''  # Clear the URN reference
-        
+        instance.datahub_urn = None if deletion_succeeded else instance.datahub_urn
+        instance.datahub_id = None if deletion_succeeded else instance.datahub_id
         instance.save()
         
         if deletion_succeeded:
-            messages.success(request, f"Recipe instance '{instance.name}' successfully deleted from DataHub")
-        elif request.POST.get('force_undeploy'):
-            messages.warning(request, f"Recipe instance '{instance.name}' marked as undeployed locally only. The recipe may still exist in DataHub.")
+            messages.success(request, f"Recipe instance '{instance.name}' undeployed successfully")
         else:
-            messages.error(request, f"Failed to delete recipe '{instance.name}' from DataHub, but marked as undeployed locally.")
+            messages.warning(request, f"Recipe instance '{instance.name}' marked as undeployed, but could not confirm deletion from DataHub")
+        
     except Exception as e:
-        messages.error(request, f"Error undeploying recipe instance: {str(e)}")
-        logger.error(f"Error undeploying recipe instance: {str(e)}", exc_info=True)
+        error_msg = f"Error undeploying recipe instance: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        messages.error(request, error_msg)
     
     return redirect('recipe_instances')
 
+@login_required
 def recipe_instance_redeploy(request, instance_id):
-    """Redeploy a recipe instance to DataHub, updating an existing deployment."""
+    """Redeploy a recipe instance by undeploying and deploying it again."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
-    client = get_datahub_client()
     
-    if not client or not client.test_connection():
-        messages.error(request, "Not connected to DataHub")
-        return redirect('recipe_instances')
+    # First undeploy the instance
+    response = recipe_instance_undeploy(request, instance_id)
     
-    try:
-        # Get combined content with env vars applied
-        recipe_content = instance.get_combined_content()
-        
-        if not recipe_content:
-            messages.error(request, "Unable to generate recipe content")
-            return redirect('recipe_instances')
-        
-        if instance.deployed and instance.datahub_urn:
-            # Update existing recipe
-            recipe_id = instance.get_recipe_id()
-            if not recipe_id:
-                messages.error(request, "Unable to extract recipe ID from URN")
-                return redirect('recipe_instances')
-                
-            # Prepare the recipe data for update
-            recipe_data = {
-                'name': instance.name,
-                'description': instance.description or '',
-                'recipe': recipe_content,
-                'type': instance.template.recipe_type,
-            }
-            
-            # Update in DataHub
-            result = client.update_ingestion_source(recipe_id, recipe_data)
-            
-            if result:
-                # Update the instance
-                instance.deployed_at = timezone.now()
-                instance.save()
-                
-                messages.success(request, f"Recipe instance '{instance.name}' redeployed successfully")
-            else:
-                messages.error(request, "Failed to redeploy recipe instance")
-        else:
-            # Not deployed yet, use normal deploy
-            # Prepare the recipe for deployment
-            recipe_data = {
-                'name': instance.name,
-                'description': instance.description or '',
-                'recipe': recipe_content,
-                'type': instance.template.recipe_type,
-            }
-            
-            # Deploy to DataHub
-            result = client.create_ingestion_source(recipe_data)
-            
-            if result:
-                # Update the instance with deployment info
-                instance.datahub_urn = result
-                instance.deployed = True
-                instance.deployed_at = timezone.now()
-                instance.save()
-                
-                messages.success(request, f"Recipe instance '{instance.name}' deployed successfully")
-            else:
-                messages.error(request, "Failed to deploy recipe instance")
-    except Exception as e:
-        messages.error(request, f"Error redeploying recipe instance: {str(e)}")
-    
-    return redirect('recipe_instances')
+    # Then deploy it again
+    return recipe_instance_deploy(request, instance_id)
 
+@login_required
 def recipe_instance_download(request, instance_id):
     """Download a recipe instance as JSON."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
     
-    try:
-        # Get combined content with environment variables applied
-        combined_content = instance.get_combined_content()
-        
-        if not combined_content:
-            messages.error(request, "Unable to generate recipe content")
-            return redirect('recipe_instances')
-        
-        # Prepare response
-        response = HttpResponse(json.dumps(combined_content, indent=2), content_type='application/json')
-        response['Content-Disposition'] = f'attachment; filename="{instance.name.replace(" ", "_")}_recipe.json"'
-        return response
-    except Exception as e:
-        messages.error(request, f"Error generating recipe download: {str(e)}")
-        logger.error(f"Error generating recipe download: {str(e)}")
-        return redirect('recipe_instances')
+    # Get the recipe content with environment variables applied
+    recipe_content = instance.get_combined_content()
+    
+    # Create a response with the JSON content
+    response = HttpResponse(recipe_content, content_type='application/json')
+    response['Content-Disposition'] = f'attachment; filename="{instance.name}.json"'
+    
+    return response
 
 def recipe_template_preview(request, template_id):
     """API endpoint to preview a recipe template with environment variables applied."""
@@ -2708,7 +2664,7 @@ def github_settings_edit(request):
         if form.is_valid():
             form.save()
             messages.success(request, "Git integration settings updated successfully")
-            return redirect('github')
+            return redirect('github_index')
     else:
         form = GitSettingsForm(instance=settings)
     
@@ -2778,14 +2734,14 @@ def github_create_branch(request):
     """Create a new branch on GitHub."""
     if not GitSettings.is_configured():
         messages.error(request, "GitHub integration is not configured")
-        return redirect('github')
+        return redirect('github_index')
     
     branch_name = request.POST.get('branch_name')
     branch_description = request.POST.get('branch_description', '')
     
     if not branch_name:
         messages.error(request, "Branch name is required")
-        return redirect('github')
+        return redirect('github_index')
     
     settings = GitSettings.get_instance()
     headers = {
@@ -2810,7 +2766,7 @@ def github_create_branch(request):
         
         if not sha:
             messages.error(request, f"Could not determine SHA of {default_branch} branch")
-            return redirect('github')
+            return redirect('github_index')
         
         # Create the new branch
         create_url = f'https://api.github.com/repos/{settings.username}/{settings.repository}/git/refs'
@@ -2854,7 +2810,7 @@ def github_create_branch(request):
                 
                 messages.success(request, f"Pull request #{pr_number} created")
         
-        return redirect('github')
+        return redirect('github_index')
         
     except requests.exceptions.RequestException as e:
         try:
@@ -2864,20 +2820,20 @@ def github_create_branch(request):
         except Exception:
             messages.error(request, f"Error creating branch: {str(e)}")
         
-        return redirect('github')
+        return redirect('github_index')
 
 def github_sync_recipes(request):
     """Sync all recipes with GitHub."""
     # For now, just redirect back with a message
     # This would be implemented based on your recipe model and requirements
     messages.info(request, "Recipe sync feature is under development")
-    return redirect('github')
+    return redirect('github_index')
 
 def github_sync_status(request):
     """Sync PR statuses with GitHub."""
     if not GitSettings.is_configured():
         messages.error(request, "GitHub integration is not configured")
-        return redirect('github')
+        return redirect('github_index')
     
     settings = GitSettings.get_instance()
     headers = {
@@ -2927,7 +2883,7 @@ def github_sync_status(request):
     if updated_count == 0 and error_count == 0:
         messages.info(request, "No pull requests to update")
     
-    return redirect('github')
+    return redirect('github_index')
 
 @require_POST
 def github_update_pr_status(request, pr_number):
@@ -2993,7 +2949,7 @@ def github_switch_branch(request, branch_name):
         github_settings = GitSettings.objects.first()
         if not github_settings:
             messages.error(request, "GitHub settings not found")
-            return redirect('github')
+            return redirect('github_index')
 
         # Update the current branch
         github_settings.current_branch = branch_name
@@ -3004,7 +2960,7 @@ def github_switch_branch(request, branch_name):
         logger.error(f"Error switching branch: {str(e)}")
         messages.error(request, f"Error switching branch: {str(e)}")
 
-    return redirect('github')
+    return redirect('github_index')
 
 @require_POST
 def recipe_instance_push_github(request, instance_id):
@@ -3034,7 +2990,7 @@ def recipe_instance_push_github(request, instance_id):
             return JsonResponse({
                 'success': True,
                 'message': f'Recipe instance "{instance.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
-                'redirect_url': reverse('github')
+                'redirect_url': reverse('github_index')
             })
         else:
             return JsonResponse({
@@ -3076,7 +3032,7 @@ def recipe_template_push_github(request, template_id):
             return JsonResponse({
                 'success': True,
                 'message': f'Recipe template "{template.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
-                'redirect_url': reverse('github')
+                'redirect_url': reverse('github_index')
             })
         else:
             return JsonResponse({
@@ -3254,7 +3210,7 @@ def env_vars_template_push_github(request, template_id):
             'branch': result.get('branch', current_branch),
             'file_path': result.get('file_path', ''),
             'message': f'Environment variables template "{env_template.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
-            'redirect_url': reverse('github')
+            'redirect_url': reverse('github_index')
         })
             
     except Exception as e:
@@ -3278,33 +3234,51 @@ def environments(request):
 def environment_create(request):
     """Create a new environment."""
     if request.method == 'POST':
-        # Extract data from POST
         name = request.POST.get('name')
-        description = request.POST.get('description', '')
-        is_default = 'is_default' in request.POST
+        description = request.POST.get('description')
+        is_default = request.POST.get('is_default') == 'on'
         
-        if not name:
-            messages.error(request, "Environment name is required")
-            return redirect('environment_create')
-            
-        # Check if environment with same name exists
-        if Environment.objects.filter(name__iexact=name).exists():
-            messages.error(request, f"Environment with name '{name}' already exists")
-            return redirect('environment_create')
-            
-        # Create environment
+        # Create the environment
         environment = Environment.objects.create(
             name=name,
             description=description,
             is_default=is_default
         )
         
-        messages.success(request, f"Environment '{environment.name}' created successfully")
+        messages.success(request, f'Environment "{name}" created successfully.')
+        
+        # Sync the new environment with GitHub if Git integration is configured
+        if GitSettings.is_configured():
+            try:
+                import subprocess
+                from pathlib import Path
+                
+                # Run the sync script
+                script_path = Path(__file__).parent.parent.parent / 'scripts' / 'sync_github_environments.py'
+                
+                if script_path.exists():
+                    result = subprocess.run(
+                        [sys.executable, str(script_path)],
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if result.returncode == 0:
+                        logger.info(f"GitHub environment sync successful: {result.stdout}")
+                        messages.success(request, f'Environment "{name}" synchronized with GitHub.')
+                    else:
+                        logger.error(f"GitHub environment sync failed: {result.stderr}")
+                        messages.warning(request, f'Failed to synchronize environment "{name}" with GitHub: {result.stderr}')
+                else:
+                    logger.warning(f"GitHub environment sync script not found at {script_path}")
+            except Exception as e:
+                logger.error(f"Error syncing environment with GitHub: {str(e)}")
+                messages.warning(request, f'Failed to synchronize environment with GitHub: {str(e)}')
+        
         return redirect('environments')
         
-    return render(request, 'environments/form.html', {
-        'title': 'Create Environment',
-        'is_new': True
+    return render(request, 'environments/create.html', {
+        'title': 'Create Environment'
     })
 
 @login_required
@@ -3313,33 +3287,47 @@ def environment_edit(request, env_id):
     environment = get_object_or_404(Environment, id=env_id)
     
     if request.method == 'POST':
-        # Extract data from POST
-        name = request.POST.get('name')
-        description = request.POST.get('description', '')
-        is_default = 'is_default' in request.POST
-        
-        if not name:
-            messages.error(request, "Environment name is required")
-            return redirect('environment_edit', env_id=env_id)
-            
-        # Check if environment with same name exists (excluding this one)
-        if Environment.objects.filter(name__iexact=name).exclude(id=env_id).exists():
-            messages.error(request, f"Environment with name '{name}' already exists")
-            return redirect('environment_edit', env_id=env_id)
-            
-        # Update environment
-        environment.name = name
-        environment.description = description
-        environment.is_default = is_default
+        # Update the environment
+        environment.name = request.POST.get('name')
+        environment.description = request.POST.get('description')
+        environment.is_default = request.POST.get('is_default') == 'on'
         environment.save()
         
-        messages.success(request, f"Environment '{environment.name}' updated successfully")
+        messages.success(request, f'Environment "{environment.name}" updated successfully.')
+        
+        # Sync the updated environment with GitHub if Git integration is configured
+        if GitSettings.is_configured():
+            try:
+                import subprocess
+                from pathlib import Path
+                
+                # Run the sync script
+                script_path = Path(__file__).parent.parent.parent / 'scripts' / 'sync_github_environments.py'
+                
+                if script_path.exists():
+                    result = subprocess.run(
+                        [sys.executable, str(script_path)],
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if result.returncode == 0:
+                        logger.info(f"GitHub environment sync successful: {result.stdout}")
+                        messages.success(request, f'Environment "{environment.name}" synchronized with GitHub.')
+                    else:
+                        logger.error(f"GitHub environment sync failed: {result.stderr}")
+                        messages.warning(request, f'Failed to synchronize environment "{environment.name}" with GitHub: {result.stderr}')
+                else:
+                    logger.warning(f"GitHub environment sync script not found at {script_path}")
+            except Exception as e:
+                logger.error(f"Error syncing environment with GitHub: {str(e)}")
+                messages.warning(request, f'Failed to synchronize environment with GitHub: {str(e)}')
+        
         return redirect('environments')
         
-    return render(request, 'environments/form.html', {
-        'title': f'Edit Environment: {environment.name}',
-        'environment': environment,
-        'is_new': False
+    return render(request, 'environments/edit.html', {
+        'title': 'Edit Environment',
+        'environment': environment
     })
 
 @login_required
@@ -3592,67 +3580,58 @@ def github_create_branch(request):
 @login_required
 def github_settings_view(request):
     """View for GitHub settings."""
+    settings = GitSettings.get_instance()
+    
     if request.method == 'POST':
-        if not GitSettings.is_configured():
-            messages.error(request, 'GitHub integration is not configured.')
-            return redirect('github_settings')
-            
-        settings = GitSettings.get_instance()
-        
-        # Get form data
-        settings.token = request.POST.get('token', '')
-        settings.username = request.POST.get('username', '')
-        settings.repository = request.POST.get('repository', '')
-        settings.current_branch = request.POST.get('current_branch', 'main')
-        settings.enabled = request.POST.get('enabled', 'off') == 'on'
-        settings.provider_type = request.POST.get('provider_type', 'github')
-        settings.base_url = request.POST.get('base_url', '') or None
-        
-        settings.save()
-        
-        messages.success(request, 'GitHub settings saved successfully.')
-        return redirect('github_settings')
+        form = GitSettingsForm(request.POST, instance=settings)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Git integration settings updated successfully")
+            return redirect('github_index')
     else:
-        settings = GitSettings.get_instance()
-        
-        # Check connection
-        connection_status = "Not connected"
-        connection_error = None
-        
-        if settings.enabled and settings.token and settings.username and settings.repository:
-            try:
-                # Initialize Git integration class
-                git_service = GitService()
-                
-                # Try to get repository information
-                result = git_service.make_api_request("GET", "")
-                
-                if result and result.status_code == 200:
-                    connection_status = "Connected"
-                else:
-                    status_code = result.status_code if result else "Unknown"
-                    connection_status = f"Error ({status_code})"
-                    connection_error = result.text if result else "Could not connect to repository"
-            except Exception as e:
-                connection_status = "Error"
-                connection_error = str(e)
-                
-        # Get all branches if connected
-        branches = []
-        if connection_status == "Connected":
-            try:
-                branches = GitIntegration.get_branches()
-            except Exception:
-                # Failed to get branches, but continue with empty list
-                pass
-                
-        return render(request, 'github_settings.html', {
-            'settings': settings,
-            'connection_status': connection_status,
-            'connection_error': connection_error,
-            'branches': branches,
-            'provider_choices': GitSettings.PROVIDER_CHOICES,
-        })
+        form = GitSettingsForm(instance=settings)
+    
+    # Check connection status
+    connection_status = "Not connected"
+    connection_error = None
+    
+    if settings.enabled and settings.token and settings.username and settings.repository:
+        try:
+            # Initialize Git integration class
+            git_service = GitService()
+            
+            # Try to get repository information
+            result = git_service.make_api_request("GET", "")
+            
+            if result and result.status_code == 200:
+                connection_status = "Connected"
+            else:
+                status_code = result.status_code if result else "Unknown"
+                connection_status = f"Error ({status_code})"
+                connection_error = result.text if result else "Could not connect to repository"
+        except Exception as e:
+            connection_status = "Error"
+            connection_error = str(e)
+            
+    # Get all branches if connected
+    branches = []
+    if connection_status == "Connected":
+        try:
+            branches = GitIntegration.get_branches()
+        except Exception:
+            # Failed to get branches, but continue with empty list
+            pass
+            
+    context = {
+        'form': form,
+        'git_settings': settings,
+        'connection_status': connection_status,
+        'connection_error': connection_error,
+        'branches': branches,
+        'provider_choices': GitSettings.PROVIDER_CHOICES,
+    }
+    
+    return render(request, 'github/settings.html', context)
 
 @login_required
 def github_sync_recipe(request, recipe_id):
@@ -4215,6 +4194,20 @@ def policy_push_github(request, policy_id):
                 'error': f"Error fetching policy from DataHub: {str(e)}"
             })
         
+        # Get environment from request (default to None if not provided)
+        environment_id = request.POST.get('environment')
+        environment = None
+        if environment_id:
+            try:
+                environment = Environment.objects.get(id=environment_id)
+                logger.info(f"Using environment '{environment.name}' for policy")
+            except Environment.DoesNotExist:
+                logger.warning(f"Environment with ID {environment_id} not found, using default")
+                environment = Environment.get_default()
+        else:
+            environment = Environment.get_default()
+            logger.info(f"No environment specified, using default: {environment.name}")
+            
         # Convert the DataHub policy to a Django model instance for Git integration
         policy = Policy(
             id=policy_id,
@@ -4224,7 +4217,8 @@ def policy_push_github(request, policy_id):
             state=datahub_policy.get('state', 'ACTIVE'),
             resources=json.dumps(datahub_policy.get('resources', [])),
             privileges=json.dumps(datahub_policy.get('privileges', [])),
-            actors=json.dumps(datahub_policy.get('actors', {}))
+            actors=json.dumps(datahub_policy.get('actors', {})),
+            environment=environment
         )
         
         # Get Git settings
@@ -4253,7 +4247,7 @@ def policy_push_github(request, policy_id):
             return JsonResponse({
                 'success': True,
                 'message': f'Policy "{policy.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
-                'redirect_url': reverse('github')
+                'redirect_url': reverse('github_index')
             })
         else:
             # Failed to stage changes
@@ -4275,4 +4269,694 @@ def policy_push_github(request, policy_id):
             'success': False,
             'error': f"An error occurred while pushing the policy: {str(e)}"
         })
+
+@login_required
+def github_secrets(request):
+    """
+    View to list and manage GitHub repository secrets.
+    """
+    github_service = GitHubService()
+    github_configured = github_service.is_configured()
+    repo_secrets = []
+    environments = []
+    env_secrets = {}
+    selected_environment = request.GET.get('environment', '')
+    
+    if github_configured:
+        try:
+            # Get repository secrets
+            repo_secrets = github_service.get_repository_secrets()
+            
+            # Update or create secrets in our database for tracking
+            for secret in repo_secrets:
+                from .models import GitSecrets
+                GitSecrets.objects.update_or_create(
+                    name=secret['name'],
+                    environment='',
+                    defaults={
+                        'description': f"Repository secret last updated {secret.get('updated_at', 'unknown')}",
+                        'is_configured': True
+                    }
+                )
+            
+            # Get available environments
+            environments = github_service.get_environments()
+            
+            # If an environment is selected, get its secrets
+            if selected_environment:
+                env_secrets = {
+                    'name': selected_environment,
+                    'secrets': github_service.get_environment_secrets(selected_environment)
+                }
+                
+                # Update or create environment secrets in our database
+                for secret in env_secrets['secrets']:
+                    from .models import GitSecrets
+                    GitSecrets.objects.update_or_create(
+                        name=secret['name'],
+                        environment=selected_environment,
+                        defaults={
+                            'description': f"Environment secret last updated {secret.get('updated_at', 'unknown')}",
+                            'is_configured': True
+                        }
+                    )
+                
+        except Exception as e:
+            logger.error(f"Error fetching GitHub secrets: {str(e)}")
+            messages.error(request, f"Error fetching GitHub secrets: {str(e)}")
+    
+    return render(request, 'github/secrets.html', {
+        'title': 'GitHub Secrets',
+        'github_configured': github_configured,
+        'repo_secrets': repo_secrets,
+        'environments': environments,
+        'selected_environment': selected_environment,
+        'env_secrets': env_secrets,
+    })
+
+@login_required
+@require_POST
+def github_create_secret(request):
+    """
+    Create or update a GitHub repository or environment secret.
+    """
+    secret_name = request.POST.get('name')
+    secret_value = request.POST.get('value')
+    environment = request.POST.get('environment', '')
+    
+    if not secret_name or not secret_value:
+        messages.error(request, "Secret name and value are required")
+        return redirect('github_secrets')
+    
+    github_service = GitHubService()
+    if not github_service.is_configured():
+        messages.error(request, "GitHub integration is not configured")
+        return redirect('github_secrets')
+    
+    try:
+        success = False
+        
+        # Check if we're creating an environment secret or repository secret
+        if environment:
+            success = github_service.create_or_update_environment_secret(environment, secret_name, secret_value)
+            
+            if success:
+                # Save to our database for tracking (we don't store the value)
+                from .models import GitSecrets
+                GitSecrets.objects.update_or_create(
+                    name=secret_name,
+                    environment=environment,
+                    defaults={
+                        'description': f"Environment secret updated on {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                        'is_configured': True
+                    }
+                )
+                messages.success(request, f"Environment secret '{secret_name}' created/updated successfully for '{environment}'")
+            else:
+                messages.error(request, f"Failed to create/update environment secret '{secret_name}' for '{environment}'")
+        else:
+            # Create repository-level secret
+            success = github_service.create_or_update_secret(secret_name, secret_value)
+            
+            if success:
+                # Save to our database for tracking (we don't store the value)
+                from .models import GitSecrets
+                GitSecrets.objects.update_or_create(
+                    name=secret_name,
+                    environment='',
+                    defaults={
+                        'description': f"Repository secret updated on {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                        'is_configured': True
+                    }
+                )
+                messages.success(request, f"Repository secret '{secret_name}' created/updated successfully")
+            else:
+                messages.error(request, f"Failed to create/update repository secret '{secret_name}'")
+        
+    except Exception as e:
+        logger.error(f"Error creating/updating GitHub secret: {str(e)}")
+        messages.error(request, f"Error creating/updating secret: {str(e)}")
+    
+    # Redirect back to the secrets page, preserving environment selection if any
+    if environment:
+        return redirect(f'{reverse("github_secrets")}?environment={environment}')
+    return redirect('github_secrets')
+
+@login_required
+@require_POST
+def github_delete_secret(request):
+    """
+    Delete a GitHub repository or environment secret.
+    """
+    secret_name = request.POST.get('name')
+    environment = request.POST.get('environment', '')
+    
+    if not secret_name:
+        messages.error(request, "Secret name is required")
+        return redirect('github_secrets')
+    
+    github_service = GitHubService()
+    if not github_service.is_configured():
+        messages.error(request, "GitHub integration is not configured")
+        return redirect('github_secrets')
+    
+    try:
+        success = False
+        
+        # Check if we're deleting an environment secret or repository secret
+        if environment:
+            success = github_service.delete_environment_secret(environment, secret_name)
+            
+            if success:
+                # Remove from our database
+                from .models import GitSecrets
+                GitSecrets.objects.filter(name=secret_name, environment=environment).delete()
+                messages.success(request, f"Environment secret '{secret_name}' deleted successfully from '{environment}'")
+            else:
+                messages.error(request, f"Failed to delete environment secret '{secret_name}' from '{environment}'")
+        else:
+            # Delete repository-level secret
+            success = github_service.delete_secret(secret_name)
+            
+            if success:
+                # Remove from our database
+                from .models import GitSecrets
+                GitSecrets.objects.filter(name=secret_name, environment='').delete()
+                messages.success(request, f"Repository secret '{secret_name}' deleted successfully")
+            else:
+                messages.error(request, f"Failed to delete repository secret '{secret_name}'")
+                
+    except Exception as e:
+        logger.error(f"Error deleting GitHub secret: {str(e)}")
+        messages.error(request, f"Error deleting secret: {str(e)}")
+    
+    # Redirect back to the secrets page, preserving environment selection if any
+    if environment:
+        return redirect(f'{reverse("github_secrets")}?environment={environment}')
+    return redirect('github_secrets')
+
+def refresh_logs(request):
+    """View for refreshing logs asynchronously."""
+    # Get filter parameters from request
+    level_filter = request.GET.get('level', '')
+    source_filter = request.GET.get('source', '')
+    search_query = request.GET.get('search', '')
+    date_filter = request.GET.get('date', '')
+    
+    # Start with all logs
+    logs_query = LogEntry.objects.all()
+    
+    # Apply filters
+    if level_filter:
+        logs_query = logs_query.filter(level=level_filter)
+    
+    if source_filter:
+        logs_query = logs_query.filter(source=source_filter)
+    
+    if search_query:
+        logs_query = logs_query.filter(message__icontains=search_query)
+    
+    if date_filter:
+        try:
+            from datetime import datetime
+            date = datetime.strptime(date_filter, '%Y-%m-%d').date()
+            logs_query = logs_query.filter(timestamp__date=date)
+        except ValueError:
+            pass
+    
+    # Paginate the results
+    from django.core.paginator import Paginator
+    paginator = Paginator(logs_query, 50)  # Show 50 logs per page
+    page_number = request.GET.get('page', 1)
+    logs_page = paginator.get_page(page_number)
+    
+    return render(request, 'logs_table.html', {
+        'logs': logs_page,
+        'current_level': level_filter,
+        'current_source': source_filter,
+        'search_query': search_query,
+        'date_filter': date_filter
+    })
+
+@login_required
+def env_vars_template_list(request):
+    """Get a list of all environment variables templates as JSON."""
+    templates = EnvVarsTemplate.objects.all().order_by('name')
+    
+    templates_list = [{
+        'id': template.id,
+        'name': template.name,
+        'recipe_type': template.recipe_type,
+        'description': template.description,
+        'tags': template.tags,  # Return the raw tags string for splitting in JavaScript
+        'variable_count': len(template.get_variables_dict()),
+        'created_at': template.created_at.isoformat()
+    } for template in templates]
+    
+    return JsonResponse({'templates': templates_list})
+
+@login_required
+def env_vars_template_get(request, template_id):
+    """Get a specific environment variables template as JSON."""
+    template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    response_data = {
+        'id': template.id,
+        'name': template.name,
+        'description': template.description,
+        'recipe_type': template.recipe_type,
+        'variables': template.get_variables_dict(),
+        'tags': template.get_tags_list(),
+        'created_at': template.created_at.isoformat(),
+        'updated_at': template.updated_at.isoformat()
+    }
+    
+    return JsonResponse(response_data)
+
+@login_required
+def env_vars_template_details(request, template_id):
+    """Get the details of an environment variables template as JSON."""
+    template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    variables = template.get_variables_dict()
+    
+    # Convert to a list of variables with key, description, required, is_secret fields
+    variables_list = []
+    for key, details in variables.items():
+        variables_list.append({
+            'key': key,
+            'description': details.get('description', ''),
+            'required': details.get('required', False),
+            'is_secret': details.get('is_secret', False),
+            'default_value': details.get('default_value', ''),
+            'data_type': details.get('data_type', 'text')
+        })
+    
+    response_data = {
+        'id': template.id,
+        'name': template.name,
+        'description': template.description,
+        'recipe_type': template.recipe_type,
+        'variables': variables_list
+    }
+    
+    return JsonResponse(response_data)
+
+@login_required
+def env_vars_instance_list(request):
+    """Get a list of all environment variables instances as JSON."""
+    instances = EnvVarsInstance.objects.all().order_by('name')
+    
+    instances_list = [{
+        'id': instance.id,
+        'name': instance.name,
+        'recipe_type': instance.recipe_type,
+        'description': instance.description,
+        'template_id': instance.template.id if instance.template else None,
+        'template_name': instance.template.name if instance.template else None,
+        'variable_count': len(instance.get_variables_dict())
+    } for instance in instances]
+    
+    return JsonResponse({'instances': instances_list})
+
+@login_required
+def env_vars_instance_json(request, instance_id):
+    """Get a specific environment variables instance as JSON."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    
+    response_data = {
+        'success': True,
+        'instance': {
+            'id': instance.id,
+            'name': instance.name,
+            'description': instance.description,
+            'recipe_type': instance.recipe_type,
+            'template_id': instance.template.id if instance.template else None,
+            'template_name': instance.template.name if instance.template else None,
+            'variables': instance.get_variables_dict(),
+            'created_at': instance.created_at.isoformat(),
+            'updated_at': instance.updated_at.isoformat()
+        }
+    }
+    
+    return JsonResponse(response_data)
+
+@login_required
+def env_vars_template_delete(request, template_id):
+    """Delete an environment variables template."""
+    template = get_object_or_404(EnvVarsTemplate, id=template_id)
+    
+    # Check if template is in use by any instances
+    instances_using_template = EnvVarsInstance.objects.filter(template=template).count()
+    
+    if request.method == 'POST':
+        template_name = template.name
+        template.delete()
+        messages.success(request, f"Environment variables template '{template_name}' deleted successfully")
+        return redirect('env_vars_templates')
+    
+    return render(request, 'env_vars/template_confirm_delete.html', {
+        'template': template,
+        'instances_count': instances_using_template
+    })
+
+@login_required
+def env_vars_instance_detail(request, instance_id):
+    """View details of an environment variables instance."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    variables = instance.get_variables_dict()
+    
+    return render(request, 'env_vars/instance_detail.html', {
+        'instance': instance,
+        'variables': variables,
+    })
+
+@login_required
+def env_vars_instance_edit(request, instance_id):
+    """Edit an existing environment variables instance."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    
+    # Get all environments
+    environments = Environment.objects.all().order_by('name')
+    
+    if request.method == 'POST':
+        form = EnvVarsInstanceForm(request.POST)
+        if form.is_valid():
+            # Update instance
+            instance.name = form.cleaned_data['name']
+            instance.description = form.cleaned_data['description']
+            instance.template = form.cleaned_data['template']
+            instance.recipe_type = form.cleaned_data['recipe_type']
+            instance.variables = form.cleaned_data['variables']
+            instance.save()
+
+            messages.success(request, f"Environment variables instance '{instance.name}' updated successfully")
+            return redirect('env_vars_instances')
+        else:
+            messages.error(request, "Please correct the errors below")
+    else:
+        # Get the variables as a parsed dictionary
+        variables_dict = instance.get_variables_dict()
+        
+        form = EnvVarsInstanceForm(initial={
+            'name': instance.name,
+            'description': instance.description,
+            'template': instance.template,
+            'recipe_type': instance.recipe_type,
+            'variables': json.dumps(variables_dict),  # Convert the parsed dict back to JSON
+        })
+    
+    # Pass the variables_json to the template for proper JavaScript initialization
+    variables_dict = instance.get_variables_dict()
+    variables_json = json.dumps(variables_dict)
+    
+    return render(request, 'env_vars/instance_form.html', {
+        'form': form,
+        'instance': instance,
+        'environments': environments,
+        'variables_json': variables_json,  # Add this to pass properly encoded JSON
+        'title': f'Edit Environment Variables Instance: {instance.name}',
+        'is_new': False
+    })
+
+@login_required
+def env_vars_instance_delete(request, instance_id):
+    """Delete an environment variables instance."""
+    instance = get_object_or_404(EnvVarsInstance, id=instance_id)
+    
+    if request.method == 'POST':
+        instance_name = instance.name
+        try:
+            instance.delete()
+            messages.success(request, f"Environment variables instance '{instance_name}' deleted successfully")
+        except Exception as e:
+            messages.error(request, f"Error deleting instance: {str(e)}")
+        return redirect('env_vars_instances')
+    
+    return render(request, 'env_vars/instance_confirm_delete.html', {'instance': instance})
+
+def recipe_instances(request):
+    """List all recipe instances."""
+    instances = RecipeInstance.objects.all().order_by('-updated_at')
+    
+    # Group by deployment status
+    deployed = instances.filter(deployed=True)
+    staging = instances.filter(deployed=False)
+    
+    return render(request, 'recipes/instances.html', {
+        'title': 'Recipe Instances',
+        'deployed': deployed, 
+        'staging': staging
+    })
+
+@login_required
+def recipe_instance_create(request):
+    """Create a new recipe instance."""
+    
+    # Get all recipe templates
+    templates = RecipeTemplate.objects.all().order_by('name')
+    
+    # Get all environment variable instances
+    env_vars_instances = EnvVarsInstance.objects.all().order_by('name')
+    
+    # Get all environments
+    environments = Environment.objects.all().order_by('name')
+    
+    if request.method == 'POST':
+        form = RecipeInstanceForm(request.POST)
+        
+        if form.is_valid():
+            # Get form data
+            name = form.cleaned_data['name']
+            description = form.cleaned_data['description']
+            template_id = form.cleaned_data['template']
+            env_vars_instance_id = form.cleaned_data.get('env_vars_instance')
+            environment_id = form.cleaned_data.get('environment')
+            
+            # Get models
+            template = RecipeTemplate.objects.get(id=template_id)
+            env_vars_instance = None
+            if env_vars_instance_id:
+                try:
+                    env_vars_instance = EnvVarsInstance.objects.get(id=env_vars_instance_id)
+                except EnvVarsInstance.DoesNotExist:
+                    pass
+                    
+            # Create recipe instance
+            instance = RecipeInstance(
+                name=name,
+                description=description,
+                template=template,
+                env_vars_instance=env_vars_instance
+            )
+            
+            # Add environment if selected
+            if environment_id:
+                try:
+                    environment = Environment.objects.get(id=environment_id)
+                    instance.environment = environment
+                except Environment.DoesNotExist:
+                    pass
+                    
+            instance.save()
+            
+            messages.success(request, f"Recipe instance '{name}' created successfully")
+            return redirect('recipe_instances')
+            
+    else:
+        form = RecipeInstanceForm()
+    
+    return render(request, 'recipes/instance_form.html', {
+        'form': form,
+        'templates': templates,
+        'env_vars_instances': env_vars_instances,
+        'environments': environments,
+        'is_new': True,
+        'title': 'Create Recipe Instance'
+    })
+
+@login_required
+def github_environments(request):
+    """
+    View to list and manage GitHub environments. It shows local environments 
+    and GitHub environments, indicating which ones need to be synced.
+    """
+    github_service = GitHubService()
+    github_configured = github_service.is_configured()
+    
+    # Get all local environments
+    local_environments = Environment.objects.all().order_by('name')
+    
+    # Get all GitHub environments if GitHub is configured
+    github_environments = []
+    
+    if github_configured:
+        try:
+            github_environments = github_service.get_environments()
+            
+            # Create a mapping of environment names (lowercase for case-insensitive comparison)
+            github_env_names = {env['name'].lower(): env for env in github_environments}
+            
+            # Check which local environments exist in GitHub and add properties directly to each environment object
+            for local_env in local_environments:
+                local_env.exists_in_github = local_env.name.lower() in github_env_names
+                local_env.github_env = github_env_names.get(local_env.name.lower())
+                
+        except Exception as e:
+            logger.error(f"Error fetching GitHub environments: {str(e)}")
+            messages.error(request, f"Error fetching GitHub environments: {str(e)}")
+    
+    return render(request, 'github/environments.html', {
+        'title': 'GitHub Environments',
+        'github_configured': github_configured,
+        'local_environments': local_environments,
+        'github_environments': github_environments,
+    })
+
+@login_required
+@require_POST
+def github_create_environment(request):
+    """
+    Create a GitHub environment from a local environment.
+    """
+    environment_id = request.POST.get('environment_id')
+    
+    if not environment_id:
+        messages.error(request, "Environment ID is required")
+        return redirect('github_environments')
+    
+    github_service = GitHubService()
+    if not github_service.is_configured():
+        messages.error(request, "GitHub integration is not configured")
+        return redirect('github_environments')
+    
+    try:
+        # Get the local environment
+        environment = get_object_or_404(Environment, id=environment_id)
+        
+        # Create the environment in GitHub
+        success = github_service.create_environment(
+            name=environment.name,
+            # Optional parameters can be added here if needed
+            # wait_timer=0,
+            # reviewers=[],
+            # prevent_self_review=False,
+            # protected_branches=False
+        )
+        
+        if success:
+            messages.success(request, f"Environment '{environment.name}' created successfully in GitHub")
+        else:
+            messages.error(request, f"Failed to create environment '{environment.name}' in GitHub")
+                
+    except Exception as e:
+        logger.error(f"Error creating GitHub environment: {str(e)}")
+        messages.error(request, f"Error creating environment: {str(e)}")
+    
+    return redirect('github_environments')
+
+@require_POST
+def policy_deploy(request, policy_id):
+    """Deploy a local policy to DataHub."""
+    # Get the policy from the database
+    policy = get_object_or_404(Policy, id=policy_id)
+    
+    # Get DataHub client
+    client = get_datahub_client()
+    if not client or not client.test_connection():
+        messages.error(request, "Not connected to DataHub. Please check your connection settings.")
+        return redirect('policies')
+    
+    try:
+        # Check if policy exists on DataHub first
+        existing_policy = None
+        try:
+            existing_policy = client.get_policy(policy.id)
+        except Exception as e:
+            logger.warning(f"Error checking if policy exists: {str(e)}")
+            
+        # Prepare the common policy properties
+        base_policy_data = {
+            'name': policy.name,
+            'description': policy.description or '',
+            'type': policy.type,
+            'state': policy.state,
+            'resources': json.loads(policy.resources) if policy.resources else [],
+            'privileges': json.loads(policy.privileges) if policy.privileges else [],
+            'actors': json.loads(policy.actors) if policy.actors else {}
+        }
+        
+        if existing_policy:
+            # For updates, include the ID
+            datahub_policy = {
+                'id': policy.id,
+                **base_policy_data
+            }
+            
+            # Update existing policy
+            logger.info(f"Updating existing policy: {policy.id}")
+            result = client.update_policy(policy.id, datahub_policy)
+            
+            if result:
+                messages.success(request, f"Policy '{policy.name}' updated successfully on DataHub")
+            else:
+                messages.error(request, f"Failed to update policy '{policy.name}' on DataHub")
+        else:
+            # For new policies, some DataHub versions don't accept 'id' in PolicyUpdateInput
+            # Use two different approaches to maximize compatibility
+            try:
+                # Try first with ID included
+                datahub_policy = {
+                    'id': policy.id,
+                    **base_policy_data
+                }
+                logger.info(f"Creating new policy with ID: {policy.id}")
+                result = client.create_policy(datahub_policy)
+                
+                if not result:
+                    # If that fails, retry without explicit ID in the input
+                    # DataHub will use the name as ID
+                    logger.info("Retrying policy creation without explicit ID")
+                    datahub_policy = base_policy_data
+                    result = client.create_policy(datahub_policy)
+            except Exception as e:
+                logger.error(f"Error in first policy creation attempt: {str(e)}")
+                # Retry without ID
+                datahub_policy = base_policy_data
+                result = client.create_policy(datahub_policy)
+            
+            if result:
+                messages.success(request, f"Policy '{policy.name}' created successfully on DataHub")
+            else:
+                messages.error(request, f"Failed to create policy '{policy.name}' on DataHub")
+        
+        return redirect('policies')
+    except Exception as e:
+        messages.error(request, f"Error deploying policy: {str(e)}")
+        logger.error(f"Error deploying policy: {str(e)}", exc_info=True)
+        return redirect('policies')
+
+@login_required
+def template_env_vars_instances(request, template_id):
+    """API endpoint to get environment variables instances matching a template's recipe type."""
+    template = get_object_or_404(RecipeTemplate, id=template_id)
+    recipe_type = template.recipe_type
+    
+    # Filter env vars instances by recipe type
+    filtered_instances = EnvVarsInstance.objects.filter(recipe_type=recipe_type).order_by('name')
+    
+    # Prepare response data
+    instances = [
+        {
+            'id': instance.id,
+            'name': instance.name,
+            'description': instance.description
+        }
+        for instance in filtered_instances
+    ]
+    
+    return JsonResponse({
+        'recipe_type': recipe_type,
+        'instances': instances
+    })
 

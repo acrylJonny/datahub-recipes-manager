@@ -15,17 +15,40 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+def replace_env_vars_with_values(content, env_vars):
+    """Replace environment variables in content with their values."""
+    if not content or not env_vars:
+        return content
+        
+    # Convert content to string if it's a dict
+    if isinstance(content, dict):
+        content = json.dumps(content)
+        
+    # Replace each environment variable
+    for key, var_info in env_vars.items():
+        if 'value' in var_info:
+            # Escape special characters in the value
+            value = str(var_info['value']).replace('\\', '\\\\').replace('$', '\\$')
+            # Replace ${VAR} or $VAR with the value
+            content = re.sub(r'\$\{?' + re.escape(key) + r'\}?', value, content)
+            
+    # Try to parse back to dict if it was originally a dict
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return content
+
 # Define recipe types
 RECIPE_TYPES = [
-    ('kafka', 'Kafka'),
+    ('bigquery', 'Google BigQuery'),
     ('file', 'File'),
-    ('s3', 'S3'),
+    ('s3', 'Amazon S3'),
     ('snowflake', 'Snowflake'),
-    ('bigquery', 'BigQuery'),
     ('postgres', 'PostgreSQL'),
     ('mysql', 'MySQL'),
     ('mssql', 'Microsoft SQL Server'),
     ('oracle', 'Oracle'),
+    ('dbt', 'dbt'),
     ('other', 'Other')
 ]
 
@@ -102,7 +125,7 @@ class LogEntry(models.Model):
     
     timestamp = models.DateTimeField(default=timezone.now)
     level = models.CharField(max_length=10, choices=LEVEL_CHOICES, default='INFO')
-    source = models.CharField(max_length=50, default='application')
+    source = models.TextField(default='application')
     message = models.TextField()
     details = models.TextField(blank=True, null=True)
     
@@ -434,10 +457,31 @@ class RecipeInstance(models.Model):
     deployed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    cron_schedule = models.CharField(max_length=100, default='0 0 * * *')  # Default to daily at midnight
+    timezone = models.CharField(max_length=50, default='UTC')
+    debug_mode = models.BooleanField(default=False)
     
     def __str__(self):
         return f"{self.name} ({self.template.name})"
     
+    @property
+    def recipe_type(self):
+        """Get the recipe type from the associated template."""
+        return self.template.recipe_type if self.template else None
+    
+    @property
+    def datahub_id(self):
+        """Get the DataHub ID for this recipe instance."""
+        return self.get_recipe_id()
+    
+    @datahub_id.setter
+    def datahub_id(self, value):
+        """Set the DataHub ID by updating the datahub_urn field."""
+        if value:
+            self.datahub_urn = f"urn:li:dataHubIngestionSource:{value}"
+        else:
+            self.datahub_urn = None
+            
     def get_recipe_id(self):
         """Extract the ID portion from the DataHub URN."""
         if not self.datahub_urn:
@@ -448,6 +492,42 @@ class RecipeInstance(models.Model):
         if len(parts) >= 4:
             return parts[3]
         return None
+    
+    def get_recipe_dict(self):
+        """Get the recipe configuration as a dictionary."""
+        try:
+            # Get the template content
+            template_content = self.template.get_content()
+            if not template_content:
+                return None
+                
+            # If we have environment variables, apply them
+            if self.env_vars_instance:
+                env_vars = self.env_vars_instance.get_variables_dict()
+                if env_vars:
+                    # Replace environment variables in the template
+                    template_content = replace_env_vars_with_values(template_content, env_vars)
+            
+            # Ensure the recipe has the correct structure
+            if isinstance(template_content, dict):
+                if 'source' not in template_content:
+                    # If the template content is not properly structured, wrap it
+                    template_content = {
+                        'source': template_content
+                    }
+            else:
+                # If template_content is not a dict, create a proper structure
+                template_content = {
+                    'source': {
+                        'type': self.template.recipe_type,
+                        'config': template_content if isinstance(template_content, dict) else {}
+                    }
+                }
+            
+            return template_content
+        except Exception as e:
+            logger.error(f"Error getting recipe dict for instance {self.id}: {str(e)}")
+            return None
     
     def get_combined_content(self):
         """Get the template content with environment variables applied."""
@@ -481,7 +561,7 @@ class RecipeInstance(models.Model):
         yaml_content = {
             'name': self.name,
             'description': self.description,
-            'recipe_type': self.template.recipe_type,
+            'recipe_type': self.recipe_type,
             'recipe': recipe_content
         }
         
@@ -1016,27 +1096,59 @@ class GitIntegration:
             
             # Export to YAML/JSON based on object type
             if isinstance(instance_or_template, RecipeInstance):
-                logger.info(f"Exporting recipe instance: {instance_or_template.name}")
+                # Recipe instance
+                instance = instance_or_template
                 
-                # Get environment (default to 'prod' if not specified)
-                if instance_or_template.environment:
-                    environment = instance_or_template.environment.name.lower()
-                else:
-                    environment = Environment.get_default().name.lower()
+                # Environment name from instance or default to 'dev'
+                env_name = 'dev'
+                if instance.environment:
+                    env_name = instance.environment.name.lower()
+                
+                # Create YAML content formatted for workflow scripts
+                yaml_content = {
+                    'recipe_id': instance.get_recipe_id() or f"recipe-{instance.id}",
+                    'recipe_type': instance.recipe_type,
+                    'description': instance.description,
+                }
+                
+                # Get parameters from the environment variables instance if available
+                parameters = {}
+                if instance.env_vars_instance:
+                    env_vars = instance.env_vars_instance.get_variables_dict()
+                    for key, var_info in env_vars.items():
+                        # Add the parameter value, handling secrets appropriately
+                        if 'value' in var_info:
+                            parameters[key] = var_info['value']
+                
+                # Add parameters to the YAML content
+                yaml_content['parameters'] = parameters
+                
+                # Add secret references if there are secrets
+                if instance.env_vars_instance and instance.env_vars_instance.has_secret_variables:
+                    secret_refs = []
+                    for key, var_info in instance.env_vars_instance.get_variables_dict().items():
+                        if var_info.get('is_secret', False):
+                            secret_refs.append(key)
+                    
+                    if secret_refs:
+                        yaml_content['secret_references'] = secret_refs
+                
+                # Convert to YAML
+                content = yaml.dump(yaml_content, default_flow_style=False, sort_keys=False)
                 
                 # Create environment directory if it doesn't exist
-                env_dir = instances_dir / environment
+                env_dir = instances_dir / env_name
                 env_dir.mkdir(exist_ok=True)
                 
                 # Create file with clean name (no spaces, lowercase)
-                instance_name = instance_or_template.name.replace(' ', '-').lower()
+                instance_name = instance.name.replace(' ', '_').lower()
                 file_path = env_dir / f"{instance_name}.yml"
                 
-                # Export the instance
+                # Write the file content
                 with open(file_path, 'w') as f:
-                    yaml.dump(instance_or_template.get_combined_content(), f, default_flow_style=False)
+                    f.write(content)
                 
-                pr_title = f"Update recipe instance: {instance_or_template.name}"
+                pr_title = f"Update recipe instance: {instance.name}"
                 
             elif isinstance(instance_or_template, RecipeTemplate):
                 logger.info(f"Exporting recipe template: {instance_or_template.name}")
@@ -1056,9 +1168,19 @@ class GitIntegration:
             elif isinstance(instance_or_template, Policy):
                 logger.info(f"Exporting policy: {instance_or_template.name}")
                 
+                # Get environment (default to 'prod' if not specified)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+                
+                # Create environment directory if it doesn't exist
+                env_policies_dir = policies_dir / environment
+                env_policies_dir.mkdir(exist_ok=True)
+                
                 # Create file with clean name (no spaces, lowercase)
                 policy_name = instance_or_template.name.replace(' ', '_').lower()
-                file_path = policies_dir / f"{policy_name}.json"
+                file_path = env_policies_dir / f"{policy_name}.json"
                 
                 # Get policy data
                 policy_data = instance_or_template.to_dict()
@@ -1785,6 +1907,7 @@ class Policy(models.Model):
     resources = models.TextField()
     privileges = models.TextField()
     actors = models.TextField()
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name='policies')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -1961,4 +2084,26 @@ class EnvironmentInstance(models.Model):
                 f.write(yaml_content)
             return path
         
-        return yaml_content 
+        return yaml_content
+
+class GitSecrets(models.Model):
+    """Model for storing GitHub repository secrets."""
+    name = models.CharField(max_length=255)
+    environment = models.CharField(max_length=255, blank=True, default='')
+    description = models.TextField(blank=True, null=True)
+    # We don't store the actual value for security reasons
+    is_configured = models.BooleanField(default=True)
+    last_checked = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "GitHub Secret"
+        verbose_name_plural = "GitHub Secrets"
+        ordering = ['environment', 'name']
+        unique_together = ('name', 'environment')
+    
+    def __str__(self):
+        if self.environment:
+            return f"{self.name} ({self.environment})"
+        return self.name 

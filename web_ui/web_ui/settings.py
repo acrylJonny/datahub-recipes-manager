@@ -160,7 +160,7 @@ LOGGING = {
             'style': '{',
         },
         'simple': {
-            'format': '{levelname} {message}',
+            'format': '{message}',
             'style': '{',
         },
     },

@@ -105,19 +105,19 @@
                                     </td>
                                     <td>
                                         <div class="btn-group">
-                                            <a href="{% url 'recipe_edit' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-primary">
+                                            <a href="{% url 'recipe_edit' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this recipe">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            <a href="{% url 'recipe_download' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-secondary">
+                                            <a href="{% url 'recipe_download' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Download this recipe">
                                                 <i class="fas fa-download"></i>
                                             </a>
-                                            <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info">
+                                            <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Save this recipe as a template">
                                                 <i class="fas fa-copy"></i>
                                             </a>
-                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}" {% if recipe.id|slice:':4' == 'cli-' %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Cannot run CLI-created recipes from the UI" tabindex="0"{% endif %}>
+                                            <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}" {% if recipe.id|slice:':4' == 'cli-' %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Cannot run CLI-created recipes from the UI" tabindex="0"{% else %}data-bs-toggle="tooltip" title="Run this recipe now"{% endif %}>
                                                 <i class="fas fa-play"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}" data-bs-toggle="modal" data-bs-target="#deleteRecipeModal">
+                                            <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="{{ recipe.id }}" data-recipe-name="{{ recipe.name }}" data-bs-toggle="modal" data-bs-target="#deleteRecipeModal" title="Delete this recipe">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </div>

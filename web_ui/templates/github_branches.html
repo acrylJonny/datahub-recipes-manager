@@ -10,7 +10,7 @@
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb">
                     <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
-                    <li class="breadcrumb-item"><a href="{% url 'github' %}">Git Integration</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'github_index' %}">Git Integration</a></li>
                     <li class="breadcrumb-item active" aria-current="page">Branches</li>
                 </ol>
             </nav>
@@ -27,7 +27,7 @@
                     {% if not settings.is_configured %}
                         <div class="alert alert-warning">
                             <i class="fas fa-exclamation-triangle"></i> Git integration is not configured. 
-                            Please <a href="{% url 'github_settings_edit' %}">configure Git integration</a> first.
+                            Please <a href="{% url 'github_settings' %}">configure Git integration</a> first.
                         </div>
                     {% else %}
                         <div class="mb-4">

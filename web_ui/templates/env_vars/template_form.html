@@ -3,12 +3,19 @@
 {% block title %}{{ title }} - DataHub CI/CD Manager{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2">{{ title }}</h1>
-        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left me-1"></i> Back to Templates
-        </a>
+<div class="container-fluid px-4">
+    <!-- Header -->
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'env_vars_templates' %}">Environment Variable Templates</a></li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    {% if template %}Edit - {{ template.name }}{% else %}Create Template{% endif %}
+                </li>
+            </ol>
+        </nav>
+        <h1 class="h2 mb-0">{{ title }}</h1>
     </div>
     
     {% if messages %}
@@ -20,21 +27,34 @@
         {% endfor %}
     {% endif %}
     
-    <div class="card">
-        <div class="card-header bg-light">
-            <h5 class="card-title mb-0">Template Details</h5>
+    <!-- Form -->
+    <form method="post" id="templateForm">
+        {% csrf_token %}
+        
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+            {{ error }}
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        <div class="row">
+            <div class="col-md-8">
+                <!-- Basic Information Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Template Information</h5>
         </div>
         <div class="card-body">
-            <form method="post" class="needs-validation" novalidate id="templateForm">
-                {% csrf_token %}
-                
                 <div class="mb-3">
-                    <label for="{{ form.name.id_for_label }}" class="form-label">Template Name</label>
+                            <label for="{{ form.name.id_for_label }}" class="form-label required">Name</label>
                     {{ form.name }}
-                    <div class="form-text">A descriptive name for this environment variable template</div>
                     {% if form.name.errors %}
-                        <div class="invalid-feedback d-block">
-                            {{ form.name.errors }}
+                            <div class="text-danger">
+                                {% for error in form.name.errors %}
+                                {{ error }}
+                                {% endfor %}
                         </div>
                     {% endif %}
                 </div>
@@ -42,374 +62,483 @@
                 <div class="mb-3">
                     <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
                     {{ form.description }}
-                    <div class="form-text">Optional description of this template</div>
                     {% if form.description.errors %}
-                        <div class="invalid-feedback d-block">
-                            {{ form.description.errors }}
+                            <div class="text-danger">
+                                {% for error in form.description.errors %}
+                                {{ error }}
+                                {% endfor %}
                         </div>
                     {% endif %}
+                            <div class="form-text">Briefly describe the purpose of this environment variables template.</div>
                 </div>
                 
+                        <!-- Recipe Type field with custom input for "other" -->
                 <div class="mb-3">
                     <label for="{{ form.recipe_type.id_for_label }}" class="form-label">Recipe Type</label>
                     {{ form.recipe_type }}
-                    <div class="form-text">The type of recipe this template is for</div>
                     {% if form.recipe_type.errors %}
-                        <div class="invalid-feedback d-block">
-                            {{ form.recipe_type.errors }}
+                            <div class="text-danger">
+                                {% for error in form.recipe_type.errors %}
+                                {{ error }}
+                                {% endfor %}
                         </div>
                     {% endif %}
+                    
+                    <!-- Custom recipe type field (shown only when "other" is selected) -->
+                    {{ form.recipe_type_other }}
                 </div>
                 
                 <div class="mb-3">
                     <label for="{{ form.tags.id_for_label }}" class="form-label">Tags</label>
                     {{ form.tags }}
-                    <div class="form-text">Optional comma-separated tags</div>
-                    {% if form.tags.errors %}
-                        <div class="invalid-feedback d-block">
-                            {{ form.tags.errors }}
-                        </div>
-                    {% endif %}
-                </div>
-                
-                <div class="mb-3">
-                    <label class="form-label">Variables Definition</label>
-                    <div class="form-text mb-2">
-                        Define the variables required by this template. Variables will be referenced in recipes as ${VARIABLE_NAME}.
-                    </div>
-                    
-                    <!-- Hidden field to store the JSON representation of variables -->
-                    <input type="hidden" name="variables" id="variables" value="{{ form.variables.value|default:'' }}">
-                    
-                    <div id="variablesContainer" class="mb-3">
-                        <!-- Variables will be added here dynamically -->
-                    </div>
-                    
-                    <button type="button" id="addVariable" class="btn btn-sm btn-outline-primary">
-                        <i class="fas fa-plus"></i> Add Variable
-                    </button>
-                    
-                    {% if form.variables.errors %}
-                        <div class="invalid-feedback d-block mt-2">
-                            {{ form.variables.errors }}
-                        </div>
-                    {% endif %}
-                </div>
-                
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <button type="submit" class="btn btn-primary">
-                            {% if is_new %}
-                                <i class="fas fa-plus me-1"></i> Create Template
-                            {% else %}
-                                <i class="fas fa-save me-1"></i> Update Template
+                            {% if form.tags.errors %}
+                            <div class="text-danger">
+                                {% for error in form.tags.errors %}
+                                {{ error }}
+                                {% endfor %}
+                            </div>
                             {% endif %}
-                        </button>
-                        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                    <div class="form-text">Optional comma-separated tags</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Environment Variables Section -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Environment Variables</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">Define environment variables for this template. Variables will be referenced in recipes as ${VARIABLE_NAME}.</p>
+                        
+                        <div id="no_variables" class="alert alert-warning {% if template and variables_json %}d-none{% endif %}">
+                            <i class="fas fa-exclamation-triangle"></i> No variables defined. Click "Add Variable" to begin.
                     </div>
                     
-                    {% if not is_new and template %}
-                    <div>
-                        <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteTemplateModal">
+                        <div id="variables_list" class="mb-3">
+                            <!-- Variables will be dynamically added here -->
+                        </div>
+                        
+                        <div class="d-flex justify-content-between mb-3">
+                            <button type="button" id="add_variable_btn" class="btn btn-outline-primary">
+                                <i class="fas fa-plus-circle"></i> Add Variable
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Hidden field to store variables -->
+                        <input type="hidden" name="variables" id="variables" value="{{ variables|safe }}">
+                        
+                        <button type="submit" class="btn btn-primary w-100 mb-3">
+                            <i class="fas fa-save"></i> 
+                            {% if template %}Update Template{% else %}Create Template{% endif %}
+                        </button>
+                        <a href="{% url 'env_vars_templates' %}" class="btn btn-outline-secondary w-100">
+                            <i class="fas fa-arrow-left"></i> Back to Templates
+                        </a>
+                    
+                        {% if template %}
+                        <hr>
+                        <button type="button" class="btn btn-danger w-100" data-bs-toggle="modal" data-bs-target="#deleteTemplateModal">
                             <i class="fas fa-trash me-1"></i> Delete Template
                         </button>
+                        {% endif %}
                     </div>
-                    {% endif %}
                 </div>
-            </form>
+            </div>
         </div>
-    </div>
+    </form>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<!-- Ensure jQuery is loaded first -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<!-- Select2 -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const variablesContainer = document.getElementById('variablesContainer');
-        const variablesInput = document.getElementById('variables');
-        const addVariableBtn = document.getElementById('addVariable');
-        const form = document.getElementById('templateForm');
-        
-        // Initialize from existing values
-        let variables = {};
-        try {
-            if (variablesInput.value) {
-                variables = JSON.parse(variablesInput.value);
-                renderVariables();
-            }
-        } catch (e) {
-            console.error("Error parsing variables JSON:", e);
+    // Basic initialization check
+    console.log('Script block is being executed');
+    
+    // Wrap everything in a try-catch to catch any initialization errors
+    try {
+        $(document).ready(function() {
+            console.log('Document ready event fired');
+            
+        // Initialize Select2 for recipe type dropdown
+        $('.select2-enable').select2({
+            theme: 'bootstrap-5',
+            width: '100%'
+        });
+
+        // Handle the "other" option for recipe type
+        const recipeTypeSelect = $('#{{ form.recipe_type.id_for_label }}');
+        const recipeTypeOther = $('#{{ form.recipe_type_other.id_for_label }}');
+
+        // Initially hide/show based on current value
+        if (recipeTypeSelect.val() === 'other') {
+            recipeTypeOther.show();
+        } else {
+            recipeTypeOther.hide();
         }
-        
-        // Add a new variable
-        addVariableBtn.addEventListener('click', function() {
-            const variableId = 'var_' + Date.now();
-            variables[variableId] = {
-                key: '',  // Use empty string as initial key instead of ID
-                description: '',
-                required: false,
-                is_secret: false,
-                data_type: 'text',
-                default_value: ''
-            };
-            renderVariables();
+
+        // Update on change
+        recipeTypeSelect.on('change', function() {
+            if ($(this).val() === 'other') {
+                recipeTypeOther.show().focus();
+            } else {
+                recipeTypeOther.hide();
+            }
         });
         
-        // Handle form submission
-        form.addEventListener('submit', function(event) {
-            event.preventDefault();
+            let variables = {};
             
-            // Convert variables to the format expected by the server
-            const finalVariables = {};
-            const allCards = document.querySelectorAll('.variable-card');
-            
-            for (const card of allCards) {
-                const varId = card.dataset.varId;
-                const keyInput = card.querySelector('.var-key');
-                const key = keyInput.value.trim();
+            // Initialize the variables from the form if editing
+            {% if template %}
+            try {
+                // Log the script tag variables for debugging
+                console.log("Script tag initialized with:", typeof window.templateVariables, window.templateVariables ? Object.keys(window.templateVariables).length : 0);
                 
-                if (!key) {
-                    alert('All variables must have a name');
+                // First try to use directly injected script variables
+                if (window.templateVariables && Object.keys(window.templateVariables).length > 0) {
+                    variables = window.templateVariables;
+                    console.log("Using window.templateVariables:", Object.keys(variables).length, "variables found");
+                    renderVariablesList(variables);
+                    $("#no_variables").addClass("d-none");
+                }
+                // Fall back to JSON parsing from the form
+                else if ('{{ variables_json|escapejs }}') {
+                    console.log("Parsing variables_json from form");
+                    variables = JSON.parse('{{ variables_json|escapejs }}');
+                    
+                    if (variables && Object.keys(variables).length > 0) {
+                        console.log("Rendering variables from JSON:", Object.keys(variables).length, "found");
+                        renderVariablesList(variables);
+                        $("#no_variables").addClass("d-none");
+                    } else {
+                        console.warn("Variables JSON was empty");
+                        $("#no_variables").removeClass("d-none");
+            }
+                } else {
+                    console.error("No variables_json provided from view");
+                    $("#no_variables").removeClass("d-none");
+                }
+        } catch (e) {
+                console.error("Error processing variables JSON:", e);
+                // Show error message
+                $("#no_variables").removeClass("d-none")
+                    .addClass("alert-danger")
+                    .removeClass("alert-warning")
+                    .html('<i class="fas fa-exclamation-triangle"></i> Error loading variables: ' + e.message);
+            }
+            {% else %}
+            console.log("Creating new template, no variables to initialize");
+            {% endif %}
+            
+            // Add variable button handler
+            $("#add_variable_btn").click(function() {
+                console.log("Add variable button clicked");
+                const varKey = `VAR_${Date.now()}`;
+                variables[varKey] = {
+                    key: varKey,
+                    value: "",
+                    description: "",
+                    required: false,
+                    is_secret: false,
+                    data_type: "text",
+                    default_value: ""
+                };
+                console.log("New variable added:", variables[varKey]);
+                renderVariablesList(variables);
+                $("#no_variables").addClass("d-none");
+            });
+            
+            // Function to render the variables list
+            function renderVariablesList(vars) {
+                console.log("Rendering variables list. Data:", vars);
+                $("#variables_list").empty();
+                $("#no_variables").addClass("d-none");
+                
+                if (!vars || Object.keys(vars).length === 0) {
+                    console.warn("No variables to render");
+                    $("#no_variables").removeClass("d-none");
                     return;
                 }
                 
-                if (Object.keys(finalVariables).includes(key)) {
-                    alert(`Duplicate variable name: ${key}`);
-                    return;
+                try {
+                    // Log how many variables we're processing
+                    console.log(`Processing ${Object.keys(vars).length} variables`);
+                    
+                    for (const key in vars) {
+                        if (!vars.hasOwnProperty(key)) continue;
+                        
+                        const varData = vars[key];
+                        console.log(`Rendering variable: ${key}`, varData);
+                        
+                        // Create a new card for each variable
+                        const card = $('<div>').addClass('card mb-3 variable-card').attr('data-var-id', key);
+                        const cardHeader = $('<div>').addClass('card-header d-flex justify-content-between align-items-center');
+                        
+                        // Variable name field
+                        const varNameInput = $('<input>').addClass('form-control var-key')
+                            .attr('type', 'text')
+                            .attr('data-key', key)
+                            .attr('value', varData.key || key)
+                            .attr('placeholder', 'VARIABLE_NAME');
+                        
+                        cardHeader.append($('<div>').addClass('flex-grow-1 me-2').append(varNameInput));
+                        
+                        // Delete button
+                        const deleteBtn = $('<button>').addClass('btn btn-sm btn-outline-danger var-delete')
+                            .attr('type', 'button')
+                            .attr('data-key', key)
+                            .html('<i class="fas fa-trash"></i>');
+                        cardHeader.append(deleteBtn);
+                        
+                        card.append(cardHeader);
+                        
+                        // Card body
+                        const cardBody = $('<div>').addClass('card-body');
+                        
+                        // Data type
+                        const dataTypeGroup = $('<div>').addClass('mb-3');
+                        dataTypeGroup.append($('<label>').addClass('form-label').text('Data Type'));
+                        
+                        const dataTypeSelect = $('<select>').addClass('form-select var-data-type')
+                            .attr('data-key', key);
+                            
+                        const dataTypes = [
+                            { value: 'text', label: 'Text' },
+                            { value: 'number', label: 'Number' },
+                            { value: 'boolean', label: 'Boolean' },
+                            { value: 'json', label: 'JSON' }
+                        ];
+                        
+                        dataTypes.forEach(dt => {
+                            const option = $('<option>').attr('value', dt.value).text(dt.label);
+                            if (varData.data_type === dt.value) {
+                                option.attr('selected', true);
+                            }
+                            dataTypeSelect.append(option);
+                        });
+                        
+                        dataTypeGroup.append(dataTypeSelect);
+                        cardBody.append(dataTypeGroup);
+                        
+                        // Description
+                        const descGroup = $('<div>').addClass('mb-3');
+                        descGroup.append($('<label>').addClass('form-label').text('Description'));
+                        
+                        const descInput = $('<textarea>').addClass('form-control var-description')
+                            .attr('data-key', key)
+                            .attr('rows', 2)
+                            .attr('placeholder', 'Description of this variable')
+                            .val(varData.description || '');
+                            
+                        descGroup.append(descInput);
+                        cardBody.append(descGroup);
+                        
+                        // Default value
+                        const defaultGroup = $('<div>').addClass('mb-3');
+                        defaultGroup.append($('<label>').addClass('form-label').text('Default Value'));
+                        
+                        const defaultInput = $('<input>').addClass('form-control var-default')
+                            .attr('type', 'text')
+                            .attr('data-key', key)
+                            .attr('placeholder', 'Default value (optional)')
+                            .val(varData.default_value || '');
+                            
+                        defaultGroup.append(defaultInput);
+                        cardBody.append(defaultGroup);
+                        
+                        // Checkboxes row
+                        const checkboxRow = $('<div>').addClass('d-flex gap-4 mb-2');
+                        
+                        // Required checkbox
+                        const reqCheck = $('<div>').addClass('form-check');
+                        const reqInput = $('<input>').addClass('form-check-input var-required')
+                            .attr('type', 'checkbox')
+                            .attr('id', 'required-' + key)
+                            .attr('data-key', key);
+                        
+                        if (varData.required) {
+                            reqInput.prop('checked', true);
+                        }
+                        
+                        reqCheck.append(reqInput);
+                        reqCheck.append($('<label>').addClass('form-check-label')
+                            .attr('for', 'required-' + key)
+                            .text('Required'));
+                            
+                        checkboxRow.append(reqCheck);
+                        
+                        // Secret checkbox
+                        const secretCheck = $('<div>').addClass('form-check');
+                        const secretInput = $('<input>').addClass('form-check-input var-secret')
+                            .attr('type', 'checkbox')
+                            .attr('id', 'secret-' + key)
+                            .attr('data-key', key);
+                        
+                        if (varData.is_secret) {
+                            secretInput.prop('checked', true);
+                        }
+                        
+                        secretCheck.append(secretInput);
+                        secretCheck.append($('<label>').addClass('form-check-label')
+                            .attr('for', 'secret-' + key)
+                            .text('Secret'));
+                            
+                        checkboxRow.append(secretCheck);
+                        cardBody.append(checkboxRow);
+                        
+                        card.append(cardBody);
+                        $("#variables_list").append(card);
+                    }
+                    
+                    // Initialize event handlers for the new elements
+                    initVariableHandlers();
+                    
+                    // Update the hidden form field
+                    updateVariablesJson();
+                } catch (error) {
+                    console.error("Error rendering variables:", error);
+                    $("#variables_list").html('<div class="alert alert-danger">Error rendering variables: ' + error.message + '</div>');
                 }
+            }
+            
+            // Function to initialize event handlers for variable elements
+            function initVariableHandlers() {
+                // Variable name change
+                $(".var-key").off('change').on('change', function() {
+                    const key = $(this).data('key');
+                    variables[key].key = $(this).val();
+                    updateVariablesJson();
+                });
                 
-                const description = card.querySelector('.var-description').value;
-                const required = card.querySelector('.var-required').checked;
-                const isSecret = card.querySelector('.var-secret').checked;
-                const dataType = card.querySelector('.var-data-type').value;
-                const defaultValue = card.querySelector('.var-default').value;
+                // Delete variable button
+                $(".var-delete").off('click').on('click', function() {
+                    const key = $(this).data('key');
+                    delete variables[key];
+                    $(this).closest('.card').remove();
+                    updateVariablesJson();
+                    
+                    if (Object.keys(variables).length === 0) {
+                        $("#no_variables").removeClass("d-none");
+                    }
+                });
                 
-                finalVariables[key] = {
-                    description: description,
-                    required: required,
-                    is_secret: isSecret,
-                    data_type: dataType,
-                    default_value: defaultValue
+                // Data type change
+                $(".var-data-type").off('change').on('change', function() {
+                    const key = $(this).data('key');
+                    variables[key].data_type = $(this).val();
+                    updateVariablesJson();
+                });
+                
+                // Description change
+                $(".var-description").off('change').on('change', function() {
+                    const key = $(this).data('key');
+                    variables[key].description = $(this).val();
+                    updateVariablesJson();
+                });
+                
+                // Default value change
+                $(".var-default").off('change').on('change', function() {
+                    const key = $(this).data('key');
+                    variables[key].default_value = $(this).val();
+                    updateVariablesJson();
+                });
+                
+                // Required checkbox change
+                $(".var-required").off('change').on('change', function() {
+                    const key = $(this).data('key');
+                    variables[key].required = $(this).is(':checked');
+                    updateVariablesJson();
+                });
+                
+                // Secret checkbox change
+                $(".var-secret").off('change').on('change', function() {
+                    const key = $(this).data('key');
+                    variables[key].is_secret = $(this).is(':checked');
+                    updateVariablesJson();
+                });
+            }
+            
+            // Function to update the hidden form field with variables JSON
+            function updateVariablesJson() {
+                $("#variables").val(JSON.stringify(variables));
+                console.log("Updated variables JSON:", $("#variables").val());
+            }
+            
+            // Form submission handler with validation
+            $("#templateForm").on('submit', function(e) {
+                // Remove any existing error messages
+                $(".is-invalid").removeClass("is-invalid");
+                $(".invalid-feedback").remove();
+                
+                // Convert variables to the format expected by the server
+                const finalVariables = {};
+                let hasErrors = false;
+                
+                for (const key in variables) {
+                    const varData = variables[key];
+                    const varName = varData.key.trim();
+                    
+                    if (!varName) {
+                        e.preventDefault();
+                        const keyInput = $(`.var-key[data-key="${key}"]`);
+                        keyInput.addClass('is-invalid');
+                        keyInput.after('<div class="invalid-feedback">Variable name is required</div>');
+                        hasErrors = true;
+                        continue;
+                    }
+                    
+                    if (Object.keys(finalVariables).includes(varName)) {
+                        e.preventDefault();
+                        const keyInput = $(`.var-key[data-key="${key}"]`);
+                        keyInput.addClass('is-invalid');
+                        keyInput.after('<div class="invalid-feedback">Duplicate variable name</div>');
+                        hasErrors = true;
+                        continue;
+                    }
+                    
+                    finalVariables[varName] = {
+                        description: varData.description || "",
+                        required: varData.required || false,
+                        is_secret: varData.is_secret || false,
+                        data_type: varData.data_type || "text",
+                        default_value: varData.default_value || ""
                 };
             }
             
-            // Set the hidden input value
-            variablesInput.value = JSON.stringify(finalVariables);
-            form.submit();
-        });
-        
-        // Render all variables
-        function renderVariables() {
-            variablesContainer.innerHTML = '';
-            
-            if (Object.keys(variables).length === 0) {
-                const noVarsMessage = document.createElement('div');
-                noVarsMessage.className = 'alert alert-info';
-                noVarsMessage.textContent = 'No variables defined yet. Click "Add Variable" to begin.';
-                variablesContainer.appendChild(noVarsMessage);
-                return;
-            }
-            
-            for (const [varId, varData] of Object.entries(variables)) {
-                const card = createVariableCard(varId, varData);
-                variablesContainer.appendChild(card);
-            }
-        }
-        
-        // Create a variable card
-        function createVariableCard(varId, varData) {
-            const card = document.createElement('div');
-            card.className = 'card mb-3 variable-card';
-            card.dataset.varId = varId;
-            
-            const cardBody = document.createElement('div');
-            cardBody.className = 'card-body';
-            
-            // Header with name and remove button
-            const header = document.createElement('div');
-            header.className = 'd-flex justify-content-between align-items-start mb-3';
-            
-            const nameWrapper = document.createElement('div');
-            nameWrapper.className = 'flex-grow-1 me-2';
-            
-            const nameLabel = document.createElement('label');
-            nameLabel.className = 'form-label';
-            nameLabel.textContent = 'Variable Name';
-            
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'form-control var-key';
-            nameInput.value = typeof varData === 'string' ? varId : (varData.key || varId);
-            nameInput.placeholder = 'VARIABLE_NAME';
-            
-            // Add input change handler to update the variable key
-            nameInput.addEventListener('input', function() {
-                variables[varId].key = this.value;
-            });
-            
-            nameWrapper.appendChild(nameLabel);
-            nameWrapper.appendChild(nameInput);
-            
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'btn btn-outline-danger';
-            removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
-            removeBtn.addEventListener('click', function() {
-                delete variables[varId];
-                renderVariables();
-            });
-            
-            header.appendChild(nameWrapper);
-            header.appendChild(removeBtn);
-            
-            // Data type selection
-            const dataTypeWrapper = document.createElement('div');
-            dataTypeWrapper.className = 'mb-3';
-            
-            const dataTypeLabel = document.createElement('label');
-            dataTypeLabel.className = 'form-label';
-            dataTypeLabel.textContent = 'Data Type';
-            
-            const dataTypeSelect = document.createElement('select');
-            dataTypeSelect.className = 'form-select var-data-type';
-            
-            const dataTypes = [
-                { value: 'text', label: 'Text' },
-                { value: 'number', label: 'Number' },
-                { value: 'boolean', label: 'Boolean' },
-                { value: 'json', label: 'JSON' }
-            ];
-            
-            for (const dt of dataTypes) {
-                const option = document.createElement('option');
-                option.value = dt.value;
-                option.textContent = dt.label;
-                if (varData.data_type === dt.value) {
-                    option.selected = true;
+                if (hasErrors) {
+                    e.preventDefault();
+                    alert("Please correct the errors in the form.");
+                    return false;
                 }
-                dataTypeSelect.appendChild(option);
-            }
-            
-            // Add change handler
-            dataTypeSelect.addEventListener('change', function() {
-                variables[varId].data_type = this.value;
+                
+                // Set the final variables JSON
+                $("#variables").val(JSON.stringify(finalVariables));
+                return true;
             });
-            
-            dataTypeWrapper.appendChild(dataTypeLabel);
-            dataTypeWrapper.appendChild(dataTypeSelect);
-            
-            // Description field
-            const descWrapper = document.createElement('div');
-            descWrapper.className = 'mb-3';
-            
-            const descLabel = document.createElement('label');
-            descLabel.className = 'form-label';
-            descLabel.textContent = 'Description';
-            
-            const descInput = document.createElement('textarea');
-            descInput.className = 'form-control var-description';
-            descInput.rows = 2;
-            descInput.value = varData.description || '';
-            descInput.placeholder = 'Description of this variable';
-            
-            // Add input handler
-            descInput.addEventListener('input', function() {
-                variables[varId].description = this.value;
-            });
-            
-            descWrapper.appendChild(descLabel);
-            descWrapper.appendChild(descInput);
-            
-            // Default value field
-            const defaultWrapper = document.createElement('div');
-            defaultWrapper.className = 'mb-3';
-            
-            const defaultLabel = document.createElement('label');
-            defaultLabel.className = 'form-label';
-            defaultLabel.textContent = 'Default Value';
-            
-            const defaultInput = document.createElement('input');
-            defaultInput.type = 'text';
-            defaultInput.className = 'form-control var-default';
-            defaultInput.value = varData.default_value || '';
-            defaultInput.placeholder = 'Default value (optional)';
-            
-            // Add input handler
-            defaultInput.addEventListener('input', function() {
-                variables[varId].default_value = this.value;
-            });
-            
-            defaultWrapper.appendChild(defaultLabel);
-            defaultWrapper.appendChild(defaultInput);
-            
-            // Checkboxes for required and secret
-            const checkboxesWrapper = document.createElement('div');
-            checkboxesWrapper.className = 'd-flex gap-4 mb-2';
-            
-            // Required checkbox
-            const requiredWrapper = document.createElement('div');
-            requiredWrapper.className = 'form-check';
-            
-            const requiredInput = document.createElement('input');
-            requiredInput.type = 'checkbox';
-            requiredInput.className = 'form-check-input var-required';
-            requiredInput.id = `var-required-${varId}`;
-            requiredInput.checked = varData.required || false;
-            
-            // Add change handler
-            requiredInput.addEventListener('change', function() {
-                variables[varId].required = this.checked;
-            });
-            
-            const requiredLabel = document.createElement('label');
-            requiredLabel.className = 'form-check-label';
-            requiredLabel.htmlFor = `var-required-${varId}`;
-            requiredLabel.textContent = 'Required';
-            
-            requiredWrapper.appendChild(requiredInput);
-            requiredWrapper.appendChild(requiredLabel);
-            
-            // Secret checkbox
-            const secretWrapper = document.createElement('div');
-            secretWrapper.className = 'form-check';
-            
-            const secretInput = document.createElement('input');
-            secretInput.type = 'checkbox';
-            secretInput.className = 'form-check-input var-secret';
-            secretInput.id = `var-secret-${varId}`;
-            secretInput.checked = varData.is_secret || false;
-            
-            // Add change handler
-            secretInput.addEventListener('change', function() {
-                variables[varId].is_secret = this.checked;
-            });
-            
-            const secretLabel = document.createElement('label');
-            secretLabel.className = 'form-check-label';
-            secretLabel.htmlFor = `var-secret-${varId}`;
-            secretLabel.textContent = 'Secret';
-            
-            secretWrapper.appendChild(secretInput);
-            secretWrapper.appendChild(secretLabel);
-            
-            checkboxesWrapper.appendChild(requiredWrapper);
-            checkboxesWrapper.appendChild(secretWrapper);
-            
-            // Assemble card
-            cardBody.appendChild(header);
-            cardBody.appendChild(dataTypeWrapper);
-            cardBody.appendChild(descWrapper);
-            cardBody.appendChild(defaultWrapper);
-            cardBody.appendChild(checkboxesWrapper);
-            
-            card.appendChild(cardBody);
-            return card;
-        }
-    });
+        });
+    } catch (e) {
+        console.error('Error in script initialization:', e);
+    }
 </script>
 {% endblock %}
 
-{% if not is_new and template %}
+{% if template %}
 <!-- Delete Template Modal -->
 <div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteTemplateModalLabel" aria-hidden="true">
     <div class="modal-dialog">

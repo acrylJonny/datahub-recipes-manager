@@ -114,4 +114,21 @@ initJob:
   enabled: true
   backoffLimit: 3
   activeDeadlineSeconds: 300
-  restartPolicy: OnFailure 
+  restartPolicy: OnFailure
+
+# Database and file backup configuration
+backup:
+  enabled: true
+  schedule: "0 1 * * *"  # Every day at 1:00 AM (cron format)
+  retention:
+    days: 90  # Default retention period in days
+  storage:
+    size: 5Gi  # Size of the persistent volume for backups
+    storageClass: ""  # Storage class to use for backups (use default if empty)
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi 

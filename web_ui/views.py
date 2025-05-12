@@ -9,6 +9,8 @@ from datetime import datetime
 from .models import ScriptRun, ScriptResult, Artifact
 from . import runner
 from pathlib import Path
+from django.urls import reverse
+from django.contrib.auth.decorators import login_required, require_POST
 
 logger = logging.getLogger(__name__)
 
@@ -546,4 +548,44 @@ def api_run_status(request, run_id):
         
         return JsonResponse(data)
     except ScriptRun.DoesNotExist:
-        return JsonResponse({'error': 'Run not found'}, status=404) 
+        return JsonResponse({'error': 'Run not found'}, status=404)
+
+def github_secrets(request):
+    """Display the list of available secrets."""
+    # Redirect back to the secrets page, preserving environment selection if any
+    if request.GET.get('environment'):
+        return redirect(f"{reverse('github_secrets')}?environment={request.GET.get('environment')}")
+    return redirect('github_secrets')
+
+@login_required
+@require_POST
+def github_create_secret(request):
+    """
+    Create or update a GitHub repository or environment secret.
+    """
+    secret_name = request.POST.get('name')
+    secret_value = request.POST.get('value')
+    environment = request.POST.get('environment', '')
+    
+    if not secret_name or not secret_value:
+        messages.error(request, "Secret name and value are required")
+        # Redirect back to the secrets page, preserving environment selection if any
+        if environment:
+            return redirect(f"{reverse('github_secrets')}?environment={environment}")
+        return redirect('github_secrets')
+
+@login_required
+@require_POST
+def github_delete_secret(request):
+    """
+    Delete a GitHub repository or environment secret.
+    """
+    secret_name = request.POST.get('name')
+    environment = request.POST.get('environment', '')
+    
+    if not secret_name:
+        messages.error(request, "Secret name is required")
+        # Redirect back to the secrets page, preserving environment selection if any
+        if environment:
+            return redirect(f"{reverse('github_secrets')}?environment={environment}")
+        return redirect('github_secrets') 

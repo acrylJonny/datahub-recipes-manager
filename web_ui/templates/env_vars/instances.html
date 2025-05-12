@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load custom_filters %}
 
 {% block title %}Environment Variable Instances - DataHub CI/CD Manager{% endblock %}
 
@@ -9,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Environment Variable Instances</h2>
         <div>
-            <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary">
+            <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary" data-bs-toggle="tooltip" title="Create a new environment variables instance">
                 <i class="fa fa-plus me-1"></i> New Instance
             </a>
         </div>
@@ -68,16 +67,13 @@
                                 <span class="badge bg-info">{{ instance.get_recipe_type_display }}</span>
                             </td>
                             <td>
-                                {% with variables=instance.get_variables_dict %}
-                                    {% with secret_count=variables.values|selectattr:"isSecret"|length %}
-                                    {% with non_secret_count=variables|length|sub:secret_count %}
-                                        <span class="badge bg-primary" title="Non-secret variables">{{ non_secret_count }}</span>
-                                        {% if secret_count > 0 %}
-                                        <span class="badge bg-warning ms-1" title="Secret variables">{{ secret_count }} <i class="fa fa-lock"></i></span>
-                                        {% endif %}
-                                    {% endwith %}
-                                    {% endwith %}
-                                {% endwith %}
+                                <!-- Show total variable count -->
+                                <span class="badge bg-primary" title="Total variables">{{ instance.get_variables_dict|length }}</span>
+                                
+                                <!-- Add data attribute for JS processing -->
+                                <span class="variable-container" 
+                                      data-instance-id="{{ instance.id }}" 
+                                      data-variables="{{ instance.get_variables_dict|safe }}"></span>
                             </td>
                             <td>
                                 <span class="badge bg-success">{{ instance.recipes.count }}</span>
@@ -87,14 +83,14 @@
                             </td>
                             <td>
                                 <div class="btn-group btn-group-sm">
-                                    <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-outline-secondary" title="View details">
+                                    <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="View details of this environment variables instance">
                                         <i class="fa fa-eye"></i>
                                     </a>
-                                    <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" title="Edit instance">
+                                    <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" data-bs-toggle="tooltip" title="Edit this environment variables instance">
                                         <i class="fa fa-edit"></i>
                                     </a>
                                     <button type="button" class="btn btn-outline-primary add-to-git-pr" 
-                                           data-instance-id="{{ instance.id }}" title="Add to GitHub PR">
+                                           data-instance-id="{{ instance.id }}" data-bs-toggle="tooltip" title="Add this environment variables instance to Git repository for version control">
                                         <i class="fab fa-github"></i>
                                     </button>
                                     <button type="button" class="btn btn-outline-danger" 
@@ -103,7 +99,7 @@
                                            data-instance-id="{{ instance.id }}"
                                            data-instance-name="{{ instance.name }}"
                                            data-recipe-count="{{ instance.recipes.count }}"
-                                           title="Delete instance">
+                                           title="Delete this environment variables instance">
                                         <i class="fa fa-trash"></i>
                                     </button>
                                 </div>
@@ -118,7 +114,7 @@
                 <i class="fa fa-list fa-3x text-muted mb-3"></i>
                 <h4>No Environment Variable Instances</h4>
                 <p class="text-muted">Create your first environment variable instance to manage variables across recipes.</p>
-                <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary mt-2">
+                <a href="{% url 'env_vars_instance_create' %}" class="btn btn-primary mt-2" data-bs-toggle="tooltip" title="Create a new environment variables instance">
                     <i class="fa fa-plus me-1"></i> Create New Instance
                 </a>
             </div>
@@ -147,10 +143,10 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-bs-toggle="tooltip" title="Cancel deletion and return to the list">Cancel</button>
                 <form id="deleteInstanceForm" method="post" action="">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-danger">Delete</button>
+                    <button type="submit" class="btn btn-danger" data-bs-toggle="tooltip" title="Permanently delete this environment variables instance">Delete</button>
                 </form>
             </div>
         </div>
@@ -161,6 +157,29 @@
 {% block scripts %}
 <script>
     $(document).ready(function() {
+        // Process variable counts for secret variables
+        $('.variable-container').each(function() {
+            try {
+                const variables = $(this).data('variables');
+                let secretCount = 0;
+                
+                Object.values(variables).forEach(val => {
+                    if (val.isSecret) {
+                        secretCount++;
+                    }
+                });
+                
+                if (secretCount > 0) {
+                    const secretBadge = $('<span class="badge bg-warning ms-1" title="Secret variables"></span>')
+                        .text(secretCount + ' ')
+                        .append('<i class="fa fa-lock"></i>');
+                    $(this).parent().append(secretBadge);
+                }
+            } catch (e) {
+                console.error("Error processing variables:", e);
+            }
+        });
+        
         // Configure delete modal when shown
         $('#deleteInstanceModal').on('show.bs.modal', function (event) {
             const button = $(event.relatedTarget);
@@ -248,7 +267,7 @@
                     }, 8000);
                 },
                 complete: function() {
-                    // Restore button state
+                    // Restore original button state
                     button.html(originalHTML);
                     button.prop('disabled', false);
                 }

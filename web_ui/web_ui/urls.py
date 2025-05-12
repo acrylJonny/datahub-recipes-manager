@@ -71,9 +71,12 @@ urlpatterns = [
     path("policies/delete/<str:policy_id>/", web_ui_views.policy_delete, name="policy_delete"),
     path("policies/download/<str:policy_id>/", web_ui_views.policy_download, name="policy_download"),
     path("policies/export-all/", web_ui_views.export_all_policies, name="export_all_policies"),
+    path("policies/<str:policy_id>/push-github/", web_ui_views.policy_push_github, name="policy_push_github"),
+    path("policies/<str:policy_id>/deploy/", web_ui_views.policy_deploy, name="policy_deploy"),
     
     # Logs
     path("logs/", web_ui_views.logs, name="logs"),
+    path("refresh-logs/", web_ui_views.refresh_logs, name="refresh_logs"),
     
     # Settings
     path("settings/", web_ui_views.settings, name="settings"),
@@ -111,11 +114,11 @@ urlpatterns = [
 
     # API endpoints for recipe templates
     path('api/recipe-templates/<int:template_id>/preview/', web_ui_views.recipe_template_preview, name='recipe_template_preview'),
+    path('api/recipe-templates/<int:template_id>/env-vars-instances/', web_ui_views.template_env_vars_instances, name='template_env_vars_instances'),
     
     # GitHub integration
-    path('github/', web_ui_views.github_index, name='github'),
-    path('github/settings/', web_ui_views.github_settings_edit, name='github_settings_edit'),
-    path('github/settings/view/', web_ui_views.github_settings_view, name='github_settings'),
+    path('github/', web_ui_views.github_index, name='github_index'),
+    path('github/settings/', web_ui_views.github_settings_view, name='github_settings'),
     path('github/pull-requests/', web_ui_views.github_pull_requests, name='github_pull_requests'),
     path('github/pull-requests/<int:pr_id>/', web_ui_views.github_pull_request_detail, name='github_pull_request_detail'),
     path('github/switch-branch/<path:branch_name>/', web_ui_views.github_switch_branch, name='github_switch_branch'),
@@ -133,6 +136,15 @@ urlpatterns = [
     path('github/workflows-overview/', web_ui_views.github_workflows_overview, name='github_workflows_overview'),
     path('github/revert-staged-file/', web_ui_views.github_revert_staged_file, name='github_revert_staged_file'),
     path('github/repo/', web_ui_views.github_repo_integration, name='github_repo'),
+    
+    # GitHub Secrets management
+    path('github/secrets/', web_ui_views.github_secrets, name='github_secrets'),
+    path('github/secrets/create/', web_ui_views.github_create_secret, name='github_create_secret'),
+    path('github/secrets/delete/', web_ui_views.github_delete_secret, name='github_delete_secret'),
+    
+    # GitHub Environments management
+    path('github/environments/', web_ui_views.github_environments, name='github_environments'),
+    path('github/environments/create/', web_ui_views.github_create_environment, name='github_create_environment'),
     
     # Recipe instance and template GitHub push endpoints
     path('recipe-instances/<int:instance_id>/push-github/', web_ui_views.recipe_instance_push_github, name='recipe_instance_push_github'),

@@ -14,13 +14,18 @@ ALLOWED_HOSTS = []
 
 # Application definition
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'test_runner',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    # Project apps
+    "web_ui",
+    "policy_manager",
+    "script_runner",
+    "template_manager",
+    "test_runner",
 ]
 
 MIDDLEWARE = [

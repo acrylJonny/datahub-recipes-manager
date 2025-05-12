@@ -1,10 +1,12 @@
 name: Deploy Recipes
 
 on:
+  # Run only on main branch
   push:
     branches: [ main ]
     paths:
       - 'recipes/instances/**/*.yml'
+  # Manual trigger with options
   workflow_dispatch:
     inputs:
       environment:
@@ -16,10 +18,24 @@ on:
           - dev
           - staging
           - prod
-      specific_recipe:
-        description: 'Specific recipe to deploy (leave empty for all)'
+      deployment_type:
+        description: 'What to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - selected
+          - recent
+      specific_recipes:
+        description: 'Specific recipes to deploy (comma-separated, only for "selected" type)'
         required: false
         type: string
+      since_hours:
+        description: 'Deploy recipes modified in the last N hours (only for "recent" type)'
+        required: false
+        default: '24'
+        type: number
       create_secrets:
         description: 'Create secrets in DataHub'
         required: false
@@ -34,6 +50,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for checking recent changes
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -80,7 +98,59 @@ jobs:
               sys.exit(1)
           "
 
+      - name: Identify recipes to deploy
+        id: identify-recipes
+        run: |
+          ENV="${{ github.event.inputs.environment || 'dev' }}"
+          DEPLOYMENT_TYPE="${{ github.event.inputs.deployment_type || 'all' }}"
+          SPECIFIC_RECIPES="${{ github.event.inputs.specific_recipes }}"
+          SINCE_HOURS="${{ github.event.inputs.since_hours || '24' }}"
+          
+          echo "Environment: $ENV"
+          echo "Deployment type: $DEPLOYMENT_TYPE"
+          
+          # Generate list of recipes to deploy
+          if [ "$DEPLOYMENT_TYPE" = "all" ] || [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            # For "all" type or automatic push to main, deploy all recipes
+            echo "Deploying all recipes for $ENV environment"
+            find "recipes/instances/$ENV" -name "*.yml" > recipes_to_deploy.txt
+          elif [ "$DEPLOYMENT_TYPE" = "selected" ] && [ -n "$SPECIFIC_RECIPES" ]; then
+            # For "selected" type, deploy specific recipes
+            echo "Deploying selected recipes: $SPECIFIC_RECIPES"
+            > recipes_to_deploy.txt
+            IFS=',' read -ra RECIPES <<< "$SPECIFIC_RECIPES"
+            for recipe in "${RECIPES[@]}"; do
+              recipe_file="recipes/instances/$ENV/$(echo $recipe | xargs).yml"
+              if [ -f "$recipe_file" ]; then
+                echo "$recipe_file" >> recipes_to_deploy.txt
+              else
+                echo "Warning: Recipe not found: $recipe_file"
+              fi
+            done
+          elif [ "$DEPLOYMENT_TYPE" = "recent" ]; then
+            # For "recent" type, deploy recipes modified in the last N hours
+            echo "Deploying recipes modified in the last $SINCE_HOURS hours"
+            find "recipes/instances/$ENV" -name "*.yml" -mtime -$((SINCE_HOURS/24)) > recipes_to_deploy.txt
+          fi
+          
+          # Count recipes
+          RECIPE_COUNT=$(wc -l < recipes_to_deploy.txt)
+          echo "Found $RECIPE_COUNT recipes to deploy"
+          
+          if [ "$RECIPE_COUNT" -eq 0 ]; then
+            echo "No recipes to deploy"
+            exit 0
+          fi
+          
+          # Output recipe count for later steps
+          echo "recipe_count=$RECIPE_COUNT" >> $GITHUB_OUTPUT
+          
+          # Log recipes to deploy
+          echo "Recipes to deploy:"
+          cat recipes_to_deploy.txt
+
       - name: Deploy recipes to DataHub
+        if: steps.identify-recipes.outputs.recipe_count > 0
         env:
           DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
@@ -95,10 +165,7 @@ jobs:
           BIGQUERY_KEYFILE: ${{ secrets.BIGQUERY_KEYFILE }}
         run: |
           ENV=${{ github.event.inputs.environment || 'dev' }}
-          SPECIFIC_RECIPE="${{ github.event.inputs.specific_recipe }}"
           CREATE_SECRETS="${{ github.event.inputs.create_secrets || 'false' }}"
-          
-          echo "Deploying recipes to $ENV environment"
           
           # Add create-secrets parameter if enabled
           SECRETS_PARAM=""
@@ -107,27 +174,14 @@ jobs:
             echo "Creating secrets in DataHub is enabled"
           fi
           
-          # If a specific recipe was specified, deploy only that recipe
-          if [ -n "$SPECIFIC_RECIPE" ]; then
-            echo "Deploying specific recipe: $SPECIFIC_RECIPE"
-            if [ -f "recipes/instances/$ENV/$SPECIFIC_RECIPE.yml" ]; then
-              python scripts/push_recipe.py --instance "recipes/instances/$ENV/$SPECIFIC_RECIPE.yml" --run-ingestion $SECRETS_PARAM
-            else
-              echo "Recipe not found: recipes/instances/$ENV/$SPECIFIC_RECIPE.yml"
-              exit 1
-            fi
-          else
-            # Deploy all recipes for the specified environment
-            echo "Deploying all recipes for $ENV environment"
-            for recipe in recipes/instances/$ENV/*.yml; do
-              if [ -f "$recipe" ]; then
-                echo "Deploying recipe: $recipe"
-                python scripts/push_recipe.py --instance "$recipe" $SECRETS_PARAM
-              fi
-            done
-          fi
+          # Read and deploy recipes one by one
+          while IFS= read -r recipe; do
+            echo "Deploying recipe: $recipe"
+            python scripts/push_recipe.py --instance "$recipe" $SECRETS_PARAM
+          done < recipes_to_deploy.txt
 
       - name: Generate deployment report
+        if: steps.identify-recipes.outputs.recipe_count > 0
         run: |
           ENV=${{ github.event.inputs.environment || 'dev' }}
           REPORT_FILE="deployment_report_${ENV}_$(date +%Y%m%d_%H%M%S).txt"
@@ -136,16 +190,15 @@ jobs:
           echo "Environment: $ENV" >> $REPORT_FILE
           echo "Date: $(date)" >> $REPORT_FILE
           echo "Deployed by: ${{ github.actor }}" >> $REPORT_FILE
+          echo "Deployment triggered by: ${{ github.event_name }}" >> $REPORT_FILE
           echo "Created secrets in DataHub: ${{ github.event.inputs.create_secrets || 'false' }}" >> $REPORT_FILE
           echo "" >> $REPORT_FILE
           echo "Deployed Recipes:" >> $REPORT_FILE
           
-          for recipe in recipes/instances/$ENV/*.yml; do
-            if [ -f "$recipe" ]; then
-              recipe_name=$(basename "$recipe" .yml)
-              recipe_type=$(grep "recipe_type" "$recipe" | cut -d ":" -f2 | tr -d ' ')
-              echo "- $recipe_name (Type: $recipe_type)" >> $REPORT_FILE
-            fi
+          cat recipes_to_deploy.txt | while read recipe; do
+            recipe_name=$(basename "$recipe" .yml)
+            recipe_type=$(grep "recipe_type" "$recipe" | cut -d ":" -f2 | tr -d ' ')
+            echo "- $recipe_name (Type: $recipe_type)" >> $REPORT_FILE
           done
           
           echo "" >> $REPORT_FILE
@@ -156,6 +209,7 @@ jobs:
           mv $REPORT_FILE deployment_reports/
 
       - name: Upload deployment report
+        if: steps.identify-recipes.outputs.recipe_count > 0
         uses: actions/upload-artifact@v3
         with:
           name: deployment-reports

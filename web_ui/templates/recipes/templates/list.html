@@ -70,7 +70,7 @@
     <!-- Template/Environment Variables/Instance Tabs -->
     <ul class="nav nav-tabs mb-4" id="recipeTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates-panel" 
+            <button class="nav-link" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates-panel" 
                     type="button" role="tab" aria-controls="templates-panel" aria-selected="true">
                 <i class="fas fa-folder me-1"></i> Recipes
             </button>
@@ -91,7 +91,7 @@
     
     <div class="tab-content">
         <!-- Templates Tab Panel -->
-        <div class="tab-pane fade show active" id="templates-panel" role="tabpanel" aria-labelledby="templates-tab">
+        <div class="tab-pane fade" id="templates-panel" role="tabpanel" aria-labelledby="templates-tab">
             <!-- Templates List -->
             <div class="card">
                 <div class="card-header bg-light d-flex justify-content-between align-items-center">
@@ -141,20 +141,20 @@
                                             <td>{{ template.created_at|date:"M d, Y" }}</td>
                                             <td>
                                                 <div class="btn-group">
-                                                    <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                    <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="View the template details">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
-                                                    <a href="{% url 'recipe_template_edit' template_id=template.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                    <a href="{% url 'recipe_template_edit' template_id=template.id %}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Edit this recipe template">
                                                         <i class="fas fa-edit"></i>
                                                     </a>
-                                                    <a href="{% url 'recipe_template_deploy' template_id=template.id %}" class="btn btn-sm btn-outline-success" title="Deploy">
+                                                    <a href="{% url 'recipe_template_deploy' template_id=template.id %}" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" title="Deploy this template to DataHub">
                                                         <i class="fas fa-rocket"></i>
                                                     </a>
                                                     <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                                            data-template-id="{{ template.id }}" title="Add to Git PR">
+                                                            data-template-id="{{ template.id }}" data-bs-toggle="tooltip" title="Add this template to Git repository for version control">
                                                         <i class="fab fa-github"></i>
                                                     </button>
-                                                    <a href="{% url 'recipe_template_delete' template_id=template.id %}" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                    <a href="{% url 'recipe_template_delete' template_id=template.id %}" class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Delete this recipe template">
                                                         <i class="fas fa-trash"></i>
                                                     </a>
                                                 </div>
@@ -273,24 +273,17 @@
                                     </td>
                                     <td>
                                         {% with variables=instance.get_variables_dict %}
-                                            {% with secret_count=0 %}
-                                                {% for value in variables.values %}
-                                                    {% if value.isSecret %}
-                                                        {% with secret_count=secret_count|add:1 %}{% endwith %}
-                                                    {% endif %}
-                                                {% endfor %}
-                                                {% with total_count=variables|length %}
-                                                    {% with non_secret_count=total_count %}
-                                                        {% for value in variables.values %}
-                                                            {% if value.isSecret %}
-                                                                {% with non_secret_count=non_secret_count|add:-1 %}{% endwith %}
-                                                            {% endif %}
-                                                        {% endfor %}
-                                                        <span class="badge bg-primary" title="Non-secret variables">{{ non_secret_count }}</span>
-                                                        {% if secret_count > 0 %}
-                                                        <span class="badge bg-warning ms-1" title="Secret variables">{{ secret_count }} <i class="fa fa-lock"></i></span>
+                                            {% with total_count=variables|length %}
+                                                <span class="badge bg-primary" title="Total variables">{{ total_count }}</span>
+                                                {% with secret_count=0 %}
+                                                    {% for value in variables.values %}
+                                                        {% if value.isSecret %}
+                                                            {% with secret_count=secret_count|add:1 %}{% endwith %}
                                                         {% endif %}
-                                                    {% endwith %}
+                                                    {% endfor %}
+                                                    {% if secret_count > 0 %}
+                                                        <span class="badge bg-warning ms-1" title="Secret variables">{{ secret_count }} <i class="fa fa-lock"></i></span>
+                                                    {% endif %}
                                                 {% endwith %}
                                             {% endwith %}
                                         {% endwith %}
@@ -303,15 +296,15 @@
                                     </td>
                                     <td>
                                         <div class="btn-group btn-group-sm">
-                                            <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-outline-secondary" title="View details">
+                                            <a href="{% url 'env_vars_instance_detail' instance.id %}" class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="View details">
                                                 <i class="fa fa-eye"></i>
                                             </a>
-                                            <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" title="Edit instance">
+                                            <a href="{% url 'env_vars_instance_edit' instance.id %}" class="btn btn-outline-primary" data-bs-toggle="tooltip" title="Edit instance">
                                                 <i class="fa fa-edit"></i>
                                             </a>
                                             <button type="button" class="btn btn-outline-primary add-env-instance-to-git-pr" 
                                                    data-instance-id="{{ instance.id }}"
-                                                   title="Add to Git PR">
+                                                   data-bs-toggle="tooltip" title="Add to Git PR">
                                                 <i class="fab fa-github"></i>
                                             </button>
                                             <button type="button" class="btn btn-outline-danger" 
@@ -320,7 +313,7 @@
                                                    data-instance-id="{{ instance.id }}"
                                                    data-instance-name="{{ instance.name }}"
                                                    data-recipe-count="{{ instance.recipes.count }}"
-                                                   title="Delete instance">
+                                                   title="Delete this environment variable instance">
                                                 <i class="fa fa-trash"></i>
                                             </button>
                                         </div>
@@ -363,7 +356,7 @@
                     
                     {% if recipe_instances %}
                     <div class="table-responsive mt-3">
-                        <table class="table table-hover">
+                        <table class="table table-hover table-striped">
                             <thead>
                                 <tr>
                                     <th>Name</th>
@@ -377,7 +370,9 @@
                                 {% for instance in recipe_instances %}
                                 <tr>
                                     <td>
-                                        <strong>{{ instance.name }}</strong>
+                                        <a href="{% url 'recipe_instance_edit' instance.id %}" class="fw-bold text-decoration-none">
+                                            {{ instance.name }}
+                                        </a>
                                         {% if instance.description %}<div class="small text-muted">{{ instance.description|truncatechars:100 }}</div>{% endif %}
                                     </td>
                                     <td>{{ instance.template.name }}</td>
@@ -391,23 +386,23 @@
                                     </td>
                                     <td>
                                         <div class="btn-group">
-                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-primary" title="Edit">
+                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this recipe instance">
                                                 <i class="fas fa-edit"></i>
                                             </a>
                                             <button type="button" class="btn btn-sm btn-outline-primary add-recipe-instance-to-git-pr" 
-                                                   data-instance-id="{{ instance.id }}" title="Add to Git PR">
+                                                   data-instance-id="{{ instance.id }}" data-bs-toggle="tooltip" title="Add this recipe instance to Git repository">
                                                 <i class="fab fa-github"></i>
                                             </button>
-                                            {% if instance.deployed %}
-                                            <a href="{% url 'recipe_instance_redeploy' instance.id %}" class="btn btn-sm btn-outline-success" title="Redeploy">
-                                                <i class="fas fa-sync"></i>
-                                            </a>
-                                            {% else %}
-                                            <a href="{% url 'recipe_instance_deploy' instance.id %}" class="btn btn-sm btn-outline-success" title="Deploy">
-                                                <i class="fas fa-upload"></i>
-                                            </a>
-                                            {% endif %}
-                                            <a href="{% url 'recipe_instance_delete' instance.id %}" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                    {% if instance.deployed %}
+                                                    <a href="{% url 'recipe_instance_redeploy' instance.id %}" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" title="Redeploy this recipe instance">
+                                                        <i class="fas fa-sync"></i>
+                                                    </a>
+                                                    {% else %}
+                                                    <a href="{% url 'recipe_instance_deploy' instance.id %}" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" title="Deploy this recipe instance to DataHub">
+                                                        <i class="fas fa-upload"></i>
+                                                    </a>
+                                                    {% endif %}
+                                            <a href="{% url 'recipe_instance_delete' instance.id %}" class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="Delete this recipe instance">
                                                 <i class="fas fa-trash"></i>
                                             </a>
                                         </div>
@@ -499,6 +494,17 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Function to initialize tooltips
+        function initTooltips() {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        }
+
+        // Initialize tooltips on page load
+        initTooltips();
+        
         // Delete template modal
         const deleteModal = document.getElementById('deleteTemplateModal');
         if (deleteModal) {
@@ -584,31 +590,41 @@
                     if (data.templates && data.templates.length > 0) {
                         let html = '<div class="table-responsive">';
                         html += '<table class="table table-hover table-striped">';
-                        html += '<thead><tr><th>Name</th><th>Recipe Type</th><th>Variables</th><th>Actions</th></tr></thead>';
+                        html += '<thead><tr><th>Name</th><th>Recipe Type</th><th>Tags</th><th>Variables</th><th>Created</th><th>Actions</th></tr></thead>';
                         html += '<tbody>';
                         
                         data.templates.forEach(template => {
                             html += `<tr>
                                 <td>
-                                    <strong>${template.name}</strong>
+                                    <a href="/env-vars/templates/${template.id}/details/" class="fw-bold text-decoration-none">
+                                        ${template.name}
+                                    </a>
                                     ${template.description ? `<p class="text-muted small mb-0">${template.description.substring(0, 100)}${template.description.length > 100 ? '...' : ''}</p>` : ''}
                                 </td>
                                 <td><span class="badge bg-primary">${template.recipe_type}</span></td>
+                                <td>
+                                    ${template.tags ? 
+                                        template.tags.split(',').map(tag => 
+                                            `<span class="badge bg-light text-dark">#${tag.trim()}</span>`
+                                        ).join(' ') : 
+                                        '<span class="text-muted">No tags</span>'}
+                                </td>
                                 <td>${template.variable_count} variable${template.variable_count !== 1 ? 's' : ''}</td>
+                                <td>${new Date(template.created_at).toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric'})}</td>
                                 <td>
                                     <div class="btn-group">
-                                        <a href="/env-vars/templates/${template.id}/edit/" class="btn btn-sm btn-outline-primary">
+                                        <a href="/env-vars/templates/${template.id}/edit/" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this environment variable template">
                                             <i class="fas fa-edit"></i>
                                         </a>
                                         <button type="button" class="btn btn-sm btn-outline-primary add-env-template-to-git-pr" 
-                                                data-template-id="${template.id}" title="Add to Git PR">
+                                                data-template-id="${template.id}" data-bs-toggle="tooltip" title="Add this template to Git repository for version control">
                                             <i class="fab fa-github"></i>
                                         </button>
                                         <button type="button" class="btn btn-sm btn-outline-danger delete-env-template" 
                                                 data-template-id="${template.id}" 
                                                 data-template-name="${template.name}"
                                                 data-bs-toggle="modal" 
-                                                data-bs-target="#deleteEnvTemplateModal" title="Delete">
+                                                data-bs-target="#deleteEnvTemplateModal" title="Delete this environment variable template">
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </div>
@@ -621,6 +637,9 @@
                         
                         // Attach event handlers to the newly created buttons
                         attachEnvTemplateButtonHandlers();
+                        
+                        // Initialize tooltips for the dynamically loaded content
+                        initTooltips();
                     } else {
                         templatesContainer.innerHTML = `
                             <div class="alert alert-info">
@@ -726,7 +745,8 @@
                         }
                     })
                     .catch(error => {
-                        alert(`Error: ${error}`);
+                        console.error('Error adding template to GitHub PR:', error);
+                        alert(`Error: ${error.message || 'Failed to add template to GitHub PR'}`);
                     })
                     .finally(() => {
                         // Restore button state
@@ -737,189 +757,126 @@
             });
         }
         
-        // Load templates when the environment variables tab is shown
+        // Load env vars templates when the tab is shown
         const envVarsTab = document.getElementById('env-vars-tab');
         if (envVarsTab) {
             envVarsTab.addEventListener('shown.bs.tab', function() {
                 loadEnvVarsTemplates();
             });
-            
-            // Also load if this tab is active initially
-            if (envVarsTab.classList.contains('active')) {
-                loadEnvVarsTemplates();
-            }
         }
-    });
-
-    $(document).ready(function() {
-        // Configure delete modal when shown
-        $('#deleteInstanceModal').on('show.bs.modal', function (event) {
-            const button = $(event.relatedTarget);
-            const instanceId = button.data('instance-id');
-            const instanceName = button.data('instance-name');
-            const recipeCount = button.data('recipe-count');
-            
-            console.log("Opening delete modal for instance ID:", instanceId, "Name:", instanceName);
-            
-            // Update modal content
-            $('#instanceNamePlaceholder').text(instanceName);
-            
-            // Show recipe warning if applicable
-            if (recipeCount > 0) {
-                $('#recipeWarning').removeClass('d-none');
-                $('#recipeCountPlaceholder').text(recipeCount);
-            } else {
-                $('#recipeWarning').addClass('d-none');
-            }
-            
-            // Set the form action using the correct URL pattern
-            const deleteForm = $('#deleteInstanceForm');
-            deleteForm.attr('action', '/env-vars/instances/' + instanceId + '/delete/');
-            console.log("Setting form action to:", deleteForm.attr('action'));
-            
-            // Ensure CSRF token is present
-            const csrfToken = $('[name=csrfmiddlewaretoken]').val();
-            let existingToken = deleteForm.find('input[name=csrfmiddlewaretoken]');
-            
-            if (existingToken.length) {
-                existingToken.val(csrfToken);
-            } else {
-                deleteForm.prepend(`<input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">`);
-            }
-        });
         
-        // Add form submission handler with debug logging
-        $('#deleteInstanceForm').on('submit', function(e) {
-            e.preventDefault();
-            const form = $(this);
-            const url = form.attr('action');
-            const formData = new FormData(form[0]);
-            
-            console.log("Submitting delete form to URL:", url);
-            
-            // Make an AJAX POST request
-            $.ajax({
-                url: url,
-                type: 'POST',
-                data: formData,
-                processData: false,
-                contentType: false,
-                success: function(response) {
-                    console.log("Delete successful, redirecting");
-                    window.location.reload();
-                },
-                error: function(xhr, status, error) {
-                    console.error("Error deleting instance:", error);
-                    console.error("Status:", xhr.status);
-                    console.error("Response:", xhr.responseText);
-                    alert(`Error deleting instance: ${error}`);
+        // Add event handlers for instance deletion
+        const deleteInstanceModal = document.getElementById('deleteInstanceModal');
+        if (deleteInstanceModal) {
+            deleteInstanceModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const instanceId = button.getAttribute('data-instance-id');
+                const instanceName = button.getAttribute('data-instance-name');
+                const recipeCount = parseInt(button.getAttribute('data-recipe-count') || '0');
+                
+                document.getElementById('instanceNamePlaceholder').textContent = instanceName;
+                
+                // Show warning if recipes are using this instance
+                const recipeWarning = document.getElementById('recipeWarning');
+                if (recipeCount > 0) {
+                    document.getElementById('recipeCountPlaceholder').textContent = recipeCount;
+                    recipeWarning.classList.remove('d-none');
+                } else {
+                    recipeWarning.classList.add('d-none');
                 }
+                
+                // Set form action
+                document.getElementById('deleteInstanceForm').action = `/env-vars/instances/delete/${instanceId}/`;
             });
-        });
+        }
         
-        // Handle "Add to Git PR" buttons for environment variable instances
-        $(document).on('click', '.add-env-instance-to-git-pr', function() {
-            const instanceId = $(this).data('instance-id');
-            
-            // Show loading state
-            const $button = $(this);
-            const originalHTML = $button.html();
-            $button.html('<i class="fas fa-spinner fa-spin"></i>');
-            $button.prop('disabled', true);
-            
-            // Send POST request to add instance to GitHub PR
-            $.ajax({
-                url: `/env-vars/instances/${instanceId}/push-github/`,
-                type: 'POST',
-                headers: {
-                    'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
-                },
-                success: function(data) {
+        // Add event handlers for recipe instance GitHub PR buttons
+        document.querySelectorAll('.add-recipe-instance-to-git-pr, .add-env-instance-to-git-pr').forEach(button => {
+            button.addEventListener('click', function() {
+                const instanceId = this.getAttribute('data-instance-id');
+                const isRecipeInstance = this.classList.contains('add-recipe-instance-to-git-pr');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Determine the endpoint
+                const endpoint = isRecipeInstance 
+                    ? `/recipe-instances/${instanceId}/push-github/` 
+                    : `/env-vars/instances/${instanceId}/push-github/`;
+                
+                // Send POST request
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
                     if (data.success) {
-                        showSuccessToast('Environment variable instance added to GitHub PR successfully!');
+                        // Create toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    ${isRecipeInstance ? 'Recipe' : 'Environment variable'} instance added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Remove toast from DOM after it's hidden
+                        toast.addEventListener('hidden.bs.toast', function() {
+                            toast.remove();
+                        });
                     } else {
                         alert(`Error: ${data.error || 'Failed to add instance to GitHub PR'}`);
                     }
-                },
-                error: function(xhr) {
-                    let errorMsg = 'Failed to add instance to GitHub PR';
-                    if (xhr.responseJSON && xhr.responseJSON.error) {
-                        errorMsg = xhr.responseJSON.error;
-                    }
-                    alert(`Error: ${errorMsg}`);
-                },
-                complete: function() {
+                })
+                .catch(error => {
+                    console.error('Error adding instance to GitHub PR:', error);
+                    alert(`Error: ${error.message || 'Failed to add instance to GitHub PR'}`);
+                })
+                .finally(() => {
                     // Restore button state
-                    $button.html(originalHTML);
-                    $button.prop('disabled', false);
-                }
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
+                });
             });
         });
+
+        // Get the active tab from session storage or default to 'templates'
+        const activeTab = sessionStorage.getItem('recipeTemplatesActiveTab');
         
-        // Handle "Add to Git PR" buttons for recipe instances
-        $(document).on('click', '.add-recipe-instance-to-git-pr', function() {
-            const instanceId = $(this).data('instance-id');
-            
-            // Show loading state
-            const $button = $(this);
-            const originalHTML = $button.html();
-            $button.html('<i class="fas fa-spinner fa-spin"></i>');
-            $button.prop('disabled', true);
-            
-            // Send POST request to add recipe instance to GitHub PR
-            $.ajax({
-                url: `/recipe-instances/${instanceId}/push-github/`,
-                type: 'POST',
-                headers: {
-                    'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
-                },
-                success: function(data) {
-                    if (data.success) {
-                        showSuccessToast('Recipe instance added to GitHub PR successfully!');
-                    } else {
-                        alert(`Error: ${data.error || 'Failed to add recipe instance to GitHub PR'}`);
-                    }
-                },
-                error: function(xhr) {
-                    let errorMsg = 'Failed to add recipe instance to GitHub PR';
-                    if (xhr.responseJSON && xhr.responseJSON.error) {
-                        errorMsg = xhr.responseJSON.error;
-                    }
-                    alert(`Error: ${errorMsg}`);
-                },
-                complete: function() {
-                    // Restore button state
-                    $button.html(originalHTML);
-                    $button.prop('disabled', false);
-                }
-            });
-        });
-        
-        // Helper function to show success toast
-        function showSuccessToast(message) {
-            const toast = $(`
-                <div class="toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3" role="alert" aria-live="assertive" aria-atomic="true">
-                    <div class="d-flex">
-                        <div class="toast-body">
-                            <i class="fas fa-check-circle me-2"></i>
-                            ${message}
-                        </div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                    </div>
-                </div>
-            `);
-            
-            $('body').append(toast);
-            
-            // Initialize and show the toast
-            const bsToast = new bootstrap.Toast(toast[0], { delay: 5000 });
-            bsToast.show();
-            
-            // Remove toast from DOM after it's hidden
-            toast.on('hidden.bs.toast', function() {
-                toast.remove();
-            });
+        // Only restore tab state if there was a previously saved state
+        if (activeTab) {
+            const tabElement = document.getElementById(`${activeTab}-tab`);
+            if (tabElement) {
+                const tab = new bootstrap.Tab(tabElement);
+                tab.show();
+            }
         }
+        
+        // Store the active tab when changed
+        document.querySelectorAll('#recipeTabs button').forEach(button => {
+            button.addEventListener('shown.bs.tab', function(event) {
+                const tabId = event.target.id.replace('-tab', '');
+                sessionStorage.setItem('recipeTemplatesActiveTab', tabId);
+            });
+        });
     });
 </script>
-{% endblock %} 
+{% endblock %}

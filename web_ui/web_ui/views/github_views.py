@@ -38,7 +38,7 @@ def github_settings_edit(request):
         if form.is_valid():
             form.save()
             messages.success(request, "Git integration settings updated successfully")
-            return redirect('github')
+            return redirect('github_index')
     else:
         form = GitSettingsForm(instance=settings)
     
@@ -240,14 +240,14 @@ def github_create_branch(request):
     """Create a new branch on Git provider."""
     if not GitSettings.is_configured():
         messages.error(request, "Git integration is not configured")
-        return redirect('github')
+        return redirect('github_index')
     
     branch_name = request.POST.get('branch_name')
     branch_description = request.POST.get('branch_description', '')
     
     if not branch_name:
         messages.error(request, "Branch name is required")
-        return redirect('github')
+        return redirect('github_index')
     
     settings = GitSettings.get_instance()
     
@@ -258,7 +258,7 @@ def github_create_branch(request):
         
         if not result:
             messages.error(request, "Failed to get repository information")
-            return redirect('github')
+            return redirect('github_index')
             
         # Update the current branch in settings
         settings.current_branch = branch_name
@@ -279,24 +279,24 @@ def github_create_branch(request):
             else:
                 messages.warning(request, "Branch created but pull request creation failed")
         
-        return redirect('github')
+        return redirect('github_index')
         
     except Exception as e:
         messages.error(request, f"Error creating branch: {str(e)}")
-        return redirect('github')
+        return redirect('github_index')
 
 def github_sync_recipes(request):
     """Sync all recipes with GitHub."""
     # For now, just redirect back with a message
     # This would be implemented based on your recipe model and requirements
     messages.info(request, "Recipe sync feature is under development")
-    return redirect('github')
+    return redirect('github_index')
 
 def github_sync_status(request):
     """Sync PR statuses with GitHub."""
     if not GitSettings.is_configured():
         messages.error(request, "Git integration is not configured")
-        return redirect('github')
+        return redirect('github_index')
     
     settings = GitSettings.get_instance()
     headers = {
@@ -346,7 +346,7 @@ def github_sync_status(request):
     if updated_count == 0 and error_count == 0:
         messages.info(request, "No pull requests to update")
     
-    return redirect('github')
+    return redirect('github_index')
 
 @require_POST
 def github_update_pr_status(request, pr_number):

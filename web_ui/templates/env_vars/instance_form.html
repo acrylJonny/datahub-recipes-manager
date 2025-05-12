@@ -96,6 +96,7 @@
                             <div class="form-text">Select the environment this instance belongs to</div>
                         </div>
 
+                        <!-- Recipe Type field with custom input for "other" -->
                         <div class="mb-3">
                             <label for="{{ form.recipe_type.id_for_label }}" class="form-label">Recipe Type</label>
                             {{ form.recipe_type }}
@@ -106,7 +107,17 @@
                                 {% endfor %}
                             </div>
                             {% endif %}
-                            <div class="form-text">Recipe type will be auto-selected when a template is chosen</div>
+                            
+                            <!-- Custom recipe type field (shown only when "other" is selected) -->
+                            {{ form.recipe_type_other }}
+                            
+                            <div class="form-text">
+                                {% if instance %}
+                                Recipe type is determined by the template and cannot be changed.
+                                {% else %}
+                                Recipe type will be auto-selected when a template is chosen.
+                                {% endif %}
+                            </div>
                         </div>
                         
                         <div class="mb-3">
@@ -194,6 +205,11 @@
 {% block scripts %}
 <!-- Ensure jQuery is loaded first -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<!-- Select2 -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
 <script>
     // Basic initialization check
     console.log('Script block is being executed');
@@ -210,16 +226,70 @@
         $(document).ready(function() {
             console.log('Document ready event fired');
             
+            // Initialize Select2 for recipe type dropdown
+            $('.select2-enable').select2({
+                theme: 'bootstrap-5',
+                width: '100%'
+            });
+
+            // Handle the "other" option for recipe type
+            const recipeTypeSelect = $('#{{ form.recipe_type.id_for_label }}');
+            const recipeTypeOther = $('#{{ form.recipe_type_other.id_for_label }}');
+
+            // Initially hide/show based on current value
+            if (recipeTypeSelect.val() === 'other') {
+                recipeTypeOther.show();
+            } else {
+                recipeTypeOther.hide();
+            }
+
+            // Update on change
+            recipeTypeSelect.on('change', function() {
+                if ($(this).val() === 'other') {
+                    recipeTypeOther.show().focus();
+                } else {
+                    recipeTypeOther.hide();
+                }
+            });
+            
             let variables = {};
             
             // Initialize the variables from the form if editing
             {% if instance %}
             try {
-                var instanceData = JSON.parse('{{ instance.variables|escapejs }}');
-                variables = instanceData;
-                renderVariablesList(variables);
+                // Set recipe type field as disabled for existing instances
+                $("#" + recipeTypeField).prop('disabled', true);
+                
+                // Directly use the pre-parsed variables_json from the view 
+                // with proper encoding to avoid JSON parsing issues
+                {% if variables_json %}
+                console.log("Received variables_json:", '{{ variables_json|escapejs }}');
+                // Parse the variables JSON
+                variables = JSON.parse('{{ variables_json|escapejs }}');
+                console.log("Parsed variables:", variables);
+                
+                // Make sure variables is not empty
+                if (variables && Object.keys(variables).length > 0) {
+                    console.log("Rendering variables:", Object.keys(variables).length, "found");
+                    // Show variables UI
+                    $("#no_variables").addClass("d-none");
+                    // Render the variables to the UI
+                    renderVariablesList(variables);
+                } else {
+                    console.warn("Variables JSON was empty");
+                    $("#no_variables").removeClass("d-none");
+                }
+                {% else %}
+                console.error("No variables_json provided from view");
+                $("#no_variables").removeClass("d-none");
+                {% endif %}
             } catch (e) {
-                console.error("Error parsing variables JSON:", e);
+                console.error("Error processing variables JSON:", e);
+                // Show error message
+                $("#no_variables").removeClass("d-none")
+                    .addClass("alert-danger")
+                    .removeClass("alert-warning")
+                    .html('<i class="fas fa-exclamation-triangle"></i> Error loading variables: ' + e.message);
             }
             {% else %}
             console.log("No instance data to initialize from");
@@ -321,119 +391,131 @@
             
             // Function to render the variables list
             function renderVariablesList(vars) {
-                console.log("Rendering variables list:", vars);
+                console.log("Rendering variables list. Data:", vars);
                 $("#variables_list").empty();
                 $("#no_variables").addClass("d-none");
 
-                if (Object.keys(vars).length === 0) {
+                if (!vars || Object.keys(vars).length === 0) {
+                    console.warn("No variables to render");
                     $("#no_variables").removeClass("d-none");
                     return;
                 }
 
-                for (const key in vars) {
-                    const varData = vars[key];
+                try {
+                    // Log how many variables we're processing
+                    console.log(`Processing ${Object.keys(vars).length} variables`);
                     
-                    // Create a new card for each variable
-                    const card = $('<div>').addClass('card mb-3');
-                    const cardHeader = $('<div>').addClass('card-header d-flex justify-content-between align-items-center');
-                    
-                    // Variable key/name in header
-                    cardHeader.append($('<h5>').addClass('mb-0').text(key));
-                    
-                    // Delete button
-                    const deleteBtn = $('<button>').addClass('btn btn-sm btn-outline-danger var-delete')
-                        .attr('data-key', key)
-                        .html('<i class="fas fa-trash"></i>');
-                    cardHeader.append(deleteBtn);
-                    
-                    card.append(cardHeader);
-                    
-                    // Card body
-                    const cardBody = $('<div>').addClass('card-body');
-                    
-                    // Input group for variable value
-                    const inputGroup = $('<div>').addClass('input-group mb-3');
-                    
-                    // Variable input
-                    const varInput = $('<input>').addClass('form-control var-value');
-                    varInput.attr('type', varData.isSecret ? 'password' : 'text');
-                    varInput.attr('id', 'var_' + key);
-                    varInput.attr('data-key', key);
-                    varInput.attr('value', varData.value || '');
-                    varInput.attr('placeholder', 'Enter value');
-                    
-                    if (varData.required) {
-                        varInput.prop('required', true);
+                    for (const key in vars) {
+                        if (!vars.hasOwnProperty(key)) continue;
+                        
+                        const varData = vars[key];
+                        console.log(`Rendering variable: ${key}`, varData);
+                        
+                        // Create a new card for each variable
+                        const card = $('<div>').addClass('card mb-3');
+                        const cardHeader = $('<div>').addClass('card-header d-flex justify-content-between align-items-center');
+                        
+                        // Variable key/name in header
+                        cardHeader.append($('<h5>').addClass('mb-0').text(key));
+                        
+                        // Delete button
+                        const deleteBtn = $('<button>').addClass('btn btn-sm btn-outline-danger var-delete')
+                            .attr('data-key', key)
+                            .html('<i class="fas fa-trash"></i>');
+                        cardHeader.append(deleteBtn);
+                        
+                        card.append(cardHeader);
+                        
+                        // Card body
+                        const cardBody = $('<div>').addClass('card-body');
+                        
+                        // Input group for variable value
+                        const inputGroup = $('<div>').addClass('input-group mb-3');
+                        
+                        // Variable input
+                        const varInput = $('<input>').addClass('form-control var-value');
+                        varInput.attr('type', varData.isSecret ? 'password' : 'text');
+                        varInput.attr('id', 'var_' + key);
+                        varInput.attr('data-key', key);
+                        varInput.attr('value', varData.value || '');
+                        varInput.attr('placeholder', 'Enter value');
+                        
+                        if (varData.required) {
+                            varInput.prop('required', true);
+                        }
+                        
+                        inputGroup.append(varInput);
+                        
+                        cardBody.append(inputGroup);
+                        
+                        // Description row
+                        if (varData.description) {
+                            const descRow = $('<div>').addClass('row mb-2');
+                            const descCol = $('<div>').addClass('col');
+                            descCol.append($('<small>').addClass('text-muted').text(varData.description));
+                            descRow.append(descCol);
+                            cardBody.append(descRow);
+                        }
+                        
+                        // Checkboxes row
+                        const checkboxRow = $('<div>').addClass('row');
+                        
+                        // Required checkbox
+                        const reqCol = $('<div>').addClass('col');
+                        const reqCheck = $('<div>').addClass('form-check');
+                        const reqInput = $('<input>').addClass('form-check-input var-required');
+                        reqInput.attr('type', 'checkbox');
+                        reqInput.attr('id', 'required_' + key);
+                        reqInput.attr('disabled', true);
+                        
+                        if (varData.required) {
+                            reqInput.prop('checked', true);
+                        }
+                        
+                        reqCheck.append(reqInput);
+                        reqCheck.append($('<label>').addClass('form-check-label')
+                            .attr('for', 'required_' + key)
+                            .text('Required'));
+                        
+                        reqCol.append(reqCheck);
+                        checkboxRow.append(reqCol);
+                        
+                        // Secret checkbox
+                        const secretCol = $('<div>').addClass('col');
+                        const secretCheck = $('<div>').addClass('form-check');
+                        const secretInput = $('<input>').addClass('form-check-input var-secret');
+                        secretInput.attr('type', 'checkbox');
+                        secretInput.attr('id', 'secret_' + key);
+                        secretInput.attr('disabled', true);
+                        
+                        if (varData.isSecret) {
+                            secretInput.prop('checked', true);
+                        }
+                        
+                        secretCheck.append(secretInput);
+                        secretCheck.append($('<label>').addClass('form-check-label')
+                            .attr('for', 'secret_' + key)
+                            .text('Secret'));
+                        
+                        secretCol.append(secretCheck);
+                        checkboxRow.append(secretCol);
+                        
+                        cardBody.append(checkboxRow);
+                        card.append(cardBody);
+                        
+                        // Add the complete card to the variables list
+                        $("#variables_list").append(card);
                     }
                     
-                    inputGroup.append(varInput);
+                    // Initialize event handlers for the new elements
+                    initVariableHandlers();
                     
-                    cardBody.append(inputGroup);
-                    
-                    // Description row
-                    if (varData.description) {
-                        const descRow = $('<div>').addClass('row mb-2');
-                        const descCol = $('<div>').addClass('col');
-                        descCol.append($('<small>').addClass('text-muted').text(varData.description));
-                        descRow.append(descCol);
-                        cardBody.append(descRow);
-                    }
-                    
-                    // Checkboxes row
-                    const checkboxRow = $('<div>').addClass('row');
-                    
-                    // Required checkbox
-                    const reqCol = $('<div>').addClass('col');
-                    const reqCheck = $('<div>').addClass('form-check');
-                    const reqInput = $('<input>').addClass('form-check-input var-required');
-                    reqInput.attr('type', 'checkbox');
-                    reqInput.attr('id', 'required_' + key);
-                    reqInput.attr('disabled', true);
-                    
-                    if (varData.required) {
-                        reqInput.prop('checked', true);
-                    }
-                    
-                    reqCheck.append(reqInput);
-                    reqCheck.append($('<label>').addClass('form-check-label')
-                        .attr('for', 'required_' + key)
-                        .text('Required'));
-                    
-                    reqCol.append(reqCheck);
-                    checkboxRow.append(reqCol);
-                    
-                    // Secret checkbox
-                    const secretCol = $('<div>').addClass('col');
-                    const secretCheck = $('<div>').addClass('form-check');
-                    const secretInput = $('<input>').addClass('form-check-input var-secret');
-                    secretInput.attr('type', 'checkbox');
-                    secretInput.attr('id', 'secret_' + key);
-                    secretInput.attr('disabled', true);
-                    
-                    if (varData.isSecret) {
-                        secretInput.prop('checked', true);
-                    }
-                    
-                    secretCheck.append(secretInput);
-                    secretCheck.append($('<label>').addClass('form-check-label')
-                        .attr('for', 'secret_' + key)
-                        .text('Secret'));
-                    
-                    secretCol.append(secretCheck);
-                    checkboxRow.append(secretCol);
-                    
-                    cardBody.append(checkboxRow);
-                    card.append(cardBody);
-                    
-                    // Add the complete card to the variables list
-                    $("#variables_list").append(card);
+                    // Update the hidden form field
+                    updateVariablesJson();
+                } catch (error) {
+                    console.error("Error rendering variables:", error);
+                    $("#variables_list").html('<div class="alert alert-danger">Error rendering variables: ' + error.message + '</div>');
                 }
-                
-                // Initialize event handlers for the new elements
-                initVariableHandlers();
-                
-                // Update the hidden form field
-                updateVariablesJson();
             }
             
             // Function to initialize event handlers for variable elements
@@ -497,11 +579,26 @@
                 $(".is-invalid").removeClass("is-invalid");
                 $(".invalid-feedback").remove();
                 
+                // Enable disabled fields temporarily to ensure they are submitted
+                const recipeTypeField = $("#{{ form.recipe_type.id_for_label }}");
+                const recipeTypeWasDisabled = recipeTypeField.prop('disabled');
+                
+                if (recipeTypeWasDisabled) {
+                    // Enable temporarily for form submission
+                    recipeTypeField.prop('disabled', false);
+                }
+                
                 // Ensure recipe type is included
-                const recipeTypeValue = $("#" + recipeTypeField).val();
+                const recipeTypeValue = $("#" + "{{ form.recipe_type.id_for_label }}").val();
                 if (!recipeTypeValue) {
                     e.preventDefault();
                     alert("Recipe type is required");
+                    
+                    // Restore disabled state
+                    if (recipeTypeWasDisabled) {
+                        recipeTypeField.prop('disabled', true);
+                    }
+                    
                     return false;
                 }
                 
@@ -564,9 +661,16 @@
                 if (hasErrors) {
                     e.preventDefault();
                     alert("Please correct the errors in the form.");
+                    
+                    // Restore disabled state if needed
+                    if (recipeTypeWasDisabled) {
+                        recipeTypeField.prop('disabled', true);
+                    }
+                    
                     return false;
                 }
                 
+                // Field is already enabled for submission at this point
                 return true;
             });
 

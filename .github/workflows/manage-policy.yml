@@ -215,14 +215,18 @@ jobs:
             FORMAT_FLAG="--format json"
           fi
           
+          # Create environment folder
+          ENV_DIR="${{ github.event.inputs.export_dir }}/${{ github.event.inputs.environment }}"
+          mkdir -p "$ENV_DIR"
+          
           if [ -n "${{ github.event.inputs.policy_id }}" ]; then
-            python scripts/export_policy.py --policy-id "${{ github.event.inputs.policy_id }}" --output-dir ${{ github.event.inputs.export_dir }} $FORMAT_FLAG
+            python scripts/export_policy.py --policy-id "${{ github.event.inputs.policy_id }}" --output-dir "$ENV_DIR" $FORMAT_FLAG
           else
-            python scripts/export_policy.py --output-dir ${{ github.event.inputs.export_dir }} $FORMAT_FLAG
+            python scripts/export_policy.py --output-dir "$ENV_DIR" $FORMAT_FLAG
           fi
           
-          echo "Exported policies:"
-          ls -la ${{ github.event.inputs.export_dir }}
+          echo "Exported policies to environment folder: ${{ github.event.inputs.environment }}"
+          ls -la "$ENV_DIR"
         
       - name: Archive exported policies
         if: github.event.inputs.action == 'export'
@@ -241,14 +245,25 @@ jobs:
       - name: Import policies
         if: github.event.inputs.action == 'import'
         run: |
-          ls -la ${{ github.event.inputs.export_dir }}
+          # Get the environment directory
+          ENV_DIR="${{ github.event.inputs.export_dir }}/${{ github.event.inputs.environment }}"
+          
+          # Check if environment directory exists
+          if [ -d "$ENV_DIR" ]; then
+            ls -la "$ENV_DIR"
+            INPUT_DIR="$ENV_DIR"
+          else
+            # Fall back to using the export_dir directly
+            ls -la ${{ github.event.inputs.export_dir }}
+            INPUT_DIR="${{ github.event.inputs.export_dir }}"
+          fi
           
           # Parse import options
           OPTIONS='${{ github.event.inputs.import_options }}'
           SKIP_EXISTING=$(echo $OPTIONS | jq -r '.skip_existing // false')
           FORCE_UPDATE=$(echo $OPTIONS | jq -r '.force_update // false')
           
-          CMD="python scripts/import_policy.py --input-dir ${{ github.event.inputs.export_dir }}"
+          CMD="python scripts/import_policy.py --input-dir \"$INPUT_DIR\""
           
           if [ "$SKIP_EXISTING" == "true" ]; then
             CMD="$CMD --skip-existing"

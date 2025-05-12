@@ -446,4 +446,309 @@ class GitHubService:
             
         except Exception as e:
             logger.error(f"Exception syncing recipe to GitHub: {str(e)}")
-            return None 
+            return None
+    
+    def get_repository_secrets(self) -> List[Dict]:
+        """
+        Get all secrets defined in the GitHub repository.
+        
+        Returns:
+            List of secrets with their properties
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return []
+        
+        url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/actions/secrets"
+        
+        try:
+            response = requests.get(url, headers=self.headers)
+            
+            if response.status_code == 200:
+                return response.json().get("secrets", [])
+            else:
+                logger.error(f"Failed to get repository secrets. Status: {response.status_code}, Response: {response.text}")
+                return []
+        
+        except Exception as e:
+            logger.error(f"Exception getting repository secrets: {str(e)}")
+            return []
+    
+    def get_environments(self) -> List[Dict]:
+        """
+        Get all GitHub environments for the repository.
+        
+        Returns:
+            List of environments with their properties
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return []
+        
+        url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/environments"
+        
+        try:
+            response = requests.get(url, headers=self.headers)
+            
+            if response.status_code == 200:
+                return response.json().get("environments", [])
+            else:
+                logger.error(f"Failed to get environments. Status: {response.status_code}, Response: {response.text}")
+                return []
+        
+        except Exception as e:
+            logger.error(f"Exception getting environments: {str(e)}")
+            return []
+    
+    def get_environment_secrets(self, environment: str) -> List[Dict]:
+        """
+        Get all secrets defined for a specific GitHub environment.
+        
+        Args:
+            environment: Name of the GitHub environment
+            
+        Returns:
+            List of secrets with their properties
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return []
+        
+        if not environment:
+            logger.warning("Environment name is required")
+            return []
+        
+        url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/environments/{environment}/secrets"
+        
+        try:
+            response = requests.get(url, headers=self.headers)
+            
+            if response.status_code == 200:
+                return response.json().get("secrets", [])
+            elif response.status_code == 404:
+                logger.warning(f"Environment '{environment}' not found")
+                return []
+            else:
+                logger.error(f"Failed to get environment secrets. Status: {response.status_code}, Response: {response.text}")
+                return []
+        
+        except Exception as e:
+            logger.error(f"Exception getting environment secrets: {str(e)}")
+            return []
+    
+    def create_or_update_secret(self, name: str, value: str) -> bool:
+        """
+        Create or update a GitHub repository secret.
+        
+        Args:
+            name: Secret name
+            value: Secret value
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return False
+        
+        try:
+            # First, get the public key for the repository
+            key_url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/actions/secrets/public-key"
+            
+            key_response = requests.get(key_url, headers=self.headers)
+            
+            if key_response.status_code != 200:
+                logger.error(f"Failed to get repository public key. Status: {key_response.status_code}, Response: {key_response.text}")
+                return False
+            
+            public_key = key_response.json()
+            
+            # GitHub requires secrets to be encrypted with a repository-specific public key
+            # See: https://docs.github.com/en/rest/actions/secrets
+            try:
+                from nacl import encoding, public
+                
+                # Convert string to bytes
+                public_key_bytes = public_key["key"].encode("utf-8")
+                
+                # Create a sealed box with the public key
+                public_key_obj = public.PublicKey(public_key_bytes, encoding.Base64Encoder())
+                sealed_box = public.SealedBox(public_key_obj)
+                
+                # Encrypt the secret value
+                encrypted_value = sealed_box.encrypt(value.encode("utf-8"))
+                
+                # Base64 encode the encrypted value
+                encrypted_value_b64 = encoding.Base64Encoder().encode(encrypted_value).decode("utf-8")
+                
+                # Create or update the secret
+                secret_url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/actions/secrets/{name}"
+                
+                secret_data = {
+                    "encrypted_value": encrypted_value_b64,
+                    "key_id": public_key["key_id"]
+                }
+                
+                secret_response = requests.put(secret_url, headers=self.headers, json=secret_data)
+                
+                if secret_response.status_code in [201, 204]:
+                    return True
+                else:
+                    logger.error(f"Failed to create/update secret. Status: {secret_response.status_code}, Response: {secret_response.text}")
+                    return False
+                
+            except ImportError:
+                logger.error("PyNaCl library not installed. Required for GitHub secret encryption.")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Exception creating/updating secret: {str(e)}")
+            return False
+    
+    def create_or_update_environment_secret(self, environment: str, name: str, value: str) -> bool:
+        """
+        Create or update a GitHub environment secret.
+        
+        Args:
+            environment: Name of the GitHub environment
+            name: Secret name
+            value: Secret value
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return False
+        
+        if not environment:
+            logger.warning("Environment name is required")
+            return False
+        
+        try:
+            # First, get the public key for the environment
+            key_url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/environments/{environment}/secrets/public-key"
+            
+            key_response = requests.get(key_url, headers=self.headers)
+            
+            if key_response.status_code != 200:
+                logger.error(f"Failed to get environment public key. Status: {key_response.status_code}, Response: {key_response.text}")
+                return False
+            
+            public_key = key_response.json()
+            
+            # GitHub requires secrets to be encrypted with an environment-specific public key
+            try:
+                from nacl import encoding, public
+                
+                # Convert string to bytes
+                public_key_bytes = public_key["key"].encode("utf-8")
+                
+                # Create a sealed box with the public key
+                public_key_obj = public.PublicKey(public_key_bytes, encoding.Base64Encoder())
+                sealed_box = public.SealedBox(public_key_obj)
+                
+                # Encrypt the secret value
+                encrypted_value = sealed_box.encrypt(value.encode("utf-8"))
+                
+                # Base64 encode the encrypted value
+                encrypted_value_b64 = encoding.Base64Encoder().encode(encrypted_value).decode("utf-8")
+                
+                # Create or update the secret
+                secret_url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/environments/{environment}/secrets/{name}"
+                
+                secret_data = {
+                    "encrypted_value": encrypted_value_b64,
+                    "key_id": public_key["key_id"]
+                }
+                
+                secret_response = requests.put(secret_url, headers=self.headers, json=secret_data)
+                
+                if secret_response.status_code in [201, 204]:
+                    return True
+                else:
+                    logger.error(f"Failed to create/update environment secret. Status: {secret_response.status_code}, Response: {secret_response.text}")
+                    return False
+                
+            except ImportError:
+                logger.error("PyNaCl library not installed. Required for GitHub secret encryption.")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Exception creating/updating environment secret: {str(e)}")
+            return False
+    
+    def delete_secret(self, name: str) -> bool:
+        """
+        Delete a GitHub repository secret.
+        
+        Args:
+            name: Name of the secret to delete
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return False
+        
+        url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/actions/secrets/{name}"
+        
+        try:
+            response = requests.delete(url, headers=self.headers)
+            
+            if response.status_code in [204, 404]:  # 204: Deleted successfully, 404: Already deleted
+                return True
+            else:
+                logger.error(f"Failed to delete secret. Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Exception deleting secret: {str(e)}")
+            return False
+    
+    def delete_environment_secret(self, environment: str, name: str) -> bool:
+        """
+        Delete a GitHub environment secret.
+        
+        Args:
+            environment: Name of the GitHub environment
+            name: Name of the secret to delete
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_configured():
+            logger.warning("GitHub integration not configured")
+            return False
+        
+        if not environment:
+            logger.warning("Environment name is required")
+            return False
+        
+        url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/environments/{environment}/secrets/{name}"
+        
+        try:
+            response = requests.delete(url, headers=self.headers)
+            
+            if response.status_code in [204, 404]:  # 204: Deleted successfully, 404: Already deleted
+                return True
+            else:
+                logger.error(f"Failed to delete environment secret. Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Exception deleting environment secret: {str(e)}")
+            return False 
+    def create_environment(self, name: str, wait_timer: int = 0, reviewers: list = None, prevent_self_review: bool = False, protected_branches: bool = False) -> bool:
+        """Create or update GitHub environment"""
+        if not self.is_configured():
+            return False
+        url = f"https://api.github.com/repos/{self.settings.username}/{self.settings.repository}/environments/{name}"
+        payload = {}
+        try:
+            response = requests.put(url, headers=self.headers, json=payload)
+            return response.status_code in [200, 201]
+        except Exception as e:
+            logger.error(f"Exception creating environment: {str(e)}")
+            return False

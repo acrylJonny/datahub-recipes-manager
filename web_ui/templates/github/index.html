@@ -105,7 +105,7 @@
                         </div>
                     </div>
                     <div class="d-grid">
-                        <a href="{% url 'github_settings_edit' %}" class="btn btn-outline-primary">
+                        <a href="{% url 'github_settings' %}" class="btn btn-outline-primary">
                             <i class="fas fa-cog me-1"></i> Edit Settings
                         </a>
                     </div>
@@ -115,7 +115,7 @@
                     </div>
                     <p>Configure Git integration to sync your recipes and create pull requests for changes.</p>
                     <div class="d-grid">
-                        <a href="{% url 'github_settings_edit' %}" class="btn btn-primary">
+                        <a href="{% url 'github_settings' %}" class="btn btn-primary">
                             <i class="fas fa-cog me-1"></i> Configure Git Repository
                         </a>
                     </div>
@@ -132,6 +132,18 @@
                         <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createBranchModal">
                             <i class="fas fa-code-branch me-1"></i> Create New Branch
                         </button>
+                    </div>
+                    
+                    <div class="d-grid mt-2">
+                        <a href="{% url 'github_secrets' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-key me-1"></i> Manage Repository Secrets
+                        </a>
+                    </div>
+                    
+                    <div class="d-grid mt-2">
+                        <a href="{% url 'github_environments' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-cogs me-1"></i> Manage Environments
+                        </a>
                     </div>
                 </div>
             </div>
@@ -1037,7 +1049,7 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        window.location.href = "{% url 'github' %}";
+                        window.location.href = "{% url 'github_index' %}";
                     } else {
                         const errorElement = document.getElementById('pr-create-error');
                         errorElement.textContent = data.error || 'Unknown error creating PR';

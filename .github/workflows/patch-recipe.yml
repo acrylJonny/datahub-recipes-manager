@@ -15,9 +15,9 @@ on:
         default: 'development'
         type: choice
         options:
-          - development
+          - dev
           - staging
-          - production
+          - prod
 
 jobs:
   patch-recipe:

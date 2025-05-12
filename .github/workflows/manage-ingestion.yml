@@ -17,7 +17,7 @@ on:
         type: choice
         options:
           - dev
-          - qa
+          - staging
           - prod
       source_id:
         description: 'DataHub ingestion source ID (required for patch and run-now)'

@@ -131,14 +131,16 @@
                         {% endfor %}
                         
                         <div class="col-md-1 d-flex align-items-center">
-                            {% if not formset.initial.is_required %}
-                            <button type="button" class="btn btn-outline-danger remove-env-var">
-                                <i class="fa fa-trash"></i>
-                            </button>
-                            {% else %}
-                            <button type="button" class="btn btn-outline-danger remove-env-var" disabled title="Required variables cannot be removed">
-                                <i class="fa fa-trash"></i>
-                            </button>
+                            {% if not form.instance.id %}
+                                {% if not formset.initial.is_required %}
+                                <button type="button" class="btn btn-outline-danger remove-env-var">
+                                    <i class="fa fa-trash"></i>
+                                </button>
+                                {% else %}
+                                <button type="button" class="btn btn-outline-danger remove-env-var" disabled title="Required variables cannot be removed">
+                                    <i class="fa fa-trash"></i>
+                                </button>
+                                {% endif %}
                             {% endif %}
                         </div>
                         
@@ -154,9 +156,18 @@
                 {{ env_vars_formset.management_form }}
                 
                 <div class="mb-4 mt-3">
+                    {% if form.instance.id %}
+                    <button type="button" id="add-env-var" class="btn btn-outline-primary" disabled title="New variables cannot be added to existing instances">
+                        <i class="fa fa-plus me-1"></i> Add Custom Environment Variable
+                    </button>
+                    <small class="text-muted d-block mt-2">
+                        <i class="fa fa-info-circle"></i> To add new variables, please update the template used by this instance.
+                    </small>
+                    {% else %}
                     <button type="button" id="add-env-var" class="btn btn-outline-primary">
                         <i class="fa fa-plus me-1"></i> Add Custom Environment Variable
                     </button>
+                    {% endif %}
                 </div>
                 
                 <hr>
@@ -233,6 +244,97 @@
         let formCount = parseInt($('#id_' + formsetPrefix + '-TOTAL_FORMS').val());
         const maxForms = parseInt($('#id_' + formsetPrefix + '-MAX_NUM_FORMS').val());
         
+        // Setup secret fields to allow seeing what's typed
+        setupSecretFields();
+        
+        // Function to handle secret field visibility
+        function setupSecretFields() {
+            // For each input that corresponds to a secret field
+            $('.env-var-row').each(function() {
+                const row = $(this);
+                const isSecret = row.find('[name$="-is_secret"]').prop('checked');
+                const valueField = row.find('[name$="-value"]');
+                const hasValue = valueField.val() !== '';
+                
+                if (isSecret) {
+                    // Create a new wrapper around the field
+                    valueField.wrap('<div class="input-group"></div>');
+                    const wrapper = valueField.parent();
+                    
+                    // If it has a value, convert to password field
+                    if (hasValue && valueField.attr('type') !== 'password') {
+                        // Save the original value in a data attribute
+                        valueField.attr('data-original-value', valueField.val());
+                        // Replace with placeholder
+                        valueField.val('');
+                        valueField.attr('type', 'password');
+                        valueField.attr('placeholder', '••••••••');
+                        
+                        // Add toggle button
+                        const toggleBtn = $('<button class="btn btn-outline-secondary toggle-password" type="button"><i class="fa fa-eye"></i></button>');
+                        wrapper.append(toggleBtn);
+                        
+                        // Add event listener for the toggle button
+                        toggleBtn.on('click', function() {
+                            const field = $(this).siblings('input');
+                            if (field.attr('type') === 'password') {
+                                // Show the value
+                                if (field.val() === '') {
+                                    // Restore original value if empty (means we're still showing placeholders)
+                                    field.val(field.attr('data-original-value'));
+                                }
+                                field.attr('type', 'text');
+                                $(this).html('<i class="fa fa-eye-slash"></i>');
+                            } else {
+                                // Hide the value again
+                                const currentValue = field.val();
+                                field.attr('data-original-value', currentValue); // Update stored value
+                                field.attr('type', 'password');
+                                $(this).html('<i class="fa fa-eye"></i>');
+                            }
+                        });
+                    }
+                }
+                
+                // Watch for changes to the is_secret checkbox
+                row.find('[name$="-is_secret"]').on('change', function() {
+                    const newIsSecret = $(this).prop('checked');
+                    const valueField = row.find('[name$="-value"]');
+                    
+                    if (newIsSecret) {
+                        // If not already wrapped, wrap it
+                        if (!valueField.parent().hasClass('input-group')) {
+                            valueField.wrap('<div class="input-group"></div>');
+                            const wrapper = valueField.parent();
+                            
+                            // Add toggle button
+                            const toggleBtn = $('<button class="btn btn-outline-secondary toggle-password" type="button"><i class="fa fa-eye-slash"></i></button>');
+                            wrapper.append(toggleBtn);
+                            
+                            // Add event listener for the toggle button
+                            toggleBtn.on('click', function() {
+                                const field = $(this).siblings('input');
+                                if (field.attr('type') === 'password') {
+                                    field.attr('type', 'text');
+                                    $(this).html('<i class="fa fa-eye-slash"></i>');
+                                } else {
+                                    field.attr('type', 'password');
+                                    $(this).html('<i class="fa fa-eye"></i>');
+                                }
+                            });
+                        }
+                    } else {
+                        // If it was secret and now isn't, unwrap it
+                        if (valueField.parent().hasClass('input-group')) {
+                            valueField.attr('type', 'text');
+                            valueField.unwrap();
+                            valueField.siblings('.toggle-password').remove();
+                        }
+                    }
+                });
+            });
+        }
+        
         // Update row numbers
         function updateRowNumbers() {
             $('.env-var-row').each(function(index) {
@@ -268,11 +370,16 @@
                 
                 // Enable remove button for the new row
                 $('.env-var-row:last .remove-env-var').click(function() {
-                    $(this).closest('.env-var-row').remove();
-                    formCount--;
-                    $('#id_' + formsetPrefix + '-TOTAL_FORMS').val(formCount);
-                    updateRowNumbers();
+                    if (!$(this).prop('disabled')) {
+                        $(this).closest('.env-var-row').remove();
+                        formCount--;
+                        $('#id_' + formsetPrefix + '-TOTAL_FORMS').val(formCount);
+                        updateRowNumbers();
+                    }
                 });
+                
+                // Setup secret field handling for the new row
+                setupSecretFields();
             } else {
                 alert('Maximum number of environment variables reached.');
             }
@@ -365,6 +472,9 @@
                                 updateRowNumbers();
                             }
                         });
+                        
+                        // Setup secret fields for newly added rows
+                        setupSecretFields();
                     },
                     error: function() {
                         alert('Error loading template variables.');
@@ -376,6 +486,16 @@
         // Form validation
         $('#env-vars-form').submit(function(e) {
             let valid = true;
+            
+            // Restore original values for secret fields before submitting
+            $('.env-var-row').each(function() {
+                const isSecret = $(this).find('[name$="-is_secret"]').prop('checked');
+                const valueField = $(this).find('[name$="-value"]');
+                
+                if (isSecret && valueField.attr('type') === 'password' && valueField.val() === '' && valueField.attr('data-original-value')) {
+                    valueField.val(valueField.attr('data-original-value'));
+                }
+            });
             
             // Check that required fields have values
             $('.env-var-row').each(function() {

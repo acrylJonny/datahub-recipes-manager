@@ -56,6 +56,19 @@
                 </div>
                 
                 <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="policy-environment" class="form-label">Environment</label>
+                        <select class="form-select" id="policy-environment" name="environment">
+                            <option value="">None</option>
+                            {% for env in environments %}
+                            <option value="{{ env.id }}" {% if policy.environment and policy.environment.id == env.id %}selected{% endif %}>{{ env.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Environment is used for GitHub PR organization</small>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
                     <div class="col-md-12">
                         <label for="policy-description" class="form-label">Description</label>
                         <textarea class="form-control" id="policy-description" name="description" rows="3">{{ policy.description }}</textarea>
@@ -231,6 +244,12 @@
         formData.set('privileges', privilegesJson);
         formData.set('actors', actorsJson);
         
+        // Get the environment value
+        const environmentSelect = document.getElementById('policy-environment');
+        if (environmentSelect) {
+            formData.set('environment', environmentSelect.value);
+        }
+        
         // Send to the server
         fetch('{% url "policy_push_github" policy.id %}', {
             method: 'POST',
@@ -244,7 +263,7 @@
             if (data.success) {
                 alert('Successfully added policy to GitHub branch!');
                 // Redirect to GitHub page
-                window.location.href = '{% url "github" %}';
+                window.location.href = '{% url "github_index" %}';
             } else {
                 alert('Error adding policy to GitHub: ' + data.error);
             }

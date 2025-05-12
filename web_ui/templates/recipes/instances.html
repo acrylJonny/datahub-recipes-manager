@@ -67,34 +67,34 @@
                                     <td>{{ instance.deployed_at }}</td>
                                     <td>
                                         <div class="btn-group" role="group">
-                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Edit this recipe instance">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            <a href="{% url 'recipe_instance_download' instance_id=instance.id %}" class="btn btn-sm btn-outline-info" title="Download">
+                                            <a href="{% url 'recipe_instance_download' instance_id=instance.id %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Download this recipe as JSON">
                                                 <i class="fas fa-download"></i>
                                             </a>
                                             <form action="{% url 'recipe_instance_undeploy' instance.id %}" method="post" class="d-inline">
                                                 {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Undeploy (Delete from DataHub)" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-original-title="This will delete the recipe from DataHub but keep it in the local database">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning" data-bs-toggle="tooltip" title="Undeploy (Delete from DataHub)">
                                                     <i class="fas fa-cloud-download-alt"></i>
                                                 </button>
                                             </form>
                                             <form action="{% url 'recipe_instance_redeploy' instance.id %}" method="post" class="d-inline">
                                                 {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Redeploy">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Update this recipe in DataHub">
                                                     <i class="fas fa-sync-alt"></i>
                                                 </button>
                                             </form>
-                                            <a href="#" class="btn btn-sm btn-outline-success run-recipe" data-recipe-id="{{ instance.datahub_urn }}" title="Run Now">
+                                            <a href="#" class="btn btn-sm btn-outline-success run-recipe" data-recipe-id="{{ instance.datahub_id|default:'' }}" data-bs-toggle="tooltip" title="Run this recipe immediately">
                                                 <i class="fas fa-play"></i>
                                             </a>
                                             <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                                    data-instance-id="{{ instance.id }}" title="Add to GitHub PR">
+                                                    data-instance-id="{{ instance.id }}" data-bs-toggle="tooltip" title="Add to Git repository for version control">
                                                 <i class="fab fa-github"></i>
                                             </button>
                                             <button type="button" class="btn btn-sm btn-outline-danger delete-recipe-instance" 
                                                     data-bs-toggle="modal" data-bs-target="#deleteInstanceModal"
-                                                    data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete">
+                                                    data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete this recipe instance">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </div>
@@ -158,25 +158,25 @@
                                     <td>{{ instance.created_at }}</td>
                                     <td>
                                         <div class="btn-group" role="group">
-                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                            <a href="{% url 'recipe_instance_edit' instance.id %}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Edit this recipe instance">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            <a href="{% url 'recipe_instance_download' instance_id=instance.id %}" class="btn btn-sm btn-outline-info" title="Download">
+                                            <a href="{% url 'recipe_instance_download' instance_id=instance.id %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Download this recipe as JSON">
                                                 <i class="fas fa-download"></i>
                                             </a>
                                             <form action="{% url 'recipe_instance_deploy' instance.id %}" method="post" class="d-inline">
                                                 {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Deploy this recipe to DataHub">
                                                     <i class="fas fa-cloud-upload-alt"></i>
                                                 </button>
                                             </form>
                                             <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                                    data-instance-id="{{ instance.id }}" title="Add to GitHub PR">
+                                                    data-instance-id="{{ instance.id }}" data-bs-toggle="tooltip" title="Add to Git repository for version control">
                                                 <i class="fab fa-github"></i>
                                             </button>
                                             <button type="button" class="btn btn-sm btn-outline-danger delete-recipe-instance" 
                                                     data-bs-toggle="modal" data-bs-target="#deleteInstanceModal"
-                                                    data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete">
+                                                    data-instance-id="{{ instance.id }}" data-instance-name="{{ instance.name }}" title="Delete this recipe instance">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </div>
@@ -215,10 +215,10 @@
                 <p class="text-danger">This action cannot be undone. If this instance is deployed, it will remain in DataHub until manually undeployed.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Cancel deletion and return to the list">Cancel</button>
                 <form id="delete-instance-form" method="POST">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-danger">Delete</button>
+                    <button type="submit" class="btn btn-danger" title="Permanently delete this recipe instance">Delete</button>
                 </form>
             </div>
         </div>
@@ -235,6 +235,10 @@
             </div>
             <div class="modal-body">
                 <p>Unable to delete the recipe instance <strong id="force-undeploy-name"></strong> from DataHub.</p>
+                <div id="force-undeploy-error" class="alert alert-danger d-none">
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    <span></span>
+                </div>
                 <p>Do you want to mark this instance as undeployed in the local database only?</p>
                 <div class="alert alert-warning">
                     <i class="fas fa-exclamation-triangle me-2"></i>
@@ -242,11 +246,11 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Cancel and return to the list">Cancel</button>
                 <form id="force-undeploy-form" method="POST">
                     {% csrf_token %}
                     <input type="hidden" name="force_undeploy" value="true">
-                    <button type="submit" class="btn btn-warning">Force Undeploy</button>
+                    <button type="submit" class="btn btn-warning" title="Mark as undeployed in local database only">Force Undeploy</button>
                 </form>
             </div>
         </div>
@@ -277,12 +281,61 @@
             });
         }
         
+        // Handle force undeploy modal
+        const forceUndeployModal = document.getElementById('forceUndeployModal');
+        if (forceUndeployModal) {
+            forceUndeployModal.addEventListener('show.bs.modal', function(event) {
+                // If triggered by button click
+                if (event.relatedTarget) {
+                    const button = event.relatedTarget;
+                    const instanceId = button.getAttribute('data-instance-id');
+                    const instanceName = button.getAttribute('data-instance-name');
+                    
+                    document.getElementById('force-undeploy-name').textContent = instanceName;
+                    document.getElementById('force-undeploy-form').action = "{% url 'recipe_instance_undeploy' 0 %}".replace('0', instanceId);
+                }
+                // If error message is provided, show it
+                const errorElement = document.getElementById('force-undeploy-error');
+                if (errorElement && "{{ error|escapejs }}") {
+                    errorElement.querySelector('span').textContent = "{{ error|escapejs }}";
+                    errorElement.classList.remove('d-none');
+                }
+            });
+        }
+        
+        {% if show_force_undeploy and instance %}
+        // Show force undeploy modal automatically if flag is set
+        (function() {
+            const forceUndeployModal = document.getElementById('forceUndeployModal');
+            if (forceUndeployModal) {
+                document.getElementById('force-undeploy-name').textContent = "{{ instance.name|escapejs }}";
+                document.getElementById('force-undeploy-form').action = "{% url 'recipe_instance_undeploy' instance.id %}";
+                
+                // If error message is provided, show it
+                const errorElement = document.getElementById('force-undeploy-error');
+                if (errorElement && "{{ error|escapejs }}") {
+                    errorElement.querySelector('span').textContent = "{{ error|escapejs }}";
+                    errorElement.classList.remove('d-none');
+                }
+                
+                const bsModal = new bootstrap.Modal(forceUndeployModal);
+                bsModal.show();
+            }
+        })();
+        {% endif %}
+        
         // Handle run recipe buttons
         const runButtons = document.querySelectorAll('.run-recipe');
         runButtons.forEach(button => {
             button.addEventListener('click', function(e) {
                 e.preventDefault();
                 const recipeId = this.getAttribute('data-recipe-id');
+                
+                // Don't proceed if recipe ID is empty
+                if (!recipeId) {
+                    alert('Cannot run recipe - recipe is not deployed or missing ID');
+                    return;
+                }
                 
                 // Disable button and show spinner
                 this.disabled = true;
@@ -294,7 +347,8 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                        'X-Requested-With': 'XMLHttpRequest'  // Add this to make sure we handle AJAX correctly
                     }
                 })
                 .then(response => response.json())
@@ -340,7 +394,7 @@
                     this.innerHTML = originalHTML;
                     
                     // Show error
-                    alert(`Error: ${error.message || 'Failed to run recipe'}`);
+                    alert(`Error: ${error.message || error}`);
                 });
             });
         });
@@ -397,7 +451,7 @@
                     }
                 })
                 .catch(error => {
-                    alert(`Error: ${error}`);
+                    alert(`Error: ${error.message || error}`);
                 })
                 .finally(() => {
                     // Restore button state
@@ -408,4 +462,4 @@
         });
     });
 </script>
-{% endblock %} 
+{% endblock %}

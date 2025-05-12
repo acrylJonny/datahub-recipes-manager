@@ -10,7 +10,7 @@ on:
         type: choice
         options:
           - dev
-          - test
+          - staging
           - prod
       source_id:
         description: 'ID of the ingestion source to run'
