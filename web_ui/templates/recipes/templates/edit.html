@@ -146,6 +146,19 @@
         overflow-wrap: normal;
         overflow-x: auto;
     }
+    
+    /* Fix z-index issues with dropdowns */
+    .higher-z-index {
+        z-index: 9999 !important;
+    }
+    
+    .select2-container {
+        z-index: 1050; /* Set default z-index */
+    }
+    
+    .select2-container--open {
+        z-index: 9999 !important; /* Ensure open dropdowns appear above other elements */
+    }
 </style>
 {% endblock %}
 
@@ -190,13 +203,26 @@
     }
     
     document.addEventListener('DOMContentLoaded', function() {
-        // Initialize Select2 for dropdowns
-        $('.select2-enable').select2({
-            theme: 'bootstrap-5',
-            width: '100%'
-        });
+        // Setup recipe editor first
+        setupRecipeEditor();
+        
+        // Then initialize Select2 for dropdowns
+        setTimeout(() => {
+            $('.select2-enable').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                dropdownCssClass: 'higher-z-index'
+            }).on('select2:open', function() {
+                // Ensure dropdown appears above other elements
+                document.querySelector('.select2-container--open').style.zIndex = 9999;
+            });
+        }, 100);
         
         // Handle the "other" option for recipe type
+        setupRecipeTypeOtherField();
+    });
+    
+    function setupRecipeTypeOtherField() {
         const recipeTypeSelect = document.getElementById('id_recipe_type');
         const recipeTypeOther = document.getElementById('id_recipe_type_other');
 
@@ -218,7 +244,9 @@
                 }
             });
         }
-        
+    }
+    
+    function setupRecipeEditor() {
         // Replace the original textarea with a simpler one for our editor
         const originalTextarea = document.getElementById('id_content');
         if (!originalTextarea) return;
@@ -229,6 +257,10 @@
         
         // Create a new textarea in a container
         const editorDiv = document.getElementById('editor-container');
+        if (!editorDiv) return;  // Exit if container not found
+        
+        // Clear any existing content in the editor container
+        editorDiv.innerHTML = '';
         
         const newTextarea = document.createElement('textarea');
         newTextarea.id = 'recipe_textarea';
@@ -258,40 +290,34 @@
             }
         }
         
-        // Format function
-        function formatContent() {
-            try {
-                const content = newTextarea.value;
-                const format = document.querySelector('input[name="format"]:checked').value;
-                
-                if (format === 'json') {
-                    // Convert to JSON if it's YAML
-                    if (!content.trim().startsWith('{')) {
-                        const obj = jsyaml.load(content);
-                        newTextarea.value = JSON.stringify(obj, null, 2);
-                    } else {
-                        // Just reformat JSON
-                        const obj = JSON.parse(content);
-                        newTextarea.value = JSON.stringify(obj, null, 2);
-                    }
-                } else {
-                    // Convert to YAML if it's JSON
-                    if (content.trim().startsWith('{')) {
-                        const obj = JSON.parse(content);
-                        newTextarea.value = jsyaml.dump(obj);
-                    } else {
-                        // Just reformat YAML
-                        const obj = jsyaml.load(content);
-                        newTextarea.value = jsyaml.dump(obj);
-                    }
-                }
-                
-                // Update original textarea and resize
-                originalTextarea.value = newTextarea.value;
-                autoResizeTextarea();
-            } catch (e) {
-                alert('Error formatting: ' + e.message);
+        // Reset function to restore original content
+        function resetContent() {
+            // Set format radio button based on original content
+            if (isJsonOriginal) {
+                document.getElementById('jsonFormat').checked = true;
+            } else {
+                document.getElementById('yamlFormat').checked = true;
             }
+            
+            // Restore content
+            newTextarea.value = originalContent;
+            originalTextarea.value = originalContent;
+            
+            // Resize after content change
+            setTimeout(autoResizeTextarea, 10);
+        }
+        
+        // Create a reset button and add it to the toolbar
+        const formatButton = document.getElementById('formatButton');
+        if (formatButton) {
+            const resetButton = document.createElement('button');
+            resetButton.type = 'button';
+            resetButton.className = 'btn btn-sm btn-outline-secondary ms-2';
+            resetButton.innerHTML = '<i class="fas fa-undo me-1"></i> Reset';
+            resetButton.addEventListener('click', resetContent);
+            
+            // Add reset button after format button
+            formatButton.parentNode.appendChild(resetButton);
         }
         
         // Initial resize with a slight delay to ensure content is rendered
@@ -303,13 +329,93 @@
             autoResizeTextarea();
         });
         
-        // Format button click handler
-        document.getElementById('formatButton').addEventListener('click', formatContent);
-        
-        // Format radio buttons change handler
-        document.querySelectorAll('input[name="format"]').forEach(radio => {
-            radio.addEventListener('change', formatContent);
+        // Disable resize attempts via the DOM
+        newTextarea.addEventListener('mousedown', function(e) {
+            const rect = newTextarea.getBoundingClientRect();
+            const isInResizeArea = 
+                e.clientX > rect.right - 20 && 
+                e.clientY > rect.bottom - 20;
+                
+            if (isInResizeArea) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
         });
-    });
+        
+        // Format toggle handling
+        document.querySelectorAll('input[name="format"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const format = this.value;
+                const content = newTextarea.value;
+                
+                try {
+                    let newContent = content;
+                    
+                    // Convert between formats
+                    if (format === 'json' && !content.trim().startsWith('{')) {
+                        const obj = jsyaml.load(content);
+                        newContent = JSON.stringify(obj, null, 2);
+                    } else if (format === 'yaml' && content.trim().startsWith('{')) {
+                        const obj = JSON.parse(content);
+                        newContent = jsyaml.dump(obj);
+                    }
+                    
+                    newTextarea.value = newContent;
+                    originalTextarea.value = newContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error changing format:', e);
+                    alert('Error changing format. Please check your syntax.');
+                }
+            });
+        });
+        
+        // Format button handler
+        if (formatButton) {
+            formatButton.addEventListener('click', function() {
+                const format = document.querySelector('input[name="format"]:checked').value;
+                
+                try {
+                    const content = newTextarea.value;
+                    let formattedContent = content;
+                    
+                    if (format === 'json') {
+                        const obj = JSON.parse(content);
+                        formattedContent = JSON.stringify(obj, null, 2);
+                    } else {
+                        const obj = jsyaml.load(content);
+                        formattedContent = jsyaml.dump(obj);
+                    }
+                    
+                    newTextarea.value = formattedContent;
+                    originalTextarea.value = formattedContent;
+                    
+                    // Ensure resize happens after content change
+                    setTimeout(autoResizeTextarea, 10);
+                } catch (e) {
+                    console.error('Error formatting:', e);
+                    alert('Error formatting code. Please check your syntax.');
+                }
+            });
+        }
+        
+        // Update form on submission
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', function() {
+                originalTextarea.value = newTextarea.value;
+            });
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            setTimeout(autoResizeTextarea, 10);
+        });
+        
+        // Run the resize one more time after a delay to catch any edge cases
+        setTimeout(autoResizeTextarea, 200);
+    }
 </script>
 {% endblock %} 
