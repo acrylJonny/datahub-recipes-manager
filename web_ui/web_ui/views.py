@@ -1703,6 +1703,7 @@ def recipe_template_create(request):
                 description=form.cleaned_data['description'],
                 recipe_type=form.cleaned_data['recipe_type'],
                 content=form.cleaned_data['content'],
+                executor_id=form.cleaned_data.get('executor_id', 'default')
             )
             
             # Handle tags
@@ -1732,6 +1733,7 @@ def recipe_template_edit(request, template_id):
             template.description = form.cleaned_data['description']
             template.recipe_type = form.cleaned_data['recipe_type']
             template.content = form.cleaned_data['content']
+            template.executor_id = form.cleaned_data.get('executor_id', 'default')
             
             # Handle tags
             if form.cleaned_data['tags']:
@@ -1748,7 +1750,8 @@ def recipe_template_edit(request, template_id):
             'description': template.description,
             'recipe_type': template.recipe_type,
             'content': template.content,
-            'tags': template.tags
+            'tags': template.tags,
+            'executor_id': template.executor_id
         })
     
     return render(request, 'recipes/templates/edit.html', {
@@ -1894,7 +1897,7 @@ def recipe_template_deploy(request, template_id):
                     recipe=recipe,
                     source_id=form.cleaned_data['recipe_id'],
                     schedule=schedule,
-                    executor_id="default",
+                    executor_id=template.executor_id,
                     description=form.cleaned_data.get('description', '')
                 )
                 
@@ -2553,37 +2556,118 @@ def recipe_instance_undeploy(request, instance_id):
     
     try:
         deletion_succeeded = False
+        error_messages = []
         
-        if instance.datahub_urn:
-            # First try - delete using the URN
+        # First, try using the datahub_id (if available)
+        if instance.datahub_id:
+            # Check that the ID looks valid (should be a UUID, not "dataHubIngestionSource")
+            if instance.datahub_id != "dataHubIngestionSource" and len(instance.datahub_id) > 5:
+                try:
+                    logger.info(f"Attempting to delete recipe using ID: {instance.datahub_id}")
+                    result = client.delete_ingestion_source(instance.datahub_id)
+                    if result:
+                        deletion_succeeded = True
+                        logger.info(f"Recipe '{instance.name}' deleted from DataHub using ID: {instance.datahub_id}")
+                    else:
+                        error_msg = f"Delete operation returned False for ID {instance.datahub_id}"
+                        logger.warning(error_msg)
+                        error_messages.append(error_msg)
+                except Exception as e:
+                    error_msg = f"Failed to delete recipe using ID: {str(e)}"
+                    logger.warning(error_msg)
+                    error_messages.append(error_msg)
+            else:
+                logger.warning(f"Skipping invalid datahub_id: {instance.datahub_id}")
+        else:
+            logger.debug("No datahub_id available for deletion")
+            
+        # If that didn't work and we have a URN, extract the ID from it and try again
+        if not deletion_succeeded and instance.datahub_urn:
             try:
-                result = client.delete_ingestion_source(instance.datahub_urn)
-                if result:
-                    deletion_succeeded = True
-                    logger.info(f"Recipe '{instance.name}' deleted from DataHub using URN: {instance.datahub_urn}")
+                # Extract just the ID part from the URN (the last part after the colon)
+                if instance.datahub_urn.startswith('urn:li:dataHubIngestionSource:'):
+                    urn_id = instance.datahub_urn.split(':')[-1]
+                    logger.debug(f"Extracted ID '{urn_id}' from URN: {instance.datahub_urn}")
+                    
+                    # Only proceed if this ID is valid and different from datahub_id we already tried
+                    if urn_id != "dataHubIngestionSource" and len(urn_id) > 5 and (not instance.datahub_id or urn_id != instance.datahub_id):
+                        logger.info(f"Attempting to delete recipe using ID from URN: {urn_id}")
+                        result = client.delete_ingestion_source(urn_id)
+                        if result:
+                            deletion_succeeded = True
+                            logger.info(f"Recipe '{instance.name}' deleted from DataHub using ID from URN: {urn_id}")
+                        else:
+                            error_msg = f"Delete operation returned False for ID from URN: {urn_id}"
+                            logger.warning(error_msg)
+                            error_messages.append(error_msg)
+                    else:
+                        logger.warning(f"Skipping invalid or duplicate ID from URN: {urn_id}")
+                else:
+                    logger.warning(f"URN does not have expected format: {instance.datahub_urn}")
             except Exception as e:
-                logger.warning(f"Failed to delete recipe using URN: {str(e)}")
+                error_msg = f"Failed to delete recipe using ID from URN: {str(e)}"
+                logger.warning(error_msg)
+                error_messages.append(error_msg)
+        else:
+            if not instance.datahub_urn:
+                logger.debug("No datahub_urn available for extraction")
         
-        if not deletion_succeeded and instance.datahub_id:
-            # Second try - delete using the ID
+        # If we still haven't succeeded, try getting the actual ID from the server
+        if not deletion_succeeded and (instance.name or instance.datahub_urn):
             try:
-                result = client.delete_ingestion_source_by_id(instance.datahub_id)
-                if result:
-                    deletion_succeeded = True
-                    logger.info(f"Recipe '{instance.name}' deleted from DataHub using ID: {instance.datahub_id}")
+                # List all sources and find by name or partial URN match
+                sources = client.list_ingestion_sources()
+                if sources:
+                    for source in sources:
+                        # Match by name
+                        if instance.name and source.get('name') == instance.name:
+                            source_id = source.get('id')
+                            if source_id:
+                                logger.info(f"Found recipe by name. Attempting to delete with ID: {source_id}")
+                                result = client.delete_ingestion_source(source_id)
+                                if result:
+                                    deletion_succeeded = True
+                                    logger.info(f"Recipe '{instance.name}' deleted from DataHub by matching name, using ID: {source_id}")
+                                    break
+                                
+                        # Match by partial URN
+                        if not deletion_succeeded and instance.datahub_urn and source.get('urn') and source.get('urn') in instance.datahub_urn:
+                            source_id = source.get('id')
+                            if source_id:
+                                logger.info(f"Found recipe by partial URN match. Attempting to delete with ID: {source_id}")
+                                result = client.delete_ingestion_source(source_id)
+                                if result:
+                                    deletion_succeeded = True
+                                    logger.info(f"Recipe '{instance.name}' deleted from DataHub by matching URN, using ID: {source_id}")
+                                    break
             except Exception as e:
-                logger.warning(f"Failed to delete recipe using ID: {str(e)}")
+                error_msg = f"Failed to delete recipe by searching: {str(e)}"
+                logger.warning(error_msg)
+                error_messages.append(error_msg)
         
-        # Update the instance status regardless of whether deletion succeeded
+        # Update the instance status
         instance.deployed = False
-        instance.datahub_urn = None if deletion_succeeded else instance.datahub_urn
-        instance.datahub_id = None if deletion_succeeded else instance.datahub_id
+        if deletion_succeeded:
+            instance.datahub_urn = None
+            instance.datahub_id = None
         instance.save()
         
         if deletion_succeeded:
-            messages.success(request, f"Recipe instance '{instance.name}' undeployed successfully")
+            messages.success(request, f"Recipe instance '{instance.name}' undeployed and deleted from DataHub successfully")
         else:
+            if error_messages:
+                logger.error(f"Deletion errors: {', '.join(error_messages)}")
+            
             messages.warning(request, f"Recipe instance '{instance.name}' marked as undeployed, but could not confirm deletion from DataHub")
+            # Show force undeploy modal
+            return render(request, 'recipes/instances.html', {
+                'title': 'Recipe Instances',
+                'deployed': RecipeInstance.objects.filter(deployed=True).order_by('-updated_at'),
+                'staging': RecipeInstance.objects.filter(deployed=False).order_by('-updated_at'),
+                'show_force_undeploy': True,
+                'instance': instance,
+                'error': 'Failed to delete recipe from DataHub. You can force undeploy to mark it as undeployed locally.'
+            })
         
     except Exception as e:
         error_msg = f"Error undeploying recipe instance: {str(e)}"
@@ -4959,4 +5043,31 @@ def template_env_vars_instances(request, template_id):
         'recipe_type': recipe_type,
         'instances': instances
     })
+
+def get_recipe_by_id(recipe_id):
+    """
+    Get a recipe by its ID.
+    
+    Args:
+        recipe_id: ID of the recipe to retrieve
+        
+    Returns:
+        dict: Recipe data if found, None otherwise
+    """
+    client = get_datahub_client()
+    if not client or not client.test_connection():
+        logger.error("Not connected to DataHub")
+        return None
+    
+    try:
+        # Get the recipe
+        recipe_data = client.get_ingestion_source(recipe_id)
+        if not recipe_data:
+            logger.error(f"Recipe {recipe_id} not found")
+            return None
+            
+        return recipe_data
+    except Exception as e:
+        logger.error(f"Error retrieving recipe {recipe_id}: {str(e)}")
+        return None
 

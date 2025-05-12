@@ -86,7 +86,7 @@ class DataHubRestClient:
         # If we have a datahubgraph client available, use it
         if self.graph is not None:
             try:
-                logger.debug(f"Executing GraphQL via datahubgraph SDK: {query[:100]}...")
+                logger.debug(f"Executing GraphQL via datahubgraph SDK: {query} with variables: {variables}")
                 result = self.graph.execute_graphql(query, variables)
                 
                 if isinstance(result, dict) and "data" in result:
@@ -1074,7 +1074,7 @@ class DataHubRestClient:
                             # Try to parse as JSON, with fallback to raw string
                             try:
                                 recipe = json.loads(recipe_str)
-                                self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)[:100]}...")
+                                self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)}")
                             except json.JSONDecodeError:
                                 self.logger.warning(f"Could not parse recipe JSON for {source_id}, treating as raw string")
                                 # If it's not valid JSON, treat it as a raw string
@@ -1120,7 +1120,7 @@ class DataHubRestClient:
                 self.logger.debug(f"Successfully retrieved ingestion source via OpenAPI v3: {source_id}")
                 try:
                     data = response.json()
-                    self.logger.debug(f"OpenAPI v3 response: {json.dumps(data)[:200]}...")
+                    self.logger.debug(f"OpenAPI v3 response: {json.dumps(data)}")
                     
                     # Extract source info from the OpenAPI v3 format
                     # The structure has nested dataHubIngestionSourceInfo.value
@@ -1166,7 +1166,7 @@ class DataHubRestClient:
                 except Exception as e:
                     self.logger.warning(f"Error processing OpenAPI v3 response for {source_id}: {str(e)}")
             else:
-                self.logger.warning(f"OpenAPI v3 GET failed: {response.status_code} - {response.text[:100]}")
+                self.logger.warning(f"OpenAPI v3 GET failed: {response.status_code} - {response.text}")
                 
             # Try all available sources endpoint as last resort
             try:
@@ -2011,7 +2011,7 @@ class DataHubRestClient:
                     self.logger.info(f"Successfully triggered ingestion using {endpoint['description']}")
                     return True
                     
-                self.logger.debug(f"Endpoint {endpoint['url']} returned {response.status_code}: {response.text[:100]}")
+                self.logger.debug(f"Endpoint {endpoint['url']} returned {response.status_code}: {response.text}")
             except Exception as e:
                 self.logger.debug(f"Error with {endpoint['description']}: {str(e)}")
                 

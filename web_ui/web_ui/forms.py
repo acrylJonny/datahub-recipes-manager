@@ -163,6 +163,10 @@ class RecipeTemplateForm(forms.Form):
                           help_text="Enter comma-separated tags to categorize this template")
     content = forms.CharField(label="Recipe Content (YAML/JSON)", required=True,
                              widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 15}))
+    executor_id = forms.CharField(label="Executor ID", max_length=255, required=False,
+                                initial='default',
+                                widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'default'}),
+                                help_text="The executor ID to use when deploying this recipe to DataHub")
                              
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

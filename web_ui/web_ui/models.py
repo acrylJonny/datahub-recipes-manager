@@ -243,6 +243,7 @@ class RecipeTemplate(models.Model):
     deployed = models.BooleanField(default=False)
     deployed_at = models.DateTimeField(null=True, blank=True)
     datahub_urn = models.CharField(max_length=255, null=True, blank=True)  # Store the DataHub URN when deployed
+    executor_id = models.CharField(max_length=255, default='default')  # Store the executor ID for DataHub
     
     def __str__(self):
         return self.name

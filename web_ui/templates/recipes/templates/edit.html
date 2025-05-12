@@ -74,6 +74,14 @@
                     </div>
                 </div>
                 
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="id_executor_id" class="form-label">Executor ID</label>
+                        <input type="text" class="form-control" id="id_executor_id" name="executor_id" value="{{ form.executor_id.value|default:'default' }}">
+                        <div class="form-text">The executor ID to use when deploying this recipe to DataHub</div>
+                    </div>
+                </div>
+                
                 <div class="mb-3">
                     <label for="id_content" class="form-label">Recipe Content (YAML/JSON) <span class="text-danger">*</span></label>
                     
