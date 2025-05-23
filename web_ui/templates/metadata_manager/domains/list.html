@@ -1,0 +1,547 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>DataHub Domains</h1>
+                <div class="d-flex gap-2">
+                    <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createDomainModal">
+                        <i class="fas fa-plus me-1"></i> Create Domain
+                    </a>
+                    
+                    <a href="{% url 'domain_import_export' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-file-export me-1"></i> Import/Export
+                    </a>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <!-- Domains Tabs -->
+            <ul class="nav nav-tabs mb-4" id="domainTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-domains" 
+                           type="button" role="tab" aria-controls="synced-domains" aria-selected="true">
+                        <i class="fas fa-sync-alt me-1"></i> Synced Domains
+                        {% if synced_domains %}
+                        <span class="badge bg-success ms-1">{{ synced_domains|length }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-domains" 
+                           type="button" role="tab" aria-controls="local-domains" aria-selected="false">
+                        <i class="fas fa-laptop me-1"></i> Local Only Domains
+                        {% if local_domains %}
+                        <span class="badge bg-secondary ms-1">{{ local_domains_count }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-domains" 
+                           type="button" role="tab" aria-controls="remote-domains" aria-selected="false">
+                        <i class="fas fa-server me-1"></i> Remote Only Domains
+                        {% if remote_only_domains %}
+                        <span class="badge bg-info ms-1">{{ remote_only_domains|length }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content" id="domainTabsContent">
+                <!-- Synced Domains Tab -->
+                <div class="tab-pane fade show active" id="synced-domains" role="tabpanel" aria-labelledby="synced-tab">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">Synced Domains</h5>
+                            <div class="d-flex">
+                                <div class="input-group">
+                                    <input type="text" id="synced-domain-search" class="form-control form-control-sm me-2" 
+                                           placeholder="Filter domains..." value="">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="synced-clear-filter">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="ms-2">
+                                    <a href="{% url 'domain_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            {% if synced_domains %}
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Description</th>
+                                                <th>Status</th>
+                                                <th width="20%">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for domain_pair in synced_domains %}
+                                                <tr>
+                                                    <td>
+                                                        <a href="{% url 'domain_detail' domain_pair.local.id %}" class="text-decoration-none">
+                                                            {{ domain_pair.local.name }}
+                                                        </a>
+                                                    </td>
+                                                    <td>{{ domain_pair.local.description|truncatechars:50 }}</td>
+                                                    <td>
+                                                        <span class="badge bg-{% if domain_pair.local.sync_status == 'SYNCED' %}success{% elif domain_pair.local.sync_status == 'MODIFIED' %}warning{% else %}primary{% endif %}">
+                                                            {{ domain_pair.local.get_sync_status_display }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div class="btn-group" role="group">
+                                                            <a href="{% url 'domain_detail' domain_pair.local.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                <i class="fas fa-eye"></i>
+                                                            </a>
+                                                            {% if domain_pair.local.sync_status == 'MODIFIED' and has_datahub_connection %}
+                                                            <form action="{% url 'domain_deploy' domain_pair.local.id %}" method="post" class="d-inline">
+                                                                {% csrf_token %}
+                                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Update in DataHub">
+                                                                    <i class="fas fa-sync-alt"></i>
+                                                                </button>
+                                                            </form>
+                                                            {% endif %}
+                                                            {% if has_git_integration %}
+                                                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                                    data-domain-id="{{ domain_pair.local.id }}" title="Add to GitHub PR">
+                                                                <i class="fab fa-github"></i>
+                                                            </button>
+                                                            {% endif %}
+                                                            <button type="button" class="btn btn-sm btn-outline-danger delete-domain" 
+                                                                    data-bs-toggle="modal" data-bs-target="#deleteDomainModal"
+                                                                    data-domain-id="{{ domain_pair.local.id }}" data-domain-name="{{ domain_pair.local.name }}" title="Delete">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% else %}
+                                <div class="py-5 text-center">
+                                    <div class="mb-3">
+                                        <i class="fas fa-sync-alt fa-4x text-muted"></i>
+                                    </div>
+                                    <h4>No synced domains</h4>
+                                    <p class="text-muted">Domains that exist both locally and in DataHub will appear here.</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Local Domains Tab -->
+                <div class="tab-pane fade" id="local-domains" role="tabpanel" aria-labelledby="local-tab">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">Local Domains</h5>
+                            <div class="d-flex">
+                                <div class="input-group">
+                                    <input type="text" id="local-domain-search" class="form-control form-control-sm me-2" 
+                                           placeholder="Filter domains..." value="">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="local-clear-filter">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            {% if local_domains %}
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Description</th>
+                                                <th>Status</th>
+                                                <th width="20%">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for domain in local_domains %}
+                                                {% if domain.sync_status == 'LOCAL_ONLY' %}
+                                                <tr>
+                                                    <td>
+                                                        <a href="{% url 'domain_detail' domain.id %}" class="text-decoration-none">
+                                                            {{ domain.name }}
+                                                        </a>
+                                                    </td>
+                                                    <td>{{ domain.description|truncatechars:50 }}</td>
+                                                    <td>
+                                                        <span class="badge bg-secondary">
+                                                            {{ domain.get_sync_status_display }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div class="btn-group" role="group">
+                                                            <a href="{% url 'domain_detail' domain.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                <i class="fas fa-eye"></i>
+                                                            </a>
+                                                            {% if has_datahub_connection %}
+                                                            <form action="{% url 'domain_deploy' domain.id %}" method="post" class="d-inline">
+                                                                {% csrf_token %}
+                                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                                    <i class="fas fa-cloud-upload-alt"></i>
+                                                                </button>
+                                                            </form>
+                                                            {% endif %}
+                                                            {% if has_git_integration %}
+                                                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                                    data-domain-id="{{ domain.id }}" title="Add to GitHub PR">
+                                                                <i class="fab fa-github"></i>
+                                                            </button>
+                                                            {% endif %}
+                                                            <button type="button" class="btn btn-sm btn-outline-danger delete-domain" 
+                                                                    data-bs-toggle="modal" data-bs-target="#deleteDomainModal"
+                                                                    data-domain-id="{{ domain.id }}" data-domain-name="{{ domain.name }}" title="Delete">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% else %}
+                                <div class="py-5 text-center">
+                                    <div class="mb-3">
+                                        <i class="fas fa-laptop fa-4x text-muted"></i>
+                                    </div>
+                                    <h4>No local-only domains</h4>
+                                    <p class="text-muted">Domains that exist only in this application will appear here.</p>
+                                    <a href="#" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#createDomainModal">
+                                        <i class="fas fa-plus me-1"></i> Create New Domain
+                                    </a>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Remote Domains Tab -->
+                <div class="tab-pane fade" id="remote-domains" role="tabpanel" aria-labelledby="remote-tab">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">Remote Domains</h5>
+                            <div class="d-flex">
+                                <div class="input-group">
+                                    <input type="text" id="remote-domain-search" class="form-control form-control-sm me-2" 
+                                           placeholder="Filter domains..." value="">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="remote-clear-filter">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            {% if remote_only_domains %}
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Description</th>
+                                                <th>URN</th>
+                                                <th width="15%">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for domain in remote_only_domains %}
+                                                <tr>
+                                                    <td>{{ domain.name }}</td>
+                                                    <td>{{ domain.description|truncatechars:50 }}</td>
+                                                    <td><code>{{ domain.urn }}</code></td>
+                                                    <td>
+                                                        <div class="btn-group" role="group">
+                                                            {% if datahub_url %}
+                                                            <a href="{{ datahub_url }}/domain/{{ domain.urn|urlencode:'' }}" target="_blank" class="btn btn-sm btn-outline-primary" title="View in DataHub">
+                                                                <i class="fas fa-external-link-alt"></i>
+                                                            </a>
+                                                            {% endif %}
+                                                            <form action="{% url 'domain_pull' %}" method="post" class="d-inline">
+                                                                {% csrf_token %}
+                                                                <input type="hidden" name="domain_urn" value="{{ domain.urn }}">
+                                                                <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
+                                                                    <i class="fas fa-download"></i>
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% else %}
+                                <div class="py-5 text-center">
+                                    <div class="mb-3">
+                                        <i class="fas fa-server fa-4x text-muted"></i>
+                                    </div>
+                                    <h4>No remote-only domains</h4>
+                                    <p class="text-muted">Domains that exist only in DataHub will appear here.</p>
+                                    {% if has_datahub_connection %}
+                                    <form method="post" action="{% url 'domain_pull' %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-primary mt-2">
+                                            <i class="fas fa-cloud-download-alt me-1"></i> Pull from DataHub
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Domain Modal -->
+<div class="modal fade" id="createDomainModal" tabindex="-1" aria-labelledby="createDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'domain_create' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createDomainModalLabel">Create New Domain</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Domain Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Domain</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Domain Modal -->
+<div class="modal fade" id="deleteDomainModal" tabindex="-1" aria-labelledby="deleteDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteDomainModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the domain <strong id="delete-domain-name"></strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        // Handle delete modal
+        const deleteModal = document.getElementById('deleteDomainModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function(event) {
+                const button = event.relatedTarget;
+                const domainId = button.getAttribute('data-domain-id');
+                const domainName = button.getAttribute('data-domain-name');
+                
+                document.getElementById('delete-domain-name').textContent = domainName;
+                
+                // Setup confirm delete button
+                const confirmDelete = document.getElementById('confirm-delete');
+                confirmDelete.onclick = function() {
+                    // Send DELETE request
+                    fetch(`/metadata/domains/${domainId}/`, {
+                        method: 'DELETE',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}',
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Show success message and reload page
+                            const toast = document.createElement('div');
+                            toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                            toast.setAttribute('role', 'alert');
+                            toast.setAttribute('aria-live', 'assertive');
+                            toast.setAttribute('aria-atomic', 'true');
+                            toast.innerHTML = `
+                                <div class="d-flex">
+                                    <div class="toast-body">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        ${data.message}
+                                    </div>
+                                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                                </div>
+                            `;
+                            document.body.appendChild(toast);
+                            
+                            // Initialize and show the toast
+                            const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                            bsToast.show();
+                            
+                            // Hide modal and reload page
+                            const bsModal = bootstrap.Modal.getInstance(deleteModal);
+                            bsModal.hide();
+                            
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 500);
+                        } else {
+                            alert(`Error: ${data.message || 'Failed to delete domain'}`);
+                        }
+                    })
+                    .catch(error => {
+                        alert(`Error: ${error.message || error}`);
+                    });
+                };
+            });
+        }
+        
+        // Handle "Add to Git PR" buttons
+        const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
+        addToGitPrButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const domainId = this.getAttribute('data-domain-id');
+                
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                this.disabled = true;
+                
+                // Send POST request to add domain to GitHub PR
+                fetch(`/metadata/domains/${domainId}/push-github/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create a toast notification
+                        const toast = document.createElement('div');
+                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                        toast.setAttribute('role', 'alert');
+                        toast.setAttribute('aria-live', 'assertive');
+                        toast.setAttribute('aria-atomic', 'true');
+                        toast.innerHTML = `
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Domain added to GitHub PR successfully!
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        `;
+                        document.body.appendChild(toast);
+                        
+                        // Initialize and show the toast
+                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                        bsToast.show();
+                        
+                        // Refresh page to update status
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        alert(`Error: ${data.error || 'Failed to add domain to GitHub PR'}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error: ${error.message || error}`);
+                })
+                .finally(() => {
+                    // Restore button state
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
+                });
+            });
+        });
+        
+        // Setup filter functionality for each tab
+        ['synced', 'local', 'remote'].forEach(tabName => {
+            const searchInput = document.getElementById(`${tabName}-domain-search`);
+            const clearButton = document.getElementById(`${tabName}-clear-filter`);
+            const tbody = document.querySelector(`#${tabName}-domains table tbody`);
+            
+            if (searchInput && clearButton && tbody) {
+                searchInput.addEventListener('input', function() {
+                    const searchText = this.value.toLowerCase();
+                    const rows = tbody.querySelectorAll('tr');
+                    
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        row.style.display = text.includes(searchText) ? '' : 'none';
+                    });
+                });
+                
+                clearButton.addEventListener('click', function() {
+                    searchInput.value = '';
+                    const rows = tbody.querySelectorAll('tr');
+                    rows.forEach(row => row.style.display = '');
+                });
+            }
+        });
+    });
+</script>
+{% endblock %}
+
+{% block styles %}
+<style>
+    /* Add any specific styles for domains page here */
+</style>
+{% endblock %} 

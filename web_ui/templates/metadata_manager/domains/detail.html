@@ -1,0 +1,11 @@
+<!-- Domain Status Badge -->
+<div class="mb-4">
+    <span class="badge bg-{% if domain.is_synced %}success{% else %}warning{% endif %} p-2">
+        <i class="fas {% if domain.is_synced %}fa-check-circle{% else %}fa-sync{% endif %} me-1"></i>
+        {{ domain.get_sync_status_display }}
+    </span>
+    
+    {% if domain.last_synced %}
+    <span class="text-muted ms-2">Last synced: {{ domain.last_synced|date:"Y-m-d H:i" }}</span>
+    {% endif %}
+</div> 

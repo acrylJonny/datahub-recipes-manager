@@ -44,6 +44,12 @@ INSTALLED_APPS = [
     "script_runner",
     "template_manager",
     "test_runner",
+    "metadata_manager",
+    "policies",
+    "env_vars",
+    "recipe_instances",
+    "github",
+    "environments",
 ]
 
 MIDDLEWARE = [
@@ -59,6 +65,12 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "web_ui.urls"
+
+# Tell Django to ignore migration checking for metadata_manager app
+# This prevents the warnings about model changes that aren't reflected in migrations
+MIGRATION_MODULES = {
+    'metadata_manager': None,
+}
 
 TEMPLATES = [
     {
@@ -89,7 +101,7 @@ WSGI_APPLICATION = "web_ui.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": os.path.join(BASE_DIR.parent, "db.sqlite3"),  # Use db in project root directory
     }
 }
 
@@ -177,7 +189,7 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console', 'database'],
-        'level': 'INFO',
+        'level': 'DEBUG',
     },
     'loggers': {
         'django': {
@@ -191,6 +203,11 @@ LOGGING = {
             'propagate': False,
         },
         'utils': {
+            'handlers': ['console', 'database'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'metadata_manager': {
             'handlers': ['console', 'database'],
             'level': 'DEBUG',
             'propagate': False,

@@ -86,6 +86,14 @@ bash test/test_import_export_policy.sh
 echo "=== Running all features test ==="
 bash test/test_all_features.sh
 
+# Add the metadata_sync test to the list of tests
+tests=(
+    # Existing tests...
+    
+    # Add the metadata_sync test
+    "test_metadata_sync.sh"
+)
+
 set -e  # Restore exit on error behavior
 
 echo "=== All tests completed! ==="

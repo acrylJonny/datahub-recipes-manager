@@ -9,7 +9,7 @@
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
-                <li class="breadcrumb-item"><a href="{% url 'policies' %}">Policies</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'policies:policies' %}">Policies</a></li>
                 <li class="breadcrumb-item active" aria-current="page">{{ policy.name }}</li>
             </ol>
         </nav>
@@ -27,10 +27,10 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">Policy Details</h1>
         <div class="btn-group">
-            <a href="{% url 'policy_edit' policy.id %}" class="btn btn-primary">
+            <a href="{% url 'policies:policy_edit' policy.id %}" class="btn btn-primary">
                 <i class="fas fa-edit me-1"></i> Edit Policy
             </a>
-            <a href="{% url 'policy_download' policy.id %}" class="btn btn-outline-secondary">
+            <a href="{% url 'policies:policy_download' policy.id %}" class="btn btn-outline-secondary">
                 <i class="fas fa-file-export me-1"></i> Export
             </a>
             <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deletePolicyModal">
@@ -173,7 +173,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form method="POST" action="{% url 'policy_delete' policy.id %}">
+                <form method="POST" action="{% url 'policies:policy_delete' policy.id %}">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-danger">Delete</button>
                 </form>

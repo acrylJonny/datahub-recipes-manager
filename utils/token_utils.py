@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Utility functions for handling DataHub authentication tokens.
+Utilities for DataHub authentication token handling.
 """
 
 import os
@@ -10,6 +10,18 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def get_token_from_env(env_var_name: str = "DATAHUB_TOKEN") -> Optional[str]:
+    """
+    Get DataHub authentication token from environment variables
+    
+    Args:
+        env_var_name: Name of the environment variable containing the token
+        
+    Returns:
+        Token string or None if not found
+    """
+    return os.environ.get(env_var_name)
+
 def get_token() -> Optional[str]:
     """
     Get the DataHub authentication token from environment variables.
@@ -17,7 +29,7 @@ def get_token() -> Optional[str]:
     Returns:
         The token if available, None otherwise
     """
-    token = os.environ.get("DATAHUB_TOKEN")
+    token = get_token_from_env()
 
     # Empty or default token is treated as not provided
     if not token or token == "your_datahub_pat_token_here":

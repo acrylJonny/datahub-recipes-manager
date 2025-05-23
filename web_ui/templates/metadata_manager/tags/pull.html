@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Pull Tags from DataHub</h1>
+                <a href="{% url 'tag_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i> Back to Tags
+                </a>
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% else %}
+                <div class="card">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Pull Options</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if confirm %}
+                            <div class="mb-4">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    This will pull all tags from DataHub into your local database.
+                                    Existing tags will be updated with the latest information.
+                                </div>
+                                <form method="post" action="{% url 'tag_pull' %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="confirm" value="true">
+                                    <input type="hidden" name="execute" value="true">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-cloud-download-alt me-1"></i> Confirm Pull
+                                    </button>
+                                    <a href="{% url 'tag_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                                </form>
+                            </div>
+                        {% elif tag_urn %}
+                            <div class="mb-4">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    This will pull the tag with URN <code>{{ tag_urn }}</code> from DataHub into your local database.
+                                </div>
+                                <form method="post" action="{% url 'tag_pull' %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="tag_urn" value="{{ tag_urn }}">
+                                    <input type="hidden" name="execute" value="true">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-cloud-download-alt me-1"></i> Confirm Pull
+                                    </button>
+                                    <a href="{% url 'tag_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                                </form>
+                            </div>
+                        {% else %}
+                            <div class="mb-4">
+                                <form method="post" action="{% url 'tag_pull' %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="confirm" value="true">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-cloud-download-alt me-1"></i> Pull All Tags
+                                    </button>
+                                </form>
+                            </div>
+                            <hr>
+                            <div>
+                                <h6>Pull Specific Tag</h6>
+                                <form method="post" action="{% url 'tag_pull' %}">
+                                    {% csrf_token %}
+                                    <div class="mb-3">
+                                        <label for="tag_urn" class="form-label">Tag URN</label>
+                                        <input type="text" class="form-control" id="tag_urn" name="tag_urn" placeholder="e.g., urn:li:tag:example" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-outline-primary">
+                                        <i class="fas fa-download me-1"></i> Pull Specific Tag
+                                    </button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if results %}
+                <div class="card mt-4">
+                    <div class="card-header bg-light">
+                        <h5 class="card-title mb-0">Results</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Tag</th>
+                                        <th>Status</th>
+                                        <th>Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for result in results %}
+                                    <tr>
+                                        <td>{{ result.tag_name }}</td>
+                                        <td>
+                                            {% if result.success %}
+                                            <span class="badge bg-success">Success</span>
+                                            {% else %}
+                                            <span class="badge bg-danger">Error</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ result.message }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mt-3">
+                            <a href="{% url 'tag_list' %}" class="btn btn-primary">
+                                <i class="fas fa-list me-1"></i> View All Tags
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %} 

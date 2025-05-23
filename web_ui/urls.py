@@ -25,4 +25,5 @@ urlpatterns = [
     path('policies/<str:policy_id>/', views.edit_policy, name='edit_policy'),
     path('tests/', views.list_tests, name='list_tests'),
     path('tests/run/<str:test_name>/', views.run_test, name='run_test'),
+    path('metadata/', include('metadata_manager.urls')),
 ]

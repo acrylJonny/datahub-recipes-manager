@@ -39,6 +39,9 @@ urlpatterns = [
     path("", home_redirect, name="home"),
     path("dashboard/", web_ui_views.index, name="dashboard"),
     
+    # Metadata Manager
+    path("metadata/", include('metadata_manager.urls')),
+    
     # Recipe management
     path("recipes/", web_ui_views.recipes, name="recipes"),
     path("recipes/create/", web_ui_views.recipe_create, name="recipe_create"),
@@ -50,29 +53,10 @@ urlpatterns = [
     path("recipes/export-all/", web_ui_views.export_all_recipes, name="export_all_recipes"),
     
     # Recipe Templates
-    path("recipes/templates/", web_ui_views.recipe_templates, name="recipe_templates"),
-    path("recipes/templates/create/", web_ui_views.recipe_template_create, name="recipe_template_create"),
-    path("recipes/templates/import/", web_ui_views.recipe_template_import, name="recipe_template_import"),
-    path("recipes/templates/export-all/", web_ui_views.export_all_templates, name="export_all_templates"),
-    path("recipes/templates/<int:template_id>/", web_ui_views.recipe_template_detail, name="recipe_template_detail"),
-    path("recipes/templates/<int:template_id>/edit/", web_ui_views.recipe_template_edit, name="recipe_template_edit"),
-    path("recipes/templates/<int:template_id>/delete/", web_ui_views.recipe_template_delete, name="recipe_template_delete"),
-    path("recipes/templates/<int:template_id>/export/", web_ui_views.recipe_template_export, name="recipe_template_export"),
-    path("recipes/templates/<int:template_id>/deploy/", web_ui_views.recipe_template_deploy, name="recipe_template_deploy"),
-    path("recipes/save-as-template/<str:recipe_id>/", web_ui_views.recipe_save_as_template, name="recipe_template_save"),
-    # path("recipes/convert-to-template-instance/<str:recipe_id>/", web_ui_views.recipe_convert_to_template_instance, name="recipe_convert_to_template_instance"),
+    path("recipes/templates/", include('template_manager.urls')),
     
     # Policy management
-    path("policies/", web_ui_views.policies, name="policies"),
-    path("policies/detail/<str:policy_id>/", web_ui_views.policy_view, name="policy_view"),
-    path("policies/create/", web_ui_views.policy_create, name="policy_create"),
-    path("policies/import/", web_ui_views.policy_import, name="policy_import"),
-    path("policies/edit/<str:policy_id>/", web_ui_views.policy_edit, name="policy_edit"),
-    path("policies/delete/<str:policy_id>/", web_ui_views.policy_delete, name="policy_delete"),
-    path("policies/download/<str:policy_id>/", web_ui_views.policy_download, name="policy_download"),
-    path("policies/export-all/", web_ui_views.export_all_policies, name="export_all_policies"),
-    path("policies/<str:policy_id>/push-github/", web_ui_views.policy_push_github, name="policy_push_github"),
-    path("policies/<str:policy_id>/deploy/", web_ui_views.policy_deploy, name="policy_deploy"),
+    path("policies/", include('policies.urls')),
     
     # Logs
     path("logs/", web_ui_views.logs, name="logs"),

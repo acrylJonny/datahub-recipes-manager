@@ -155,7 +155,8 @@ def create_django_apps():
         "policy_manager",
         "script_runner",
         "template_manager",
-        "test_runner"
+        "test_runner",
+        "metadata_manager"
     ]
     
     for app in apps:

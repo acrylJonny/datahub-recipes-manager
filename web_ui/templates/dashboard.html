@@ -80,7 +80,7 @@
                     <div class="display-4 mb-2">{{ policies_count|default:"0" }}</div>
                     <p class="card-text text-muted">Access control policies</p>
                     <div class="mt-auto">
-                        <a href="{% url 'policies' %}" class="btn btn-outline-primary w-100">
+                        <a href="{% url 'policies:policies' %}" class="btn btn-outline-primary w-100">
                             <i class="fas fa-shield-alt me-1"></i> Manage Policies
                         </a>
                     </div>
@@ -139,7 +139,7 @@
             <div class="card h-100">
                 <div class="card-header bg-light d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">Recent Policy Updates</h5>
-                    <a href="{% url 'policies' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                    <a href="{% url 'policies:policies' %}" class="btn btn-sm btn-outline-primary">View All</a>
                 </div>
                 <div class="card-body p-0">
                     {% if recent_policies %}
@@ -151,7 +151,7 @@
                                     </div>
                                     <p class="mb-1 text-truncate">{{ policy.description|default:"No description" }}</p>
                                     <div class="d-flex mt-2">
-                                        <a href="{% url 'policy_view' policy.id %}" class="btn btn-sm btn-outline-secondary me-2">
+                                        <a href="{% url 'policies:policy_view' policy.id %}" class="btn btn-sm btn-outline-secondary me-2">
                                             <i class="fas fa-eye me-1"></i> View
                                         </a>
                                         <span class="badge bg-{% if policy.type == 'METADATA' %}primary{% else %}secondary{% endif %} me-2">
@@ -171,7 +171,7 @@
                             </div>
                             <h5>No policies found</h5>
                             <p class="text-muted">Create your first policy to manage access control</p>
-                            <a href="{% url 'policy_create' %}" class="btn btn-primary mt-2">
+                            <a href="{% url 'policies:policy_create' %}" class="btn btn-primary mt-2">
                                 <i class="fas fa-plus me-1"></i> Create Policy
                             </a>
                         </div>

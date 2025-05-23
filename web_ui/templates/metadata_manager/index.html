@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h1 class="mb-4">Metadata Manager</h1>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+            
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-tags mr-2"></i> Tags
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <h2 class="display-4 text-center">{{ stats.tags_count }}</h2>
+                            <p class="text-center">DataHub Tags</p>
+                            <div class="d-grid gap-2">
+                                <a href="{% url 'tag_list' %}" class="btn btn-outline-primary">Manage Tags</a>
+                                <a href="{% url 'tag_pull' %}" class="btn btn-outline-secondary">Pull from DataHub</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-3">
+                    <div class="card mb-4">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-book mr-2"></i> Glossary
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-6 text-center">
+                                    <h3>{{ stats.glossary_nodes_count }}</h3>
+                                    <p>Nodes</p>
+                                </div>
+                                <div class="col-6 text-center">
+                                    <h3>{{ stats.glossary_terms_count }}</h3>
+                                    <p>Terms</p>
+                                </div>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <a href="{% url 'glossary_list' %}" class="btn btn-outline-success">Manage Glossary</a>
+                                <a href="#" class="btn btn-outline-secondary">Pull from DataHub</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-3">
+                    <div class="card mb-4">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-sitemap mr-2"></i> Domains
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <h2 class="display-4 text-center">{{ stats.domains_count }}</h2>
+                            <p class="text-center">DataHub Domains</p>
+                            <div class="d-grid gap-2">
+                                <a href="{% url 'domain_list' %}" class="btn btn-outline-info">Manage Domains</a>
+                                <a href="#" class="btn btn-outline-secondary">Pull from DataHub</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-3">
+                    <div class="card mb-4">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-check-circle mr-2"></i> Assertions
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <h2 class="display-4 text-center">{{ stats.assertions_count }}</h2>
+                            <p class="text-center">Metadata Assertions</p>
+                            <div class="d-grid gap-2">
+                                <a href="{% url 'assertion_list' %}" class="btn btn-outline-warning">Manage Assertions</a>
+                                <a href="#" class="btn btn-outline-secondary">Run Assertions</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header bg-dark text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-sync mr-2"></i> Metadata Synchronization
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Configure and run metadata synchronization between environments.</p>
+                            <div class="d-grid gap-2">
+                                <a href="{% url 'sync_config_list' %}" class="btn btn-outline-dark">Sync Configurations</a>
+                                <a href="#" class="btn btn-outline-secondary">Execute Sync</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header bg-secondary text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-upload mr-2"></i> Export for CICD
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Export metadata for CICD workflows to deploy to other environments.</p>
+                            <div class="d-grid gap-2">
+                                <a href="#" class="btn btn-outline-secondary">Export All Metadata</a>
+                                <a href="#" class="btn btn-outline-dark">Configure CICD Export</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

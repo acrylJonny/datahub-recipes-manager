@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Metadata Assertions</h1>
+                <div>
+                    <button type="button" class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#createAssertionModal">
+                        <i class="fas fa-plus"></i> Create Assertion
+                    </button>
+                    <button type="button" class="btn btn-success me-2">
+                        <i class="fas fa-play"></i> Run All Assertions
+                    </button>
+                </div>
+            </div>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+            
+            <div class="card">
+                <div class="card-body">
+                    {% if assertions %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th>Type</th>
+                                    <th>Last Run</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for assertion in assertions %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'assertion_detail' assertion.id %}">{{ assertion.name }}</a>
+                                    </td>
+                                    <td>{{ assertion.description|default:"-" }}</td>
+                                    <td>
+                                        {% if assertion.type == 'domain_exists' %}
+                                            <span class="badge bg-info">Domain Exists</span>
+                                        {% elif assertion.type == 'tag_exists' %}
+                                            <span class="badge bg-secondary">Tag Exists</span>
+                                        {% elif assertion.type == 'glossary_term_exists' %}
+                                            <span class="badge bg-success">Glossary Term Exists</span>
+                                        {% elif assertion.type == 'sql' %}
+                                            <span class="badge bg-warning">SQL Query</span>
+                                        {% else %}
+                                            <span class="badge bg-dark">{{ assertion.type }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ assertion.last_run|default:"Never" }}</td>
+                                    <td>
+                                        {% if assertion.last_status == "SUCCESS" %}
+                                            <span class="badge bg-success">Success</span>
+                                        {% elif assertion.last_status == "FAILED" %}
+                                            <span class="badge bg-danger">Failed</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Not Run</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <form method="post" action="{% url 'assertion_run' assertion.id %}" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-success">
+                                                    <i class="fas fa-play"></i>
+                                                </button>
+                                            </form>
+                                            <a href="{% url 'assertion_detail' assertion.id %}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger delete-assertion" 
+                                                    data-bs-toggle="modal" data-bs-target="#deleteAssertionModal"
+                                                    data-assertion-id="{{ assertion.id }}" 
+                                                    data-assertion-name="{{ assertion.name }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> No assertions found. 
+                        <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#createAssertionModal">
+                            Create your first assertion
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Assertion Modal -->
+<div class="modal fade" id="createAssertionModal" tabindex="-1" aria-labelledby="createAssertionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="{% url 'assertion_create' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createAssertionModalLabel">Create New Assertion</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Assertion Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="type" class="form-label">Assertion Type <span class="text-danger">*</span></label>
+                        <select class="form-select" id="type" name="type" required>
+                            <option value="">-- Select Type --</option>
+                            <option value="domain_exists">Domain Exists</option>
+                            <option value="tag_exists">Tag Exists</option>
+                            <option value="glossary_term_exists">Glossary Term Exists</option>
+                            <option value="sql">SQL Query</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Domain Exists Config -->
+                    <div id="domain_exists_config" class="config-section" style="display: none;">
+                        <div class="mb-3">
+                            <label for="domain_id" class="form-label">Select Domain <span class="text-danger">*</span></label>
+                            <select class="form-select" id="domain_id" name="domain_id">
+                                <option value="">-- Select Domain --</option>
+                                {% for domain in domains %}
+                                    <option value="{{ domain.id }}">{{ domain.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                This assertion will check if this domain exists in DataHub.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tag Exists Config -->
+                    <div id="tag_exists_config" class="config-section" style="display: none;">
+                        <div class="mb-3">
+                            <label for="tag_name" class="form-label">Tag Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="tag_name" name="tag_name">
+                            <div class="form-text">
+                                This assertion will check if a tag with this name exists in DataHub.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Glossary Term Exists Config -->
+                    <div id="glossary_term_exists_config" class="config-section" style="display: none;">
+                        <div class="mb-3">
+                            <label for="term_name" class="form-label">Term Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="term_name" name="term_name">
+                            <div class="form-text">
+                                This assertion will check if a glossary term with this name exists in DataHub.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- SQL Query Config -->
+                    <div id="sql_config" class="config-section" style="display: none;">
+                        <div class="mb-3">
+                            <label for="sql_query" class="form-label">SQL Query <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="sql_query" name="sql_query" rows="5"></textarea>
+                            <div class="form-text">
+                                This assertion will run your SQL query and verify the results.
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="expected_result" class="form-label">Expected Result</label>
+                            <input type="text" class="form-control" id="expected_result" name="expected_result">
+                            <div class="form-text">
+                                Optional. If provided, the assertion will check if the query result matches this value.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Assertion</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Assertion Modal -->
+<div class="modal fade" id="deleteAssertionModal" tabindex="-1" aria-labelledby="deleteAssertionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteAssertionModalLabel">Delete Assertion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this assertion?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Show/hide config sections based on assertion type selection
+        const typeSelect = document.getElementById('type');
+        const configSections = document.querySelectorAll('.config-section');
+        
+        typeSelect.addEventListener('change', function() {
+            const selectedType = this.value;
+            
+            // Hide all config sections
+            configSections.forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Show the selected config section
+            if (selectedType) {
+                const selectedSection = document.getElementById(selectedType + '_config');
+                if (selectedSection) {
+                    selectedSection.style.display = 'block';
+                }
+            }
+        });
+        
+        // Setup delete modal
+        document.querySelectorAll('.delete-assertion').forEach(function(button) {
+            button.addEventListener('click', function() {
+                const assertionId = this.getAttribute('data-assertion-id');
+                const assertionName = this.getAttribute('data-assertion-name');
+                const modal = document.getElementById('deleteAssertionModal');
+                
+                // Update modal content
+                modal.querySelector('.modal-body p:first-child').textContent = 
+                    `Are you sure you want to delete the assertion "${assertionName}"?`;
+                
+                // Setup delete confirmation button
+                document.getElementById('confirmDelete').addEventListener('click', function() {
+                    // Create and submit a form
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = `/metadata/assertions/${assertionId}/delete/`;
+                    
+                    // Add CSRF token
+                    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+                    const csrfInput = document.createElement('input');
+                    csrfInput.type = 'hidden';
+                    csrfInput.name = 'csrfmiddlewaretoken';
+                    csrfInput.value = csrfToken;
+                    form.appendChild(csrfInput);
+                    
+                    // Add to document and submit
+                    document.body.appendChild(form);
+                    form.submit();
+                });
+            });
+        });
+    });
+</script>
+{% endblock %} 

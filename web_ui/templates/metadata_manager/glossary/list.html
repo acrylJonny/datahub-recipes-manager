@@ -1,0 +1,1078 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>DataHub Glossary</h1>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createNodeModal">
+                        <i class="fas fa-folder-plus me-1"></i> Create Node
+                    </button>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createTermModal">
+                        <i class="fas fa-tag me-1"></i> Create Term
+                    </button>
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="batchActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-tasks me-1"></i> Batch Actions
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="batchActionsDropdown">
+                            <li><h6 class="dropdown-header">Selected Items</h6></li>
+                            <li><button type="button" class="dropdown-item" id="push-selected-items" {% if not has_datahub_connection %}disabled{% endif %}>
+                                <i class="fas fa-cloud-upload-alt me-1"></i> Push to DataHub
+                            </button></li>
+                            <li><button type="button" class="dropdown-item" id="download-selected-items">
+                                <i class="fas fa-download me-1"></i> Download Selected
+                            </button></li>
+                            {% if has_git_integration %}
+                            <li><button type="button" class="dropdown-item" id="add-selected-to-git">
+                                <i class="fab fa-github me-1"></i> Add to GitHub PR
+                            </button></li>
+                            {% endif %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">All Items</h6></li>
+                            <li><button type="button" class="dropdown-item" id="download-all-items">
+                                <i class="fas fa-download me-1"></i> Download All
+                            </button></li>
+                            <li><button type="button" class="dropdown-item" id="push-all-items" {% if not has_datahub_connection %}disabled{% endif %}>
+                                <i class="fas fa-cloud-upload-alt me-1"></i> Push All
+                            </button></li>
+                        </ul>
+                    </div>
+                    <a href="{% url 'glossary_import_export' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-file-export me-1"></i> Import/Export
+                    </a>
+                    <a href="{% url 'glossary_pull' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-cloud-download-alt me-1"></i> Pull
+                    </a>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- Glossary Sync Status Tabs -->
+            <ul class="nav nav-tabs mb-3" id="glossarySyncTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-glossary" 
+                           type="button" role="tab" aria-controls="synced-glossary" aria-selected="true">
+                        <i class="fas fa-sync-alt me-1"></i> Synced Items
+                        <span class="badge bg-success ms-1">{{ synced_nodes|length|add:synced_terms|length }}</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-glossary" 
+                           type="button" role="tab" aria-controls="local-glossary" aria-selected="false">
+                        <i class="fas fa-laptop me-1"></i> Local Only Items
+                        <span class="badge bg-secondary ms-1">{{ local_only_nodes|length|add:local_only_terms|length }}</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-glossary" 
+                           type="button" role="tab" aria-controls="remote-glossary" aria-selected="false">
+                        <i class="fas fa-server me-1"></i> Remote Only Items
+                        <span class="badge bg-info ms-1">{{ remote_only_nodes|length|add:remote_only_terms|length }}</span>
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="glossarySyncTabsContent">
+                <!-- Synced Items Tab -->
+                <div class="tab-pane fade show active" id="synced-glossary" role="tabpanel" aria-labelledby="synced-tab">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check me-3">
+                                    <input class="form-check-input" type="checkbox" id="select-all-synced">
+                                    <label class="form-check-label" for="select-all-synced">Select All</label>
+                                </div>
+                                <h5 class="card-title mb-0">Synced Glossary</h5>
+                            </div>
+                            <div class="d-flex">
+                                <div class="input-group">
+                                    <input type="text" id="synced-search" class="form-control form-control-sm me-2" 
+                                           placeholder="Filter items..." value="">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="synced-clear-filter">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="ms-2">
+                                    <a href="{% url 'glossary_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="expand-all-glossary" title="Expand All">
+                                        <i class="fas fa-expand-alt"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="collapse-all-glossary" title="Collapse All">
+                                        <i class="fas fa-compress-alt"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group glossary-tree">
+                                <!-- Root level terms section -->
+                                <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center">
+                                        <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#synced-root-terms" role="button" aria-expanded="false" aria-controls="synced-root-terms">
+                                            <i class="fas fa-caret-right"></i>
+                                        </span>
+                                        <span class="node-icon me-2">
+                                            <i class="fas fa-home text-info"></i>
+                                        </span>
+                                        <span><strong>Root Level Terms</strong></span>
+                                        {% with root_terms_count=synced_root_terms|length %}
+                                        {% if root_terms_count > 0 %}
+                                        <span class="badge bg-info ms-2">{{ root_terms_count }}</span>
+                                        {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </div>
+                                <div class="collapse glossary-node-children" id="synced-root-terms">
+                                    <div class="list-group">
+                                        {% for term in synced_root_terms %}
+                                            <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="form-check me-2">
+                                                        <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
+                                                    </div>
+                                                    <span class="toggle-node-children invisible me-2">
+                                                        <i class="fas fa-caret-right"></i>
+                                                    </span>
+                                                    <span class="node-icon me-2">
+                                                        <i class="fas fa-tag text-info"></i>
+                                                    </span>
+                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                        <span>{{ term.name }}</span>
+                                                    </a>
+                                                    {% if term.sync_status == 'MODIFIED' %}
+                                                    <span class="badge bg-warning ms-2">Modified</span>
+                                                    {% elif term.sync_status == 'LOCAL_ONLY' %}
+                                                    <span class="badge bg-secondary ms-2">Local Only</span>
+                                                    {% elif term.sync_status == 'REMOTE_ONLY' %}
+                                                    <span class="badge bg-info ms-2">Remote Only</span>
+                                                    {% elif term.sync_status == 'SYNCED' %}
+                                                    <span class="badge bg-success ms-2">Synced</span>
+                                                    {% elif term.sync_status == 'PENDING_PUSH' %}
+                                                    <span class="badge bg-primary ms-2">Pending Push</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="btn-group">
+                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    {% if term.can_deploy and has_datahub_connection %}
+                                                    <form action="{% url 'glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                            <i class="fas fa-cloud-upload-alt"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+                                                    {% if has_git_integration %}
+                                                    <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
+                                                            data-term-id="{{ term.id }}" title="Add to GitHub PR">
+                                                        <i class="fab fa-github"></i>
+                                                    </button>
+                                                    {% endif %}
+                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
+                                                            data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                                                            data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                
+                                <!-- Root Nodes -->
+                                {% for node in synced_nodes %}
+                                    {% if not node.parent %}
+                                        {% with node=node level=0 show_checkbox=True %}
+                                            {% include "metadata_manager/glossary/partials/node_tree_item.html" %}
+                                        {% endwith %}
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Local Only Items Tab -->
+                <div class="tab-pane fade" id="local-glossary" role="tabpanel" aria-labelledby="local-tab">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check me-3">
+                                    <input class="form-check-input" type="checkbox" id="select-all-local">
+                                    <label class="form-check-label" for="select-all-local">Select All</label>
+                                </div>
+                                <h5 class="card-title mb-0">Local Only Glossary</h5>
+                            </div>
+                            <div class="d-flex">
+                                <div class="input-group">
+                                    <input type="text" id="local-search" class="form-control form-control-sm me-2" 
+                                           placeholder="Filter items..." value="">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="local-clear-filter">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="ms-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="expand-all-local" title="Expand All">
+                                        <i class="fas fa-expand-alt"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="collapse-all-local" title="Collapse All">
+                                        <i class="fas fa-compress-alt"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group glossary-tree">
+                                <!-- Root level terms section -->
+                                <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center">
+                                        <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#local-root-terms" role="button" aria-expanded="false" aria-controls="local-root-terms">
+                                            <i class="fas fa-caret-right"></i>
+                                        </span>
+                                        <span class="node-icon me-2">
+                                            <i class="fas fa-home text-info"></i>
+                                        </span>
+                                        <span><strong>Root Level Terms</strong></span>
+                                        {% with root_terms_count=local_only_root_terms|length %}
+                                        {% if root_terms_count > 0 %}
+                                        <span class="badge bg-info ms-2">{{ root_terms_count }}</span>
+                                        {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </div>
+                                <div class="collapse glossary-node-children" id="local-root-terms">
+                                    <div class="list-group">
+                                        {% for term in local_only_root_terms %}
+                                            <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="form-check me-2">
+                                                        <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
+                                                    </div>
+                                                    <span class="toggle-node-children invisible me-2">
+                                                        <i class="fas fa-caret-right"></i>
+                                                    </span>
+                                                    <span class="node-icon me-2">
+                                                        <i class="fas fa-tag text-info"></i>
+                                                    </span>
+                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                        <span>{{ term.name }}</span>
+                                                    </a>
+                                                    <span class="badge bg-secondary ms-2">Local Only</span>
+                                                </div>
+                                                <div class="btn-group">
+                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    {% if term.can_deploy and has_datahub_connection %}
+                                                    <form action="{% url 'glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                            <i class="fas fa-cloud-upload-alt"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+                                                    {% if has_git_integration %}
+                                                    <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
+                                                            data-term-id="{{ term.id }}" title="Add to GitHub PR">
+                                                        <i class="fab fa-github"></i>
+                                                    </button>
+                                                    {% endif %}
+                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
+                                                            data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                                                            data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                
+                                <!-- Root Nodes -->
+                                {% for node in local_only_nodes %}
+                                    {% if not node.parent %}
+                                        {% with node=node level=0 show_checkbox=True %}
+                                            {% include "metadata_manager/glossary/partials/node_tree_item.html" %}
+                                        {% endwith %}
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Remote Only Items Tab -->
+                <div class="tab-pane fade" id="remote-glossary" role="tabpanel" aria-labelledby="remote-tab">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check me-3">
+                                    <input class="form-check-input" type="checkbox" id="select-all-remote">
+                                    <label class="form-check-label" for="select-all-remote">Select All</label>
+                                </div>
+                                <h5 class="card-title mb-0">Remote Only Glossary</h5>
+                            </div>
+                            <div class="d-flex">
+                                <div class="input-group">
+                                    <input type="text" id="remote-search" class="form-control form-control-sm me-2" 
+                                           placeholder="Filter items..." value="">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="remote-clear-filter">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div class="ms-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="expand-all-remote" title="Expand All">
+                                        <i class="fas fa-expand-alt"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="collapse-all-remote" title="Collapse All">
+                                        <i class="fas fa-compress-alt"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group glossary-tree">
+                                                                 <!-- Root level terms section -->
+                                <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center">
+                                        <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#remote-root-terms" role="button" aria-expanded="false" aria-controls="remote-root-terms">
+                                            <i class="fas fa-caret-right"></i>
+                                        </span>
+                                        <span class="node-icon me-2">
+                                            <i class="fas fa-home text-info"></i>
+                                        </span>
+                                        <span><strong>Root Level Terms</strong></span>
+                                        {% with root_terms_count=remote_only_root_terms|length %}
+                                        {% if root_terms_count > 0 %}
+                                        <span class="badge bg-info ms-2">{{ root_terms_count }}</span>
+                                        {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </div>
+                                <div class="collapse glossary-node-children" id="remote-root-terms">
+                                    <div class="list-group">
+                                        {% for term in remote_only_root_terms %}
+                                            <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="form-check me-2">
+                                                        <input class="form-check-input term-checkbox" type="checkbox" data-term-urn="{{ term.urn }}" data-item-type="term">
+                                                    </div>
+                                                    <span class="toggle-node-children invisible me-2">
+                                                        <i class="fas fa-caret-right"></i>
+                                                    </span>
+                                                    <span class="node-icon me-2">
+                                                        <i class="fas fa-tag text-info"></i>
+                                                    </span>
+                                                    <span class="text-muted">{{ term.properties.name }}</span>
+                                                    <span class="badge bg-info ms-2">Remote Only</span>
+                                                </div>
+                                                <div class="btn-group">
+                                                    <form action="{% url 'glossary_term_pull' %}" method="post" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="term_urns" value="{{ term.urn }}">
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull from DataHub">
+                                                            <i class="fas fa-cloud-download-alt"></i>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                
+                                <!-- Root Nodes -->
+                                {% for node in remote_only_nodes %}
+                                    {% if 'parentNodes' not in node or not node.parentNodes %}
+                                        <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                            <div class="d-flex align-items-center">
+                                                <div class="form-check me-2">
+                                                    <input class="form-check-input node-checkbox" type="checkbox" data-node-urn="{{ node.urn }}" data-item-type="node">
+                                                </div>
+                                                
+                                                {% if node.childNodes or node.terms %}
+                                                <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#remote-node-{{ forloop.counter }}" role="button" aria-expanded="false" aria-controls="remote-node-{{ forloop.counter }}">
+                                                    <i class="fas fa-caret-right"></i>
+                                                </span>
+                                                {% else %}
+                                                <span class="toggle-node-children invisible me-2">
+                                                    <i class="fas fa-caret-right"></i>
+                                                </span>
+                                                {% endif %}
+                                                
+                                                <span class="node-icon me-2">
+                                                    <i class="fas fa-folder text-warning"></i>
+                                                </span>
+                                                
+                                                <span class="text-muted">{{ node.properties.name }}</span>
+                                                <span class="badge bg-info ms-2">Remote Only</span>
+                                            </div>
+                                            
+                                            <div class="btn-group">
+                                                <form action="{% url 'glossary_node_pull' %}" method="post" class="d-inline">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="node_urns" value="{{ node.urn }}">
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull from DataHub">
+                                                        <i class="fas fa-cloud-download-alt"></i>
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                        
+                                        {% if node.childNodes or node.terms %}
+                                        <div class="collapse glossary-node-children" id="remote-node-{{ forloop.counter }}">
+                                            <div class="list-group">
+                                                <!-- Child nodes (if any) -->
+                                                {% for child_node in node.childNodes %}
+                                                    <!-- Recursively render child nodes here -->
+                                                {% endfor %}
+                                                
+                                                <!-- Terms under this node -->
+                                                {% for term in node.terms %}
+                                                    <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
+                                                        <div class="d-flex align-items-center">
+                                                            <div class="form-check me-2">
+                                                                <input class="form-check-input term-checkbox" type="checkbox" data-term-urn="{{ term.urn }}" data-item-type="term">
+                                                            </div>
+                                                            
+                                                            <span class="toggle-node-children invisible me-2">
+                                                                <i class="fas fa-caret-right"></i>
+                                                            </span>
+                                                            
+                                                            <span class="node-icon me-2">
+                                                                <i class="fas fa-tag text-info"></i>
+                                                            </span>
+                                                            
+                                                            <span class="text-muted">{{ term.properties.name }}</span>
+                                                            <span class="badge bg-info ms-2">Remote Only</span>
+                                                        </div>
+                                                        
+                                                        <div class="btn-group">
+                                                            <form action="{% url 'glossary_term_pull' %}" method="post" class="d-inline">
+                                                                {% csrf_token %}
+                                                                <input type="hidden" name="term_urns" value="{{ term.urn }}">
+                                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull from DataHub">
+                                                                    <i class="fas fa-cloud-download-alt"></i>
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Node Modal -->
+<div class="modal fade" id="createNodeModal" tabindex="-1" aria-labelledby="createNodeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'glossary_list' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createNodeModalLabel">Create Glossary Node</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="node-name" class="form-label">Node Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="node-name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="node-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="node-description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="parent-node" class="form-label">Parent Node</label>
+                        <select class="form-select" id="parent-node" name="parent_id">
+                            <option value="">No parent (root node)</option>
+                            {% for node in nodes %}
+                                <option value="{{ node.id }}">{{ node.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Node</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Create Term Modal -->
+<div class="modal fade" id="createTermModal" tabindex="-1" aria-labelledby="createTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'glossary_term_create' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createTermModalLabel">Create Glossary Term</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="term-name" class="form-label">Term Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="term-name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="term-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="term-description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="parent-node-for-term" class="form-label">Parent Node</label>
+                        <select class="form-select" id="parent-node-for-term" name="parent_node_id">
+                            <option value="">Root level (no parent)</option>
+                            {% for node in nodes %}
+                                <option value="{{ node.id }}">{{ node.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Terms can be created at the root level or under a node.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="term-source" class="form-label">Term Source</label>
+                        <input type="text" class="form-control" id="term-source" name="term_source" placeholder="Optional source of this term">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Term</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Node Modal -->
+<div class="modal fade" id="deleteNodeModal" tabindex="-1" aria-labelledby="deleteNodeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteNodeModalLabel">Delete Glossary Node</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the node <strong id="delete-node-name"></strong>?</p>
+                <p class="text-danger">This action cannot be undone. All child nodes and terms will be lost!</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-node-form" method="post" action="">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger">Delete Node</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Term Modal -->
+<div class="modal fade" id="deleteTermModal" tabindex="-1" aria-labelledby="deleteTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTermModalLabel">Delete Glossary Term</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the term <strong id="delete-term-name"></strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-term-form" method="post" action="">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger">Delete Term</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Filtering functionality
+    $("#synced-search, #local-search, #remote-search").on("keyup", function() {
+        let value = $(this).val().toLowerCase();
+        $(this).closest(".card").find(".glossary-tree .list-group-item").filter(function() {
+            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1);
+        });
+    });
+    
+    $("#synced-clear-filter, #local-clear-filter, #remote-clear-filter").click(function() {
+        $(this).prev("input").val("");
+        $(this).closest(".card").find(".glossary-tree .list-group-item").show();
+    });
+    
+    // Toggle node children
+    $(document).on("click", ".toggle-node-children", function() {
+        let icon = $(this).find("i");
+        if (icon.hasClass("fa-caret-right")) {
+            icon.removeClass("fa-caret-right").addClass("fa-caret-down");
+        } else {
+            icon.removeClass("fa-caret-down").addClass("fa-caret-right");
+        }
+    });
+    
+    // Expand/collapse glossary
+    $("#expand-all-glossary, #expand-all-local, #expand-all-remote").click(function() {
+        let container = $(this).closest(".card").find(".glossary-tree");
+        container.find(".glossary-node-children").collapse('show');
+        container.find(".toggle-node-children i").removeClass("fa-caret-right").addClass("fa-caret-down");
+    });
+    
+    $("#collapse-all-glossary, #collapse-all-local, #collapse-all-remote").click(function() {
+        let container = $(this).closest(".card").find(".glossary-tree");
+        container.find(".glossary-node-children").collapse('hide');
+        container.find(".toggle-node-children i").removeClass("fa-caret-down").addClass("fa-caret-right");
+    });
+    
+    // Select all checkboxes
+    $("#select-all-synced, #select-all-local, #select-all-remote").change(function() {
+        let isChecked = $(this).prop("checked");
+        $(this).closest(".tab-pane").find(".node-checkbox, .term-checkbox").prop("checked", isChecked);
+    });
+    
+    // When a term is checked, select all nodes in its path
+    $(document).on("change", ".term-checkbox", function() {
+        if ($(this).prop("checked")) {
+            // Find all parent nodes and check them
+            let parentNode = $(this).closest(".glossary-node-children");
+            while (parentNode.length) {
+                // Get the node that contains this child and check its checkbox
+                let nodeItem = parentNode.prev(".glossary-item");
+                nodeItem.find(".node-checkbox").prop("checked", true);
+                
+                // Move up to the next level
+                parentNode = nodeItem.closest(".glossary-node-children");
+            }
+        }
+    });
+    
+    // When a node is unchecked, uncheck all its children
+    $(document).on("change", ".node-checkbox", function() {
+        if (!$(this).prop("checked")) {
+            // Find all children and uncheck them
+            let childrenContainer = $(this).closest(".glossary-item").next(".glossary-node-children");
+            if (childrenContainer.length) {
+                childrenContainer.find(".node-checkbox, .term-checkbox").prop("checked", false);
+            }
+        }
+    });
+    
+    // Handle individual node GitHub PR push
+    $(document).on("click", ".add-node-to-git-pr", function() {
+        const nodeId = $(this).data("node-id");
+        const nodeName = $(this).data("node-name") || "this node";
+        
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = `/metadata/glossary/nodes/${nodeId}/push-github/`;
+        
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+        form.appendChild(csrfToken);
+        
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+    
+    // Handle individual term GitHub PR push
+    $(document).on("click", ".add-term-to-git-pr", function() {
+        const termId = $(this).data("term-id");
+        const termName = $(this).data("term-name") || "this term";
+        
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = `/metadata/glossary/terms/${termId}/push-github/`;
+        
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+        form.appendChild(csrfToken);
+        
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+    
+    // Handle delete node modal
+    $(document).on("click", ".delete-node", function() {
+        const nodeId = $(this).data("node-id");
+        const nodeName = $(this).data("node-name");
+        
+        // Update the modal form
+        $("#delete-node-name").text(nodeName);
+        $("#delete-node-form").attr("action", `/metadata/glossary/nodes/${nodeId}/delete/`);
+    });
+    
+    // Handle delete term modal
+    $(document).on("click", ".delete-term", function() {
+        const termId = $(this).data("term-id");
+        const termName = $(this).data("term-name");
+        
+        // Update the modal form
+        $("#delete-term-name").text(termName);
+        $("#delete-term-form").attr("action", `/metadata/glossary/terms/${termId}/delete/`);
+    });
+    
+    // Batch Actions: Download Selected Items
+    $("#download-selected-items").click(function() {
+        // Get all checked items
+        const selectedNodes = [];
+        const selectedTerms = [];
+        
+        // Get from all tabs (synced, local, remote)
+        $(".node-checkbox:checked").each(function() {
+            const nodeId = $(this).data("node-id");
+            const nodeUrn = $(this).data("node-urn");
+            if (nodeId) {
+                selectedNodes.push({id: nodeId, type: "node"});
+            } else if (nodeUrn) {
+                selectedNodes.push({urn: nodeUrn, type: "node"});
+            }
+        });
+        
+        $(".term-checkbox:checked").each(function() {
+            const termId = $(this).data("term-id");
+            const termUrn = $(this).data("term-urn");
+            if (termId) {
+                selectedTerms.push({id: termId, type: "term"});
+            } else if (termUrn) {
+                selectedTerms.push({urn: termUrn, type: "term"});
+            }
+        });
+        
+        if (selectedNodes.length === 0 && selectedTerms.length === 0) {
+            alert("Please select at least one item to download");
+            return;
+        }
+        
+        // Create a data object with the selected items
+        const data = {
+            nodes: selectedNodes,
+            terms: selectedTerms
+        };
+        
+        // Convert to JSON and download
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "selected_glossary_items.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    });
+    
+    // Batch Actions: Download All Items
+    $("#download-all-items").click(function() {
+        // Create a data object with all items
+        const data = {
+            nodes: [],
+            terms: []
+        };
+        
+        // We'll submit a form to the server to get all items
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = '{% url "glossary_import_export" %}';
+        form.target = '_blank';
+        
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+        form.appendChild(csrfToken);
+        
+        // Add action to perform
+        const action = document.createElement('input');
+        action.type = 'hidden';
+        action.name = 'action';
+        action.value = 'export_all';
+        form.appendChild(action);
+        
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+    
+    // Batch Actions: Push Selected Items to DataHub
+    $("#push-selected-items").click(function() {
+        // Get all checked items
+        const selectedNodes = [];
+        const selectedTerms = [];
+        
+        // Get from synced and local tabs only (remote items don't need pushing)
+        $("#synced-glossary, #local-glossary").find(".node-checkbox:checked").each(function() {
+            const nodeId = $(this).data("node-id");
+            if (nodeId) {
+                selectedNodes.push(nodeId);
+            }
+        });
+        
+        $("#synced-glossary, #local-glossary").find(".term-checkbox:checked").each(function() {
+            const termId = $(this).data("term-id");
+            if (termId) {
+                selectedTerms.push(termId);
+            }
+        });
+        
+        if (selectedNodes.length === 0 && selectedTerms.length === 0) {
+            alert("Please select at least one item to push to DataHub");
+            return;
+        }
+        
+        // Confirm the push operation
+        if (!confirm(`You are about to push ${selectedNodes.length} nodes and ${selectedTerms.length} terms to DataHub. Continue?`)) {
+            return;
+        }
+        
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = '{% url "glossary_list" %}';
+        
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+        form.appendChild(csrfToken);
+        
+        // Add action to perform
+        const action = document.createElement('input');
+        action.type = 'hidden';
+        action.name = 'action';
+        action.value = 'push_selected';
+        form.appendChild(action);
+        
+        // Add selected node IDs
+        selectedNodes.forEach(nodeId => {
+            const nodeInput = document.createElement('input');
+            nodeInput.type = 'hidden';
+            nodeInput.name = 'node_ids';
+            nodeInput.value = nodeId;
+            form.appendChild(nodeInput);
+        });
+        
+        // Add selected term IDs
+        selectedTerms.forEach(termId => {
+            const termInput = document.createElement('input');
+            termInput.type = 'hidden';
+            termInput.name = 'term_ids';
+            termInput.value = termId;
+            form.appendChild(termInput);
+        });
+        
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+    
+    // Batch Actions: Push All Items to DataHub
+    $("#push-all-items").click(function() {
+        // Confirm the push operation
+        if (!confirm("You are about to push ALL glossary items to DataHub. This may take some time. Continue?")) {
+            return;
+        }
+        
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = '{% url "glossary_list" %}';
+        
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+        form.appendChild(csrfToken);
+        
+        // Add action to perform
+        const action = document.createElement('input');
+        action.type = 'hidden';
+        action.name = 'action';
+        action.value = 'push_all';
+        form.appendChild(action);
+        
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+    
+    // Batch Actions: Add Selected Items to Git PR
+    $("#add-selected-to-git").click(function() {
+        // Get all checked items
+        const selectedNodes = [];
+        const selectedTerms = [];
+        
+        // Get from synced and local tabs only (remote items don't exist locally)
+        $("#synced-glossary, #local-glossary").find(".node-checkbox:checked").each(function() {
+            const nodeId = $(this).data("node-id");
+            if (nodeId) {
+                selectedNodes.push(nodeId);
+            }
+        });
+        
+        $("#synced-glossary, #local-glossary").find(".term-checkbox:checked").each(function() {
+            const termId = $(this).data("term-id");
+            if (termId) {
+                selectedTerms.push(termId);
+            }
+        });
+        
+        if (selectedNodes.length === 0 && selectedTerms.length === 0) {
+            alert("Please select at least one item to add to the GitHub PR");
+            return;
+        }
+        
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = '{% url "glossary_list" %}';
+        
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+        form.appendChild(csrfToken);
+        
+        // Add action to perform
+        const action = document.createElement('input');
+        action.type = 'hidden';
+        action.name = 'action';
+        action.value = 'add_to_git';
+        form.appendChild(action);
+        
+        // Add selected node IDs
+        selectedNodes.forEach(nodeId => {
+            const nodeInput = document.createElement('input');
+            nodeInput.type = 'hidden';
+            nodeInput.name = 'node_ids';
+            nodeInput.value = nodeId;
+            form.appendChild(nodeInput);
+        });
+        
+        // Add selected term IDs
+        selectedTerms.forEach(termId => {
+            const termInput = document.createElement('input');
+            termInput.type = 'hidden';
+            termInput.name = 'term_ids';
+            termInput.value = termId;
+            form.appendChild(termInput);
+        });
+        
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+});
+</script>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .glossary-tree .list-group-item {
+        border-left: none;
+        border-right: none;
+        border-radius: 0;
+    }
+    
+    .glossary-tree .list-group-item:first-child {
+        border-top: none;
+    }
+    
+    .glossary-tree .list-group-item:last-child {
+        border-bottom: none;
+    }
+    
+    .glossary-item {
+        padding-left: 10px;
+    }
+    
+    .node-level-1 {
+        padding-left: 30px;
+    }
+    
+    .node-level-2 {
+        padding-left: 50px;
+    }
+    
+    .node-level-3 {
+        padding-left: 70px;
+    }
+    
+    .node-level-4 {
+        padding-left: 90px;
+    }
+    
+    .node-level-5 {
+        padding-left: 110px;
+    }
+    
+    .toggle-node-children {
+        cursor: pointer;
+        width: 20px;
+        display: inline-block;
+        text-align: center;
+    }
+    
+    .node-icon {
+        width: 20px;
+        display: inline-block;
+        text-align: center;
+        margin-right: 5px;
+    }
+    
+    .term-item .node-icon {
+        margin-left: 20px;
+    }
+</style>
+{% endblock %} 

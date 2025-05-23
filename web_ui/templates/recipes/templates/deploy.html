@@ -9,7 +9,7 @@
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
                 <li class="breadcrumb-item"><a href="{% url 'recipes' %}">Recipes</a></li>
-                <li class="breadcrumb-item"><a href="{% url 'recipe_templates' %}">Templates</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'template_manager:recipe_templates' %}">Templates</a></li>
                 <li class="breadcrumb-item"><a href="{% url 'recipe_template_detail' template_id=template.id %}">{{ template.name }}</a></li>
                 <li class="breadcrumb-item active" aria-current="page">Deploy</li>
             </ol>

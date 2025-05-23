@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Export Glossary</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Export all glossary nodes and terms to a JSON file.</p>
+                    <form method="post" action="{% url 'glossary_import_export' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="export">
+                        
+                        <div class="mb-3">
+                            <label for="environment_id" class="form-label">Target Environment (Optional)</label>
+                            <select class="form-select" id="environment_id" name="environment_id">
+                                <option value="">No environment (default)</option>
+                                {% for env in environments %}
+                                <option value="{{ env.id }}">{{ env.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">
+                                Selecting an environment will transform the exported data based on environment settings.
+                                This is useful for CI/CD integrations.
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-file-export"></i> Export
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Import Glossary</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Import glossary nodes and terms from a JSON file.</p>
+                    <form method="post" action="{% url 'glossary_import_export' %}" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="import">
+                        <div class="mb-3">
+                            <label for="json_file" class="form-label">JSON File</label>
+                            <input type="file" class="form-control" id="json_file" name="json_file" accept=".json">
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-file-import"></i> Import
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

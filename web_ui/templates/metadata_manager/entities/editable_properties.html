@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Editable Properties</h1>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" id="refreshEntities">
+                        <i class="fas fa-sync me-1"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Filters</h5>
+                </div>
+                <div class="card-body">
+                    <form id="filterForm" class="row g-3">
+                        <div class="col-md-4">
+                            <label for="entityType" class="form-label">Entity Type</label>
+                            <select class="form-select" id="entityType" name="entityType">
+                                <option value="">All Types</option>
+                                <option value="DATASET">Dataset</option>
+                                <option value="CONTAINER">Container</option>
+                                <option value="CHART">Chart</option>
+                                <option value="DASHBOARD">Dashboard</option>
+                                <option value="DATAFLOW">Data Flow</option>
+                                <option value="DATAJOB">Data Job</option>
+                                <option value="MLFEATURE">ML Feature</option>
+                                <option value="MLFEATURETABLE">ML Feature Table</option>
+                                <option value="MLMODEL">ML Model</option>
+                                <option value="MLMODELGROUP">ML Model Group</option>
+                                <option value="MLPRIMARYKEY">ML Primary Key</option>
+                                <option value="NOTEBOOK">Notebook</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="searchQuery" class="form-label">Search</label>
+                            <input type="text" class="form-control" id="searchQuery" name="searchQuery" placeholder="Search by name or URN">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="submit" class="btn btn-primary d-block">Apply Filters</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Results Table -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Entities</h5>
+                    <div class="pagination-info">
+                        Showing <span id="startCount">0</span> - <span id="endCount">0</span> of <span id="totalCount">0</span>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Name/URN</th>
+                                    <th>Editable Properties</th>
+                                    <th width="15%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="entitiesTableBody">
+                                <!-- Entities will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <nav aria-label="Entity navigation">
+                        <ul class="pagination justify-content-center mb-0">
+                            <!-- Pagination will be populated here -->
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Properties Modal -->
+<div class="modal fade" id="editPropertiesModal" tabindex="-1" aria-labelledby="editPropertiesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editPropertiesModalLabel">Edit Properties</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editPropertiesForm">
+                    <input type="hidden" id="entityUrn" name="entityUrn">
+                    <input type="hidden" id="entityType" name="entityType">
+                    
+                    <!-- Basic Properties -->
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="name" name="name">
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <!-- Dataset-specific Fields -->
+                    <div id="datasetFields" style="display: none;">
+                        <h6 class="mt-4">Schema Fields</h6>
+                        <div id="schemaFieldsContainer">
+                            <!-- Schema fields will be populated here -->
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveProperties">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    let currentPage = 1;
+    const PAGE_SIZE = 20;
+    
+    // Load initial data
+    loadEntities();
+    
+    // Handle filter form submission
+    $('#filterForm').on('submit', function(e) {
+        e.preventDefault();
+        currentPage = 1;
+        loadEntities();
+    });
+    
+    // Handle refresh button
+    $('#refreshEntities').click(function() {
+        loadEntities();
+    });
+    
+    // Handle pagination clicks
+    $(document).on('click', '.page-link', function(e) {
+        e.preventDefault();
+        const page = $(this).data('page');
+        if (page) {
+            currentPage = page;
+            loadEntities();
+        }
+    });
+    
+    // Handle edit button clicks
+    $(document).on('click', '.edit-properties', function() {
+        const entityUrn = $(this).data('urn');
+        const entityType = $(this).data('type');
+        loadEntityProperties(entityUrn, entityType);
+    });
+    
+    // Handle save properties
+    $('#saveProperties').click(function() {
+        saveProperties();
+    });
+    
+    function loadEntities() {
+        const filters = {
+            entityType: $('#entityType').val(),
+            searchQuery: $('#searchQuery').val(),
+            start: (currentPage - 1) * PAGE_SIZE,
+            count: PAGE_SIZE
+        };
+        
+        // Show loading state
+        $('#entitiesTableBody').html('<tr><td colspan="4" class="text-center">Loading...</td></tr>');
+        
+        $.ajax({
+            url: '{% url "get_editable_entities" %}',
+            data: filters,
+            success: function(response) {
+                if (response.success) {
+                    displayEntities(response.data);
+                    updatePagination(response.data.total);
+                } else {
+                    showError('Failed to load entities: ' + response.error);
+                }
+            },
+            error: function() {
+                showError('Network error occurred while loading entities');
+            }
+        });
+    }
+    
+    function displayEntities(data) {
+        const tbody = $('#entitiesTableBody');
+        tbody.empty();
+        
+        if (data.searchResults.length === 0) {
+            tbody.html('<tr><td colspan="4" class="text-center">No entities found</td></tr>');
+            return;
+        }
+        
+        data.searchResults.forEach(function(result) {
+            const entity = result.entity;
+            const editableProps = getEditableProperties(entity);
+            
+            tbody.append(`
+                <tr>
+                    <td>${entity.type}</td>
+                    <td>
+                        <div>${entity.urn}</div>
+                        ${entity.editableProperties?.name ? `<div class="text-muted">${entity.editableProperties.name}</div>` : ''}
+                    </td>
+                    <td>${editableProps}</td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-primary edit-properties" 
+                                data-urn="${entity.urn}" data-type="${entity.type}">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                    </td>
+                </tr>
+            `);
+        });
+        
+        // Update counts
+        $('#startCount').text(data.start + 1);
+        $('#endCount').text(Math.min(data.start + data.count, data.total));
+        $('#totalCount').text(data.total);
+    }
+    
+    function getEditableProperties(entity) {
+        const props = [];
+        
+        if (entity.editableProperties) {
+            if (entity.editableProperties.name) props.push('Name');
+            if (entity.editableProperties.description) props.push('Description');
+        }
+        
+        if (entity.editableSchemaMetadata) {
+            props.push(`Schema Fields (${entity.editableSchemaMetadata.editableSchemaFieldInfo.length})`);
+        }
+        
+        return props.join(', ') || 'None';
+    }
+    
+    function updatePagination(total) {
+        const totalPages = Math.ceil(total / PAGE_SIZE);
+        const pagination = $('.pagination');
+        pagination.empty();
+        
+        if (totalPages <= 1) return;
+        
+        // Previous button
+        pagination.append(`
+            <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" data-page="${currentPage - 1}">Previous</a>
+            </li>
+        `);
+        
+        // Page numbers
+        for (let i = 1; i <= totalPages; i++) {
+            if (
+                i === 1 || 
+                i === totalPages || 
+                (i >= currentPage - 2 && i <= currentPage + 2)
+            ) {
+                pagination.append(`
+                    <li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                    </li>
+                `);
+            } else if (
+                i === currentPage - 3 || 
+                i === currentPage + 3
+            ) {
+                pagination.append(`
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                `);
+            }
+        }
+        
+        // Next button
+        pagination.append(`
+            <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" data-page="${currentPage + 1}">Next</a>
+            </li>
+        `);
+    }
+    
+    function loadEntityProperties(urn, type) {
+        // Show loading state
+        $('#editPropertiesForm').html('<div class="text-center">Loading...</div>');
+        $('#editPropertiesModal').modal('show');
+        
+        $.ajax({
+            url: '{% url "get_entity_properties" %}',
+            data: { urn, type },
+            success: function(response) {
+                if (response.success) {
+                    displayEditForm(response.data);
+                } else {
+                    showError('Failed to load entity properties: ' + response.error);
+                }
+            },
+            error: function() {
+                showError('Network error occurred while loading entity properties');
+            }
+        });
+    }
+    
+    function displayEditForm(entity) {
+        const form = $('#editPropertiesForm');
+        form.empty();
+        
+        // Hidden fields
+        form.append(`
+            <input type="hidden" id="entityUrn" name="entityUrn" value="${entity.urn}">
+            <input type="hidden" id="entityType" name="entityType" value="${entity.type}">
+        `);
+        
+        // Basic properties
+        if (entity.editableProperties) {
+            if ('name' in entity.editableProperties) {
+                form.append(`
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="name" name="name" 
+                               value="${entity.editableProperties.name || ''}">
+                    </div>
+                `);
+            }
+            
+            form.append(`
+                <div class="mb-3">
+                    <label for="description" class="form-label">Description</label>
+                    <textarea class="form-control" id="description" name="description" 
+                              rows="3">${entity.editableProperties.description || ''}</textarea>
+                </div>
+            `);
+        }
+        
+        // Dataset-specific fields
+        if (entity.type === 'DATASET' && entity.editableSchemaMetadata) {
+            const container = $('<div id="schemaFields" class="mt-4">').appendTo(form);
+            container.append('<h6>Schema Fields</h6>');
+            
+            entity.editableSchemaMetadata.editableSchemaFieldInfo.forEach((field, index) => {
+                container.append(`
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <strong>${field.fieldPath}</strong>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control" name="schemaFields[${index}].description" 
+                                          rows="2">${field.description || ''}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Tags</label>
+                                <div class="schema-field-tags" data-field-index="${index}">
+                                    ${renderFieldTags(field.tags?.tags || [])}
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary add-tag" 
+                                        data-field-index="${index}">
+                                    <i class="fas fa-plus"></i> Add Tag
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `);
+            });
+        }
+    }
+    
+    function renderFieldTags(tags) {
+        return tags.map((tag, index) => `
+            <div class="badge bg-primary me-2 mb-2">
+                ${tag.tag.urn}
+                <button type="button" class="btn-close btn-close-white" 
+                        onclick="removeTag(this)" data-tag-index="${index}"></button>
+            </div>
+        `).join('');
+    }
+    
+    function saveProperties() {
+        const formData = new FormData($('#editPropertiesForm')[0]);
+        
+        $.ajax({
+            url: '{% url "update_entity_properties" %}',
+            method: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                if (response.success) {
+                    $('#editPropertiesModal').modal('hide');
+                    loadEntities();  // Refresh the list
+                    showSuccess('Properties updated successfully');
+                } else {
+                    showError('Failed to update properties: ' + response.error);
+                }
+            },
+            error: function() {
+                showError('Network error occurred while updating properties');
+            }
+        });
+    }
+    
+    function showError(message) {
+        // Implement your error notification here
+        console.error(message);
+    }
+    
+    function showSuccess(message) {
+        // Implement your success notification here
+        console.log(message);
+    }
+});
+</script>
+{% endblock %} 

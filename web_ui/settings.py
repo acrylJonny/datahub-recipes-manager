@@ -1,5 +1,24 @@
 import os
 from pathlib import Path
+import logging
+
+# Initialize DataHub environment
+try:
+    from .initialize_env import initialize_datahub_environment
+    # Set up environment variables
+    env_vars = initialize_datahub_environment()
+    logging.info(f"DataHub environment initialized from settings.py")
+    
+    # Make DataHub connection details available to the application
+    DATAHUB_SERVER_URL = os.environ.get('DATAHUB_GMS_URL', 'http://localhost:8080')
+    DATAHUB_TOKEN = os.environ.get('DATAHUB_TOKEN', None)
+    VERIFY_SSL = os.environ.get('VERIFY_SSL', 'true').lower() == 'true'
+except ImportError as e:
+    logging.warning(f"Could not import environment initialization: {str(e)}")
+    # Default values if initialization fails
+    DATAHUB_SERVER_URL = os.environ.get('DATAHUB_GMS_URL', 'http://localhost:8080')
+    DATAHUB_TOKEN = os.environ.get('DATAHUB_TOKEN', None)
+    VERIFY_SSL = True
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

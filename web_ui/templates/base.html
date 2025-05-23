@@ -109,16 +109,48 @@
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item{% if request.path == '/recipe-templates/' %} active{% endif %}" href="{% url 'recipe_templates' %}">
+                                    <a class="dropdown-item{% if request.path == '/recipes/templates/' %} active{% endif %}" href="{% url 'template_manager:recipe_templates' %}">
                                         <i class="fas fa-scroll fa-fw me-2"></i> Recipe Templates
                                     </a>
                                 </li>
                             </ul>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link{% if request.path == '/policies/' %} active{% endif %}" href="{% url 'policies' %}">
+                            <a class="nav-link{% if request.path == '/policies/' %} active{% endif %}" href="{% url 'policies:policies' %}">
                                 <i class="fas fa-shield-alt fa-fw me-2"></i> Policies
                             </a>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle{% if request.path|slice:':10' == '/metadata/' %} active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-tags fa-fw me-2"></i> Metadata
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/' %} active{% endif %}" href="{% url 'metadata_index' %}">
+                                        <i class="fas fa-home fa-fw me-2"></i> Dashboard
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/tags/' %} active{% endif %}" href="{% url 'tag_list' %}">
+                                        <i class="fas fa-tag fa-fw me-2"></i> Tags
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/glossary/' %} active{% endif %}" href="{% url 'glossary_list' %}">
+                                        <i class="fas fa-book fa-fw me-2"></i> Glossary
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/domains/' %} active{% endif %}" href="{% url 'domain_list' %}">
+                                        <i class="fas fa-sitemap fa-fw me-2"></i> Domains
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/assertions/' %} active{% endif %}" href="{% url 'assertion_list' %}">
+                                        <i class="fas fa-check-circle fa-fw me-2"></i> Assertions
+                                    </a>
+                                </li>
+                            </ul>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link{% if request.path == '/environments/' %} active{% endif %}" href="{% url 'environments' %}">
