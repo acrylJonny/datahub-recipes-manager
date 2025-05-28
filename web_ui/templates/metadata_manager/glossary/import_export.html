@@ -10,7 +10,7 @@
                 </div>
                 <div class="card-body">
                     <p class="card-text">Export all glossary nodes and terms to a JSON file.</p>
-                    <form method="post" action="{% url 'glossary_import_export' %}">
+                    <form method="post" action="{% url 'metadata_manager:glossary_import_export' %}">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="export">
                         
@@ -42,7 +42,7 @@
                 </div>
                 <div class="card-body">
                     <p class="card-text">Import glossary nodes and terms from a JSON file.</p>
-                    <form method="post" action="{% url 'glossary_import_export' %}" enctype="multipart/form-data">
+                    <form method="post" action="{% url 'metadata_manager:glossary_import_export' %}" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="import">
                         <div class="mb-3">

@@ -9,7 +9,7 @@
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
                 <li class="breadcrumb-item"><a href="{% url 'recipes' %}">Recipes</a></li>
-                <li class="breadcrumb-item"><a href="{% url 'template_manager:recipe_templates' %}">Templates</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'recipe_templates' %}">Templates</a></li>
                 <li class="breadcrumb-item active" aria-current="page">Create Template</li>
             </ol>
         </nav>
@@ -27,7 +27,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">{% if imported %}Import{% else %}Create{% endif %} Recipe Template</h1>
         <div class="d-flex gap-2">
-            <a href="{% url 'template_manager:recipe_templates' %}" class="btn btn-outline-secondary">
+            <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary">
                 <i class="fas fa-arrow-left me-1"></i> Back to Templates
             </a>
         </div>
@@ -126,7 +126,7 @@
                 </div>
                 
                 <div class="d-flex justify-content-end">
-                    <a href="{% url 'template_manager:recipe_templates' %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                    <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary me-2">Cancel</a>
                     <button type="submit" class="btn btn-primary">Save Template</button>
                 </div>
             </form>

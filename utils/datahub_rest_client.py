@@ -5502,17 +5502,12 @@ class DataHubRestClient:
             'start': start,
             'count': count,
             'query': query,
-            'filter': {}
+            'types': [entity_type] if entity_type else None
         }
         
-        if entity_type:
-            search_input['filter'] = {
-                'type': entity_type
-            }
-        
         query = """
-            query GetAllEntitiesWithEditableAspects($input: SearchInput!) {
-                search(input: $input) {
+            query GetAllEntitiesWithEditableAspects($input: SearchAcrossEntitiesInput!) {
+                searchAcrossEntities(input: $input) {
                     start
                     count
                     total
@@ -5520,6 +5515,13 @@ class DataHubRestClient:
                         entity {
                             urn
                             type
+                            properties {
+                                name
+                                description
+                                lastModified {
+                                    time
+                                }
+                            }
                             ... on Dataset {
                                 editableProperties {
                                     name
@@ -5604,10 +5606,12 @@ class DataHubRestClient:
         
         try:
             result = self.execute_graphql(query, {'input': search_input})
-            return result.get('search', {})
+            if result and 'data' in result and 'searchAcrossEntities' in result['data']:
+                return result['data']['searchAcrossEntities']
+            return {'start': 0, 'count': 0, 'total': 0, 'searchResults': []}
         except Exception as e:
             self.logger.error(f"Error getting editable entities: {str(e)}")
-            return {}
+            return {'start': 0, 'count': 0, 'total': 0, 'searchResults': []}
 
     def update_entity_properties(self, entity_urn: str, entity_type: str, properties: dict) -> bool:
         """Update editable properties of an entity.

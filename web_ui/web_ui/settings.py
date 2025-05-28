@@ -45,11 +45,6 @@ INSTALLED_APPS = [
     "template_manager",
     "test_runner",
     "metadata_manager",
-    "policies",
-    "env_vars",
-    "recipe_instances",
-    "github",
-    "environments",
 ]
 
 MIDDLEWARE = [

@@ -86,6 +86,9 @@ def get_editable_entities(request):
         query = request.GET.get('searchQuery', '*')
         entity_type = request.GET.get('entityType')
         
+        if entity_type == '':
+            entity_type = None
+        
         # Use the client method to get editable entities
         result = client.get_editable_entities(
             start=start,
@@ -188,4 +191,115 @@ from .views_tags import *
 from .views_glossary import *
 from .views_domains import *
 from .views_assertions import *
-from .views_sync import * 
+from .views_sync import *
+
+@login_required
+@require_http_methods(["GET"])
+def get_entity_details(request, urn):
+    """Get details of a specific entity."""
+    try:
+        # Get active environment
+        environment = Environment.objects.filter(is_default=True).first()
+        if not environment:
+            return JsonResponse({
+                'success': False,
+                'error': 'No active environment configured'
+            })
+        
+        # Initialize DataHub client
+        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        
+        # Get entity details
+        entity = client.get_entity(urn)
+        
+        if not entity:
+            return JsonResponse({
+                'success': False,
+                'error': 'Entity not found'
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'entity': entity
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting entity details: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@login_required
+@require_http_methods(["GET"])
+def get_entity_schema(request, urn):
+    """Get schema details for a dataset entity."""
+    try:
+        # Get active environment
+        environment = Environment.objects.filter(is_default=True).first()
+        if not environment:
+            return JsonResponse({
+                'success': False,
+                'error': 'No active environment configured'
+            })
+        
+        # Initialize DataHub client
+        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        
+        # Get schema details
+        schema = client.get_schema(urn)
+        
+        if not schema:
+            return JsonResponse({
+                'success': False,
+                'error': 'Schema not found'
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'schema': schema
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting schema details: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@login_required
+@require_http_methods(["POST"])
+def sync_metadata(request):
+    """Sync metadata with DataHub."""
+    try:
+        # Get active environment
+        environment = Environment.objects.filter(is_default=True).first()
+        if not environment:
+            return JsonResponse({
+                'success': False,
+                'error': 'No active environment configured'
+            })
+        
+        # Initialize DataHub client
+        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        
+        # Sync metadata
+        success = client.sync_metadata()
+        
+        if success:
+            return JsonResponse({
+                'success': True,
+                'message': 'Metadata synced successfully'
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Failed to sync metadata'
+            })
+        
+    except Exception as e:
+        logger.error(f"Error syncing metadata: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })

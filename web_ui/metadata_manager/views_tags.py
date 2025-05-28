@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 # Import the deterministic URN utilities
 from utils.urn_utils import generate_deterministic_urn, get_full_urn_from_name
 from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from web_ui.models import GitSettings
 from .models import Tag
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,6 @@ class TagListView(View):
             
             # Check if git integration is enabled
             try:
-                from web_ui.web_ui.models import GitSettings
                 github_settings = GitSettings.objects.first()
                 context['has_git_integration'] = github_settings and github_settings.enabled
                 logger.debug(f"Git integration enabled: {context['has_git_integration']}")
@@ -171,8 +171,7 @@ class TagDetailView(View):
             
             # Check if git integration is enabled
             try:
-                from web_ui.models import GitHubSettings
-                github_settings = GitHubSettings.objects.first()
+                github_settings = GitSettings.objects.first()
                 context['has_git_integration'] = github_settings and github_settings.enabled
             except:
                 pass
@@ -562,8 +561,7 @@ class TagGitPushView(View):
             
             # Check if Git integration is enabled
             try:
-                from web_ui.models import GitHubSettings
-                github_settings = GitHubSettings.objects.first()
+                github_settings = GitSettings.objects.first()
                 if not github_settings or not github_settings.enabled:
                     return JsonResponse({'success': False, 'error': 'Git integration is not enabled'})
             except Exception as e:

@@ -12,9 +12,9 @@
                 </h1>
                 <div class="d-flex gap-2">
                     {% if node.can_deploy and has_datahub_connection %}
-                    <form method="post" action="{% url 'glossary_node_deploy' node.id %}" class="d-inline">
+                    <form method="post" action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" class="d-inline">
                         {% csrf_token %}
-                        <input type="hidden" name="redirect_url" value="{% url 'glossary_node_detail' node.id %}">
+                        <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_node_detail' node.id %}">
                         <button type="submit" class="btn btn-primary" onclick="return confirm('Deploy this node to DataHub?')">
                             <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
                         </button>
@@ -27,7 +27,7 @@
                     </button>
                     {% endif %}
                     
-                    <a href="{% url 'glossary_list' %}" class="btn btn-secondary">
+                    <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left me-1"></i> Back to Glossary
                     </a>
                 </div>
@@ -93,7 +93,7 @@
                                     </button>
                                 </div>
                                 <div class="card-body">
-                                    <form method="post" action="{% url 'glossary_node_detail' node.id %}">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="update">
                                         
@@ -206,7 +206,7 @@
                                         <strong>{{ owner.owner.info.label }}</strong>
                                         <p class="text-muted mb-0">{{ owner.type }} | {{ owner.owner.urn }}</p>
                                     </div>
-                                    <form method="post" action="{% url 'glossary_node_detail' node.id %}">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="remove_owner">
                                         <input type="hidden" name="owner_urn" value="{{ owner.owner.urn }}">
@@ -261,7 +261,7 @@
                                         {% for term in node.terms.all %}
                                             <tr>
                                                 <td>
-                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
                                                         {{ term.name }}
                                                     </a>
                                                 </td>
@@ -273,7 +273,7 @@
                                                 </td>
                                                 <td>
                                                     <div class="btn-group" role="group">
-                                                        <a href="{% url 'glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                             <i class="fas fa-eye"></i>
                                                         </a>
                                                     </div>
@@ -337,7 +337,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form method="post" action="{% url 'glossary_node_detail' node.id %}">
+                <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete">
                     <button type="submit" class="btn btn-danger">Delete Node</button>
@@ -351,7 +351,7 @@
 <div class="modal fade" id="addOwnerModal" tabindex="-1" aria-labelledby="addOwnerModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'glossary_node_detail' node.id %}">
+            <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="add_owner">
                 <div class="modal-header">

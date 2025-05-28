@@ -21,7 +21,7 @@
             <i class="fas fa-folder text-warning"></i>
         </span>
         
-        <a href="{% url 'glossary_node_detail' node.id %}" class="text-decoration-none">
+        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="text-decoration-none">
             <span>{{ node.name }}</span>
         </a>
         
@@ -39,12 +39,12 @@
     </div>
     
     <div class="btn-group">
-        <a href="{% url 'glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
             <i class="fas fa-eye"></i>
         </a>
         
         {% if node.can_deploy and has_datahub_connection %}
-        <form action="{% url 'glossary_node_deploy' node.id %}" method="post" class="d-inline">
+        <form action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" method="post" class="d-inline">
             {% csrf_token %}
             <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
                 <i class="fas fa-cloud-upload-alt"></i>
@@ -93,7 +93,7 @@
                         <i class="fas fa-tag text-info"></i>
                     </span>
                     
-                    <a href="{% url 'glossary_term_detail' term.id %}" class="text-decoration-none">
+                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
                         <span>{{ term.name }}</span>
                     </a>
                     
@@ -115,12 +115,12 @@
                 </div>
                 
                 <div class="btn-group">
-                    <a href="{% url 'glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                         <i class="fas fa-eye"></i>
                     </a>
                     
                     {% if term.can_deploy and has_datahub_connection %}
-                    <form action="{% url 'glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                    <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
                             <i class="fas fa-cloud-upload-alt"></i>

@@ -12,9 +12,9 @@
                 </h1>
                 <div class="d-flex gap-2">
                     {% if term.can_deploy and has_datahub_connection %}
-                    <form method="post" action="{% url 'glossary_term_deploy' term.id %}" class="d-inline">
+                    <form method="post" action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" class="d-inline">
                         {% csrf_token %}
-                        <input type="hidden" name="redirect_url" value="{% url 'glossary_term_detail' term.id %}">
+                        <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                         <button type="submit" class="btn btn-primary" onclick="return confirm('Deploy this term to DataHub?')">
                             <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
                         </button>
@@ -27,7 +27,7 @@
                     </button>
                     {% endif %}
                     
-                    <a href="{% url 'glossary_list' %}" class="btn btn-secondary">
+                    <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left me-1"></i> Back to Glossary
                     </a>
                 </div>
@@ -93,7 +93,7 @@
                                     </button>
                                 </div>
                                 <div class="card-body">
-                                    <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="update">
                                         
@@ -183,7 +183,7 @@
                                         <h6>{{ domain.properties.name }}</h6>
                                         <p class="text-muted mb-0">{{ domain.urn }}</p>
                                     </div>
-                                    <form method="post" action="{% url 'glossary_term_detail' term.id %}" class="d-inline">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="d-inline">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="set_domain">
                                         <input type="hidden" name="domain_urn" value="">
@@ -198,7 +198,7 @@
                                         <h6>Domain URN</h6>
                                         <p class="text-muted mb-0">{{ term.domain_urn }}</p>
                                     </div>
-                                    <form method="post" action="{% url 'glossary_term_detail' term.id %}" class="d-inline">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="d-inline">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="set_domain">
                                         <input type="hidden" name="domain_urn" value="">
@@ -242,7 +242,7 @@
                                         <strong>{{ owner.owner.info.label }}</strong>
                                         <p class="text-muted mb-0">{{ owner.type }} | {{ owner.owner.urn }}</p>
                                     </div>
-                                    <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="remove_owner">
                                         <input type="hidden" name="owner_urn" value="{{ owner.owner.urn }}">
@@ -277,7 +277,7 @@
                                         <strong>{{ related_term.term.properties.name }}</strong>
                                         <p class="text-muted mb-0">{{ related_term.relationshipType }} | {{ related_term.term.urn }}</p>
                                     </div>
-                                    <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="remove_related_term">
                                         <input type="hidden" name="related_term_urn" value="{{ related_term.term.urn }}">
@@ -399,7 +399,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+                <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete">
                     <button type="submit" class="btn btn-danger">Delete Term</button>
@@ -413,7 +413,7 @@
 <div class="modal fade" id="addOwnerModal" tabindex="-1" aria-labelledby="addOwnerModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="add_owner">
                 <div class="modal-header">
@@ -448,7 +448,7 @@
 <div class="modal fade" id="addRelatedTermModal" tabindex="-1" aria-labelledby="addRelatedTermModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="add_related_term">
                 <div class="modal-header">
@@ -482,7 +482,7 @@
 <div class="modal fade" id="moveTermModal" tabindex="-1" aria-labelledby="moveTermModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="move_term">
                 <div class="modal-header">
@@ -533,7 +533,7 @@
 <div class="modal fade" id="setDomainModal" tabindex="-1" aria-labelledby="setDomainModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'glossary_term_detail' term.id %}">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="set_domain">
                 <div class="modal-header">

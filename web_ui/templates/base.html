@@ -116,7 +116,7 @@
                             </ul>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link{% if request.path == '/policies/' %} active{% endif %}" href="{% url 'policies:policies' %}">
+                            <a class="nav-link{% if request.path == '/policies/' %} active{% endif %}" href="{% url 'policies' %}">
                                 <i class="fas fa-shield-alt fa-fw me-2"></i> Policies
                             </a>
                         </li>
@@ -126,27 +126,27 @@
                             </a>
                             <ul class="dropdown-menu">
                                 <li>
-                                    <a class="dropdown-item{% if request.path == '/metadata/' %} active{% endif %}" href="{% url 'metadata_index' %}">
+                                    <a class="dropdown-item{% if request.path == '/metadata/' %} active{% endif %}" href="{% url 'metadata_manager:metadata_index' %}">
                                         <i class="fas fa-home fa-fw me-2"></i> Dashboard
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item{% if request.path == '/metadata/tags/' %} active{% endif %}" href="{% url 'tag_list' %}">
+                                    <a class="dropdown-item{% if request.path == '/metadata/tags/' %} active{% endif %}" href="{% url 'metadata_manager:tag_list' %}">
                                         <i class="fas fa-tag fa-fw me-2"></i> Tags
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item{% if request.path == '/metadata/glossary/' %} active{% endif %}" href="{% url 'glossary_list' %}">
+                                    <a class="dropdown-item{% if request.path == '/metadata/glossary/' %} active{% endif %}" href="{% url 'metadata_manager:glossary_list' %}">
                                         <i class="fas fa-book fa-fw me-2"></i> Glossary
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item{% if request.path == '/metadata/domains/' %} active{% endif %}" href="{% url 'domain_list' %}">
+                                    <a class="dropdown-item{% if request.path == '/metadata/domains/' %} active{% endif %}" href="{% url 'metadata_manager:domain_list' %}">
                                         <i class="fas fa-sitemap fa-fw me-2"></i> Domains
                                     </a>
                                 </li>
                                 <li>
-                                    <a class="dropdown-item{% if request.path == '/metadata/assertions/' %} active{% endif %}" href="{% url 'assertion_list' %}">
+                                    <a class="dropdown-item{% if request.path == '/metadata/assertions/' %} active{% endif %}" href="{% url 'metadata_manager:assertion_list' %}">
                                         <i class="fas fa-check-circle fa-fw me-2"></i> Assertions
                                     </a>
                                 </li>

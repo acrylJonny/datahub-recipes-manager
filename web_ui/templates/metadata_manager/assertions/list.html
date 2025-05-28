@@ -22,83 +22,266 @@
             </div>
             {% endif %}
             
-            <div class="card">
-                <div class="card-body">
-                    {% if assertions %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Description</th>
-                                    <th>Type</th>
-                                    <th>Last Run</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for assertion in assertions %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'assertion_detail' assertion.id %}">{{ assertion.name }}</a>
-                                    </td>
-                                    <td>{{ assertion.description|default:"-" }}</td>
-                                    <td>
-                                        {% if assertion.type == 'domain_exists' %}
-                                            <span class="badge bg-info">Domain Exists</span>
-                                        {% elif assertion.type == 'tag_exists' %}
-                                            <span class="badge bg-secondary">Tag Exists</span>
-                                        {% elif assertion.type == 'glossary_term_exists' %}
-                                            <span class="badge bg-success">Glossary Term Exists</span>
-                                        {% elif assertion.type == 'sql' %}
-                                            <span class="badge bg-warning">SQL Query</span>
-                                        {% else %}
-                                            <span class="badge bg-dark">{{ assertion.type }}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>{{ assertion.last_run|default:"Never" }}</td>
-                                    <td>
-                                        {% if assertion.last_status == "SUCCESS" %}
-                                            <span class="badge bg-success">Success</span>
-                                        {% elif assertion.last_status == "FAILED" %}
-                                            <span class="badge bg-danger">Failed</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">Not Run</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <div class="btn-group">
-                                            <form method="post" action="{% url 'assertion_run' assertion.id %}" class="d-inline">
-                                                {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-outline-success">
-                                                    <i class="fas fa-play"></i>
-                                                </button>
-                                            </form>
-                                            <a href="{% url 'assertion_detail' assertion.id %}" class="btn btn-sm btn-outline-primary">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                            <button type="button" class="btn btn-sm btn-outline-danger delete-assertion" 
-                                                    data-bs-toggle="modal" data-bs-target="#deleteAssertionModal"
-                                                    data-assertion-id="{{ assertion.id }}" 
-                                                    data-assertion-name="{{ assertion.name }}">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+            <!-- Assertion Tabs -->
+            <ul class="nav nav-tabs mb-4" id="assertionTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local" 
+                            type="button" role="tab" aria-controls="local" aria-selected="true">
+                        <i class="fas fa-laptop me-1"></i> Local
+                        {% if local_assertions %}
+                        <span class="badge bg-secondary ms-1">{{ local_assertions|length }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote" 
+                            type="button" role="tab" aria-controls="remote" aria-selected="false">
+                        <i class="fas fa-cloud me-1"></i> Remote
+                        {% if remote_assertions %}
+                        <span class="badge bg-secondary ms-1">{{ remote_assertions|length }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced" 
+                            type="button" role="tab" aria-controls="synced" aria-selected="false">
+                        <i class="fas fa-sync me-1"></i> Synced
+                        {% if synced_assertions %}
+                        <span class="badge bg-secondary ms-1">{{ synced_assertions|length }}</span>
+                        {% endif %}
+                    </button>
+                </li>
+            </ul>
+            
+            <!-- Tab Content -->
+            <div class="tab-content" id="assertionTabsContent">
+                <!-- Local Tab -->
+                <div class="tab-pane fade show active" id="local" role="tabpanel" aria-labelledby="local-tab">
+                    <div class="card">
+                        <div class="card-body">
+                            {% if local_assertions %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Description</th>
+                                            <th>Type</th>
+                                            <th>Schedule</th>
+                                            <th>Last Run</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for assertion in local_assertions %}
+                                        <tr>
+                                            <td>
+                                                <a href="{% url 'metadata_manager:assertion_detail' assertion.id %}">{{ assertion.name }}</a>
+                                            </td>
+                                            <td>{{ assertion.description|default:"-" }}</td>
+                                            <td>
+                                                {% include "metadata_manager/assertions/partials/type_badge.html" with type=assertion.type %}
+                                            </td>
+                                            <td>
+                                                {% if assertion.schedule_type == 'manual' %}
+                                                <span class="badge bg-secondary">Manual</span>
+                                                {% elif assertion.schedule_type == 'fixed' %}
+                                                <span class="badge bg-info">Every {{ assertion.interval_value }} {{ assertion.interval_unit }}</span>
+                                                {% elif assertion.schedule_type == 'cron' %}
+                                                <span class="badge bg-info" title="{{ assertion.cron_expression }}">Cron</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ assertion.last_run|default:"Never" }}</td>
+                                            <td>
+                                                {% include "metadata_manager/assertions/partials/status_badge.html" with status=assertion.last_status %}
+                                            </td>
+                                            <td>
+                                                <div class="btn-group">
+                                                    <form method="post" action="{% url 'metadata_manager:assertion_run' assertion.id %}" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Run Assertion">
+                                                            <i class="fas fa-play"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% if has_datahub_connection %}
+                                                    <form method="post" action="{% url 'metadata_manager:assertion_deploy' assertion.id %}" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                            <i class="fas fa-cloud-upload-alt"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+                                                    <a href="{% url 'metadata_manager:assertion_detail' assertion.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-assertion" 
+                                                            data-bs-toggle="modal" data-bs-target="#deleteAssertionModal"
+                                                            data-assertion-id="{{ assertion.id }}" 
+                                                            data-assertion-name="{{ assertion.name }}"
+                                                            title="Delete Assertion">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> No local assertions found. 
+                                <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#createAssertionModal">
+                                    Create your first assertion
+                                </button>
+                            </div>
+                            {% endif %}
+                        </div>
                     </div>
-                    {% else %}
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i> No assertions found. 
-                        <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#createAssertionModal">
-                            Create your first assertion
-                        </button>
+                </div>
+                
+                <!-- Remote Tab -->
+                <div class="tab-pane fade" id="remote" role="tabpanel" aria-labelledby="remote-tab">
+                    <div class="card">
+                        <div class="card-body">
+                            {% if remote_assertions %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Description</th>
+                                            <th>Type</th>
+                                            <th>Schedule</th>
+                                            <th>Last Run</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for assertion in remote_assertions %}
+                                        <tr>
+                                            <td>{{ assertion.name }}</td>
+                                            <td>{{ assertion.description|default:"-" }}</td>
+                                            <td>
+                                                {% include "metadata_manager/assertions/partials/type_badge.html" with type=assertion.type %}
+                                            </td>
+                                            <td>
+                                                {% if assertion.schedule_type == 'manual' %}
+                                                <span class="badge bg-secondary">Manual</span>
+                                                {% elif assertion.schedule_type == 'fixed' %}
+                                                <span class="badge bg-info">Every {{ assertion.interval_value }} {{ assertion.interval_unit }}</span>
+                                                {% elif assertion.schedule_type == 'cron' %}
+                                                <span class="badge bg-info" title="{{ assertion.cron_expression }}">Cron</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ assertion.last_run|default:"Never" }}</td>
+                                            <td>
+                                                {% include "metadata_manager/assertions/partials/status_badge.html" with status=assertion.last_status %}
+                                            </td>
+                                            <td>
+                                                <div class="btn-group">
+                                                    <form method="post" action="{% url 'metadata_manager:assertion_pull' assertion.id %}" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull to Local">
+                                                            <i class="fas fa-cloud-download-alt"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% if datahub_url %}
+                                                    <a href="{{ datahub_url }}/assertion/{{ assertion.urn|urlencode:'' }}" 
+                                                       target="_blank" class="btn btn-sm btn-outline-secondary" title="View in DataHub">
+                                                        <i class="fas fa-external-link-alt"></i>
+                                                    </a>
+                                                    {% endif %}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> No remote assertions found.
+                            </div>
+                            {% endif %}
+                        </div>
                     </div>
-                    {% endif %}
+                </div>
+                
+                <!-- Synced Tab -->
+                <div class="tab-pane fade" id="synced" role="tabpanel" aria-labelledby="synced-tab">
+                    <div class="card">
+                        <div class="card-body">
+                            {% if synced_assertions %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Description</th>
+                                            <th>Type</th>
+                                            <th>Schedule</th>
+                                            <th>Last Run</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for assertion in synced_assertions %}
+                                        <tr>
+                                            <td>
+                                                <a href="{% url 'metadata_manager:assertion_detail' assertion.id %}">{{ assertion.name }}</a>
+                                            </td>
+                                            <td>{{ assertion.description|default:"-" }}</td>
+                                            <td>
+                                                {% include "metadata_manager/assertions/partials/type_badge.html" with type=assertion.type %}
+                                            </td>
+                                            <td>
+                                                {% if assertion.schedule_type == 'manual' %}
+                                                <span class="badge bg-secondary">Manual</span>
+                                                {% elif assertion.schedule_type == 'fixed' %}
+                                                <span class="badge bg-info">Every {{ assertion.interval_value }} {{ assertion.interval_unit }}</span>
+                                                {% elif assertion.schedule_type == 'cron' %}
+                                                <span class="badge bg-info" title="{{ assertion.cron_expression }}">Cron</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ assertion.last_run|default:"Never" }}</td>
+                                            <td>
+                                                {% include "metadata_manager/assertions/partials/status_badge.html" with status=assertion.last_status %}
+                                            </td>
+                                            <td>
+                                                <div class="btn-group">
+                                                    <form method="post" action="{% url 'metadata_manager:assertion_run' assertion.id %}" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Run Assertion">
+                                                            <i class="fas fa-play"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% if datahub_url %}
+                                                    <a href="{{ datahub_url }}/assertion/{{ assertion.urn|urlencode:'' }}" 
+                                                       target="_blank" class="btn btn-sm btn-outline-secondary" title="View in DataHub">
+                                                        <i class="fas fa-external-link-alt"></i>
+                                                    </a>
+                                                    {% endif %}
+                                                    <a href="{% url 'metadata_manager:assertion_detail' assertion.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> No synced assertions found.
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -109,7 +292,7 @@
 <div class="modal fade" id="createAssertionModal" tabindex="-1" aria-labelledby="createAssertionModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form method="post" action="{% url 'assertion_create' %}">
+            <form method="post" action="{% url 'metadata_manager:assertion_create' %}">
                 {% csrf_token %}
                 <div class="modal-header">
                     <h5 class="modal-title" id="createAssertionModalLabel">Create New Assertion</h5>
@@ -128,66 +311,170 @@
                         <label for="type" class="form-label">Assertion Type <span class="text-danger">*</span></label>
                         <select class="form-select" id="type" name="type" required>
                             <option value="">-- Select Type --</option>
-                            <option value="domain_exists">Domain Exists</option>
-                            <option value="tag_exists">Tag Exists</option>
-                            <option value="glossary_term_exists">Glossary Term Exists</option>
-                            <option value="sql">SQL Query</option>
+                            <option value="schema">Schema Assertion</option>
+                            <option value="sql">SQL Assertion</option>
+                            <option value="field">Field Assertion</option>
+                            <option value="volume">Volume Assertion</option>
+                            <option value="freshness">Freshness Assertion</option>
                         </select>
                     </div>
-                    
-                    <!-- Domain Exists Config -->
-                    <div id="domain_exists_config" class="config-section" style="display: none;">
+
+                    <!-- Schedule Configuration -->
+                    <div class="mb-4 border-bottom pb-3">
+                        <h6>Schedule Configuration</h6>
                         <div class="mb-3">
-                            <label for="domain_id" class="form-label">Select Domain <span class="text-danger">*</span></label>
-                            <select class="form-select" id="domain_id" name="domain_id">
-                                <option value="">-- Select Domain --</option>
-                                {% for domain in domains %}
-                                    <option value="{{ domain.id }}">{{ domain.name }}</option>
-                                {% endfor %}
+                            <label for="schedule_type" class="form-label">Schedule Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="schedule_type" name="schedule_type" required>
+                                <option value="manual">Manual Only</option>
+                                <option value="fixed">Fixed Schedule</option>
+                                <option value="cron">Cron Expression</option>
                             </select>
-                            <div class="form-text">
-                                This assertion will check if this domain exists in DataHub.
+                        </div>
+                        
+                        <!-- Fixed Schedule Options -->
+                        <div id="fixed_schedule_config" class="schedule-section" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="interval_value" class="form-label">Interval</label>
+                                        <div class="input-group">
+                                            <input type="number" class="form-control" id="interval_value" name="interval_value" min="1">
+                                            <select class="form-select" id="interval_unit" name="interval_unit">
+                                                <option value="minutes">Minutes</option>
+                                                <option value="hours">Hours</option>
+                                                <option value="days">Days</option>
+                                                <option value="weeks">Weeks</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Cron Schedule Options -->
+                        <div id="cron_schedule_config" class="schedule-section" style="display: none;">
+                            <div class="mb-3">
+                                <label for="cron_expression" class="form-label">Cron Expression</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="cron_expression" name="cron_expression" placeholder="*/15 * * * *">
+                                    <button class="btn btn-outline-secondary" type="button" id="cronHelperBtn">
+                                        <i class="fas fa-question-circle"></i>
+                                    </button>
+                                </div>
+                                <div class="form-text">
+                                    Standard cron expression format (e.g., "*/15 * * * *" for every 15 minutes)
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="timezone" class="form-label">Timezone</label>
+                                <select class="form-select" id="timezone" name="timezone">
+                                    <option value="UTC">UTC</option>
+                                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                                    <option value="America/New_York">America/New_York</option>
+                                    <option value="Europe/London">Europe/London</option>
+                                    <option value="Asia/Tokyo">Asia/Tokyo</option>
+                                    <!-- Add more timezone options as needed -->
+                                </select>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Tag Exists Config -->
-                    <div id="tag_exists_config" class="config-section" style="display: none;">
+                    <!-- Schema Assertion Config -->
+                    <div id="schema_config" class="config-section" style="display: none;">
                         <div class="mb-3">
-                            <label for="tag_name" class="form-label">Tag Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="tag_name" name="tag_name">
+                            <label for="dataset_urn" class="form-label">Dataset URN <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="dataset_urn" name="dataset_urn">
                             <div class="form-text">
-                                This assertion will check if a tag with this name exists in DataHub.
+                                The URN of the dataset to check schema assertions against.
                             </div>
                         </div>
-                    </div>
-                    
-                    <!-- Glossary Term Exists Config -->
-                    <div id="glossary_term_exists_config" class="config-section" style="display: none;">
                         <div class="mb-3">
-                            <label for="term_name" class="form-label">Term Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="term_name" name="term_name">
+                            <label for="schema_field" class="form-label">Schema Field</label>
+                            <input type="text" class="form-control" id="schema_field" name="schema_field">
                             <div class="form-text">
-                                This assertion will check if a glossary term with this name exists in DataHub.
+                                Optional. The specific field to check. Leave empty to check entire schema.
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="expected_type" class="form-label">Expected Type</label>
+                            <input type="text" class="form-control" id="expected_type" name="expected_type">
+                            <div class="form-text">
+                                Optional. The expected data type of the field.
                             </div>
                         </div>
                     </div>
                     
-                    <!-- SQL Query Config -->
+                    <!-- SQL Assertion Config -->
                     <div id="sql_config" class="config-section" style="display: none;">
                         <div class="mb-3">
                             <label for="sql_query" class="form-label">SQL Query <span class="text-danger">*</span></label>
                             <textarea class="form-control" id="sql_query" name="sql_query" rows="5"></textarea>
                             <div class="form-text">
-                                This assertion will run your SQL query and verify the results.
+                                The SQL query to execute. The assertion will pass if the query returns results.
                             </div>
                         </div>
                         <div class="mb-3">
                             <label for="expected_result" class="form-label">Expected Result</label>
-                            <input type="text" class="form-control" id="expected_result" name="expected_result">
+                            <textarea class="form-control" id="expected_result" name="expected_result" rows="3"></textarea>
                             <div class="form-text">
-                                Optional. If provided, the assertion will check if the query result matches this value.
+                                Optional. JSON representation of the expected result.
                             </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Field Assertion Config -->
+                    <div id="field_config" class="config-section" style="display: none;">
+                        <div class="mb-3">
+                            <label for="dataset_urn" class="form-label">Dataset URN <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="field_dataset_urn" name="dataset_urn">
+                        </div>
+                        <div class="mb-3">
+                            <label for="field_path" class="form-label">Field Path <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="field_path" name="field_path">
+                        </div>
+                        <div class="mb-3">
+                            <label for="assertion_type" class="form-label">Field Assertion Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="assertion_type" name="assertion_type">
+                                <option value="NOT_NULL">Not Null</option>
+                                <option value="REGEX_MATCH">Regex Match</option>
+                                <option value="ENUM">Enum Values</option>
+                                <option value="RANGE">Numeric Range</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="assertion_params" class="form-label">Parameters</label>
+                            <textarea class="form-control" id="assertion_params" name="assertion_params" rows="3"></textarea>
+                            <div class="form-text">
+                                JSON parameters for the assertion (e.g., regex pattern, enum values, min/max range)
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Volume Assertion Config -->
+                    <div id="volume_config" class="config-section" style="display: none;">
+                        <div class="mb-3">
+                            <label for="dataset_urn" class="form-label">Dataset URN <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="volume_dataset_urn" name="dataset_urn">
+                        </div>
+                        <div class="mb-3">
+                            <label for="min_count" class="form-label">Minimum Count</label>
+                            <input type="number" class="form-control" id="min_count" name="min_count">
+                        </div>
+                        <div class="mb-3">
+                            <label for="max_count" class="form-label">Maximum Count</label>
+                            <input type="number" class="form-control" id="max_count" name="max_count">
+                        </div>
+                    </div>
+                    
+                    <!-- Freshness Assertion Config -->
+                    <div id="freshness_config" class="config-section" style="display: none;">
+                        <div class="mb-3">
+                            <label for="dataset_urn" class="form-label">Dataset URN <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="freshness_dataset_urn" name="dataset_urn">
+                        </div>
+                        <div class="mb-3">
+                            <label for="max_age_hours" class="form-label">Maximum Age (Hours) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="max_age_hours" name="max_age_hours">
                         </div>
                     </div>
                 </div>
@@ -228,6 +515,137 @@
         const typeSelect = document.getElementById('type');
         const configSections = document.querySelectorAll('.config-section');
         
+        // Schedule configuration handling
+        const scheduleTypeSelect = document.getElementById('schedule_type');
+        const scheduleSections = document.querySelectorAll('.schedule-section');
+        
+        scheduleTypeSelect.addEventListener('change', function() {
+            const selectedType = this.value;
+            
+            // Hide all schedule sections
+            scheduleSections.forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Show the selected schedule section
+            if (selectedType === 'fixed') {
+                document.getElementById('fixed_schedule_config').style.display = 'block';
+            } else if (selectedType === 'cron') {
+                document.getElementById('cron_schedule_config').style.display = 'block';
+            }
+        });
+        
+        // Cron expression helper
+        const cronHelperBtn = document.getElementById('cronHelperBtn');
+        if (cronHelperBtn) {
+            cronHelperBtn.addEventListener('click', function() {
+                const cronHelperContent = `
+                    <div class="modal" id="cronHelperModal" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Cron Expression Helper</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <h6>Common Examples:</h6>
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Expression</th>
+                                                <th>Description</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td><code>*/15 * * * *</code></td>
+                                                <td>Every 15 minutes</td>
+                                            </tr>
+                                            <tr>
+                                                <td><code>0 * * * *</code></td>
+                                                <td>Every hour</td>
+                                            </tr>
+                                            <tr>
+                                                <td><code>0 0 * * *</code></td>
+                                                <td>Every day at midnight</td>
+                                            </tr>
+                                            <tr>
+                                                <td><code>0 9 * * 1-5</code></td>
+                                                <td>Every weekday at 9 AM</td>
+                                            </tr>
+                                            <tr>
+                                                <td><code>0 0 * * 0</code></td>
+                                                <td>Every Sunday at midnight</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <h6>Format:</h6>
+                                    <p><code>* * * * *</code></p>
+                                    <p>From left to right:</p>
+                                    <ul>
+                                        <li>Minutes (0-59)</li>
+                                        <li>Hours (0-23)</li>
+                                        <li>Day of month (1-31)</li>
+                                        <li>Month (1-12)</li>
+                                        <li>Day of week (0-6, 0=Sunday)</li>
+                                    </ul>
+                                    <h6>Special Characters:</h6>
+                                    <ul>
+                                        <li><code>*</code> - any value</li>
+                                        <li><code>,</code> - value list separator</li>
+                                        <li><code>-</code> - range of values</li>
+                                        <li><code>/</code> - step values</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Remove existing modal if any
+                const existingModal = document.getElementById('cronHelperModal');
+                if (existingModal) {
+                    existingModal.remove();
+                }
+                
+                // Add modal to document
+                document.body.insertAdjacentHTML('beforeend', cronHelperContent);
+                
+                // Show modal
+                const modal = new bootstrap.Modal(document.getElementById('cronHelperModal'));
+                modal.show();
+            });
+        }
+        
+        // Function to show/hide assertion parameters based on field assertion type
+        function updateFieldAssertionParams() {
+            const assertionType = document.getElementById('assertion_type').value;
+            const paramsField = document.getElementById('assertion_params');
+            let placeholder = '';
+            
+            switch (assertionType) {
+                case 'REGEX_MATCH':
+                    placeholder = '{\n  "pattern": "^[A-Z][a-z]+$"\n}';
+                    break;
+                case 'ENUM':
+                    placeholder = '{\n  "values": ["value1", "value2", "value3"]\n}';
+                    break;
+                case 'RANGE':
+                    placeholder = '{\n  "min": 0,\n  "max": 100\n}';
+                    break;
+                default:
+                    placeholder = '{}';
+            }
+            
+            paramsField.placeholder = placeholder;
+        }
+        
+        // Initialize field assertion parameters
+        if (document.getElementById('assertion_type')) {
+            document.getElementById('assertion_type').addEventListener('change', updateFieldAssertionParams);
+            updateFieldAssertionParams();
+        }
+        
         typeSelect.addEventListener('change', function() {
             const selectedType = this.value;
             
@@ -250,32 +668,91 @@
             button.addEventListener('click', function() {
                 const assertionId = this.getAttribute('data-assertion-id');
                 const assertionName = this.getAttribute('data-assertion-name');
-                const modal = document.getElementById('deleteAssertionModal');
                 
-                // Update modal content
-                modal.querySelector('.modal-body p:first-child').textContent = 
-                    `Are you sure you want to delete the assertion "${assertionName}"?`;
-                
-                // Setup delete confirmation button
-                document.getElementById('confirmDelete').addEventListener('click', function() {
-                    // Create and submit a form
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = `/metadata/assertions/${assertionId}/delete/`;
-                    
-                    // Add CSRF token
-                    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
-                    const csrfInput = document.createElement('input');
-                    csrfInput.type = 'hidden';
-                    csrfInput.name = 'csrfmiddlewaretoken';
-                    csrfInput.value = csrfToken;
-                    form.appendChild(csrfInput);
-                    
-                    // Add to document and submit
-                    document.body.appendChild(form);
-                    form.submit();
-                });
+                document.getElementById('confirmDelete').onclick = function() {
+                    fetch(`/metadata/assertions/${assertionId}/delete/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Error deleting assertion: ' + data.error);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error deleting assertion');
+                    });
+                };
             });
+        });
+        
+        // Setup dataset URN search
+        const datasetUrnFields = document.querySelectorAll('[id$="_dataset_urn"]');
+        datasetUrnFields.forEach(field => {
+            field.addEventListener('input', function() {
+                // TODO: Add dataset search/autocomplete functionality
+            });
+        });
+        
+        // Form validation
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const selectedType = typeSelect.value;
+            const scheduleType = scheduleTypeSelect.value;
+            
+            // Validate schedule configuration
+            if (scheduleType === 'fixed') {
+                const intervalValue = document.getElementById('interval_value').value;
+                if (!intervalValue || intervalValue < 1) {
+                    e.preventDefault();
+                    alert('Please enter a valid interval value');
+                    return;
+                }
+            } else if (scheduleType === 'cron') {
+                const cronExpression = document.getElementById('cron_expression').value;
+                if (!cronExpression) {
+                    e.preventDefault();
+                    alert('Please enter a cron expression');
+                    return;
+                }
+                // Basic cron expression validation
+                const cronParts = cronExpression.split(' ');
+                if (cronParts.length !== 5) {
+                    e.preventDefault();
+                    alert('Invalid cron expression format');
+                    return;
+                }
+            }
+            
+            if (selectedType === 'field') {
+                const params = document.getElementById('assertion_params').value;
+                if (params) {
+                    try {
+                        JSON.parse(params);
+                    } catch (error) {
+                        e.preventDefault();
+                        alert('Invalid JSON in assertion parameters');
+                    }
+                }
+            }
+            
+            if (selectedType === 'sql') {
+                const expectedResult = document.getElementById('expected_result').value;
+                if (expectedResult) {
+                    try {
+                        JSON.parse(expectedResult);
+                    } catch (error) {
+                        e.preventDefault();
+                        alert('Invalid JSON in expected result');
+                    }
+                }
+            }
         });
     });
 </script>

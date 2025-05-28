@@ -1,135 +1,227 @@
 {% extends "base.html" %}
 
+{% block title %}Metadata Manager - DataHub CI/CD Manager{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
+    <div class="mb-4">
+        <h1 class="h2">Metadata Manager</h1>
+        <p class="text-muted">Manage DataHub metadata entities and their properties</p>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
     <div class="row">
-        <div class="col-md-12">
-            <h1 class="mb-4">Metadata Manager</h1>
-            
-            {% if error %}
-            <div class="alert alert-danger">
-                <strong>Error:</strong> {{ error }}
-            </div>
-            {% endif %}
-            
+        <!-- Statistics Cards -->
+        <div class="col-md-8">
             <div class="row">
-                <div class="col-md-3">
-                    <div class="card mb-4">
-                        <div class="card-header bg-primary text-white">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-tags mr-2"></i> Tags
-                            </h5>
-                        </div>
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
                         <div class="card-body">
-                            <h2 class="display-4 text-center">{{ stats.tags_count }}</h2>
-                            <p class="text-center">DataHub Tags</p>
-                            <div class="d-grid gap-2">
-                                <a href="{% url 'tag_list' %}" class="btn btn-outline-primary">Manage Tags</a>
-                                <a href="{% url 'tag_pull' %}" class="btn btn-outline-secondary">Pull from DataHub</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-md-3">
-                    <div class="card mb-4">
-                        <div class="card-header bg-success text-white">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-book mr-2"></i> Glossary
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-6 text-center">
-                                    <h3>{{ stats.glossary_nodes_count }}</h3>
-                                    <p>Nodes</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Tags</h6>
+                                    <h2 class="card-title mb-0">{{ stats.tags_count }}</h2>
                                 </div>
-                                <div class="col-6 text-center">
-                                    <h3>{{ stats.glossary_terms_count }}</h3>
-                                    <p>Terms</p>
+                                <div class="text-primary">
+                                    <i class="fas fa-tag fa-2x"></i>
                                 </div>
                             </div>
-                            <div class="d-grid gap-2">
-                                <a href="{% url 'glossary_list' %}" class="btn btn-outline-success">Manage Glossary</a>
-                                <a href="#" class="btn btn-outline-secondary">Pull from DataHub</a>
-                            </div>
+                            <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-sm btn-outline-primary mt-3">
+                                <i class="fas fa-arrow-right me-1"></i> Manage Tags
+                            </a>
                         </div>
                     </div>
                 </div>
-                
-                <div class="col-md-3">
-                    <div class="card mb-4">
-                        <div class="card-header bg-info text-white">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-sitemap mr-2"></i> Domains
-                            </h5>
-                        </div>
+
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
                         <div class="card-body">
-                            <h2 class="display-4 text-center">{{ stats.domains_count }}</h2>
-                            <p class="text-center">DataHub Domains</p>
-                            <div class="d-grid gap-2">
-                                <a href="{% url 'domain_list' %}" class="btn btn-outline-info">Manage Domains</a>
-                                <a href="#" class="btn btn-outline-secondary">Pull from DataHub</a>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Glossary Terms</h6>
+                                    <h2 class="card-title mb-0">{{ stats.glossary_terms_count }}</h2>
+                                </div>
+                                <div class="text-success">
+                                    <i class="fas fa-book fa-2x"></i>
+                                </div>
                             </div>
+                            <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-sm btn-outline-success mt-3">
+                                <i class="fas fa-arrow-right me-1"></i> Manage Glossary
+                            </a>
                         </div>
                     </div>
                 </div>
-                
-                <div class="col-md-3">
-                    <div class="card mb-4">
-                        <div class="card-header bg-warning text-dark">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-check-circle mr-2"></i> Assertions
-                            </h5>
-                        </div>
+
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
                         <div class="card-body">
-                            <h2 class="display-4 text-center">{{ stats.assertions_count }}</h2>
-                            <p class="text-center">Metadata Assertions</p>
-                            <div class="d-grid gap-2">
-                                <a href="{% url 'assertion_list' %}" class="btn btn-outline-warning">Manage Assertions</a>
-                                <a href="#" class="btn btn-outline-secondary">Run Assertions</a>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Domains</h6>
+                                    <h2 class="card-title mb-0">{{ stats.domains_count }}</h2>
+                                </div>
+                                <div class="text-info">
+                                    <i class="fas fa-sitemap fa-2x"></i>
+                                </div>
                             </div>
+                            <a href="{% url 'metadata_manager:domain_list' %}" class="btn btn-sm btn-outline-info mt-3">
+                                <i class="fas fa-arrow-right me-1"></i> Manage Domains
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Assertions</h6>
+                                    <h2 class="card-title mb-0">{{ stats.assertions_count }}</h2>
+                                </div>
+                                <div class="text-warning">
+                                    <i class="fas fa-check-circle fa-2x"></i>
+                                </div>
+                            </div>
+                            <a href="{% url 'metadata_manager:assertion_list' %}" class="btn btn-sm btn-outline-warning mt-3">
+                                <i class="fas fa-arrow-right me-1"></i> Manage Assertions
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Editable Properties</h6>
+                                    <p class="card-text">Manage entity properties</p>
+                                </div>
+                                <div class="text-secondary">
+                                    <i class="fas fa-edit fa-2x"></i>
+                                </div>
+                            </div>
+                            <a href="{% url 'metadata_manager:editable_properties' %}" class="btn btn-sm btn-outline-secondary mt-3">
+                                <i class="fas fa-arrow-right me-1"></i> Manage Properties
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Sync Status</h6>
+                                    <p class="card-text">Sync metadata with DataHub</p>
+                                </div>
+                                <div class="text-danger">
+                                    <i class="fas fa-sync fa-2x"></i>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger mt-3" id="syncButton">
+                                <i class="fas fa-sync me-1"></i> Sync Now
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="row mt-4">
-                <div class="col-md-6">
-                    <div class="card mb-4">
-                        <div class="card-header bg-dark text-white">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-sync mr-2"></i> Metadata Synchronization
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <p>Configure and run metadata synchronization between environments.</p>
-                            <div class="d-grid gap-2">
-                                <a href="{% url 'sync_config_list' %}" class="btn btn-outline-dark">Sync Configurations</a>
-                                <a href="#" class="btn btn-outline-secondary">Execute Sync</a>
-                            </div>
-                        </div>
-                    </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Quick Actions</h5>
                 </div>
-                
-                <div class="col-md-6">
-                    <div class="card mb-4">
-                        <div class="card-header bg-secondary text-white">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-upload mr-2"></i> Export for CICD
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <p>Export metadata for CICD workflows to deploy to other environments.</p>
-                            <div class="d-grid gap-2">
-                                <a href="#" class="btn btn-outline-secondary">Export All Metadata</a>
-                                <a href="#" class="btn btn-outline-dark">Configure CICD Export</a>
-                            </div>
-                        </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        <a href="{% url 'metadata_manager:tag_list' %}" class="list-group-item list-group-item-action">
+                            <i class="fas fa-plus-circle me-2"></i> Create New Tag
+                        </a>
+                        <a href="{% url 'metadata_manager:glossary_term_create' %}" class="list-group-item list-group-item-action">
+                            <i class="fas fa-plus-circle me-2"></i> Add Glossary Term
+                        </a>
+                        <a href="{% url 'metadata_manager:domain_create' %}" class="list-group-item list-group-item-action">
+                            <i class="fas fa-plus-circle me-2"></i> Create New Domain
+                        </a>
+                        <a href="{% url 'metadata_manager:assertion_create' %}" class="list-group-item list-group-item-action">
+                            <i class="fas fa-plus-circle me-2"></i> Add Assertion
+                        </a>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle sync button click
+    document.getElementById('syncButton').addEventListener('click', function() {
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Syncing...';
+        
+        fetch('/metadata/sync/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showSuccess('Metadata synced successfully');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                showError(data.error || 'Failed to sync metadata');
+            }
+        })
+        .catch(error => {
+            console.error('Error syncing metadata:', error);
+            showError('Failed to sync metadata');
+        })
+        .finally(() => {
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-sync me-1"></i> Sync Now';
+        });
+    });
+    
+    // Function to show success message
+    function showSuccess(message) {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-success alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+    }
+    
+    // Function to show error message
+    function showError(message) {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-danger alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+    }
+});
+</script>
 {% endblock %} 

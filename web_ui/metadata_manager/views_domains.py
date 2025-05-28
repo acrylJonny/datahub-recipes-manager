@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import sys
+from django.views.decorators.csrf import csrf_exempt
 
 # Add project root to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -17,6 +18,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from utils.urn_utils import generate_deterministic_urn, get_full_urn_from_name
 from utils.datahub_utils import get_datahub_client, test_datahub_connection
 from .models import Domain
+from web_ui.models import GitSettings
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +102,6 @@ class DomainListView(View):
             
             # Check if git integration is enabled
             try:
-                from web_ui.web_ui.models import GitSettings
                 github_settings = GitSettings.objects.first()
                 context['has_git_integration'] = github_settings and github_settings.enabled
                 logger.debug(f"Git integration enabled: {context['has_git_integration']}")
@@ -169,8 +170,7 @@ class DomainDetailView(View):
             
             # Check if git integration is enabled
             try:
-                from web_ui.models import GitHubSettings
-                github_settings = GitHubSettings.objects.first()
+                github_settings = GitSettings.objects.first()
                 context['has_git_integration'] = github_settings and github_settings.enabled
             except:
                 pass
@@ -370,18 +370,9 @@ class DomainGitPushView(View):
     def post(self, request, domain_id):
         """Push a domain to a GitHub PR"""
         try:
-            from web_ui.models import GitHubSettings
             from web_ui.views import add_entity_to_git_push
             
             domain = get_object_or_404(Domain, id=domain_id)
-            
-            # Get GitHub settings
-            github_settings = GitHubSettings.objects.first()
-            if not github_settings or not github_settings.enabled:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'GitHub integration is not enabled'
-                })
             
             # Add domain to Git staging
             try:

@@ -11,7 +11,7 @@
                         <i class="fas fa-plus me-1"></i> Create Tag
                     </a>
                     
-                    <a href="{% url 'tag_import_export' %}" class="btn btn-outline-secondary">
+                    <a href="{% url 'metadata_manager:tag_import_export' %}" class="btn btn-outline-secondary">
                         <i class="fas fa-file-export me-1"></i> Import/Export
                     </a>
                 </div>
@@ -82,7 +82,7 @@
                                     </button>
                                 </div>
                                 <div class="ms-2">
-                                    <a href="{% url 'tag_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                                    <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
                                         <i class="fas fa-sync-alt"></i>
                                     </a>
                                 </div>
@@ -105,7 +105,7 @@
                                             {% for tag_pair in synced_tags %}
                                                 <tr>
                                                     <td>
-                                                        <a href="{% url 'tag_detail' tag_pair.local.id %}" class="text-decoration-none">
+                                                        <a href="{% url 'metadata_manager:tag_detail' tag_pair.local.id %}" class="text-decoration-none">
                                                             {{ tag_pair.local.name }}
                                                         </a>
                                                     </td>
@@ -123,11 +123,11 @@
                                                     </td>
                                                     <td>
                                                         <div class="btn-group" role="group">
-                                                            <a href="{% url 'tag_detail' tag_pair.local.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <a href="{% url 'metadata_manager:tag_detail' tag_pair.local.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                                 <i class="fas fa-eye"></i>
                                                             </a>
                                                             {% if tag_pair.local.sync_status == 'MODIFIED' and has_datahub_connection %}
-                                                            <form action="{% url 'tag_deploy' tag_pair.local.id %}" method="post" class="d-inline">
+                                                            <form action="{% url 'metadata_manager:tag_deploy' tag_pair.local.id %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Update in DataHub">
                                                                     <i class="fas fa-sync-alt"></i>
@@ -198,7 +198,7 @@
                                                 {% if tag.sync_status == 'LOCAL_ONLY' %}
                                                 <tr>
                                                     <td>
-                                                        <a href="{% url 'tag_detail' tag.id %}" class="text-decoration-none">
+                                                        <a href="{% url 'metadata_manager:tag_detail' tag.id %}" class="text-decoration-none">
                                                             {{ tag.name }}
                                                         </a>
                                                     </td>
@@ -216,11 +216,11 @@
                                                     </td>
                                                     <td>
                                                         <div class="btn-group" role="group">
-                                                            <a href="{% url 'tag_detail' tag.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <a href="{% url 'metadata_manager:tag_detail' tag.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                                 <i class="fas fa-eye"></i>
                                                             </a>
                                                             {% if has_datahub_connection %}
-                                                            <form action="{% url 'tag_deploy' tag.id %}" method="post" class="d-inline">
+                                                            <form action="{% url 'metadata_manager:tag_deploy' tag.id %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
                                                                     <i class="fas fa-cloud-upload-alt"></i>
@@ -313,7 +313,7 @@
                                                                 <i class="fas fa-external-link-alt"></i>
                                                             </a>
                                                             {% endif %}
-                                                            <form action="{% url 'tag_pull' %}" method="post" class="d-inline">
+                                                            <form action="{% url 'metadata_manager:tag_pull' %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <input type="hidden" name="tag_urn" value="{{ tag.urn }}">
                                                                 <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
@@ -335,7 +335,7 @@
                                     <h4>No remote-only tags</h4>
                                     <p class="text-muted">Tags that exist only in DataHub will appear here.</p>
                                     {% if has_datahub_connection %}
-                                    <form method="post" action="{% url 'tag_pull' %}" class="d-inline">
+                                    <form method="post" action="{% url 'metadata_manager:tag_pull' %}" class="d-inline">
                                         {% csrf_token %}
                                         <button type="submit" class="btn btn-primary mt-2">
                                             <i class="fas fa-cloud-download-alt me-1"></i> Pull from DataHub
@@ -356,7 +356,7 @@
 <div class="modal fade" id="createTagModal" tabindex="-1" aria-labelledby="createTagModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'tag_create' %}">
+            <form method="post" action="{% url 'metadata_manager:tag_list' %}">
                 {% csrf_token %}
                 <div class="modal-header">
                     <h5 class="modal-title" id="createTagModalLabel">Create New Tag</h5>

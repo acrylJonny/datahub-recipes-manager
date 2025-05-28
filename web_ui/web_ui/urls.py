@@ -56,7 +56,16 @@ urlpatterns = [
     path("recipes/templates/", include('template_manager.urls')),
     
     # Policy management
-    path("policies/", include('policies.urls')),
+    path("policies/", web_ui_views.policies, name="policies"),
+    path("policies/detail/<str:policy_id>/", web_ui_views.policy_view, name="policy_view"),
+    path("policies/create/", web_ui_views.policy_create, name="policy_create"),
+    path("policies/import/", web_ui_views.policy_import, name="policy_import"),
+    path("policies/edit/<str:policy_id>/", web_ui_views.policy_edit, name="policy_edit"),
+    path("policies/delete/<str:policy_id>/", web_ui_views.policy_delete, name="policy_delete"),
+    path("policies/download/<str:policy_id>/", web_ui_views.policy_download, name="policy_download"),
+    path("policies/export-all/", web_ui_views.export_all_policies, name="export_all_policies"),
+    path("policies/<str:policy_id>/push-github/", web_ui_views.policy_push_github, name="policy_push_github"),
+    path("policies/<str:policy_id>/deploy/", web_ui_views.policy_deploy, name="policy_deploy"),
     
     # Logs
     path("logs/", web_ui_views.logs, name="logs"),

@@ -7,7 +7,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">Manage Ingestion Recipes</h1>
         <div>
-            <a href="{% url 'template_manager:recipe_templates' %}" class="btn btn-outline-secondary">
+            <a href="{% url 'recipe_templates' %}" class="btn btn-outline-secondary">
                 <i class="fas fa-scroll me-1"></i> Recipe Templates
             </a>
             <a href="{% url 'recipe_create' %}" class="btn btn-primary ms-2">
@@ -111,7 +111,7 @@
                                             <a href="{% url 'recipe_download' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Download this recipe">
                                                 <i class="fas fa-download"></i>
                                             </a>
-                                            <a href="{% url 'template_manager:recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Save this recipe as a template">
+                                            <a href="{% url 'recipe_template_save' recipe_id=recipe.id %}" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Save this recipe as a template">
                                                 <i class="fas fa-copy"></i>
                                             </a>
                                             <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="{{ recipe.id }}" {% if recipe.id|slice:':4' == 'cli-' %}disabled data-bs-toggle="tooltip" data-bs-placement="top" title="Cannot run CLI-created recipes from the UI" tabindex="0"{% else %}data-bs-toggle="tooltip" title="Run this recipe now"{% endif %}>

@@ -58,123 +58,11 @@ class GlossaryListView(View):
             
             logger.debug(f"Found {root_terms.count()} root-level terms")
             
-            # Get DataHub connection info using the shared utility
-            logger.debug("Testing DataHub connection from GlossaryListView")
-            connected, client = test_datahub_connection()
-            logger.debug(f"DataHub connection test result: {connected}")
-            
-            # Fetch remote-only nodes and terms if connected
-            remote_only_nodes = []
-            remote_only_terms = []
-            datahub_url = None
-            
-            if connected and client:
-                logger.debug("Connected to DataHub, fetching remote nodes and terms")
-                try:
-                    # Get all remote nodes and terms from DataHub
-                    remote_nodes = client.list_glossary_nodes(count=1000)
-                    remote_terms = client.list_glossary_terms(count=1000)
-                    
-                    logger.debug(f"Fetched {len(remote_nodes) if remote_nodes else 0} remote nodes and {len(remote_terms) if remote_terms else 0} remote terms")
-                    
-                    # Extract node URNs that exist locally
-                    local_node_urns = set(nodes.values_list('deterministic_urn', flat=True))
-                    
-                    # Find nodes that exist remotely but not locally
-                    remote_only_nodes = [node for node in remote_nodes if node.get('urn') not in local_node_urns]
-                    
-                    # Extract term URNs that exist locally
-                    local_term_urns = set(terms.values_list('deterministic_urn', flat=True))
-                    
-                    # Find terms that exist remotely but not locally
-                    remote_only_terms = [term for term in remote_terms if term.get('urn') not in local_term_urns]
-                    
-                    logger.debug(f"Identified {len(remote_only_nodes)} remote-only nodes and {len(remote_only_terms)} remote-only terms")
-                    
-                    # Get DataHub URL for direct links
-                    datahub_url = client.server_url
-                    if datahub_url.endswith('/api/gms'):
-                        datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
-                except Exception as e:
-                    logger.error(f"Error fetching remote glossary data: {str(e)}")
-                    # Try alternative query if the standard one fails
-                    try:
-                        logger.info("Trying alternative GraphQL query for terms")
-                        # Use a more generic query that's compatible with more DataHub versions
-                        query = """
-                        query glossaryNodes($input: ListGlossaryNodesInput!) {
-                            glossaryNodes(input: $input) {
-                                nodes {
-                                    urn
-                                    properties {
-                                        name
-                                    }
-                                    parentNode {
-                                        urn
-                                    }
-                                }
-                            }
-                        }
-                        """
-                        variables = {"input": {"start": 0, "count": 1000}}
-                        result = client.execute_graphql(query, variables)
-                        remote_nodes = []
-                        if result and 'data' in result and 'glossaryNodes' in result['data']:
-                            for node in result['data']['glossaryNodes']['nodes']:
-                                remote_nodes.append(node)
-                        
-                        # Use a more generic query for terms as well
-                        query = """
-                        query {
-                            glossaryTerms(start: 0, count: 1000) {
-                                terms {
-                                    urn
-                                    name
-                                    hierarchicalName
-                                    properties {
-                                        name
-                                    }
-                                    parentNodes {
-                                        nodes {
-                                            urn
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        """
-                        variables = {}
-                        result = client.execute_graphql(query, variables)
-                        remote_terms = []
-                        if result and 'data' in result and 'glossaryTerms' in result['data']:
-                            for term in result['data']['glossaryTerms']['terms']:
-                                remote_terms.append(term)
-                        
-                        # Extract node URNs that exist locally
-                        local_node_urns = set(nodes.values_list('deterministic_urn', flat=True))
-                        
-                        # Find nodes that exist remotely but not locally
-                        remote_only_nodes = [node for node in remote_nodes if node.get('urn') not in local_node_urns]
-                        
-                        # Extract term URNs that exist locally
-                        local_term_urns = set(terms.values_list('deterministic_urn', flat=True))
-                        
-                        # Find terms that exist remotely but not locally
-                        remote_only_terms = [term for term in remote_terms if term.get('urn') not in local_term_urns]
-                        
-                        logger.debug(f"Identified {len(remote_only_nodes)} remote-only nodes and {len(remote_only_terms)} remote-only terms using alternative query")
-                        
-                        # Get DataHub URL for direct links
-                        datahub_url = client.server_url
-                        if datahub_url.endswith('/api/gms'):
-                            datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
-                    except Exception as alt_e:
-                        logger.error(f"Alternative query also failed: {str(alt_e)}")
-                        remote_only_nodes = []
-                        remote_only_terms = []
-            
-            # Initialize context
+            # Initialize context with all required variables
             context = {
+                'page_title': 'DataHub Glossary',
+                'has_datahub_connection': False,
+                'has_git_integration': False,
                 'nodes': nodes,
                 'root_nodes': root_nodes,
                 'terms': terms,
@@ -190,16 +78,17 @@ class GlossaryListView(View):
                 'synced_root_terms': synced_root_terms,
                 'local_only_root_terms': local_only_root_terms,
                 'remote_only_root_terms': remote_only_root_terms,
-                'modified_root_terms': modified_root_terms,
-                'datahub_url': datahub_url,
-                'has_datahub_connection': connected,
-                'page_title': 'DataHub Glossary',
-                'has_git_integration': False
+                'modified_root_terms': modified_root_terms
             }
+            
+            # Get DataHub connection info
+            logger.debug("Testing DataHub connection from GlossaryListView")
+            connected, client = test_datahub_connection()
+            context['has_datahub_connection'] = connected
+            logger.debug(f"DataHub connection test result: {connected}")
             
             # Check if git integration is enabled
             try:
-                from web_ui.web_ui.models import GitSettings
                 github_settings = GitSettings.objects.first()
                 context['has_git_integration'] = github_settings and github_settings.enabled
                 logger.debug(f"Git integration enabled: {context['has_git_integration']}")
@@ -212,10 +101,31 @@ class GlossaryListView(View):
         except Exception as e:
             logger.error(f"Error in glossary list view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return render(request, 'metadata_manager/glossary/list.html', {
+            
+            # Return a minimal context with empty querysets for all required variables
+            error_context = {
                 'error': str(e),
-                'page_title': 'DataHub Glossary'
-            })
+                'page_title': 'DataHub Glossary',
+                'has_datahub_connection': False,
+                'has_git_integration': False,
+                'nodes': GlossaryNode.objects.none(),
+                'root_nodes': GlossaryNode.objects.none(),
+                'terms': GlossaryTerm.objects.none(),
+                'root_terms': GlossaryTerm.objects.none(),
+                'synced_terms': GlossaryTerm.objects.none(),
+                'local_only_terms': GlossaryTerm.objects.none(),
+                'remote_only_terms': GlossaryTerm.objects.none(),
+                'modified_terms': GlossaryTerm.objects.none(),
+                'synced_nodes': GlossaryNode.objects.none(),
+                'local_only_nodes': GlossaryNode.objects.none(),
+                'remote_only_nodes': GlossaryNode.objects.none(),
+                'modified_nodes': GlossaryNode.objects.none(),
+                'synced_root_terms': GlossaryTerm.objects.none(),
+                'local_only_root_terms': GlossaryTerm.objects.none(),
+                'remote_only_root_terms': GlossaryTerm.objects.none(),
+                'modified_root_terms': GlossaryTerm.objects.none()
+            }
+            return render(request, 'metadata_manager/glossary/list.html', error_context)
     
     def post(self, request):
         """Handle glossary node creation and batch actions"""

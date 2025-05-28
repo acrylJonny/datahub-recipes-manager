@@ -60,9 +60,28 @@
                 {% endif %}
             </div>
             
-            <!-- Tag Details -->
-            <div class="row">
-                <div class="col-md-6">
+            <!-- Node Details Tabs -->
+            <ul class="nav nav-tabs mb-4" id="nodeDetailTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local" 
+                           type="button" role="tab" aria-controls="local" aria-selected="true">
+                        <i class="fas fa-laptop me-1"></i> Local
+                    </button>
+                </li>
+                {% if remote_tag %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote" 
+                           type="button" role="tab" aria-controls="remote" aria-selected="false">
+                        <i class="fas fa-server me-1"></i> Remote
+                    </button>
+                </li>
+                {% endif %}
+            </ul>
+            
+            <!-- Tab Content -->
+            <div class="tab-content" id="nodeDetailTabsContent">
+                <!-- Local Tab -->
+                <div class="tab-pane fade show active" id="local" role="tabpanel" aria-labelledby="local-tab">
                     <div class="card mb-4">
                         <div class="card-header">
                             <h5 class="card-title mb-0">Tag Details</h5>
@@ -135,7 +154,9 @@
                     {% endif %}
                 </div>
                 
-                <div class="col-md-6">
+                <!-- Remote Tab -->
+                {% if remote_tag %}
+                <div class="tab-pane fade" id="remote" role="tabpanel" aria-labelledby="remote-tab">
                     <div class="card mb-4">
                         <div class="card-header">
                             <h5 class="card-title mb-0">Usage Statistics</h5>
@@ -153,6 +174,7 @@
                         </div>
                     </div>
                 </div>
+                {% endif %}
             </div>
             
             <!-- Related Entities Section -->

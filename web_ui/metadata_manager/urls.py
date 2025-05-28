@@ -6,13 +6,22 @@ from . import views_domains
 from . import views_assertions
 from . import views_sync
 
+app_name = 'metadata_manager'
+
 urlpatterns = [
     # Main metadata manager dashboard
     path('', views.MetadataIndexView.as_view(), name='metadata_index'),
 
+    # Editable Properties
+    path('entities/editable/', views.editable_properties_view, name='editable_properties'),
+    path('entities/editable/list/', views.get_editable_entities, name='get_editable_entities'),
+    path('entities/<str:urn>/', views.get_entity_details, name='get_entity_details'),
+    path('entities/<str:urn>/schema/', views.get_entity_schema, name='get_entity_schema'),
+    path('entities/update/', views.update_entity_properties, name='update_entity_properties'),
+    path('sync/', views.sync_metadata, name='sync_metadata'),
+
     # Tags
     path('tags/', views_tags.TagListView.as_view(), name='tag_list'),
-    path('tags/create/', views_tags.TagListView.as_view(), name='tag_create'),
     path('tags/<uuid:tag_id>/', views_tags.TagDetailView.as_view(), name='tag_detail'),
     path('tags/<uuid:tag_id>/edit/', views_tags.TagDetailView.as_view(), name='tag_edit'),
     path('tags/<uuid:tag_id>/delete/', views_tags.TagDetailView.as_view(), name='tag_delete'),
@@ -63,9 +72,4 @@ urlpatterns = [
     # Sync
     path('sync/', views_sync.SyncConfigListView.as_view(), name='sync_config_list'),
     path('sync/create/', views_sync.SyncConfigListView.as_view(), name='sync_config_create'),
-
-    # Editable Properties URLs
-    path('entities/editable-properties/', views.editable_properties_view, name='editable_properties'),
-    path('entities/editable-properties/list/', views.get_editable_entities, name='get_editable_entities'),
-    path('entities/editable-properties/update/', views.update_entity_properties, name='update_entity_properties'),
 ] 

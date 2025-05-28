@@ -11,7 +11,7 @@
                 </div>
                 <div>
                     <div class="btn-group">
-                        <form method="post" action="{% url 'assertion_run' assertion.id %}">
+                        <form method="post" action="{% url 'metadata_manager:assertion_run' assertion.id %}">
                             {% csrf_token %}
                             <button type="submit" class="btn btn-success me-2">
                                 <i class="fas fa-play"></i> Run Assertion
@@ -121,7 +121,7 @@
                             {% else %}
                                 <div class="alert alert-info">
                                     <i class="fas fa-info-circle"></i> No run history available. 
-                                    <form method="post" action="{% url 'assertion_run' assertion.id %}" class="d-inline">
+                                    <form method="post" action="{% url 'metadata_manager:assertion_run' assertion.id %}" class="d-inline">
                                         {% csrf_token %}
                                         <button type="submit" class="btn btn-sm btn-success ms-2">
                                             Run this assertion
@@ -144,7 +144,7 @@
                                         <div class="text-muted">URN: {{ assertion.config.domain_urn }}</div>
                                     </div>
                                     <div>
-                                        <a href="{% url 'domain_detail' assertion.config.domain_id %}" class="btn btn-outline-primary">
+                                        <a href="{% url 'metadata_manager:domain_detail' assertion.config.domain_id %}" class="btn btn-outline-primary">
                                             <i class="fas fa-eye"></i> View Domain
                                         </a>
                                     </div>
@@ -220,7 +220,7 @@
             // Create and submit a form
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = "{% url 'assertion_delete' assertion.id %}";
+            form.action = "{% url 'metadata_manager:assertion_delete' assertion.id %}";
             
             // Add CSRF token
             const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;

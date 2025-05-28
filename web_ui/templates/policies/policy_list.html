@@ -9,10 +9,10 @@
         <p class="text-muted">Manage your DataHub access policies</p>
     </div>
     <div>
-        <a href="{% url 'policies:policy_create' %}" class="btn btn-primary">
+        <a href="{% url 'policy_create' %}" class="btn btn-primary">
             <i class="fas fa-plus me-1"></i> Create Policy
         </a>
-        <a href="{% url 'policies:policy_import' %}" class="btn btn-outline-secondary ms-2">
+        <a href="{% url 'policy_import' %}" class="btn btn-outline-secondary ms-2">
             <i class="fas fa-file-import me-1"></i> Import
         </a>
     </div>
@@ -72,7 +72,7 @@
                     {% for policy in policies %}
                     <tr>
                         <td>
-                            <a href="{% url 'policies:policy_view' policy.id %}" class="text-decoration-none">
+                            <a href="{% url 'policy_view' policy.id %}" class="text-decoration-none">
                                 {{ policy.name }}
                             </a>
                             {% if policy.description %}
@@ -107,13 +107,13 @@
                         </td>
                         <td>
                             <div class="btn-group" role="group">
-                                <a href="{% url 'policies:policy_view' policy.id %}" class="btn btn-sm btn-outline-primary" title="View">
+                                <a href="{% url 'policy_view' policy.id %}" class="btn btn-sm btn-outline-primary" title="View">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <a href="{% url 'policies:policy_edit' policy.id %}" class="btn btn-sm btn-outline-info" title="Edit">
+                                <a href="{% url 'policy_edit' policy.id %}" class="btn btn-sm btn-outline-info" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <a href="{% url 'policies:policy_export' policy.id %}" class="btn btn-sm btn-outline-secondary" title="Export">
+                                <a href="{% url 'policy_export' policy.id %}" class="btn btn-sm btn-outline-secondary" title="Export">
                                     <i class="fas fa-file-export"></i>
                                 </a>
                                 <button type="button" class="btn btn-sm btn-outline-danger" 
@@ -183,7 +183,7 @@
     <p class="text-muted mb-4">
         {% if request.GET %}
         No policies match your filter criteria.
-        <a href="{% url 'policies:policy_list' %}" class="btn btn-outline-secondary mt-2">
+        <a href="{% url 'policy_list' %}" class="btn btn-outline-secondary mt-2">
             <i class="fas fa-times me-1"></i> Clear Filters
         </a>
         {% else %}
@@ -191,10 +191,10 @@
         {% endif %}
     </p>
     {% if not request.GET %}
-    <a href="{% url 'policies:policy_create' %}" class="btn btn-primary">
+    <a href="{% url 'policy_create' %}" class="btn btn-primary">
         <i class="fas fa-plus me-1"></i> Create Policy
     </a>
-    <a href="{% url 'policies:policy_import' %}" class="btn btn-outline-secondary ms-2">
+    <a href="{% url 'policy_import' %}" class="btn btn-outline-secondary ms-2">
         <i class="fas fa-file-import me-1"></i> Import Policy
     </a>
     {% endif %}
@@ -239,7 +239,7 @@
                 const deleteForm = document.getElementById('deletePolicyForm');
                 const nameDisplay = document.getElementById('deletePolicyNamePlaceholder');
                 
-                deleteForm.action = "{% url 'policies:policies_delete' 0 %}".replace('0', policyId);
+                deleteForm.action = "{% url 'policy_delete' 0 %}".replace('0', policyId);
                 nameDisplay.textContent = policyName;
             });
         }

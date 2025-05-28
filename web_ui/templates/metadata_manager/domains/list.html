@@ -11,7 +11,7 @@
                         <i class="fas fa-plus me-1"></i> Create Domain
                     </a>
                     
-                    <a href="{% url 'domain_import_export' %}" class="btn btn-outline-secondary">
+                    <a href="{% url 'metadata_manager:domain_import_export' %}" class="btn btn-outline-secondary">
                         <i class="fas fa-file-export me-1"></i> Import/Export
                     </a>
                 </div>
@@ -82,7 +82,7 @@
                                     </button>
                                 </div>
                                 <div class="ms-2">
-                                    <a href="{% url 'domain_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                                    <a href="{% url 'metadata_manager:domain_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
                                         <i class="fas fa-sync-alt"></i>
                                     </a>
                                 </div>
@@ -104,7 +104,7 @@
                                             {% for domain_pair in synced_domains %}
                                                 <tr>
                                                     <td>
-                                                        <a href="{% url 'domain_detail' domain_pair.local.id %}" class="text-decoration-none">
+                                                        <a href="{% url 'metadata_manager:domain_detail' domain_pair.local.id %}" class="text-decoration-none">
                                                             {{ domain_pair.local.name }}
                                                         </a>
                                                     </td>
@@ -116,11 +116,11 @@
                                                     </td>
                                                     <td>
                                                         <div class="btn-group" role="group">
-                                                            <a href="{% url 'domain_detail' domain_pair.local.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <a href="{% url 'metadata_manager:domain_detail' domain_pair.local.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                                 <i class="fas fa-eye"></i>
                                                             </a>
                                                             {% if domain_pair.local.sync_status == 'MODIFIED' and has_datahub_connection %}
-                                                            <form action="{% url 'domain_deploy' domain_pair.local.id %}" method="post" class="d-inline">
+                                                            <form action="{% url 'metadata_manager:domain_deploy' domain_pair.local.id %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Update in DataHub">
                                                                     <i class="fas fa-sync-alt"></i>
@@ -190,7 +190,7 @@
                                                 {% if domain.sync_status == 'LOCAL_ONLY' %}
                                                 <tr>
                                                     <td>
-                                                        <a href="{% url 'domain_detail' domain.id %}" class="text-decoration-none">
+                                                        <a href="{% url 'metadata_manager:domain_detail' domain.id %}" class="text-decoration-none">
                                                             {{ domain.name }}
                                                         </a>
                                                     </td>
@@ -202,11 +202,11 @@
                                                     </td>
                                                     <td>
                                                         <div class="btn-group" role="group">
-                                                            <a href="{% url 'domain_detail' domain.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <a href="{% url 'metadata_manager:domain_detail' domain.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                                 <i class="fas fa-eye"></i>
                                                             </a>
                                                             {% if has_datahub_connection %}
-                                                            <form action="{% url 'domain_deploy' domain.id %}" method="post" class="d-inline">
+                                                            <form action="{% url 'metadata_manager:domain_deploy' domain.id %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
                                                                     <i class="fas fa-cloud-upload-alt"></i>
@@ -288,7 +288,7 @@
                                                                 <i class="fas fa-external-link-alt"></i>
                                                             </a>
                                                             {% endif %}
-                                                            <form action="{% url 'domain_pull' %}" method="post" class="d-inline">
+                                                            <form action="{% url 'metadata_manager:domain_pull' %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <input type="hidden" name="domain_urn" value="{{ domain.urn }}">
                                                                 <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
@@ -310,7 +310,7 @@
                                     <h4>No remote-only domains</h4>
                                     <p class="text-muted">Domains that exist only in DataHub will appear here.</p>
                                     {% if has_datahub_connection %}
-                                    <form method="post" action="{% url 'domain_pull' %}" class="d-inline">
+                                    <form method="post" action="{% url 'metadata_manager:domain_pull' %}" class="d-inline">
                                         {% csrf_token %}
                                         <button type="submit" class="btn btn-primary mt-2">
                                             <i class="fas fa-cloud-download-alt me-1"></i> Pull from DataHub
@@ -331,7 +331,7 @@
 <div class="modal fade" id="createDomainModal" tabindex="-1" aria-labelledby="createDomainModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'domain_create' %}">
+            <form method="post" action="{% url 'metadata_manager:domain_create' %}">
                 {% csrf_token %}
                 <div class="modal-header">
                     <h5 class="modal-title" id="createDomainModalLabel">Create New Domain</h5>

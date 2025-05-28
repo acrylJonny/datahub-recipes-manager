@@ -40,10 +40,10 @@
                             </button></li>
                         </ul>
                     </div>
-                    <a href="{% url 'glossary_import_export' %}" class="btn btn-outline-secondary">
+                    <a href="{% url 'metadata_manager:glossary_import_export' %}" class="btn btn-outline-secondary">
                         <i class="fas fa-file-export me-1"></i> Import/Export
                     </a>
-                    <a href="{% url 'glossary_pull' %}" class="btn btn-outline-secondary">
+                    <a href="{% url 'metadata_manager:glossary_pull' %}" class="btn btn-outline-secondary">
                         <i class="fas fa-cloud-download-alt me-1"></i> Pull
                     </a>
                 </div>
@@ -114,7 +114,7 @@
                                     </button>
                                 </div>
                                 <div class="ms-2">
-                                    <a href="{% url 'glossary_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                                    <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
                                         <i class="fas fa-sync-alt"></i>
                                     </a>
                                     <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="expand-all-glossary" title="Expand All">
@@ -159,7 +159,7 @@
                                                     <span class="node-icon me-2">
                                                         <i class="fas fa-tag text-info"></i>
                                                     </span>
-                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
                                                         <span>{{ term.name }}</span>
                                                     </a>
                                                     {% if term.sync_status == 'MODIFIED' %}
@@ -175,11 +175,11 @@
                                                     {% endif %}
                                                 </div>
                                                 <div class="btn-group">
-                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
                                                     {% if term.can_deploy and has_datahub_connection %}
-                                                    <form action="{% url 'glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                                                    <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
                                                         {% csrf_token %}
                                                         <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
                                                             <i class="fas fa-cloud-upload-alt"></i>
@@ -278,17 +278,17 @@
                                                     <span class="node-icon me-2">
                                                         <i class="fas fa-tag text-info"></i>
                                                     </span>
-                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
                                                         <span>{{ term.name }}</span>
                                                     </a>
                                                     <span class="badge bg-secondary ms-2">Local Only</span>
                                                 </div>
                                                 <div class="btn-group">
-                                                    <a href="{% url 'glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
                                                     {% if term.can_deploy and has_datahub_connection %}
-                                                    <form action="{% url 'glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                                                    <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
                                                         {% csrf_token %}
                                                         <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
                                                             <i class="fas fa-cloud-upload-alt"></i>
@@ -391,7 +391,7 @@
                                                     <span class="badge bg-info ms-2">Remote Only</span>
                                                 </div>
                                                 <div class="btn-group">
-                                                    <form action="{% url 'glossary_term_pull' %}" method="post" class="d-inline">
+                                                    <form action="{% url 'metadata_manager:glossary_term_pull' %}" method="post" class="d-inline">
                                                         {% csrf_token %}
                                                         <input type="hidden" name="term_urns" value="{{ term.urn }}">
                                                         <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull from DataHub">
@@ -432,7 +432,7 @@
                                             </div>
                                             
                                             <div class="btn-group">
-                                                <form action="{% url 'glossary_node_pull' %}" method="post" class="d-inline">
+                                                <form action="{% url 'metadata_manager:glossary_node_pull' %}" method="post" class="d-inline">
                                                     {% csrf_token %}
                                                     <input type="hidden" name="node_urns" value="{{ node.urn }}">
                                                     <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull from DataHub">
@@ -471,7 +471,7 @@
                                                         </div>
                                                         
                                                         <div class="btn-group">
-                                                            <form action="{% url 'glossary_term_pull' %}" method="post" class="d-inline">
+                                                            <form action="{% url 'metadata_manager:glossary_term_pull' %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <input type="hidden" name="term_urns" value="{{ term.urn }}">
                                                                 <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull from DataHub">
@@ -499,7 +499,7 @@
 <div class="modal fade" id="createNodeModal" tabindex="-1" aria-labelledby="createNodeModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'glossary_list' %}">
+            <form method="post" action="{% url 'metadata_manager:glossary_list' %}">
                 {% csrf_token %}
                 <div class="modal-header">
                     <h5 class="modal-title" id="createNodeModalLabel">Create Glossary Node</h5>
@@ -537,7 +537,7 @@
 <div class="modal fade" id="createTermModal" tabindex="-1" aria-labelledby="createTermModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'glossary_term_create' %}">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_create' %}">
                 {% csrf_token %}
                 <div class="modal-header">
                     <h5 class="modal-title" id="createTermModalLabel">Create Glossary Term</h5>
@@ -820,7 +820,7 @@ $(document).ready(function() {
         // We'll submit a form to the server to get all items
         const form = document.createElement('form');
         form.method = 'post';
-        form.action = '{% url "glossary_import_export" %}';
+        form.action = '{% url "metadata_manager:glossary_import_export" %}';
         form.target = '_blank';
         
         // Add CSRF token
@@ -876,7 +876,7 @@ $(document).ready(function() {
         // Create a form and submit it
         const form = document.createElement('form');
         form.method = 'post';
-        form.action = '{% url "glossary_list" %}';
+        form.action = '{% url "metadata_manager:glossary_list" %}';
         
         // Add CSRF token
         const csrfToken = document.createElement('input');
@@ -925,7 +925,7 @@ $(document).ready(function() {
         // Create a form and submit it
         const form = document.createElement('form');
         form.method = 'post';
-        form.action = '{% url "glossary_list" %}';
+        form.action = '{% url "metadata_manager:glossary_list" %}';
         
         // Add CSRF token
         const csrfToken = document.createElement('input');
@@ -975,7 +975,7 @@ $(document).ready(function() {
         // Create a form and submit it
         const form = document.createElement('form');
         form.method = 'post';
-        form.action = '{% url "glossary_list" %}';
+        form.action = '{% url "metadata_manager:glossary_list" %}';
         
         // Add CSRF token
         const csrfToken = document.createElement('input');
