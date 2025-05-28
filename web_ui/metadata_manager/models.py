@@ -7,7 +7,10 @@ class BaseMetadataModel(models.Model):
     
     SYNC_STATUS_CHOICES = [
         ('SYNCED', 'Synced'),
-        ('NOT_SYNCED', 'Not Synced'),
+        ('LOCAL_ONLY', 'Local Only'),
+        ('REMOTE_ONLY', 'Remote Only'),
+        ('MODIFIED', 'Modified'),
+        ('PENDING_PUSH', 'Pending Push'),
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -114,6 +117,11 @@ class GlossaryNode(BaseMetadataModel):
             data['parent_urn'] = self.parent.deterministic_urn
             
         return data
+        
+    @property
+    def can_deploy(self):
+        """Check if this node can be deployed to DataHub"""
+        return self.sync_status in ['LOCAL_ONLY', 'MODIFIED']
 
 class GlossaryTerm(BaseMetadataModel):
     """Represents a term in the DataHub Glossary"""
@@ -157,6 +165,11 @@ class Domain(BaseMetadataModel):
             'urn': self.deterministic_urn,
             'original_urn': self.original_urn if self.original_urn else None
         }
+        
+    @property
+    def can_deploy(self):
+        """Check if this domain can be deployed to DataHub"""
+        return self.sync_status in ['LOCAL_ONLY', 'MODIFIED']
 
 class Assertion(models.Model):
     """Represents a metadata assertion"""

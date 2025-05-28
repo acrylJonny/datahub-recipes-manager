@@ -62,3 +62,6 @@ workflow_analysis.md
 
 # Local database
 db.*
+
+# venv
+.venv/*

@@ -12,9 +12,9 @@
                 </h1>
                 <div class="d-flex gap-2">
                     {% if tag.can_deploy and has_datahub_connection %}
-                    <form method="post" action="{% url 'tag_deploy' tag.id %}" class="d-inline">
+                    <form method="post" action="{% url 'metadata_manager:tag_deploy' tag.id %}" class="d-inline">
                         {% csrf_token %}
-                        <input type="hidden" name="redirect_url" value="{% url 'tag_detail' tag.id %}">
+                        <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:tag_detail' tag.id %}">
                         <button type="submit" class="btn btn-primary" onclick="return confirm('Deploy this tag to DataHub?')">
                             <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
                         </button>
@@ -27,7 +27,7 @@
                     </button>
                     {% endif %}
                     
-                    <a href="{% url 'tag_list' %}" class="btn btn-secondary">
+                    <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left me-1"></i> Back to Tags
                     </a>
                 </div>
@@ -87,7 +87,7 @@
                             <h5 class="card-title mb-0">Tag Details</h5>
                         </div>
                         <div class="card-body">
-                            <form method="post" action="{% url 'tag_detail' tag.id %}">
+                            <form method="post" action="{% url 'metadata_manager:tag_detail' tag.id %}">
                                 {% csrf_token %}
                                 <div class="mb-3">
                                     <label for="name" class="form-label">Name</label>
@@ -335,7 +335,7 @@
         
         confirmDeleteBtn.addEventListener('click', function() {
             // Send DELETE request
-            fetch("{% url 'tag_detail' tag.id %}", {
+            fetch("{% url 'metadata_manager:tag_detail' tag.id %}", {
                 method: 'DELETE',
                 headers: {
                     'X-CSRFToken': '{{ csrf_token }}',
@@ -345,7 +345,7 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    window.location.href = "{% url 'tag_list' %}";
+                    window.location.href = "{% url 'metadata_manager:tag_list' %}";
                 } else {
                     alert("Error: " + data.message);
                     deleteModal.hide();

@@ -150,6 +150,11 @@
                                         <i class="fas fa-check-circle fa-fw me-2"></i> Assertions
                                     </a>
                                 </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/tests/' %} active{% endif %}" href="{% url 'metadata_manager:tests_list' %}">
+                                        <i class="fas fa-vial fa-fw me-2"></i> Metadata Tests
+                                    </a>
+                                </li>
                             </ul>
                         </li>
                         <li class="nav-item">

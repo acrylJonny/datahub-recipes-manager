@@ -128,7 +128,7 @@ class TagListView(View):
             
             if not name:
                 messages.error(request, "Tag name is required")
-                return redirect('tag_list')
+                return redirect('metadata_manager:tag_list')
             
             # Generate deterministic URN
             deterministic_urn = get_full_urn_from_name("tag", name)
@@ -136,7 +136,7 @@ class TagListView(View):
             # Check if tag with this URN already exists
             if Tag.objects.filter(deterministic_urn=deterministic_urn).exists():
                 messages.error(request, f"Tag with name '{name}' already exists")
-                return redirect('tag_list')
+                return redirect('metadata_manager:tag_list')
             
             # Create the tag
             tag = Tag.objects.create(
@@ -148,11 +148,11 @@ class TagListView(View):
             )
             
             messages.success(request, f"Tag '{name}' created successfully")
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
         except Exception as e:
             logger.error(f"Error creating tag: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
 
 class TagDetailView(View):
     """View to display, edit and delete tags"""
@@ -237,7 +237,7 @@ class TagDetailView(View):
         except Exception as e:
             logger.error(f"Error in tag detail view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
     
     def post(self, request, tag_id):
         """Update a tag"""
@@ -250,7 +250,7 @@ class TagDetailView(View):
             
             if not name:
                 messages.error(request, "Tag name is required")
-                return redirect('tag_detail', tag_id=tag.id)
+                return redirect('metadata_manager:tag_detail', tag_id=tag.id)
             
             # If name changed, update deterministic URN
             if name != tag.name:
@@ -258,7 +258,7 @@ class TagDetailView(View):
                 # Check if another tag with this URN already exists
                 if Tag.objects.filter(deterministic_urn=new_urn).exclude(id=tag.id).exists():
                     messages.error(request, f"Tag with name '{name}' already exists")
-                    return redirect('tag_detail', tag_id=tag.id)
+                    return redirect('metadata_manager:tag_detail', tag_id=tag.id)
                 tag.deterministic_urn = new_urn
             
             # If this tag exists remotely and we're changing details, mark as modified
@@ -272,11 +272,11 @@ class TagDetailView(View):
             tag.save()
             
             messages.success(request, f"Tag '{name}' updated successfully")
-            return redirect('tag_detail', tag_id=tag.id)
+            return redirect('metadata_manager:tag_detail', tag_id=tag.id)
         except Exception as e:
             logger.error(f"Error updating tag: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('tag_detail', tag_id=tag.id)
+            return redirect('metadata_manager:tag_detail', tag_id=tag.id)
     
     def delete(self, request, tag_id):
         """Delete a tag"""
@@ -321,7 +321,7 @@ class TagImportExportView(View):
         except Exception as e:
             logger.error(f"Error in tag import/export view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
     
     def post(self, request):
         """Import tags from JSON file"""
@@ -329,14 +329,14 @@ class TagImportExportView(View):
             import_file = request.FILES.get('import_file')
             if not import_file:
                 messages.error(request, "No file was uploaded")
-                return redirect('tag_import_export')
+                return redirect('metadata_manager:tag_import_export')
             
             # Read the file
             try:
                 tag_data = json.loads(import_file.read().decode('utf-8'))
             except json.JSONDecodeError:
                 messages.error(request, "Invalid JSON file")
-                return redirect('tag_import_export')
+                return redirect('metadata_manager:tag_import_export')
             
             # Process tags
             imported_count = 0
@@ -380,11 +380,11 @@ class TagImportExportView(View):
                 if len(errors) > 5:
                     messages.error(request, f"... and {len(errors) - 5} more errors")
             
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
         except Exception as e:
             logger.error(f"Error importing tags: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('tag_import_export')
+            return redirect('metadata_manager:tag_import_export')
 
 @method_decorator(require_POST, name='dispatch')
 class TagDeployView(View):
@@ -400,14 +400,14 @@ class TagDeployView(View):
             client = get_datahub_client()
             if not client:
                 messages.error(request, "Could not connect to DataHub. Check your connection settings.")
-                return redirect('tag_list')
+                return redirect('metadata_manager:tag_list')
             
             # Deploy to DataHub
             # Ensure the deterministic_urn is a string before splitting
             tag_id_portion = str(tag.deterministic_urn).split(':')[-1] if tag.deterministic_urn else None
             if not tag_id_portion:
                 messages.error(request, "Invalid tag URN")
-                return redirect('tag_detail', tag_id=tag.id)
+                return redirect('metadata_manager:tag_detail', tag_id=tag.id)
             
             # Create or update the tag in DataHub
             result = client.create_tag(
@@ -437,12 +437,12 @@ class TagDeployView(View):
             if redirect_url:
                 return redirect(redirect_url)
             else:
-                return redirect('tag_detail', tag_id=tag.id)
+                return redirect('metadata_manager:tag_detail', tag_id=tag.id)
                 
         except Exception as e:
             logger.error(f"Error deploying tag: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
 
 @method_decorator(require_POST, name='dispatch')
 class TagPullView(View):
@@ -452,7 +452,7 @@ class TagPullView(View):
         """Redirect to tag list for GET requests"""
         # We no longer want to show a separate page for pulling tags
         messages.info(request, "Use the 'Pull from DataHub' button on the Tags page")
-        return redirect('tag_list')
+        return redirect('metadata_manager:tag_list')
     
     def post(self, request, only_post=False):
         """Pull tags from DataHub"""
@@ -462,12 +462,12 @@ class TagPullView(View):
             
             if not client:
                 messages.error(request, "Could not connect to DataHub. Check your connection settings.")
-                return redirect('tag_list')
+                return redirect('metadata_manager:tag_list')
             
             # Test the connection
             if not client.test_connection():
                 messages.error(request, "Could not connect to DataHub. Check your connection settings.")
-                return redirect('tag_list')
+                return redirect('metadata_manager:tag_list')
             
             # Fetch all tags from DataHub
             tags = client.list_tags(query="*", count=1000)
@@ -544,11 +544,11 @@ class TagPullView(View):
             if imported_count == 0 and updated_count == 0 and error_count == 0:
                 messages.info(request, "No tags found in DataHub")
             
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
         except Exception as e:
             logger.error(f"Error pulling tags from DataHub: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('tag_list')
+            return redirect('metadata_manager:tag_list')
 
 @method_decorator(csrf_exempt, name='dispatch')
 class TagGitPushView(View):

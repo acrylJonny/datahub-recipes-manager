@@ -5,6 +5,7 @@ from . import views_glossary
 from . import views_domains
 from . import views_assertions
 from . import views_sync
+from . import views_tests
 
 app_name = 'metadata_manager'
 
@@ -68,6 +69,15 @@ urlpatterns = [
     path('assertions/<int:assertion_id>/', views_assertions.AssertionDetailView.as_view(), name='assertion_detail'),
     path('assertions/<int:assertion_id>/run/', views_assertions.AssertionRunView.as_view(), name='assertion_run'),
     path('assertions/<int:assertion_id>/delete/', views_assertions.AssertionDeleteView.as_view(), name='assertion_delete'),
+    
+    # Metadata Tests
+    path('tests/', views_tests.TestListView.as_view(), name='tests_list'),
+    path('tests/create/', views_tests.TestDetailView.as_view(), name='test_create'),
+    path('tests/<str:test_urn>/', views_tests.TestDetailView.as_view(), name='test_detail'),
+    path('tests/<str:test_urn>/delete/', views_tests.TestDeleteView.as_view(), name='test_delete'),
+    path('tests/<str:test_urn>/export/', views_tests.TestExportView.as_view(), name='test_export'),
+    path('tests/<str:test_urn>/push-github/', views_tests.TestGitPushView.as_view(), name='test_push_github'),
+    path('tests/import/', views_tests.TestImportView.as_view(), name='test_import'),
     
     # Sync
     path('sync/', views_sync.SyncConfigListView.as_view(), name='sync_config_list'),

@@ -40,7 +40,7 @@ urlpatterns = [
     path("dashboard/", web_ui_views.index, name="dashboard"),
     
     # Metadata Manager
-    path("metadata/", include('metadata_manager.urls')),
+    path("metadata/", include('metadata_manager.urls', namespace='metadata_manager')),
     
     # Recipe management
     path("recipes/", web_ui_views.recipes, name="recipes"),

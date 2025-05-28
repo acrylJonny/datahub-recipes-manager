@@ -1,21 +1,86 @@
 {% extends "base.html" %}
+{% load static %}
+
+{% block title %}DataHub Glossary{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card-header-tabs {
+        margin-right: -1.25rem;
+        margin-bottom: -0.75rem;
+        margin-left: -1.25rem;
+        border-bottom: 0;
+    }
+    .glossary-card {
+        margin-bottom: 1.5rem;
+    }
+    .glossary-item {
+        transition: background-color 0.2s;
+    }
+    .glossary-item:hover {
+        background-color: rgba(0,0,0,0.02);
+    }
+    .node-level-1 {
+        padding-left: 1.5rem;
+    }
+    .node-level-2 {
+        padding-left: 3rem;
+    }
+    .node-level-3 {
+        padding-left: 4.5rem;
+    }
+    .badge-category {
+        font-size: 0.8em;
+        padding: 0.35em 0.65em;
+    }
+    .toggle-node-children {
+        cursor: pointer;
+        width: 18px;
+        display: inline-block;
+        text-align: center;
+    }
+    .toggle-node-children[aria-expanded="true"] .fa-caret-right {
+        transform: rotate(90deg);
+    }
+    .glossary-node-children {
+        border-left: 1px dashed #dee2e6;
+        margin-left: 1.5rem;
+    }
+    .node-icon {
+        width: 20px;
+        display: inline-block;
+        text-align: center;
+    }
+    .description-preview {
+        max-height: 60px;
+        overflow: hidden;
+        color: #6c757d;
+        font-size: 0.9em;
+    }
+    /* Responsive table */
+    @media (max-width: 768px) {
+        .responsive-table th:nth-child(3),
+        .responsive-table td:nth-child(3) {
+            display: none;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row">
-        <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>DataHub Glossary</h1>
-                <div class="d-flex gap-2">
+        <div>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createNodeModal">
                         <i class="fas fa-folder-plus me-1"></i> Create Node
                     </button>
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createTermModal">
+            <button type="button" class="btn btn-success ms-2" data-bs-toggle="modal" data-bs-target="#createTermModal">
                         <i class="fas fa-tag me-1"></i> Create Term
                     </button>
-                    <div class="dropdown">
+            <div class="dropdown d-inline-block ms-2">
                         <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="batchActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-tasks me-1"></i> Batch Actions
+                    <i class="fas fa-tasks me-1"></i> Actions
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="batchActionsDropdown">
                             <li><h6 class="dropdown-header">Selected Items</h6></li>
@@ -32,30 +97,23 @@
                             {% endif %}
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">All Items</h6></li>
-                            <li><button type="button" class="dropdown-item" id="download-all-items">
-                                <i class="fas fa-download me-1"></i> Download All
-                            </button></li>
                             <li><button type="button" class="dropdown-item" id="push-all-items" {% if not has_datahub_connection %}disabled{% endif %}>
                                 <i class="fas fa-cloud-upload-alt me-1"></i> Push All
                             </button></li>
+                    <li><a href="{% url 'metadata_manager:glossary_pull' %}" class="dropdown-item">
+                        <i class="fas fa-cloud-download-alt me-1"></i> Pull from DataHub
+                    </a></li>
+                    <li><a href="{% url 'metadata_manager:glossary_import_export' %}" class="dropdown-item">
+                        <i class="fas fa-file-export me-1"></i> Import/Export
+                    </a></li>
                         </ul>
                     </div>
-                    <a href="{% url 'metadata_manager:glossary_import_export' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-file-export me-1"></i> Import/Export
-                    </a>
-                    <a href="{% url 'metadata_manager:glossary_pull' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-cloud-download-alt me-1"></i> Pull
-                    </a>
                 </div>
             </div>
             
             {% if not has_datahub_connection %}
-                <div class="alert alert-warning" role="alert">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    Not connected to DataHub. Please check your connection settings.
-                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
-                        <i class="fas fa-cog"></i> Settings
-                    </a>
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-1"></i> Not connected to DataHub. Please check your connection settings.
                 </div>
             {% endif %}
             
@@ -69,26 +127,33 @@
             {% endif %}
 
             <!-- Glossary Sync Status Tabs -->
-            <ul class="nav nav-tabs mb-3" id="glossarySyncTabs" role="tablist">
+    <ul class="nav nav-tabs mb-4" id="glossarySyncTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-glossary" 
                            type="button" role="tab" aria-controls="synced-glossary" aria-selected="true">
                         <i class="fas fa-sync-alt me-1"></i> Synced Items
-                        <span class="badge bg-success ms-1">{{ synced_nodes|length|add:synced_terms|length }}</span>
+                <span class="badge bg-success ms-1">{{ synced_count }}</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-glossary" 
                            type="button" role="tab" aria-controls="local-glossary" aria-selected="false">
                         <i class="fas fa-laptop me-1"></i> Local Only Items
-                        <span class="badge bg-secondary ms-1">{{ local_only_nodes|length|add:local_only_terms|length }}</span>
+                <span class="badge bg-secondary ms-1">{{ local_only_count }}</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-glossary" 
                            type="button" role="tab" aria-controls="remote-glossary" aria-selected="false">
                         <i class="fas fa-server me-1"></i> Remote Only Items
-                        <span class="badge bg-info ms-1">{{ remote_only_nodes|length|add:remote_only_terms|length }}</span>
+                <span class="badge bg-info ms-1">{{ remote_only_count }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="modified-tab" data-bs-toggle="tab" data-bs-target="#modified-glossary" 
+                   type="button" role="tab" aria-controls="modified-glossary" aria-selected="false">
+                <i class="fas fa-edit me-1"></i> Modified Items
+                <span class="badge bg-warning ms-1">{{ modified_count }}</span>
                     </button>
                 </li>
             </ul>
@@ -98,13 +163,7 @@
                 <div class="tab-pane fade show active" id="synced-glossary" role="tabpanel" aria-labelledby="synced-tab">
                     <div class="card mb-4">
                         <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <div class="d-flex align-items-center">
-                                <div class="form-check me-3">
-                                    <input class="form-check-input" type="checkbox" id="select-all-synced">
-                                    <label class="form-check-label" for="select-all-synced">Select All</label>
-                                </div>
                                 <h5 class="card-title mb-0">Synced Glossary</h5>
-                            </div>
                             <div class="d-flex">
                                 <div class="input-group">
                                     <input type="text" id="synced-search" class="form-control form-control-sm me-2" 
@@ -127,15 +186,211 @@
                             </div>
                         </div>
                         <div class="card-body p-0">
-                            <div class="list-group glossary-tree">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0 responsive-table">
+                            <thead>
+                                <tr>
+                                    <th width="2%">
+                                        <input class="form-check-input" type="checkbox" id="select-all-synced">
+                                    </th>
+                                    <th width="35%">Name</th>
+                                    <th width="40%">Description</th>
+                                    <th width="8%">Type</th>
+                                    <th width="15%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Root level nodes section -->
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
+                                        <div class="d-flex align-items-center">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#synced-root-nodes" role="button" aria-expanded="true" aria-controls="synced-root-nodes">
+                                                <i class="fas fa-caret-right"></i>
+                                            </span>
+                                            <span class="node-icon me-2">
+                                                <i class="fas fa-folder text-warning"></i>
+                                            </span>
+                                            <span><strong>Root Level Nodes</strong></span>
+                                            {% with root_nodes_count=synced_nodes|length %}
+                                            {% if root_nodes_count > 0 %}
+                                            <span class="badge bg-warning ms-2">{{ root_nodes_count }}</span>
+                                            {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="synced-root-nodes">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
+                                            {% for node in synced_nodes %}
+                                            <tr class="glossary-item node-item">
+                                                <td width="2%">
+                                                    <input class="form-check-input node-checkbox" type="checkbox" data-node-id="{{ node.id }}" data-item-type="node">
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="toggle-node-children me-2" {% if node.children.exists or node.terms.exists %}data-bs-toggle="collapse" data-bs-target="#node-{{ node.id }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                            <i class="fas fa-caret-right"></i>
+                                                        </span>
+                                                        <span class="node-icon me-2">
+                                                            <i class="fas fa-folder text-warning"></i>
+                                                        </span>
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="text-decoration-none">
+                                                            {{ node.name }}
+                                                        </a>
+                                                        <span class="badge bg-success ms-2">Synced</span>
+                                                    </div>
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ node.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-warning badge-category">Node</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <i class="fas fa-eye"></i>
+                                                        </a>
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                        {% if has_git_integration %}
+                                                        <button type="button" class="btn btn-sm btn-outline-primary add-node-to-git-pr" 
+                                                                data-node-id="{{ node.id }}" title="Add to GitHub PR">
+                                                            <i class="fab fa-github"></i>
+                                                        </button>
+                                                        {% endif %}
+                                                        <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                                                                data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                                                                data-node-id="{{ node.id }}" data-node-name="{{ node.name }}" title="Delete">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            
+                                            <!-- Node's children and terms -->
+                                            {% if node.children.exists or node.terms.exists %}
+                                            <tr class="collapse" id="node-{{ node.id }}-children">
+                                                <td colspan="5" class="p-0">
+                                                    <table class="table table-hover mb-0 w-100">
+                                                        {% for child in node.children.all %}
+                                                        <tr class="glossary-item node-item node-level-1">
+                                                            <td width="2%">
+                                                                <input class="form-check-input node-checkbox" type="checkbox" data-node-id="{{ child.id }}" data-item-type="node">
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
+                                                                    <span class="toggle-node-children me-2" {% if child.children.exists or child.terms.exists %}data-bs-toggle="collapse" data-bs-target="#node-{{ child.id }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                                        <i class="fas fa-caret-right"></i>
+                                                                    </span>
+                                                                    <span class="node-icon me-2">
+                                                                        <i class="fas fa-folder text-warning"></i>
+                                                                    </span>
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="text-decoration-none">
+                                                                        {{ child.name }}
+                                                                    </a>
+                                                                    <span class="badge bg-success ms-2">Synced</span>
+                                                                </div>
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ child.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-warning badge-category">Node</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                        <i class="fas fa-eye"></i>
+                                                                    </a>
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                                        <i class="fas fa-edit"></i>
+                                                                    </a>
+                                                                    {% if has_git_integration %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-primary add-node-to-git-pr" 
+                                                                            data-node-id="{{ child.id }}" title="Add to GitHub PR">
+                                                                        <i class="fab fa-github"></i>
+                                                                    </button>
+                                                                    {% endif %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                                                                            data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                                                                            data-node-id="{{ child.id }}" data-node-name="{{ child.name }}" title="Delete">
+                                                                        <i class="fas fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                        
+                                                        {% for term in node.terms.all %}
+                                                        <tr class="glossary-item term-item node-level-1">
+                                                            <td width="2%">
+                                                                <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
+                                                                    <span class="toggle-node-children invisible me-2">
+                                                                        <i class="fas fa-caret-right"></i>
+                                                                    </span>
+                                                                    <span class="node-icon me-2">
+                                                                        <i class="fas fa-tag text-info"></i>
+                                                                    </span>
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                                        {{ term.name }}
+                                                                    </a>
+                                                                    <span class="badge bg-success ms-2">Synced</span>
+                                                                </div>
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ term.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-info badge-category">Term</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                        <i class="fas fa-eye"></i>
+                                                                    </a>
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                                        <i class="fas fa-edit"></i>
+                                                                    </a>
+                                                                    {% if has_git_integration %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
+                                                                            data-term-id="{{ term.id }}" title="Add to GitHub PR">
+                                                                        <i class="fab fa-github"></i>
+                                                                    </button>
+                                                                    {% endif %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
+                                                                            data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                                                                            data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
+                                                                        <i class="fas fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </table>
+                                    </td>
+                                </tr>
+                                
                                 <!-- Root level terms section -->
-                                <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
                                     <div class="d-flex align-items-center">
-                                        <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#synced-root-terms" role="button" aria-expanded="false" aria-controls="synced-root-terms">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#synced-root-terms" role="button" aria-expanded="true" aria-controls="synced-root-terms">
                                             <i class="fas fa-caret-right"></i>
                                         </span>
                                         <span class="node-icon me-2">
-                                            <i class="fas fa-home text-info"></i>
+                                                <i class="fas fa-tags text-info"></i>
                                         </span>
                                         <span><strong>Root Level Terms</strong></span>
                                         {% with root_terms_count=synced_root_terms|length %}
@@ -144,15 +399,19 @@
                                         {% endif %}
                                         {% endwith %}
                                     </div>
-                                </div>
-                                <div class="collapse glossary-node-children" id="synced-root-terms">
-                                    <div class="list-group">
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="synced-root-terms">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
                                         {% for term in synced_root_terms %}
-                                            <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
-                                                <div class="d-flex align-items-center">
-                                                    <div class="form-check me-2">
+                                            <tr class="glossary-item term-item">
+                                                <td width="2%">
                                                         <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
-                                                    </div>
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
                                                     <span class="toggle-node-children invisible me-2">
                                                         <i class="fas fa-caret-right"></i>
                                                     </span>
@@ -160,32 +419,25 @@
                                                         <i class="fas fa-tag text-info"></i>
                                                     </span>
                                                     <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
-                                                        <span>{{ term.name }}</span>
-                                                    </a>
-                                                    {% if term.sync_status == 'MODIFIED' %}
-                                                    <span class="badge bg-warning ms-2">Modified</span>
-                                                    {% elif term.sync_status == 'LOCAL_ONLY' %}
-                                                    <span class="badge bg-secondary ms-2">Local Only</span>
-                                                    {% elif term.sync_status == 'REMOTE_ONLY' %}
-                                                    <span class="badge bg-info ms-2">Remote Only</span>
-                                                    {% elif term.sync_status == 'SYNCED' %}
+                                                            {{ term.name }}
+                                                        </a>
                                                     <span class="badge bg-success ms-2">Synced</span>
-                                                    {% elif term.sync_status == 'PENDING_PUSH' %}
-                                                    <span class="badge bg-primary ms-2">Pending Push</span>
-                                                    {% endif %}
                                                 </div>
-                                                <div class="btn-group">
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ term.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-info badge-category">Term</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
                                                     <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
-                                                    {% if term.can_deploy and has_datahub_connection %}
-                                                    <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
-                                                        {% csrf_token %}
-                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
-                                                            <i class="fas fa-cloud-upload-alt"></i>
-                                                        </button>
-                                                    </form>
-                                                    {% endif %}
+                                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
                                                     {% if has_git_integration %}
                                                     <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
                                                             data-term-id="{{ term.id }}" title="Add to GitHub PR">
@@ -198,19 +450,14 @@
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 </div>
-                                            </div>
+                                                </td>
+                                            </tr>
                                         {% endfor %}
-                                    </div>
-                                </div>
-                                
-                                <!-- Root Nodes -->
-                                {% for node in synced_nodes %}
-                                    {% if not node.parent %}
-                                        {% with node=node level=0 show_checkbox=True %}
-                                            {% include "metadata_manager/glossary/partials/node_tree_item.html" %}
-                                        {% endwith %}
-                                    {% endif %}
-                                {% endfor %}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                             </div>
                         </div>
                     </div>
@@ -220,13 +467,7 @@
                 <div class="tab-pane fade" id="local-glossary" role="tabpanel" aria-labelledby="local-tab">
                     <div class="card mb-4">
                         <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <div class="d-flex align-items-center">
-                                <div class="form-check me-3">
-                                    <input class="form-check-input" type="checkbox" id="select-all-local">
-                                    <label class="form-check-label" for="select-all-local">Select All</label>
-                                </div>
                                 <h5 class="card-title mb-0">Local Only Glossary</h5>
-                            </div>
                             <div class="d-flex">
                                 <div class="input-group">
                                     <input type="text" id="local-search" class="form-control form-control-sm me-2" 
@@ -246,15 +487,29 @@
                             </div>
                         </div>
                         <div class="card-body p-0">
-                            <div class="list-group glossary-tree">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0 responsive-table">
+                            <thead>
+                                <tr>
+                                    <th width="2%">
+                                        <input class="form-check-input" type="checkbox" id="select-all-local">
+                                    </th>
+                                    <th width="35%">Name</th>
+                                    <th width="40%">Description</th>
+                                    <th width="8%">Type</th>
+                                    <th width="15%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                                 <!-- Root level terms section -->
-                                <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
                                     <div class="d-flex align-items-center">
-                                        <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#local-root-terms" role="button" aria-expanded="false" aria-controls="local-root-terms">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#local-root-terms" role="button" aria-expanded="true" aria-controls="local-root-terms">
                                             <i class="fas fa-caret-right"></i>
                                         </span>
                                         <span class="node-icon me-2">
-                                            <i class="fas fa-home text-info"></i>
+                                                <i class="fas fa-tags text-info"></i>
                                         </span>
                                         <span><strong>Root Level Terms</strong></span>
                                         {% with root_terms_count=local_only_root_terms|length %}
@@ -263,15 +518,19 @@
                                         {% endif %}
                                         {% endwith %}
                                     </div>
-                                </div>
-                                <div class="collapse glossary-node-children" id="local-root-terms">
-                                    <div class="list-group">
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="local-root-terms">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
                                         {% for term in local_only_root_terms %}
-                                            <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
-                                                <div class="d-flex align-items-center">
-                                                    <div class="form-check me-2">
+                                            <tr class="glossary-item term-item">
+                                                <td width="2%">
                                                         <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
-                                                    </div>
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
                                                     <span class="toggle-node-children invisible me-2">
                                                         <i class="fas fa-caret-right"></i>
                                                     </span>
@@ -279,11 +538,19 @@
                                                         <i class="fas fa-tag text-info"></i>
                                                     </span>
                                                     <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
-                                                        <span>{{ term.name }}</span>
+                                                            {{ term.name }}
                                                     </a>
                                                     <span class="badge bg-secondary ms-2">Local Only</span>
                                                 </div>
-                                                <div class="btn-group">
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ term.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-info badge-category">Term</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
                                                     <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
                                                         <i class="fas fa-eye"></i>
                                                     </a>
@@ -295,32 +562,200 @@
                                                         </button>
                                                     </form>
                                                     {% endif %}
-                                                    {% if has_git_integration %}
-                                                    <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
-                                                            data-term-id="{{ term.id }}" title="Add to GitHub PR">
-                                                        <i class="fab fa-github"></i>
-                                                    </button>
-                                                    {% endif %}
                                                     <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
                                                             data-bs-toggle="modal" data-bs-target="#deleteTermModal"
                                                             data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 </div>
-                                            </div>
+                                                </td>
+                                            </tr>
                                         {% endfor %}
-                                    </div>
-                                </div>
+                                        </table>
+                                    </td>
+                                </tr>
                                 
-                                <!-- Root Nodes -->
+                                <!-- Root level nodes section -->
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
+                                        <div class="d-flex align-items-center">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#local-root-nodes" role="button" aria-expanded="true" aria-controls="local-root-nodes">
+                                                <i class="fas fa-caret-right"></i>
+                                            </span>
+                                            <span class="node-icon me-2">
+                                                <i class="fas fa-folder text-warning"></i>
+                                            </span>
+                                            <span><strong>Root Level Nodes</strong></span>
+                                            {% with root_nodes_count=local_only_nodes|length %}
+                                            {% if root_nodes_count > 0 %}
+                                            <span class="badge bg-warning ms-2">{{ root_nodes_count }}</span>
+                                            {% endif %}
+                                            {% endwith %}
+                                    </div>
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="local-root-nodes">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
                                 {% for node in local_only_nodes %}
-                                    {% if not node.parent %}
-                                        {% with node=node level=0 show_checkbox=True %}
-                                            {% include "metadata_manager/glossary/partials/node_tree_item.html" %}
-                                        {% endwith %}
+                                            <tr class="glossary-item node-item">
+                                                <td width="2%">
+                                                    <input class="form-check-input node-checkbox" type="checkbox" data-node-id="{{ node.id }}" data-item-type="node">
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="toggle-node-children me-2" {% if node.children|length > 0 or node.terms|length > 0 %}data-bs-toggle="collapse" data-bs-target="#local-node-{{ node.id }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                            <i class="fas fa-caret-right"></i>
+                                                        </span>
+                                                        <span class="node-icon me-2">
+                                                            <i class="fas fa-folder text-warning"></i>
+                                                        </span>
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="text-decoration-none">
+                                                            {{ node.name }}
+                                                        </a>
+                                                        <span class="badge bg-secondary ms-2">Local Only</span>
+                                                    </div>
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ node.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-warning badge-category">Node</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <i class="fas fa-eye"></i>
+                                                        </a>
+                                                        {% if node.can_deploy and has_datahub_connection %}
+                                                        <form action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" method="post" class="d-inline">
+                                                            {% csrf_token %}
+                                                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                                <i class="fas fa-cloud-upload-alt"></i>
+                                                            </button>
+                                                        </form>
                                     {% endif %}
+                                                        <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                                                                data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                                                                data-node-id="{{ node.id }}" data-node-name="{{ node.name }}" title="Delete">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            
+                                            <!-- Node's children and terms -->
+                                            {% if node.children|length > 0 or node.terms|length > 0 %}
+                                            <tr class="collapse" id="local-node-{{ node.id }}-children">
+                                                <td colspan="5" class="p-0">
+                                                    <table class="table table-hover mb-0 w-100">
+                                                        {% for child in node.children %}
+                                                        <tr class="glossary-item node-item node-level-1">
+                                                            <td width="2%">
+                                                                <input class="form-check-input node-checkbox" type="checkbox" data-node-id="{{ child.id }}" data-item-type="node">
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
+                                                                    <span class="toggle-node-children me-2" {% if child.children|length > 0 or child.terms|length > 0 %}data-bs-toggle="collapse" data-bs-target="#local-node-{{ child.id }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                                        <i class="fas fa-caret-right"></i>
+                                                                    </span>
+                                                                    <span class="node-icon me-2">
+                                                                        <i class="fas fa-folder text-warning"></i>
+                                                                    </span>
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="text-decoration-none">
+                                                                        {{ child.name }}
+                                                                    </a>
+                                                                    <span class="badge bg-secondary ms-2">Local Only</span>
+                                                                </div>
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ child.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-warning badge-category">Node</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                        <i class="fas fa-eye"></i>
+                                                                    </a>
+                                                                    {% if child.can_deploy and has_datahub_connection %}
+                                                                    <form action="{% url 'metadata_manager:glossary_node_deploy' child.id %}" method="post" class="d-inline">
+                                                                        {% csrf_token %}
+                                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                                            <i class="fas fa-cloud-upload-alt"></i>
+                                                                        </button>
+                                                                    </form>
+                                                                    {% endif %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                                                                            data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                                                                            data-node-id="{{ child.id }}" data-node-name="{{ child.name }}" title="Delete">
+                                                                        <i class="fas fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
                                 {% endfor %}
+                                                        
+                                                        {% for term in node.terms %}
+                                                        <tr class="glossary-item term-item node-level-1">
+                                                            <td width="2%">
+                                                                <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
+                                                                    <span class="toggle-node-children invisible me-2">
+                                                                        <i class="fas fa-caret-right"></i>
+                                                                    </span>
+                                                                    <span class="node-icon me-2">
+                                                                        <i class="fas fa-tag text-info"></i>
+                                                                    </span>
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                                        {{ term.name }}
+                                                                    </a>
+                                                                    <span class="badge bg-secondary ms-2">Local Only</span>
                             </div>
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ term.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-info badge-category">Term</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                        <i class="fas fa-eye"></i>
+                                                                    </a>
+                                                                    {% if term.can_deploy and has_datahub_connection %}
+                                                                    <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                                                                        {% csrf_token %}
+                                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                                            <i class="fas fa-cloud-upload-alt"></i>
+                                                                        </button>
+                                                                    </form>
+                                                                    {% endif %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
+                                                                            data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                                                                            data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
+                                                                        <i class="fas fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                         </div>
                     </div>
                 </div>
@@ -329,13 +764,7 @@
                 <div class="tab-pane fade" id="remote-glossary" role="tabpanel" aria-labelledby="remote-tab">
                     <div class="card mb-4">
                         <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <div class="d-flex align-items-center">
-                                <div class="form-check me-3">
-                                    <input class="form-check-input" type="checkbox" id="select-all-remote">
-                                    <label class="form-check-label" for="select-all-remote">Select All</label>
-                                </div>
                                 <h5 class="card-title mb-0">Remote Only Glossary</h5>
-                            </div>
                             <div class="d-flex">
                                 <div class="input-group">
                                     <input type="text" id="remote-search" class="form-control form-control-sm me-2" 
@@ -355,15 +784,29 @@
                             </div>
                         </div>
                         <div class="card-body p-0">
-                            <div class="list-group glossary-tree">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0 responsive-table">
+                            <thead>
+                                <tr>
+                                    <th width="2%">
+                                        <input class="form-check-input" type="checkbox" id="select-all-remote">
+                                    </th>
+                                    <th width="35%">Name</th>
+                                    <th width="40%">Description</th>
+                                    <th width="8%">Type</th>
+                                    <th width="15%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                                                                  <!-- Root level terms section -->
-                                <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
                                     <div class="d-flex align-items-center">
-                                        <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#remote-root-terms" role="button" aria-expanded="false" aria-controls="remote-root-terms">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#remote-root-terms" role="button" aria-expanded="true" aria-controls="remote-root-terms">
                                             <i class="fas fa-caret-right"></i>
                                         </span>
                                         <span class="node-icon me-2">
-                                            <i class="fas fa-home text-info"></i>
+                                                <i class="fas fa-tags text-info"></i>
                                         </span>
                                         <span><strong>Root Level Terms</strong></span>
                                         {% with root_terms_count=remote_only_root_terms|length %}
@@ -372,25 +815,37 @@
                                         {% endif %}
                                         {% endwith %}
                                     </div>
-                                </div>
-                                <div class="collapse glossary-node-children" id="remote-root-terms">
-                                    <div class="list-group">
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="remote-root-terms">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
                                         {% for term in remote_only_root_terms %}
-                                            <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
-                                                <div class="d-flex align-items-center">
-                                                    <div class="form-check me-2">
+                                            <tr class="glossary-item term-item">
+                                                <td width="2%">
                                                         <input class="form-check-input term-checkbox" type="checkbox" data-term-urn="{{ term.urn }}" data-item-type="term">
-                                                    </div>
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
                                                     <span class="toggle-node-children invisible me-2">
                                                         <i class="fas fa-caret-right"></i>
                                                     </span>
                                                     <span class="node-icon me-2">
                                                         <i class="fas fa-tag text-info"></i>
                                                     </span>
-                                                    <span class="text-muted">{{ term.properties.name }}</span>
+                                                        <span>{{ term.properties.name }}</span>
                                                     <span class="badge bg-info ms-2">Remote Only</span>
                                                 </div>
-                                                <div class="btn-group">
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ term.properties.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-info badge-category">Term</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
                                                     <form action="{% url 'metadata_manager:glossary_term_pull' %}" method="post" class="d-inline">
                                                         {% csrf_token %}
                                                         <input type="hidden" name="term_urns" value="{{ term.urn }}">
@@ -399,39 +854,61 @@
                                                         </button>
                                                     </form>
                                                 </div>
-                                            </div>
+                                                </td>
+                                            </tr>
                                         {% endfor %}
-                                    </div>
-                                </div>
+                                        </table>
+                                    </td>
+                                </tr>
                                 
-                                <!-- Root Nodes -->
-                                {% for node in remote_only_nodes %}
-                                    {% if 'parentNodes' not in node or not node.parentNodes %}
-                                        <div class="list-group-item glossary-item d-flex justify-content-between align-items-center">
+                                <!-- Root level nodes section -->
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
                                             <div class="d-flex align-items-center">
-                                                <div class="form-check me-2">
-                                                    <input class="form-check-input node-checkbox" type="checkbox" data-node-urn="{{ node.urn }}" data-item-type="node">
-                                                </div>
-                                                
-                                                {% if node.childNodes or node.terms %}
-                                                <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#remote-node-{{ forloop.counter }}" role="button" aria-expanded="false" aria-controls="remote-node-{{ forloop.counter }}">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#remote-root-nodes" role="button" aria-expanded="true" aria-controls="remote-root-nodes">
                                                     <i class="fas fa-caret-right"></i>
                                                 </span>
-                                                {% else %}
-                                                <span class="toggle-node-children invisible me-2">
-                                                    <i class="fas fa-caret-right"></i>
+                                            <span class="node-icon me-2">
+                                                <i class="fas fa-folder text-warning"></i>
                                                 </span>
+                                            <span><strong>Root Level Nodes</strong></span>
+                                            {% with root_nodes_count=remote_only_nodes|length %}
+                                            {% if root_nodes_count > 0 %}
+                                            <span class="badge bg-warning ms-2">{{ root_nodes_count }}</span>
                                                 {% endif %}
-                                                
+                                            {% endwith %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="remote-root-nodes">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
+                                            {% for node in remote_only_nodes %}
+                                            <tr class="glossary-item node-item">
+                                                <td width="2%">
+                                                    <input class="form-check-input node-checkbox" type="checkbox" data-node-urn="{{ node.urn }}" data-item-type="node">
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="toggle-node-children me-2" {% if node.childNodes or node.terms %}data-bs-toggle="collapse" data-bs-target="#remote-node-{{ forloop.counter }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                            <i class="fas fa-caret-right"></i>
+                                                        </span>
                                                 <span class="node-icon me-2">
                                                     <i class="fas fa-folder text-warning"></i>
                                                 </span>
-                                                
-                                                <span class="text-muted">{{ node.properties.name }}</span>
+                                                        <span>{{ node.properties.name }}</span>
                                                 <span class="badge bg-info ms-2">Remote Only</span>
                                             </div>
-                                            
-                                            <div class="btn-group">
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ node.properties.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-warning badge-category">Node</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
                                                 <form action="{% url 'metadata_manager:glossary_node_pull' %}" method="post" class="d-inline">
                                                     {% csrf_token %}
                                                     <input type="hidden" name="node_urns" value="{{ node.urn }}">
@@ -440,37 +917,76 @@
                                                     </button>
                                                 </form>
                                             </div>
-                                        </div>
+                                                </td>
+                                            </tr>
                                         
+                                            <!-- Node's children and terms -->
                                         {% if node.childNodes or node.terms %}
-                                        <div class="collapse glossary-node-children" id="remote-node-{{ forloop.counter }}">
-                                            <div class="list-group">
-                                                <!-- Child nodes (if any) -->
+                                            <tr class="collapse" id="remote-node-{{ forloop.counter }}-children">
+                                                <td colspan="5" class="p-0">
+                                                    <table class="table table-hover mb-0 w-100">
                                                 {% for child_node in node.childNodes %}
-                                                    <!-- Recursively render child nodes here -->
+                                                        <tr class="glossary-item node-item node-level-1">
+                                                            <td width="2%">
+                                                                <input class="form-check-input node-checkbox" type="checkbox" data-node-urn="{{ child_node.urn }}" data-item-type="node">
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
+                                                                    <span class="toggle-node-children me-2" {% if child_node.childNodes or child_node.terms %}data-bs-toggle="collapse" data-bs-target="#remote-node-{{ forloop.parentloop.counter }}-{{ forloop.counter }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                                        <i class="fas fa-caret-right"></i>
+                                                                    </span>
+                                                                    <span class="node-icon me-2">
+                                                                        <i class="fas fa-folder text-warning"></i>
+                                                                    </span>
+                                                                    <span>{{ child_node.properties.name }}</span>
+                                                                    <span class="badge bg-info ms-2">Remote Only</span>
+                                                                </div>
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ child_node.properties.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-warning badge-category">Node</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
+                                                                    <form action="{% url 'metadata_manager:glossary_node_pull' %}" method="post" class="d-inline">
+                                                                        {% csrf_token %}
+                                                                        <input type="hidden" name="node_urns" value="{{ child_node.urn }}">
+                                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull from DataHub">
+                                                                            <i class="fas fa-cloud-download-alt"></i>
+                                                                        </button>
+                                                                    </form>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
                                                 {% endfor %}
                                                 
-                                                <!-- Terms under this node -->
                                                 {% for term in node.terms %}
-                                                    <div class="list-group-item glossary-item term-item node-level-1 d-flex justify-content-between align-items-center">
-                                                        <div class="d-flex align-items-center">
-                                                            <div class="form-check me-2">
+                                                        <tr class="glossary-item term-item node-level-1">
+                                                            <td width="2%">
                                                                 <input class="form-check-input term-checkbox" type="checkbox" data-term-urn="{{ term.urn }}" data-item-type="term">
-                                                            </div>
-                                                            
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
                                                             <span class="toggle-node-children invisible me-2">
                                                                 <i class="fas fa-caret-right"></i>
                                                             </span>
-                                                            
                                                             <span class="node-icon me-2">
                                                                 <i class="fas fa-tag text-info"></i>
                                                             </span>
-                                                            
-                                                            <span class="text-muted">{{ term.properties.name }}</span>
+                                                                    <span>{{ term.properties.name }}</span>
                                                             <span class="badge bg-info ms-2">Remote Only</span>
                                                         </div>
-                                                        
-                                                        <div class="btn-group">
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ term.properties.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-info badge-category">Term</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
                                                             <form action="{% url 'metadata_manager:glossary_term_pull' %}" method="post" class="d-inline">
                                                                 {% csrf_token %}
                                                                 <input type="hidden" name="term_urns" value="{{ term.urn }}">
@@ -479,15 +995,320 @@
                                                                 </button>
                                                             </form>
                                                         </div>
+                                                            </td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                                                     </div>
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-                                        {% endif %}
-                                    {% endif %}
-                                {% endfor %}
-                            </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Modified Items Tab -->
+        <div class="tab-pane fade" id="modified-glossary" role="tabpanel" aria-labelledby="modified-tab">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Modified Items</h5>
+                    <div class="d-flex">
+                        <div class="input-group">
+                            <input type="text" id="modified-search" class="form-control form-control-sm me-2" 
+                                   placeholder="Filter items..." value="">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="modified-clear-filter">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
+                        <div class="ms-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="expand-all-modified" title="Expand All">
+                                <i class="fas fa-expand-alt"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="collapse-all-modified" title="Collapse All">
+                                <i class="fas fa-compress-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0 responsive-table">
+                            <thead>
+                                <tr>
+                                    <th width="2%">
+                                        <input class="form-check-input" type="checkbox" id="select-all-modified">
+                                    </th>
+                                    <th width="35%">Name</th>
+                                    <th width="40%">Description</th>
+                                    <th width="8%">Type</th>
+                                    <th width="15%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Root level terms section -->
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
+                                        <div class="d-flex align-items-center">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#modified-root-terms" role="button" aria-expanded="true" aria-controls="modified-root-terms">
+                                                <i class="fas fa-caret-right"></i>
+                                            </span>
+                                            <span class="node-icon me-2">
+                                                <i class="fas fa-tags text-info"></i>
+                                            </span>
+                                            <span><strong>Root Level Terms</strong></span>
+                                            {% with root_terms_count=modified_root_terms|length %}
+                                            {% if root_terms_count > 0 %}
+                                            <span class="badge bg-info ms-2">{{ root_terms_count }}</span>
+                                            {% endif %}
+                                            {% endwith %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="modified-root-terms">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
+                                            {% for term in modified_root_terms %}
+                                            <tr class="glossary-item term-item">
+                                                <td width="2%">
+                                                    <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="toggle-node-children invisible me-2">
+                                                            <i class="fas fa-caret-right"></i>
+                                                        </span>
+                                                        <span class="node-icon me-2">
+                                                            <i class="fas fa-tag text-info"></i>
+                                                        </span>
+                                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                            {{ term.name }}
+                                                        </a>
+                                                        <span class="badge bg-warning ms-2">Modified</span>
+                                                    </div>
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ term.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-info badge-category">Term</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
+                                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <i class="fas fa-eye"></i>
+                                                        </a>
+                                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                        {% if has_git_integration %}
+                                                        <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
+                                                                data-term-id="{{ term.id }}" title="Add to GitHub PR">
+                                                            <i class="fab fa-github"></i>
+                                                        </button>
+                                                        {% endif %}
+                                                        <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
+                                                                data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                                                                data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                                {% endfor %}
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Root level nodes section -->
+                                <tr class="glossary-tree-header">
+                                    <td colspan="5" class="bg-light">
+                                        <div class="d-flex align-items-center">
+                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#modified-root-nodes" role="button" aria-expanded="true" aria-controls="modified-root-nodes">
+                                                <i class="fas fa-caret-right"></i>
+                                            </span>
+                                            <span class="node-icon me-2">
+                                                <i class="fas fa-folder text-warning"></i>
+                                            </span>
+                                            <span><strong>Root Level Nodes</strong></span>
+                                            {% with root_nodes_count=modified_nodes|length %}
+                                            {% if root_nodes_count > 0 %}
+                                            <span class="badge bg-warning ms-2">{{ root_nodes_count }}</span>
+                                            {% endif %}
+                                            {% endwith %}
+                                            </div>
+                                    </td>
+                                </tr>
+                                
+                                <tr class="collapse show" id="modified-root-nodes">
+                                    <td colspan="5" class="p-0">
+                                        <table class="table table-hover mb-0 w-100">
+                                            {% for node in modified_nodes %}
+                                            <tr class="glossary-item node-item">
+                                                <td width="2%">
+                                                    <input class="form-check-input node-checkbox" type="checkbox" data-node-id="{{ node.id }}" data-item-type="node">
+                                                </td>
+                                                <td width="35%">
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="toggle-node-children me-2" {% if node.children|length > 0 or node.terms|length > 0 %}data-bs-toggle="collapse" data-bs-target="#modified-node-{{ node.id }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                            <i class="fas fa-caret-right"></i>
+                                                        </span>
+                                                        <span class="node-icon me-2">
+                                                            <i class="fas fa-folder text-warning"></i>
+                                                        </span>
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="text-decoration-none">
+                                                            {{ node.name }}
+                                                        </a>
+                                                        <span class="badge bg-warning ms-2">Modified</span>
+                                        </div>
+                                                </td>
+                                                <td width="40%">
+                                                    <div class="description-preview">{{ node.description|default:"No description" }}</div>
+                                                </td>
+                                                <td width="8%">
+                                                    <span class="badge bg-warning badge-category">Node</span>
+                                                </td>
+                                                <td width="15%">
+                                                    <div class="btn-group" role="group">
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <i class="fas fa-eye"></i>
+                                                        </a>
+                                                        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                        {% if has_git_integration %}
+                                                        <button type="button" class="btn btn-sm btn-outline-primary add-node-to-git-pr" 
+                                                                data-node-id="{{ node.id }}" title="Add to GitHub PR">
+                                                            <i class="fab fa-github"></i>
+                                                        </button>
+                                        {% endif %}
+                                                        <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                                                                data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                                                                data-node-id="{{ node.id }}" data-node-name="{{ node.name }}" title="Delete">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            
+                                            <!-- Node's children and terms -->
+                                            {% if node.children|length > 0 or node.terms|length > 0 %}
+                                            <tr class="collapse" id="modified-node-{{ node.id }}-children">
+                                                <td colspan="5" class="p-0">
+                                                    <table class="table table-hover mb-0 w-100">
+                                                        {% for child in node.children %}
+                                                        <tr class="glossary-item node-item node-level-1">
+                                                            <td width="2%">
+                                                                <input class="form-check-input node-checkbox" type="checkbox" data-node-id="{{ child.id }}" data-item-type="node">
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
+                                                                    <span class="toggle-node-children me-2" {% if child.children|length > 0 or child.terms|length > 0 %}data-bs-toggle="collapse" data-bs-target="#modified-node-{{ child.id }}-children"{% else %}style="visibility: hidden;"{% endif %}>
+                                                                        <i class="fas fa-caret-right"></i>
+                                                                    </span>
+                                                                    <span class="node-icon me-2">
+                                                                        <i class="fas fa-folder text-warning"></i>
+                                                                    </span>
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="text-decoration-none">
+                                                                        {{ child.name }}
+                                                                    </a>
+                                                                    <span class="badge bg-warning ms-2">Modified</span>
+                                                                </div>
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ child.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-warning badge-category">Node</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                        <i class="fas fa-eye"></i>
+                                                                    </a>
+                                                                    <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                                        <i class="fas fa-edit"></i>
+                                                                    </a>
+                                                                    {% if has_git_integration %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-primary add-node-to-git-pr" 
+                                                                            data-node-id="{{ child.id }}" title="Add to GitHub PR">
+                                                                        <i class="fab fa-github"></i>
+                                                                    </button>
+                                    {% endif %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                                                                            data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                                                                            data-node-id="{{ child.id }}" data-node-name="{{ child.name }}" title="Delete">
+                                                                        <i class="fas fa-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                {% endfor %}
+                                                        
+                                                        {% for term in node.terms %}
+                                                        <tr class="glossary-item term-item node-level-1">
+                                                            <td width="2%">
+                                                                <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term">
+                                                            </td>
+                                                            <td width="35%">
+                                                                <div class="d-flex align-items-center">
+                                                                    <span class="toggle-node-children invisible me-2">
+                                                                        <i class="fas fa-caret-right"></i>
+                                                                    </span>
+                                                                    <span class="node-icon me-2">
+                                                                        <i class="fas fa-tag text-info"></i>
+                                                                    </span>
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
+                                                                        {{ term.name }}
+                                                                    </a>
+                                                                    <span class="badge bg-warning ms-2">Modified</span>
+                            </div>
+                                                            </td>
+                                                            <td width="40%">
+                                                                <div class="description-preview">{{ term.description|default:"No description" }}</div>
+                                                            </td>
+                                                            <td width="8%">
+                                                                <span class="badge bg-info badge-category">Term</span>
+                                                            </td>
+                                                            <td width="15%">
+                                                                <div class="btn-group" role="group">
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                                        <i class="fas fa-eye"></i>
+                                                                    </a>
+                                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                                        <i class="fas fa-edit"></i>
+                                                                    </a>
+                                                                    {% if has_git_integration %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
+                                                                            data-term-id="{{ term.id }}" title="Add to GitHub PR">
+                                                                        <i class="fab fa-github"></i>
+                                                                    </button>
+                                                                    {% endif %}
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
+                                                                            data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                                                                            data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
+                                                                        <i class="fas fa-trash"></i>
+                                                                    </button>
+                        </div>
+                                                            </td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -623,456 +1444,202 @@
         </div>
     </div>
 </div>
+
+<!-- GitHub PR Modal -->
+<div class="modal fade" id="githubPrModal" tabindex="-1" aria-labelledby="githubPrModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="githubPrModalLabel">Add to GitHub PR</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="github-environment" class="form-label">GitHub Environment</label>
+                    <input type="text" class="form-control" id="github-environment" name="environment" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="submit-github-pr">Submit</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
 $(document).ready(function() {
-    // Filtering functionality
-    $("#synced-search, #local-search, #remote-search").on("keyup", function() {
-        let value = $(this).val().toLowerCase();
-        $(this).closest(".card").find(".glossary-tree .list-group-item").filter(function() {
-            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1);
+        // Toggle node children with animation
+        $(document).on('click', '.toggle-node-children', function() {
+            $(this).find('i').toggleClass('fa-rotate-90');
         });
-    });
-    
-    $("#synced-clear-filter, #local-clear-filter, #remote-clear-filter").click(function() {
-        $(this).prev("input").val("");
-        $(this).closest(".card").find(".glossary-tree .list-group-item").show();
-    });
-    
-    // Toggle node children
-    $(document).on("click", ".toggle-node-children", function() {
-        let icon = $(this).find("i");
-        if (icon.hasClass("fa-caret-right")) {
-            icon.removeClass("fa-caret-right").addClass("fa-caret-down");
-        } else {
-            icon.removeClass("fa-caret-down").addClass("fa-caret-right");
-        }
-    });
-    
-    // Expand/collapse glossary
-    $("#expand-all-glossary, #expand-all-local, #expand-all-remote").click(function() {
-        let container = $(this).closest(".card").find(".glossary-tree");
-        container.find(".glossary-node-children").collapse('show');
-        container.find(".toggle-node-children i").removeClass("fa-caret-right").addClass("fa-caret-down");
-    });
-    
-    $("#collapse-all-glossary, #collapse-all-local, #collapse-all-remote").click(function() {
-        let container = $(this).closest(".card").find(".glossary-tree");
-        container.find(".glossary-node-children").collapse('hide');
-        container.find(".toggle-node-children i").removeClass("fa-caret-down").addClass("fa-caret-right");
+        
+        // Expand all nodes
+        $('#expand-all-glossary, #expand-all-local, #expand-all-remote, #expand-all-modified').click(function() {
+            const tabId = $(this).closest('.tab-pane').attr('id');
+            $(`#${tabId} .collapse`).collapse('show');
+            $(`#${tabId} .toggle-node-children i`).addClass('fa-rotate-90');
+        });
+        
+        // Collapse all nodes
+        $('#collapse-all-glossary, #collapse-all-local, #collapse-all-remote, #collapse-all-modified').click(function() {
+            const tabId = $(this).closest('.tab-pane').attr('id');
+            $(`#${tabId} .collapse`).collapse('hide');
+            $(`#${tabId} .toggle-node-children i`).removeClass('fa-rotate-90');
     });
     
     // Select all checkboxes
-    $("#select-all-synced, #select-all-local, #select-all-remote").change(function() {
-        let isChecked = $(this).prop("checked");
-        $(this).closest(".tab-pane").find(".node-checkbox, .term-checkbox").prop("checked", isChecked);
-    });
-    
-    // When a term is checked, select all nodes in its path
-    $(document).on("change", ".term-checkbox", function() {
-        if ($(this).prop("checked")) {
-            // Find all parent nodes and check them
-            let parentNode = $(this).closest(".glossary-node-children");
-            while (parentNode.length) {
-                // Get the node that contains this child and check its checkbox
-                let nodeItem = parentNode.prev(".glossary-item");
-                nodeItem.find(".node-checkbox").prop("checked", true);
-                
-                // Move up to the next level
-                parentNode = nodeItem.closest(".glossary-node-children");
-            }
-        }
-    });
-    
-    // When a node is unchecked, uncheck all its children
-    $(document).on("change", ".node-checkbox", function() {
-        if (!$(this).prop("checked")) {
-            // Find all children and uncheck them
-            let childrenContainer = $(this).closest(".glossary-item").next(".glossary-node-children");
-            if (childrenContainer.length) {
-                childrenContainer.find(".node-checkbox, .term-checkbox").prop("checked", false);
-            }
-        }
-    });
-    
-    // Handle individual node GitHub PR push
-    $(document).on("click", ".add-node-to-git-pr", function() {
-        const nodeId = $(this).data("node-id");
-        const nodeName = $(this).data("node-name") || "this node";
+        $('#select-all-synced, #select-all-local, #select-all-remote, #select-all-modified').change(function() {
+            const tabId = $(this).closest('.tab-pane').attr('id');
+            const isChecked = $(this).prop('checked');
+            $(`#${tabId} .node-checkbox, #${tabId} .term-checkbox`).prop('checked', isChecked);
+        });
         
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = `/metadata/glossary/nodes/${nodeId}/push-github/`;
-        
-        // Add CSRF token
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = 'csrfmiddlewaretoken';
-        csrfToken.value = '{{ csrf_token }}';
-        form.appendChild(csrfToken);
-        
-        document.body.appendChild(form);
-        form.submit();
-        form.remove();
-    });
-    
-    // Handle individual term GitHub PR push
-    $(document).on("click", ".add-term-to-git-pr", function() {
-        const termId = $(this).data("term-id");
-        const termName = $(this).data("term-name") || "this term";
-        
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = `/metadata/glossary/terms/${termId}/push-github/`;
-        
-        // Add CSRF token
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = 'csrfmiddlewaretoken';
-        csrfToken.value = '{{ csrf_token }}';
-        form.appendChild(csrfToken);
-        
-        document.body.appendChild(form);
-        form.submit();
-        form.remove();
-    });
-    
-    // Handle delete node modal
-    $(document).on("click", ".delete-node", function() {
-        const nodeId = $(this).data("node-id");
-        const nodeName = $(this).data("node-name");
-        
-        // Update the modal form
-        $("#delete-node-name").text(nodeName);
-        $("#delete-node-form").attr("action", `/metadata/glossary/nodes/${nodeId}/delete/`);
-    });
-    
-    // Handle delete term modal
-    $(document).on("click", ".delete-term", function() {
-        const termId = $(this).data("term-id");
-        const termName = $(this).data("term-name");
-        
-        // Update the modal form
-        $("#delete-term-name").text(termName);
-        $("#delete-term-form").attr("action", `/metadata/glossary/terms/${termId}/delete/`);
-    });
-    
-    // Batch Actions: Download Selected Items
-    $("#download-selected-items").click(function() {
-        // Get all checked items
-        const selectedNodes = [];
-        const selectedTerms = [];
-        
-        // Get from all tabs (synced, local, remote)
-        $(".node-checkbox:checked").each(function() {
-            const nodeId = $(this).data("node-id");
-            const nodeUrn = $(this).data("node-urn");
-            if (nodeId) {
-                selectedNodes.push({id: nodeId, type: "node"});
-            } else if (nodeUrn) {
-                selectedNodes.push({urn: nodeUrn, type: "node"});
+        // Filter items in each tab
+        $('#synced-search, #local-search, #remote-search, #modified-search').on('keyup', function() {
+            const tabId = $(this).closest('.tab-pane').attr('id');
+            const searchTerm = $(this).val().toLowerCase();
+            
+            if (searchTerm.length > 0) {
+                $(`#${tabId} .glossary-item`).each(function() {
+                    const text = $(this).text().toLowerCase();
+                    const match = text.indexOf(searchTerm) > -1;
+                    $(this).toggle(match);
+                });
+            } else {
+                $(`#${tabId} .glossary-item`).show();
             }
         });
         
-        $(".term-checkbox:checked").each(function() {
-            const termId = $(this).data("term-id");
-            const termUrn = $(this).data("term-urn");
-            if (termId) {
-                selectedTerms.push({id: termId, type: "term"});
-            } else if (termUrn) {
-                selectedTerms.push({urn: termUrn, type: "term"});
-            }
+        // Clear filters
+        $('#synced-clear-filter, #local-clear-filter, #remote-clear-filter, #modified-clear-filter').click(function() {
+            const tabId = $(this).closest('.tab-pane').attr('id');
+            $(`#${tabId}-search`).val('');
+            $(`#${tabId} .glossary-item`).show();
         });
+        
+        // Handle batch actions
+        $('#push-selected-items').click(function() {
+            const selectedNodes = $('.node-checkbox:checked').map(function() {
+                return $(this).data('node-id');
+            }).get();
+            
+            const selectedTerms = $('.term-checkbox:checked').map(function() {
+                return $(this).data('term-id');
+            }).get();
         
         if (selectedNodes.length === 0 && selectedTerms.length === 0) {
-            alert("Please select at least one item to download");
+                alert('Please select at least one item to push to DataHub.');
             return;
         }
         
-        // Create a data object with the selected items
-        const data = {
-            nodes: selectedNodes,
-            terms: selectedTerms
-        };
-        
-        // Convert to JSON and download
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "selected_glossary_items.json");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-    });
-    
-    // Batch Actions: Download All Items
-    $("#download-all-items").click(function() {
-        // Create a data object with all items
-        const data = {
-            nodes: [],
-            terms: []
-        };
-        
-        // We'll submit a form to the server to get all items
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = '{% url "metadata_manager:glossary_import_export" %}';
-        form.target = '_blank';
-        
-        // Add CSRF token
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = 'csrfmiddlewaretoken';
-        csrfToken.value = '{{ csrf_token }}';
-        form.appendChild(csrfToken);
-        
-        // Add action to perform
-        const action = document.createElement('input');
-        action.type = 'hidden';
-        action.name = 'action';
-        action.value = 'export_all';
-        form.appendChild(action);
-        
-        document.body.appendChild(form);
+            // Submit form with selected items
+            const form = $('<form action="{% url "metadata_manager:glossary_list" %}" method="post"></form>');
+            form.append('{% csrf_token %}');
+            form.append('<input type="hidden" name="action" value="push_selected">');
+            
+            selectedNodes.forEach(function(nodeId) {
+                form.append(`<input type="hidden" name="selected_nodes" value="${nodeId}">`);
+            });
+            
+            selectedTerms.forEach(function(termId) {
+                form.append(`<input type="hidden" name="selected_terms" value="${termId}">`);
+            });
+            
+            $('body').append(form);
         form.submit();
-        form.remove();
-    });
-    
-    // Batch Actions: Push Selected Items to DataHub
-    $("#push-selected-items").click(function() {
-        // Get all checked items
-        const selectedNodes = [];
-        const selectedTerms = [];
-        
-        // Get from synced and local tabs only (remote items don't need pushing)
-        $("#synced-glossary, #local-glossary").find(".node-checkbox:checked").each(function() {
-            const nodeId = $(this).data("node-id");
-            if (nodeId) {
-                selectedNodes.push(nodeId);
-            }
         });
         
-        $("#synced-glossary, #local-glossary").find(".term-checkbox:checked").each(function() {
-            const termId = $(this).data("term-id");
-            if (termId) {
-                selectedTerms.push(termId);
-            }
-        });
+        // Add to GitHub PR action
+        $('#add-selected-to-git').click(function() {
+            const selectedNodes = $('.node-checkbox:checked').map(function() {
+                return $(this).data('node-id');
+            }).get();
+            
+            const selectedTerms = $('.term-checkbox:checked').map(function() {
+                return $(this).data('term-id');
+            }).get();
         
         if (selectedNodes.length === 0 && selectedTerms.length === 0) {
-            alert("Please select at least one item to push to DataHub");
+                alert('Please select at least one item to add to GitHub PR.');
             return;
         }
         
-        // Confirm the push operation
-        if (!confirm(`You are about to push ${selectedNodes.length} nodes and ${selectedTerms.length} terms to DataHub. Continue?`)) {
-            return;
-        }
-        
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = '{% url "metadata_manager:glossary_list" %}';
-        
-        // Add CSRF token
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = 'csrfmiddlewaretoken';
-        csrfToken.value = '{{ csrf_token }}';
-        form.appendChild(csrfToken);
-        
-        // Add action to perform
-        const action = document.createElement('input');
-        action.type = 'hidden';
-        action.name = 'action';
-        action.value = 'push_selected';
-        form.appendChild(action);
-        
-        // Add selected node IDs
-        selectedNodes.forEach(nodeId => {
-            const nodeInput = document.createElement('input');
-            nodeInput.type = 'hidden';
-            nodeInput.name = 'node_ids';
-            nodeInput.value = nodeId;
-            form.appendChild(nodeInput);
+            // Open GitHub PR modal
+            $('#githubPrModal').modal('show');
+            
+            // Store selected items in the modal form
+            $('#github-pr-form').data('selected-nodes', selectedNodes);
+            $('#github-pr-form').data('selected-terms', selectedTerms);
         });
         
-        // Add selected term IDs
-        selectedTerms.forEach(termId => {
-            const termInput = document.createElement('input');
-            termInput.type = 'hidden';
-            termInput.name = 'term_ids';
-            termInput.value = termId;
-            form.appendChild(termInput);
-        });
-        
-        document.body.appendChild(form);
+        // GitHub PR form submission
+        $('#github-pr-form').submit(function(e) {
+            e.preventDefault();
+            
+            const selectedNodes = $(this).data('selected-nodes') || [];
+            const selectedTerms = $(this).data('selected-terms') || [];
+            const environment = $('#github-environment').val();
+            
+            // Submit form with selected items
+            const form = $('<form action="{% url "metadata_manager:glossary_list" %}" method="post"></form>');
+            form.append('{% csrf_token %}');
+            form.append('<input type="hidden" name="action" value="add_to_git">');
+            form.append(`<input type="hidden" name="environment" value="${environment}">`);
+            
+            selectedNodes.forEach(function(nodeId) {
+                form.append(`<input type="hidden" name="selected_nodes" value="${nodeId}">`);
+            });
+            
+            selectedTerms.forEach(function(termId) {
+                form.append(`<input type="hidden" name="selected_terms" value="${termId}">`);
+            });
+            
+            $('body').append(form);
         form.submit();
-        form.remove();
-    });
-    
-    // Batch Actions: Push All Items to DataHub
-    $("#push-all-items").click(function() {
-        // Confirm the push operation
-        if (!confirm("You are about to push ALL glossary items to DataHub. This may take some time. Continue?")) {
+        });
+        
+        // Push all items
+        $('#push-all-items').click(function() {
+            if (!confirm('Are you sure you want to push all local and modified items to DataHub?')) {
             return;
         }
         
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = '{% url "metadata_manager:glossary_list" %}';
-        
-        // Add CSRF token
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = 'csrfmiddlewaretoken';
-        csrfToken.value = '{{ csrf_token }}';
-        form.appendChild(csrfToken);
-        
-        // Add action to perform
-        const action = document.createElement('input');
-        action.type = 'hidden';
-        action.name = 'action';
-        action.value = 'push_all';
-        form.appendChild(action);
-        
-        document.body.appendChild(form);
+            // Submit form to push all items
+            const form = $('<form action="{% url "metadata_manager:glossary_list" %}" method="post"></form>');
+            form.append('{% csrf_token %}');
+            form.append('<input type="hidden" name="action" value="push_all">');
+            $('body').append(form);
         form.submit();
-        form.remove();
-    });
-    
-    // Batch Actions: Add Selected Items to Git PR
-    $("#add-selected-to-git").click(function() {
-        // Get all checked items
-        const selectedNodes = [];
-        const selectedTerms = [];
-        
-        // Get from synced and local tabs only (remote items don't exist locally)
-        $("#synced-glossary, #local-glossary").find(".node-checkbox:checked").each(function() {
-            const nodeId = $(this).data("node-id");
-            if (nodeId) {
-                selectedNodes.push(nodeId);
-            }
         });
         
-        $("#synced-glossary, #local-glossary").find(".term-checkbox:checked").each(function() {
-            const termId = $(this).data("term-id");
-            if (termId) {
-                selectedTerms.push(termId);
-            }
-        });
+        // Download selected items
+        $('#download-selected-items').click(function() {
+            const selectedNodes = $('.node-checkbox:checked').map(function() {
+                return $(this).data('node-id');
+            }).get();
+            
+            const selectedTerms = $('.term-checkbox:checked').map(function() {
+                return $(this).data('term-id');
+            }).get();
         
         if (selectedNodes.length === 0 && selectedTerms.length === 0) {
-            alert("Please select at least one item to add to the GitHub PR");
+                alert('Please select at least one item to download.');
             return;
         }
         
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = '{% url "metadata_manager:glossary_list" %}';
-        
-        // Add CSRF token
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = 'csrfmiddlewaretoken';
-        csrfToken.value = '{{ csrf_token }}';
-        form.appendChild(csrfToken);
-        
-        // Add action to perform
-        const action = document.createElement('input');
-        action.type = 'hidden';
-        action.name = 'action';
-        action.value = 'add_to_git';
-        form.appendChild(action);
-        
-        // Add selected node IDs
-        selectedNodes.forEach(nodeId => {
-            const nodeInput = document.createElement('input');
-            nodeInput.type = 'hidden';
-            nodeInput.name = 'node_ids';
-            nodeInput.value = nodeId;
-            form.appendChild(nodeInput);
+            // TODO: Implement download functionality
+            alert('Download functionality not yet implemented.');
         });
         
-        // Add selected term IDs
-        selectedTerms.forEach(termId => {
-            const termInput = document.createElement('input');
-            termInput.type = 'hidden';
-            termInput.name = 'term_ids';
-            termInput.value = termId;
-            form.appendChild(termInput);
-        });
-        
-        document.body.appendChild(form);
-        form.submit();
-        form.remove();
+        // Download all items
+        $('#download-all-items').click(function() {
+            // TODO: Implement download functionality
+            alert('Download functionality not yet implemented.');
     });
 });
 </script>
-{% endblock %}
-
-{% block styles %}
-<style>
-    .glossary-tree .list-group-item {
-        border-left: none;
-        border-right: none;
-        border-radius: 0;
-    }
-    
-    .glossary-tree .list-group-item:first-child {
-        border-top: none;
-    }
-    
-    .glossary-tree .list-group-item:last-child {
-        border-bottom: none;
-    }
-    
-    .glossary-item {
-        padding-left: 10px;
-    }
-    
-    .node-level-1 {
-        padding-left: 30px;
-    }
-    
-    .node-level-2 {
-        padding-left: 50px;
-    }
-    
-    .node-level-3 {
-        padding-left: 70px;
-    }
-    
-    .node-level-4 {
-        padding-left: 90px;
-    }
-    
-    .node-level-5 {
-        padding-left: 110px;
-    }
-    
-    .toggle-node-children {
-        cursor: pointer;
-        width: 20px;
-        display: inline-block;
-        text-align: center;
-    }
-    
-    .node-icon {
-        width: 20px;
-        display: inline-block;
-        text-align: center;
-        margin-right: 5px;
-    }
-    
-    .term-item .node-icon {
-        margin-left: 20px;
-    }
-</style>
 {% endblock %} 

@@ -1,0 +1,693 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card-header-tabs {
+        margin-right: -1.25rem;
+        margin-bottom: -0.75rem;
+        margin-left: -1.25rem;
+        border-bottom: 0;
+    }
+    .test-card {
+        margin-bottom: 1.5rem;
+    }
+    .definition-preview {
+        max-height: 200px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 0.85em;
+        white-space: pre-wrap;
+        background-color: #f8f9fa;
+        padding: 0.5rem;
+        border-radius: 4px;
+    }
+    .badge-category {
+        font-size: 0.8em;
+        padding: 0.35em 0.65em;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>{{ page_title }}</h1>
+        <div>
+            <a href="{% url 'metadata_manager:test_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Create Test
+            </a>
+            <button type="button" class="btn btn-outline-secondary ms-2" id="import-test-btn">
+                <i class="fas fa-file-import"></i> Import Test
+            </button>
+            <button type="button" class="btn btn-outline-secondary ms-2" id="export-all-tests-btn">
+                <i class="fas fa-file-export"></i> Export All Tests
+            </button>
+        </div>
+    </div>
+
+    {% if not has_datahub_connection %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle"></i> Not connected to DataHub. Please check your connection settings.
+    </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Test Tabs -->
+    <ul class="nav nav-tabs mb-4" id="testTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="server-tab" data-bs-toggle="tab" data-bs-target="#server-tests" 
+                   type="button" role="tab" aria-controls="server-tests" aria-selected="true">
+                <i class="fas fa-server me-1"></i> Server Tests
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-tests" 
+                   type="button" role="tab" aria-controls="local-tests" aria-selected="false">
+                <i class="fas fa-laptop me-1"></i> Local Tests
+                <span class="badge bg-primary ms-1" id="local-tests-count">0</span>
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content" id="testTabsContent">
+        <!-- Server Tests Tab -->
+        <div class="tab-pane fade show active" id="server-tests" role="tabpanel" aria-labelledby="server-tab">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">DataHub Server Tests</h5>
+                    <div class="d-flex">
+                        <div class="input-group">
+                            <input type="text" id="server-test-search" class="form-control form-control-sm me-2" 
+                                   placeholder="Filter tests..." value="">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="server-clear-filter">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="ms-2">
+                            <a href="{% url 'metadata_manager:tests_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
+                                <i class="fas fa-sync-alt"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    {% if tests %}
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Category</th>
+                                        <th>Description</th>
+                                        <th>Definition</th>
+                                        <th width="15%">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for test in tests %}
+                                        <tr>
+                                            <td>
+                                                <a href="{% url 'metadata_manager:test_detail' test_urn=test.urn %}" class="text-decoration-none">
+                                                    {{ test.name }}
+                                                </a>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-info badge-category">
+                                                    {{ test.category|default:"Uncategorized" }}
+                                                </span>
+                                            </td>
+                                            <td>{{ test.description|default:"No description" }}</td>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary view-definition-btn" 
+                                                        data-bs-toggle="modal" data-bs-target="#viewDefinitionModal"
+                                                        data-test-name="{{ test.name }}" data-test-definition="{{ test.yaml_definition }}">
+                                                    <i class="fas fa-code"></i> View Definition
+                                                </button>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group" role="group">
+                                                    <a href="{% url 'metadata_manager:test_detail' test_urn=test.urn %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <a href="{% url 'metadata_manager:test_detail' test_urn=test.urn %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                    <button type="button" class="btn btn-sm btn-outline-info save-local-btn" 
+                                                            data-test-urn="{{ test.urn }}" data-test-name="{{ test.name }}"
+                                                            data-test-category="{{ test.category }}" data-test-description="{{ test.description }}"
+                                                            data-test-definition="{{ test.yaml_definition }}" title="Save Locally">
+                                                        <i class="fas fa-save"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                            data-test-urn="{{ test.urn }}" title="Add to GitHub PR">
+                                                        <i class="fab fa-github"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-test-btn" 
+                                                            data-bs-toggle="modal" data-bs-target="#deleteTestModal"
+                                                            data-test-urn="{{ test.urn }}" data-test-name="{{ test.name }}" title="Delete">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="py-5 text-center">
+                            <div class="mb-3">
+                                <i class="fas fa-vial fa-4x text-muted"></i>
+                            </div>
+                            <h4>No tests available on the server</h4>
+                            <p class="text-muted">Create your first test to get started.</p>
+                            <a href="{% url 'metadata_manager:test_create' %}" class="btn btn-primary mt-2">
+                                <i class="fas fa-plus me-1"></i> Create New Test
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Local Tests Tab -->
+        <div class="tab-pane fade" id="local-tests" role="tabpanel" aria-labelledby="local-tab">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Local Tests</h5>
+                    <div class="d-flex">
+                        <div class="input-group">
+                            <input type="text" id="local-test-search" class="form-control form-control-sm me-2" 
+                                   placeholder="Filter tests..." value="">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="local-clear-filter">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0" id="local-tests-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Category</th>
+                                    <th>Description</th>
+                                    <th>Definition</th>
+                                    <th width="20%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="local-tests-body">
+                                <!-- Local tests will be loaded here via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-local-tests" class="py-5 text-center">
+                        <div class="mb-3">
+                            <i class="fas fa-laptop-code fa-4x text-muted"></i>
+                        </div>
+                        <h4>No local tests</h4>
+                        <p class="text-muted">Save tests locally for offline editing or to prepare for pushing to DataHub.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteTestModal" tabindex="-1" aria-labelledby="deleteTestModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTestModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete the test "<span id="deleteTestName"></span>"?
+                <p class="text-danger mt-2">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{% url 'metadata_manager:tests_list' %}" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="test_urn" id="deleteTestUrn">
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Definition Modal -->
+<div class="modal fade" id="viewDefinitionModal" tabindex="-1" aria-labelledby="viewDefinitionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewDefinitionModalLabel">Test Definition</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6 id="definitionTestName" class="mb-3"></h6>
+                <pre id="definitionContent" class="definition-preview"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Local Test Confirmation Modal -->
+<div class="modal fade" id="deleteLocalTestModal" tabindex="-1" aria-labelledby="deleteLocalTestModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteLocalTestModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to delete the local test "<span id="deleteLocalTestName"></span>"?
+                <p class="text-danger mt-2">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteLocalTest">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Test Modal -->
+<div class="modal fade" id="importTestModal" tabindex="-1" aria-labelledby="importTestModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importTestModalLabel">Import Test</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="importTestFile" class="form-label">Upload Test File (YAML or JSON)</label>
+                    <input class="form-control" type="file" id="importTestFile" accept=".yaml,.yml,.json">
+                </div>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> The test will be imported to your local storage.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmImportTest">Import</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle delete button clicks
+        const deleteButtons = document.querySelectorAll('.delete-test-btn');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const testUrn = this.getAttribute('data-test-urn');
+                const testName = this.getAttribute('data-test-name');
+                
+                document.getElementById('deleteTestUrn').value = testUrn;
+                document.getElementById('deleteTestName').textContent = testName;
+            });
+        });
+
+        // Handle definition view button clicks
+        const viewDefinitionButtons = document.querySelectorAll('.view-definition-btn');
+        viewDefinitionButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const testName = this.getAttribute('data-test-name');
+                const testDefinition = this.getAttribute('data-test-definition');
+                
+                document.getElementById('definitionTestName').textContent = testName;
+                document.getElementById('definitionContent').textContent = testDefinition;
+            });
+        });
+
+        // Local storage functionality
+        const localTestsKey = 'datahub_local_tests';
+        
+        // Load local tests
+        function loadLocalTests() {
+            const localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+            const localTestsBody = document.getElementById('local-tests-body');
+            const noLocalTests = document.getElementById('no-local-tests');
+            const localTestsCount = document.getElementById('local-tests-count');
+            
+            // Update count badge
+            localTestsCount.textContent = localTests.length;
+            
+            // Show/hide empty state
+            if (localTests.length === 0) {
+                noLocalTests.style.display = 'block';
+                document.getElementById('local-tests-table').style.display = 'none';
+            } else {
+                noLocalTests.style.display = 'none';
+                document.getElementById('local-tests-table').style.display = 'table';
+                
+                // Clear and repopulate table
+                localTestsBody.innerHTML = '';
+                localTests.forEach((test, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>
+                            <a href="#" class="text-decoration-none edit-local-test" data-test-index="${index}">
+                                ${test.name}
+                            </a>
+                        </td>
+                        <td>
+                            <span class="badge bg-info badge-category">
+                                ${test.category || 'Uncategorized'}
+                            </span>
+                        </td>
+                        <td>${test.description || 'No description'}</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-secondary view-local-definition-btn" 
+                                    data-bs-toggle="modal" data-bs-target="#viewDefinitionModal"
+                                    data-test-name="${test.name}" data-test-definition="${test.yaml_definition}">
+                                <i class="fas fa-code"></i> View Definition
+                            </button>
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-sm btn-outline-primary edit-local-test" 
+                                        data-test-index="${index}" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                ${test.urn ? `
+                                <button type="button" class="btn btn-sm btn-outline-success push-to-server-btn" 
+                                        data-test-index="${index}" title="Push to Server">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                </button>
+                                ` : `
+                                <button type="button" class="btn btn-sm btn-outline-success create-on-server-btn" 
+                                        data-test-index="${index}" title="Create on Server">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                                `}
+                                <button type="button" class="btn btn-sm btn-outline-danger delete-local-test-btn" 
+                                        data-bs-toggle="modal" data-bs-target="#deleteLocalTestModal"
+                                        data-test-index="${index}" data-test-name="${test.name}" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    localTestsBody.appendChild(row);
+                });
+
+                // Handle view definition buttons
+                document.querySelectorAll('.view-local-definition-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const testName = this.getAttribute('data-test-name');
+                        const testDefinition = this.getAttribute('data-test-definition');
+                        
+                        document.getElementById('definitionTestName').textContent = testName;
+                        document.getElementById('definitionContent').textContent = testDefinition;
+                    });
+                });
+
+                // Handle edit local test buttons
+                document.querySelectorAll('.edit-local-test').forEach(button => {
+                    button.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const index = this.getAttribute('data-test-index');
+                        const localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+                        const test = localTests[index];
+                        
+                        // Store current test in session storage
+                        sessionStorage.setItem('editing_test', JSON.stringify(test));
+                        // Navigate to the create/edit page
+                        window.location.href = "{% url 'metadata_manager:test_create' %}";
+                    });
+                });
+
+                // Handle delete local test buttons
+                document.querySelectorAll('.delete-local-test-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const index = this.getAttribute('data-test-index');
+                        const testName = this.getAttribute('data-test-name');
+                        
+                        document.getElementById('deleteLocalTestName').textContent = testName;
+                        document.getElementById('confirmDeleteLocalTest').setAttribute('data-test-index', index);
+                    });
+                });
+
+                // Handle push to server buttons
+                document.querySelectorAll('.push-to-server-btn, .create-on-server-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const index = this.getAttribute('data-test-index');
+                        const localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+                        const test = localTests[index];
+                        
+                        // Store current test in session storage
+                        sessionStorage.setItem('push_test', JSON.stringify(test));
+                        // Navigate to the create page
+                        window.location.href = "{% url 'metadata_manager:test_create' %}";
+                    });
+                });
+            }
+        }
+
+        // Save test locally
+        document.querySelectorAll('.save-local-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const testUrn = this.getAttribute('data-test-urn');
+                const testName = this.getAttribute('data-test-name');
+                const testCategory = this.getAttribute('data-test-category');
+                const testDescription = this.getAttribute('data-test-description');
+                const testDefinition = this.getAttribute('data-test-definition');
+                
+                // Create test object
+                const test = {
+                    urn: testUrn,
+                    name: testName,
+                    category: testCategory,
+                    description: testDescription,
+                    yaml_definition: testDefinition
+                };
+                
+                // Get existing local tests
+                let localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+                
+                // Check if test already exists locally
+                const existingIndex = localTests.findIndex(t => t.urn === testUrn);
+                if (existingIndex >= 0) {
+                    // Update existing test
+                    localTests[existingIndex] = test;
+                } else {
+                    // Add new test
+                    localTests.push(test);
+                }
+                
+                // Save to local storage
+                localStorage.setItem(localTestsKey, JSON.stringify(localTests));
+                
+                // Show success message
+                alert(`Test "${testName}" saved locally.`);
+                
+                // Reload local tests
+                loadLocalTests();
+                
+                // Switch to local tab
+                document.getElementById('local-tab').click();
+            });
+        });
+
+        // Handle delete local test confirmation
+        document.getElementById('confirmDeleteLocalTest').addEventListener('click', function() {
+            const index = this.getAttribute('data-test-index');
+            let localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+            
+            // Remove test at index
+            localTests.splice(index, 1);
+            
+            // Save updated list
+            localStorage.setItem(localTestsKey, JSON.stringify(localTests));
+            
+            // Hide modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('deleteLocalTestModal'));
+            modal.hide();
+            
+            // Reload local tests
+            loadLocalTests();
+        });
+
+        // Import test functionality
+        document.getElementById('import-test-btn').addEventListener('click', function() {
+            const modal = new bootstrap.Modal(document.getElementById('importTestModal'));
+            modal.show();
+        });
+
+        document.getElementById('confirmImportTest').addEventListener('click', function() {
+            const fileInput = document.getElementById('importTestFile');
+            if (fileInput.files.length === 0) {
+                alert('Please select a file to import.');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    let testData;
+                    const content = e.target.result;
+                    
+                    // Parse based on file extension
+                    if (file.name.endsWith('.json')) {
+                        testData = JSON.parse(content);
+                    } else if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
+                        // Simple YAML parsing (for demo - in production, use a proper YAML parser)
+                        testData = {
+                            name: file.name.replace(/\.(yaml|yml)$/, ''),
+                            yaml_definition: content
+                        };
+                    } else {
+                        throw new Error('Unsupported file format');
+                    }
+                    
+                    // Save to local storage
+                    let localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+                    localTests.push(testData);
+                    localStorage.setItem(localTestsKey, JSON.stringify(localTests));
+                    
+                    // Hide modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('importTestModal'));
+                    modal.hide();
+                    
+                    // Reload local tests
+                    loadLocalTests();
+                    
+                    // Switch to local tab
+                    document.getElementById('local-tab').click();
+                    
+                    // Reset file input
+                    fileInput.value = '';
+                    
+                    // Show success message
+                    alert(`Test "${testData.name || 'Unknown'}" imported successfully.`);
+                } catch (error) {
+                    alert(`Error importing test: ${error.message}`);
+                }
+            };
+            
+            reader.readAsText(file);
+        });
+
+        // Export all tests
+        document.getElementById('export-all-tests-btn').addEventListener('click', function() {
+            // Get all server and local tests
+            const serverTests = [];
+            document.querySelectorAll('.delete-test-btn').forEach(button => {
+                const testUrn = button.getAttribute('data-test-urn');
+                const testName = button.getAttribute('data-test-name');
+                const testCategory = button.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+                const testDescription = button.closest('tr').querySelector('td:nth-child(3)').textContent.trim();
+                const testDefinition = button.closest('tr').querySelector('.view-definition-btn').getAttribute('data-test-definition');
+                
+                serverTests.push({
+                    urn: testUrn,
+                    name: testName,
+                    category: testCategory,
+                    description: testDescription,
+                    yaml_definition: testDefinition
+                });
+            });
+            
+            const localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+            
+            // Combine all tests
+            const allTests = [...serverTests, ...localTests];
+            
+            // Create JSON string
+            const jsonStr = JSON.stringify(allTests, null, 2);
+            
+            // Create and download file
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'datahub_tests_export.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // Filter functionality for server tests
+        const serverSearchInput = document.getElementById('server-test-search');
+        const serverClearFilterBtn = document.getElementById('server-clear-filter');
+        
+        serverSearchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            document.querySelectorAll('#server-tests tbody tr').forEach(row => {
+                const name = row.querySelector('td:first-child').textContent.toLowerCase();
+                const category = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+                const description = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+                
+                if (name.includes(searchTerm) || category.includes(searchTerm) || description.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+        
+        serverClearFilterBtn.addEventListener('click', function() {
+            serverSearchInput.value = '';
+            document.querySelectorAll('#server-tests tbody tr').forEach(row => {
+                row.style.display = '';
+            });
+        });
+        
+        // Filter functionality for local tests
+        const localSearchInput = document.getElementById('local-test-search');
+        const localClearFilterBtn = document.getElementById('local-clear-filter');
+        
+        localSearchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            document.querySelectorAll('#local-tests tbody tr').forEach(row => {
+                const name = row.querySelector('td:first-child').textContent.toLowerCase();
+                const category = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+                const description = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+                
+                if (name.includes(searchTerm) || category.includes(searchTerm) || description.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+        
+        localClearFilterBtn.addEventListener('click', function() {
+            localSearchInput.value = '';
+            document.querySelectorAll('#local-tests tbody tr').forEach(row => {
+                row.style.display = '';
+            });
+        });
+
+        // Load local tests on page load
+        loadLocalTests();
+    });
+</script>
+{% endblock %} 

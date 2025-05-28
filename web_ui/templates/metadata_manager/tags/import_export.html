@@ -7,7 +7,7 @@
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>Import/Export Tags</h1>
                 <div>
-                    <a href="{% url 'tag_list' %}" class="btn btn-secondary">
+                    <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i> Back to Tags
                     </a>
                 </div>
@@ -29,7 +29,7 @@
                         </div>
                         <div class="card-body">
                             <p>Export all tags as a JSON file that can be imported into this or another DataHub instance.</p>
-                            <form method="get" action="{% url 'tag_import_export' %}">
+                            <form method="get" action="{% url 'metadata_manager:tag_import_export' %}">
                                 <input type="hidden" name="action" value="export">
                                 <div class="d-grid gap-2">
                                     <button type="submit" class="btn btn-primary">
@@ -50,7 +50,7 @@
                         </div>
                         <div class="card-body">
                             <p>Import tags from a JSON file. This will create new tags or update existing ones.</p>
-                            <form method="post" action="{% url 'tag_import_export' %}" enctype="multipart/form-data">
+                            <form method="post" action="{% url 'metadata_manager:tag_import_export' %}" enctype="multipart/form-data">
                                 {% csrf_token %}
                                 <div class="mb-3">
                                     <label for="import_file" class="form-label">JSON File <span class="text-danger">*</span></label>

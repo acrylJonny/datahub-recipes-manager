@@ -918,26 +918,26 @@ class GlossaryTermDetailView(View):
     def post(self, request, term_id):
         try:
             term = get_object_or_404(GlossaryTerm, id=term_id)
-            name = request.POST.get('name')
-            description = request.POST.get('description', '')
-            parent_node_id = request.POST.get('parent_node_id')
-            term_source = request.POST.get('term_source', '')
-            
-            if not name:
-                messages.error(request, "Glossary term name is required")
-            return redirect('metadata_manager:glossary_term_detail', term_id=term_id)
-            
-            # Update the term
-            term.name = name
-            term.description = description
-            term.term_source = term_source
+                name = request.POST.get('name')
+                description = request.POST.get('description', '')
+                parent_node_id = request.POST.get('parent_node_id')
+                term_source = request.POST.get('term_source', '')
+                
+                if not name:
+                    messages.error(request, "Glossary term name is required")
+                return redirect('metadata_manager:glossary_term_detail', term_id=term_id)
+                
+                # Update the term
+                term.name = name
+                term.description = description
+                term.term_source = term_source
                 
             # Handle parent node if specified
             if parent_node_id:
                 try:
                     parent_node = GlossaryNode.objects.get(id=parent_node_id)
                     term.parent_node = parent_node
-                except GlossaryNode.DoesNotExist:
+                    except GlossaryNode.DoesNotExist:
                     messages.error(request, f"Parent node not found")
                     return redirect('metadata_manager:glossary_term_detail', term_id=term_id)
             
@@ -987,9 +987,9 @@ class GlossaryTermDeployView(View):
             # Deploy the term
             success = term.deploy_to_datahub(client)
             if success:
-                messages.success(request, f"Successfully deployed term '{term.name}' to DataHub")
-            else:
-                messages.error(request, f"Failed to deploy term '{term.name}' to DataHub")
+                        messages.success(request, f"Successfully deployed term '{term.name}' to DataHub")
+                    else:
+                        messages.error(request, f"Failed to deploy term '{term.name}' to DataHub")
             
             return redirect('metadata_manager:glossary_term_detail', term_id=term_id)
         except Exception as e:
@@ -1017,16 +1017,16 @@ class GlossaryTermGitPushView(View):
             # Add term to git staging
             term.add_to_git_staging()
             
-            return JsonResponse({
-                'success': True,
+                    return JsonResponse({
+                        'success': True,
                 'message': f"Glossary term '{term.name}' added to git staging"
-            })
+                    })
         except Exception as e:
             logger.error(f"Error adding glossary term to git: {str(e)}")
-            return JsonResponse({
-                'success': False,
-        'error': str(e)
-    })
+                    return JsonResponse({
+                        'success': False,
+                'error': str(e)
+            })
 
 class GlossaryNodeGitPushView(View):
     @method_decorator(require_POST)

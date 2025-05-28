@@ -1,71 +1,85 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-    <div class="row">
-        <div class="col-md-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1>
-                    <span class="badge glossary-node-badge">
-                        <i class="fas fa-folder me-1 text-warning"></i> {{ node.name }}
-                    </span>
-                </h1>
-                <div class="d-flex gap-2">
-                    {% if node.can_deploy and has_datahub_connection %}
-                    <form method="post" action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" class="d-inline">
-                        {% csrf_token %}
-                        <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_node_detail' node.id %}">
-                        <button type="submit" class="btn btn-primary" onclick="return confirm('Deploy this node to DataHub?')">
-                            <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
-                        </button>
-                    </form>
-                    {% endif %}
-                    
-                    {% if node.is_local and has_git_integration %}
-                    <button type="button" class="btn btn-outline-primary add-node-to-git-pr" data-node-id="{{ node.id }}">
-                        <i class="fab fa-github me-1"></i> Add to Git PR
-                    </button>
-                    {% endif %}
-                    
-                    <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-secondary">
-                        <i class="fas fa-arrow-left me-1"></i> Back to Glossary
-                    </a>
-                </div>
-            </div>
-            
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>
+            <span class="badge glossary-node-badge">
+                <i class="fas fa-folder me-1 text-warning"></i> {{ node.name }}
+            </span>
+        </h1>
+        <div class="d-flex gap-2">
+            {% if node.can_deploy and has_datahub_connection %}
+            <form method="post" action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_node_detail' node.id %}">
+                <button type="submit" class="btn btn-primary" onclick="return confirm('Deploy this node to DataHub?')">
+                    <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                </button>
+            </form>
             {% endif %}
             
-            <!-- Node Status Badge -->
-            <div class="mb-4">
-                <span class="badge bg-{% if node.is_synced %}success{% else %}warning{% endif %} p-2">
-                    <i class="fas {% if node.is_synced %}fa-check-circle{% else %}fa-sync{% endif %} me-1"></i>
-                    {{ node.get_sync_status_display }}
-                </span>
-                
-                {% if node.last_synced %}
-                <span class="text-muted ms-2">Last synced: {{ node.last_synced|date:"Y-m-d H:i" }}</span>
-                {% endif %}
-                
-                {% if node.staged_for_git %}
-                <span class="badge bg-primary ms-2">
-                    <i class="fab fa-github me-1"></i> Staged for Git
-                </span>
-                {% endif %}
-            </div>
+            {% if node.is_local and has_git_integration %}
+            <button type="button" class="btn btn-outline-primary add-node-to-git-pr" data-node-id="{{ node.id }}">
+                <i class="fab fa-github me-1"></i> Add to Git PR
+            </button>
+            {% endif %}
             
+            <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Glossary
+            </a>
+        </div>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <!-- Node Status Badge -->
+    <div class="mb-4">
+        <span class="badge bg-{% if node.is_synced %}success{% else %}warning{% endif %} p-2">
+            <i class="fas {% if node.is_synced %}fa-check-circle{% else %}fa-sync{% endif %} me-1"></i>
+            {{ node.get_sync_status_display }}
+        </span>
+        
+        {% if node.last_synced %}
+        <span class="text-muted ms-2">Last synced: {{ node.last_synced|date:"Y-m-d H:i" }}</span>
+        {% endif %}
+        
+        {% if node.staged_for_git %}
+        <span class="badge bg-primary ms-2">
+            <i class="fab fa-github me-1"></i> Staged for Git
+        </span>
+        {% endif %}
+    </div>
+    
+    <div class="card">
+        <div class="card-body">
             <!-- Node Details Tabs -->
             <ul class="nav nav-tabs mb-4" id="nodeDetailTabs" role="tablist">
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local" 
-                           type="button" role="tab" aria-controls="local" aria-selected="true">
-                        <i class="fas fa-laptop me-1"></i> Local
+                    <button class="nav-link active" id="details-tab" data-bs-toggle="tab" data-bs-target="#details" 
+                           type="button" role="tab" aria-controls="details" aria-selected="true">
+                        <i class="fas fa-info-circle me-1"></i> Details
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="children-tab" data-bs-toggle="tab" data-bs-target="#children" 
+                           type="button" role="tab" aria-controls="children" aria-selected="false">
+                        <i class="fas fa-sitemap me-1"></i> Children
+                        <span class="badge bg-primary ms-1">{{ node.children.count|add:node.terms.count }}</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="owners-tab" data-bs-toggle="tab" data-bs-target="#owners" 
+                           type="button" role="tab" aria-controls="owners" aria-selected="false">
+                        <i class="fas fa-users me-1"></i> Owners
+                        <span class="badge bg-primary ms-1">{{ node.owners.count }}</span>
                     </button>
                 </li>
                 {% if remote_node %}
@@ -76,92 +90,335 @@
                     </button>
                 </li>
                 {% endif %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="save-options-tab" data-bs-toggle="tab" data-bs-target="#save-options" 
+                           type="button" role="tab" aria-controls="save-options" aria-selected="false">
+                        <i class="fas fa-save me-1"></i> Save Options
+                    </button>
+                </li>
             </ul>
             
             <!-- Tab Content -->
             <div class="tab-content" id="nodeDetailTabsContent">
-                <!-- Local Tab -->
-                <div class="tab-pane fade show active" id="local" role="tabpanel" aria-labelledby="local-tab">
-                    <div class="row">
-                        <!-- Node Details Card -->
-                        <div class="col-md-8">
-                            <div class="card mb-4">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <h5 class="mb-0">Node Details</h5>
-                                    <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteNodeModal">
-                                        <i class="fas fa-trash-alt me-1"></i> Delete
-                                    </button>
+                <!-- Details Tab -->
+                <div class="tab-pane fade show active" id="details" role="tabpanel" aria-labelledby="details-tab">
+                    <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update">
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="name" class="form-label">Name</label>
+                                    <input type="text" class="form-control" id="name" name="name" value="{{ node.name }}" required>
                                 </div>
-                                <div class="card-body">
-                                    <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="action" value="update">
-                                        
-                                        <div class="mb-3">
-                                            <label for="name" class="form-label">Name</label>
-                                            <input type="text" class="form-control" id="name" name="name" value="{{ node.name }}" required>
-                                        </div>
-                                        
-                                        <div class="mb-3">
-                                            <label for="parent_node_id" class="form-label">Parent Node</label>
-                                            <select class="form-select" id="parent_node_id" name="parent_node_id">
-                                                <option value="">No parent (root node)</option>
-                                                {% for other_node in available_parent_nodes %}
-                                                    {% if other_node.id != node.id %}
-                                                    <option value="{{ other_node.id }}" {% if node.parent_node and node.parent_node.id == other_node.id %}selected{% endif %}>{{ other_node.name }}</option>
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </select>
-                                        </div>
-                                        
-                                        <div class="mb-3">
-                                            <label for="description" class="form-label">Description</label>
-                                            <textarea class="form-control" id="description" name="description" rows="5">{{ node.description }}</textarea>
-                                        </div>
-                                        
-                                        <div class="mb-3">
-                                            <label class="form-label">URN</label>
-                                            <div class="input-group">
-                                                <input type="text" class="form-control" value="{{ node.deterministic_urn }}" readonly>
-                                                <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText('{{ node.deterministic_urn }}')">
-                                                    <i class="fas fa-copy"></i>
-                                                </button>
-                                            </div>
-                                            {% if node.original_urn and node.original_urn != node.deterministic_urn %}
-                                            <small class="text-muted">Original URN: {{ node.original_urn }}</small>
+                                
+                                <div class="mb-3">
+                                    <label for="parent_node_id" class="form-label">Parent Node</label>
+                                    <select class="form-select" id="parent_node_id" name="parent_node_id">
+                                        <option value="">No parent (root node)</option>
+                                        {% for other_node in available_parent_nodes %}
+                                            {% if other_node.id != node.id %}
+                                            <option value="{{ other_node.id }}" {% if node.parent_node and node.parent_node.id == other_node.id %}selected{% endif %}>{{ other_node.name }}</option>
                                             {% endif %}
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">URN</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" value="{{ node.deterministic_urn }}" readonly>
+                                        <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText('{{ node.deterministic_urn }}')">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                    {% if node.original_urn and node.original_urn != node.deterministic_urn %}
+                                    <small class="text-muted">Original URN: {{ node.original_urn }}</small>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">Statistics</label>
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-6">
+                                                    <strong>Child Nodes:</strong> {{ node.children.count }}
+                                                </div>
+                                                <div class="col-6">
+                                                    <strong>Terms:</strong> {{ node.terms.count }}
+                                                </div>
+                                            </div>
                                         </div>
-                                        
-                                        <button type="submit" class="btn btn-primary">Save Changes</button>
-                                    </form>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         
-                        <div class="col-md-4">
-                            {% if has_datahub_connection %}
-                            <!-- Usage Statistics -->
-                            <div class="card mb-4">
-                                <div class="card-header">
-                                    <h5 class="mb-0">Children Statistics</h5>
-                                </div>
-                                <div class="card-body">
-                                    <p>This node contains:</p>
-                                    <ul>
-                                        <li>Child Nodes: <strong>{{ node.children.count }}</strong></li>
-                                        <li>Terms: <strong>{{ node.terms.count }}</strong></li>
-                                    </ul>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="5">{{ node.description }}</textarea>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteNodeModal">
+                                <i class="fas fa-trash-alt me-1"></i> Delete Node
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Save Changes
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Children Tab -->
+                <div class="tab-pane fade" id="children" role="tabpanel" aria-labelledby="children-tab">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5>Child Nodes</h5>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createChildNodeModal">
+                            <i class="fas fa-folder-plus me-1"></i> Add Child Node
+                        </button>
+                    </div>
+                    
+                    {% if node.children.exists %}
+                    <div class="table-responsive mb-4">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th width="10%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for child in node.children.all %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}">
+                                            <i class="fas fa-folder text-warning me-1"></i> {{ child.name }}
+                                        </a>
+                                    </td>
+                                    <td>{{ child.description|truncatechars:100 }}</td>
+                                    <td>
+                                        <span class="badge bg-{% if child.is_synced %}success{% else %}warning{% endif %}">
+                                            {{ child.get_sync_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="{% url 'metadata_manager:glossary_node_detail' child.id %}" class="btn btn-outline-primary">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-outline-danger delete-child-node" 
+                                                   data-bs-toggle="modal" data-bs-target="#deleteChildNodeModal"
+                                                   data-node-id="{{ child.id }}" data-node-name="{{ child.name }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-1"></i> This node has no child nodes.
+                    </div>
+                    {% endif %}
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5>Terms</h5>
+                        <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#createTermModal">
+                            <i class="fas fa-tag me-1"></i> Add Term
+                        </button>
+                    </div>
+                    
+                    {% if node.terms.exists %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th width="10%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for term in node.terms.all %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                                            <i class="fas fa-tag text-info me-1"></i> {{ term.name }}
+                                        </a>
+                                    </td>
+                                    <td>{{ term.description|truncatechars:100 }}</td>
+                                    <td>
+                                        <span class="badge bg-{% if term.is_synced %}success{% else %}warning{% endif %}">
+                                            {{ term.get_sync_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-outline-primary">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-outline-danger delete-term" 
+                                                   data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                                                   data-term-id="{{ term.id }}" data-term-name="{{ term.name }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-1"></i> This node has no terms.
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Owners Tab -->
+                <div class="tab-pane fade" id="owners" role="tabpanel" aria-labelledby="owners-tab">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5>Node Owners</h5>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addOwnerModal">
+                            <i class="fas fa-user-plus me-1"></i> Add Owner
+                        </button>
+                    </div>
+                    
+                    {% if node.owners.exists %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Owner</th>
+                                    <th>Type</th>
+                                    <th width="10%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for owner in node.owners.all %}
+                                <tr>
+                                    <td>
+                                        <i class="fas {% if owner.owner_type == 'CORP_USER' %}fa-user{% elif owner.owner_type == 'CORP_GROUP' %}fa-users{% else %}fa-building{% endif %} me-1"></i>
+                                        {{ owner.owner_id }}
+                                    </td>
+                                    <td>{{ owner.get_owner_type_display }}</td>
+                                    <td>
+                                        <form action="{% url 'metadata_manager:glossary_node_detail' node.id %}" method="post" class="d-inline">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="remove_owner">
+                                            <input type="hidden" name="owner_id" value="{{ owner.id }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" 
+                                                   onclick="return confirm('Remove this owner?')">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-1"></i> This node has no owners.
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if remote_node %}
+                <!-- Remote Tab -->
+                <div class="tab-pane fade" id="remote" role="tabpanel" aria-labelledby="remote-tab">
+                    <div class="alert alert-info mb-4">
+                        <i class="fas fa-info-circle me-1"></i>
+                        This shows the node as it currently exists on the DataHub server.
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Name</label>
+                                <input type="text" class="form-control" value="{{ remote_node.name }}" readonly>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">URN</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" value="{{ remote_node.urn }}" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText('{{ remote_node.urn }}')">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
                                 </div>
                             </div>
-                            {% endif %}
-                            
-                            {% if has_git_integration %}
-                            <!-- GitHub Integration -->
-                            <div class="card mb-4">
-                                <div class="card-header">
-                                    <h5 class="mb-0">GitHub Integration</h5>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Parent Node</label>
+                                <input type="text" class="form-control" value="{{ remote_node.parent_name|default:'No parent (root node)' }}" readonly>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" rows="5" readonly>{{ remote_node.description }}</textarea>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Save Options Tab -->
+                <div class="tab-pane fade" id="save-options" role="tabpanel" aria-labelledby="save-options-tab">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header bg-light">
+                                    <h5 class="card-title mb-0">DataHub Server</h5>
                                 </div>
                                 <div class="card-body">
+                                    <p>Deploy this node to the DataHub server.</p>
+                                    {% if node.can_deploy and has_datahub_connection %}
+                                    <form method="post" action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_node_detail' node.id %}">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <button class="btn btn-primary" disabled>
+                                        <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                                    </button>
+                                    <div class="alert alert-warning mt-3">
+                                        <i class="fas fa-exclamation-triangle me-1"></i>
+                                        {% if not has_datahub_connection %}
+                                        Not connected to DataHub.
+                                        {% else %}
+                                        Node is already synced with the server.
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100">
+                                <div class="card-header bg-light">
+                                    <h5 class="card-title mb-0">GitHub Integration</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p>Add this node to a GitHub PR for version control.</p>
+                                    
+                                    {% if has_git_integration %}
                                     <form id="gitHubPushForm" data-node-id="{{ node.id }}">
                                         {% csrf_token %}
                                         <div class="mb-3">
@@ -172,10 +429,6 @@
                                                 <option value="{{ env.id }}">{{ env.name }}</option>
                                                 {% endfor %}
                                             </select>
-                                            <div class="form-text">
-                                                Selecting an environment will transform the node based on environment settings
-                                                before adding it to the PR.
-                                            </div>
                                         </div>
                                         
                                         <button type="button" class="btn btn-outline-primary" id="addToGitPRBtn">
@@ -183,141 +436,20 @@
                                         </button>
                                     </form>
                                     <div id="gitPushResult" class="mt-3"></div>
+                                    {% else %}
+                                    <button class="btn btn-outline-primary" disabled>
+                                        <i class="fab fa-github me-1"></i> Add to GitHub PR
+                                    </button>
+                                    <div class="alert alert-warning mt-3">
+                                        <i class="fas fa-exclamation-triangle me-1"></i>
+                                        GitHub integration is not enabled.
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    
-                    <!-- Owners Card -->
-                    <div class="card mb-4">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">Owners</h5>
-                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addOwnerModal">
-                                <i class="fas fa-user-plus me-1"></i> Add Owner
-                            </button>
-                        </div>
-                        <div class="card-body">
-                            {% if owners %}
-                            <ul class="list-group">
-                                {% for owner in owners %}
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <strong>{{ owner.owner.info.label }}</strong>
-                                        <p class="text-muted mb-0">{{ owner.type }} | {{ owner.owner.urn }}</p>
-                                    </div>
-                                    <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="action" value="remove_owner">
-                                        <input type="hidden" name="owner_urn" value="{{ owner.owner.urn }}">
-                                        <input type="hidden" name="ownership_type" value="{{ owner.type }}">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">
-                                            <i class="fas fa-user-minus"></i>
-                                        </button>
-                                    </form>
-                                </li>
-                                {% endfor %}
-                            </ul>
-                            {% else %}
-                            <p class="text-muted">No owners assigned to this node.</p>
-                            {% endif %}
-                        </div>
-                    </div>
-                    
-                    <!-- Child Nodes -->
-                    {% if node.children.all %}
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <h5 class="mb-0">Child Nodes</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="list-group glossary-tree">
-                                {% for child in node.children.all %}
-                                    {% include "metadata_manager/glossary/partials/node_tree_item.html" with node=child level=0 %}
-                                {% endfor %}
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-                    
-                    <!-- Child Terms -->
-                    {% if node.terms.all %}
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <h5 class="mb-0">Terms in this Node</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-hover table-striped mb-0">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Description</th>
-                                            <th>Status</th>
-                                            <th width="15%">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for term in node.terms.all %}
-                                            <tr>
-                                                <td>
-                                                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
-                                                        {{ term.name }}
-                                                    </a>
-                                                </td>
-                                                <td>{{ term.description|truncatechars:50 }}</td>
-                                                <td>
-                                                    <span class="badge bg-{% if term.sync_status == 'SYNCED' %}success{% elif term.sync_status == 'MODIFIED' %}warning{% elif term.sync_status == 'LOCAL_ONLY' %}secondary{% else %}primary{% endif %}">
-                                                        {{ term.get_sync_status_display }}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <div class="btn-group" role="group">
-                                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
-                                                            <i class="fas fa-eye"></i>
-                                                        </a>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
-                
-                <!-- Remote Tab -->
-                {% if remote_node %}
-                <div class="tab-pane fade" id="remote" role="tabpanel" aria-labelledby="remote-tab">
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">Remote Node Details</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="mb-3">
-                                <label class="form-label">Name</label>
-                                <input type="text" class="form-control" value="{{ remote_node.properties.name }}" readonly>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Description</label>
-                                <textarea class="form-control" rows="5" readonly>{{ remote_node.description }}</textarea>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">URN</label>
-                                <input type="text" class="form-control" value="{{ remote_node.urn }}" readonly>
-                            </div>
-                            
-                            {% if datahub_url %}
-                            <a href="{{ datahub_url }}/glossaryNode/{{ remote_node.urn|urlencode:''}}" target="_blank" class="btn btn-outline-primary">
-                                <i class="fas fa-external-link-alt me-1"></i> View in DataHub
-                            </a>
-                            {% endif %}
                         </div>
                     </div>
                 </div>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -328,16 +460,19 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="deleteNodeModalLabel">Delete Glossary Node</h5>
+                <h5 class="modal-title" id="deleteNodeModalLabel">Confirm Deletion</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to delete the node <strong>{{ node.name }}</strong>?</p>
-                <p class="text-danger">This action cannot be undone. All child nodes and terms will be lost!</p>
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Warning: This will also delete all child nodes and terms!
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
+                <form action="{% url 'metadata_manager:glossary_node_detail' node.id %}" method="post">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="delete">
                     <button type="submit" class="btn btn-danger">Delete Node</button>
@@ -351,25 +486,25 @@
 <div class="modal fade" id="addOwnerModal" tabindex="-1" aria-labelledby="addOwnerModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'metadata_manager:glossary_node_detail' node.id %}">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addOwnerModalLabel">Add Owner</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{% url 'metadata_manager:glossary_node_detail' node.id %}" method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="add_owner">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="addOwnerModalLabel">Add Owner</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="owner_urn" class="form-label">Owner URN</label>
-                        <input type="text" class="form-control" id="owner_urn" name="owner_urn" placeholder="urn:li:corpuser:username" required>
-                        <div class="form-text">Enter the URN of the user or group (e.g., urn:li:corpuser:username or urn:li:corpGroup:groupname)</div>
+                        <label for="owner_id" class="form-label">Owner ID</label>
+                        <input type="text" class="form-control" id="owner_id" name="owner_id" required>
+                        <div class="form-text">For users, use their LDAP username</div>
                     </div>
                     <div class="mb-3">
-                        <label for="ownership_type" class="form-label">Ownership Type</label>
-                        <select class="form-select" id="ownership_type" name="ownership_type" required>
-                            <option value="urn:li:ownershipType:__system__technical_owner">Technical Owner</option>
-                            <option value="urn:li:ownershipType:__system__business_owner">Business Owner</option>
-                            <option value="urn:li:ownershipType:__system__data_steward">Data Steward</option>
+                        <label for="owner_type" class="form-label">Owner Type</label>
+                        <select class="form-select" id="owner_type" name="owner_type" required>
+                            <option value="CORP_USER">User</option>
+                            <option value="CORP_GROUP">Group</option>
+                            <option value="CORP_TEAM">Team</option>
                         </select>
                     </div>
                 </div>
@@ -382,37 +517,178 @@
     </div>
 </div>
 
-{% block scripts %}
+<!-- Delete Child Node Modal -->
+<div class="modal fade" id="deleteChildNodeModal" tabindex="-1" aria-labelledby="deleteChildNodeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteChildNodeModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the node <strong id="deleteChildNodeName"></strong>?</p>
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    Warning: This will also delete all its child nodes and terms!
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteChildNodeForm" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger">Delete Node</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Term Modal -->
+<div class="modal fade" id="deleteTermModal" tabindex="-1" aria-labelledby="deleteTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTermModalLabel">Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the term <strong id="deleteTermName"></strong>?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteTermForm" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger">Delete Term</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Child Node Modal -->
+<div class="modal fade" id="createChildNodeModal" tabindex="-1" aria-labelledby="createChildNodeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createChildNodeModalLabel">Create Child Node</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{% url 'metadata_manager:glossary_node_create' %}" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="parent_node_id" value="{{ node.id }}">
+                <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_node_detail' node.id %}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="new_node_name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="new_node_name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_node_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="new_node_description" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Node</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Create Term Modal -->
+<div class="modal fade" id="createTermModal" tabindex="-1" aria-labelledby="createTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createTermModalLabel">Create Term</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{% url 'metadata_manager:glossary_term_create' %}" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="parent_node_id" value="{{ node.id }}">
+                <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_node_detail' node.id %}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="new_term_name" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="new_term_name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_term_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="new_term_description" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Term</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
 <script>
-$(document).ready(function() {
-    // Add node to GitHub PR
-    $('#addToGitPRBtn').click(function() {
-        var nodeId = $('#gitHubPushForm').data('node-id');
-        var environmentId = $('#environment_id').val();
-        
-        $('#gitPushResult').html('<div class="alert alert-info">Adding to GitHub PR...</div>');
-        
-        // Send AJAX request
-        $.ajax({
-            url: '{% url "glossary_node_push_github" node.id %}',
-            type: 'POST',
-            data: {
-                'csrfmiddlewaretoken': $('input[name=csrfmiddlewaretoken]').val(),
-                'environment_id': environmentId
-            },
-            success: function(response) {
-                if (response.success) {
-                    $('#gitPushResult').html('<div class="alert alert-success">' + response.message + '</div>');
-                } else {
-                    $('#gitPushResult').html('<div class="alert alert-danger">Error: ' + response.error + '</div>');
-                }
-            },
-            error: function() {
-                $('#gitPushResult').html('<div class="alert alert-danger">Network error occurred</div>');
-            }
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle child node deletion
+    document.querySelectorAll('.delete-child-node').forEach(button => {
+        button.addEventListener('click', function() {
+            const nodeId = this.getAttribute('data-node-id');
+            const nodeName = this.getAttribute('data-node-name');
+            
+            document.getElementById('deleteChildNodeName').textContent = nodeName;
+            document.getElementById('deleteChildNodeForm').action = "{% url 'metadata_manager:glossary_node_detail' 0 %}".replace('0', nodeId);
         });
     });
+    
+    // Handle term deletion
+    document.querySelectorAll('.delete-term').forEach(button => {
+        button.addEventListener('click', function() {
+            const termId = this.getAttribute('data-term-id');
+            const termName = this.getAttribute('data-term-name');
+            
+            document.getElementById('deleteTermName').textContent = termName;
+            document.getElementById('deleteTermForm').action = "{% url 'metadata_manager:glossary_term_detail' 0 %}".replace('0', termId);
+        });
+    });
+    
+    // GitHub integration if enabled
+    const addToGitPRBtn = document.getElementById('addToGitPRBtn');
+    if (addToGitPRBtn) {
+        addToGitPRBtn.addEventListener('click', function() {
+            const form = document.getElementById('gitHubPushForm');
+            const nodeId = form.getAttribute('data-node-id');
+            const environmentId = document.getElementById('environment_id').value;
+            const resultDiv = document.getElementById('gitPushResult');
+            
+            resultDiv.innerHTML = '<div class="alert alert-info">Adding to GitHub PR...</div>';
+            
+            fetch("{% url 'metadata_manager:glossary_node_push_github' 0 %}".replace('0', nodeId), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: new URLSearchParams({
+                    'environment_id': environmentId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resultDiv.innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            });
+        });
+    }
 });
 </script>
-{% endblock %}
 {% endblock %} 

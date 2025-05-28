@@ -6,7 +6,7 @@
         <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>Pull Domains from DataHub</h1>
-                <a href="{% url 'domain_list' %}" class="btn btn-outline-secondary">
+                <a href="{% url 'metadata_manager:domain_list' %}" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left me-1"></i> Back to Domains
                 </a>
             </div>
@@ -41,14 +41,14 @@
                                     This will pull all domains from DataHub into your local database.
                                     Existing domains will be updated with the latest information.
                                 </div>
-                                <form method="post" action="{% url 'domain_pull' %}">
+                                <form method="post" action="{% url 'metadata_manager:domain_pull' %}">
                                     {% csrf_token %}
                                     <input type="hidden" name="confirm" value="true">
                                     <input type="hidden" name="execute" value="true">
                                     <button type="submit" class="btn btn-primary">
                                         <i class="fas fa-cloud-download-alt me-1"></i> Confirm Pull
                                     </button>
-                                    <a href="{% url 'domain_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                                    <a href="{% url 'metadata_manager:domain_list' %}" class="btn btn-outline-secondary">Cancel</a>
                                 </form>
                             </div>
                         {% elif domain_urn %}
@@ -57,19 +57,19 @@
                                     <i class="fas fa-info-circle me-2"></i>
                                     This will pull the domain with URN <code>{{ domain_urn }}</code> from DataHub into your local database.
                                 </div>
-                                <form method="post" action="{% url 'domain_pull' %}">
+                                <form method="post" action="{% url 'metadata_manager:domain_pull' %}">
                                     {% csrf_token %}
                                     <input type="hidden" name="domain_urn" value="{{ domain_urn }}">
                                     <input type="hidden" name="execute" value="true">
                                     <button type="submit" class="btn btn-primary">
                                         <i class="fas fa-cloud-download-alt me-1"></i> Confirm Pull
                                     </button>
-                                    <a href="{% url 'domain_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                                    <a href="{% url 'metadata_manager:domain_list' %}" class="btn btn-outline-secondary">Cancel</a>
                                 </form>
                             </div>
                         {% else %}
                             <div class="mb-4">
-                                <form method="post" action="{% url 'domain_pull' %}">
+                                <form method="post" action="{% url 'metadata_manager:domain_pull' %}">
                                     {% csrf_token %}
                                     <input type="hidden" name="confirm" value="true">
                                     <button type="submit" class="btn btn-primary">
@@ -80,7 +80,7 @@
                             <hr>
                             <div>
                                 <h6>Pull Specific Domain</h6>
-                                <form method="post" action="{% url 'domain_pull' %}">
+                                <form method="post" action="{% url 'metadata_manager:domain_pull' %}">
                                     {% csrf_token %}
                                     <div class="mb-3">
                                         <label for="domain_urn" class="form-label">Domain URN</label>
@@ -128,7 +128,7 @@
                             </table>
                         </div>
                         <div class="mt-3">
-                            <a href="{% url 'domain_list' %}" class="btn btn-primary">
+                            <a href="{% url 'metadata_manager:domain_list' %}" class="btn btn-primary">
                                 <i class="fas fa-list me-1"></i> View All Domains
                             </a>
                         </div>

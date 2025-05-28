@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Import Metadata Test{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Import Metadata Test</h1>
+        <a href="{% url 'metadata_manager:tests_list' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Tests
+        </a>
+    </div>
+
+    {% if not has_datahub_connection %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle"></i> Not connected to DataHub. Please check your connection settings.
+    </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Import Test File</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data" id="importForm">
+                        {% csrf_token %}
+                        
+                        <div class="mb-4">
+                            <h6>Import Options</h6>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="destination" id="destinationServer" value="server" {% if has_datahub_connection %}checked{% else %}disabled{% endif %}>
+                                <label class="form-check-label" for="destinationServer">
+                                    Import to DataHub Server
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="destination" id="destinationLocal" value="local" {% if not has_datahub_connection %}checked{% endif %}>
+                                <label class="form-check-label" for="destinationLocal">
+                                    Save to Local Storage
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="testFile" class="form-label">Test File (YAML or JSON)</label>
+                            <input class="form-control" type="file" id="testFile" name="test_file" accept=".yaml,.yml,.json" required>
+                            <div class="form-text">
+                                Upload a YAML or JSON file containing a metadata test definition.
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <span>The file should contain a valid metadata test definition in either YAML or JSON format.</span>
+                        </div>
+                        
+                        <div class="d-flex justify-content-end">
+                            <a href="{% url 'metadata_manager:tests_list' %}" class="btn btn-secondary me-2">Cancel</a>
+                            <button type="submit" class="btn btn-primary" id="importButton">
+                                <i class="fas fa-file-import me-1"></i> Import Test
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Example Test Format</h5>
+                </div>
+                <div class="card-body">
+                    <h6>YAML Example:</h6>
+                    <pre class="bg-light p-3 rounded">name: Ensure datasets have owners
+category: METADATA_QUALITY
+description: Verifies that all datasets have at least one owner assigned
+on:
+  types:
+    - dataset
+rules:
+  property: ownership.owners
+  operator: exists
+actions:
+  failing:
+    - type: create_ticket
+      system: email
+      properties:
+        recipients:
+          - data-governance@example.com
+        subject: "Dataset missing owners: {urn}"</pre>
+                    
+                    <h6 class="mt-4">JSON Example:</h6>
+                    <pre class="bg-light p-3 rounded">{
+  "name": "Ensure datasets have owners",
+  "category": "METADATA_QUALITY",
+  "description": "Verifies that all datasets have at least one owner assigned",
+  "on": {
+    "types": ["dataset"]
+  },
+  "rules": {
+    "property": "ownership.owners",
+    "operator": "exists"
+  },
+  "actions": {
+    "failing": [
+      {
+        "type": "create_ticket",
+        "system": "email",
+        "properties": {
+          "recipients": ["data-governance@example.com"],
+          "subject": "Dataset missing owners: {urn}"
+        }
+      }
+    ]
+  }
+}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('importForm');
+        const destinationServer = document.getElementById('destinationServer');
+        const destinationLocal = document.getElementById('destinationLocal');
+        const importButton = document.getElementById('importButton');
+        
+        form.addEventListener('submit', function(event) {
+            // If destination is local, handle it in JavaScript instead of form submission
+            if (destinationLocal.checked) {
+                event.preventDefault();
+                
+                const fileInput = document.getElementById('testFile');
+                if (!fileInput.files.length) {
+                    alert('Please select a file to import.');
+                    return;
+                }
+                
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    try {
+                        let testData;
+                        const content = e.target.result;
+                        
+                        // Parse based on file extension
+                        if (file.name.endsWith('.json')) {
+                            testData = JSON.parse(content);
+                        } else if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
+                            // For YAML, we'll need to save the raw content and parse it on the detail page
+                            testData = {
+                                name: file.name.replace(/\.(yaml|yml)$/, ''),
+                                yaml_definition: content
+                            };
+                        } else {
+                            throw new Error('Unsupported file format');
+                        }
+                        
+                        // Save to local storage
+                        let localTests = JSON.parse(localStorage.getItem('datahub_local_tests') || '[]');
+                        localTests.push(testData);
+                        localStorage.setItem('datahub_local_tests', JSON.stringify(localTests));
+                        
+                        // Show success message and redirect
+                        alert(`Test "${testData.name || 'Unknown'}" imported successfully to local storage.`);
+                        window.location.href = "{% url 'metadata_manager:tests_list' %}";
+                    } catch (error) {
+                        alert(`Error importing test: ${error.message}`);
+                    }
+                };
+                
+                reader.readAsText(file);
+            }
+            // Otherwise let the form submit normally to handle server-side import
+        });
+    });
+</script>
+{% endblock %} 

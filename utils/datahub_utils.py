@@ -21,46 +21,48 @@ def get_datahub_client():
         DataHubRestClient: configured client, or None if connection is not possible
     """
     try:
-        # Try to get settings from Django settings first (for web UI)
+        # Always try to get settings from AppSettings first
+        try:
+            from web_ui.models import AppSettings
+            logger.debug("Getting DataHub settings from AppSettings")
+            datahub_url = AppSettings.get('datahub_url')
+            datahub_token = AppSettings.get('datahub_token')
+            verify_ssl = AppSettings.get_bool('verify_ssl', True)
+            
+            # Log the URL being used (without token)
+            logger.debug(f"Using DataHub URL from settings: {datahub_url}")
+            
+            # If we have both URL and token from AppSettings, use them
+            if datahub_url and datahub_token:
+                logger.info("Creating DataHub client with settings from AppSettings")
+                client = DataHubRestClient(server_url=datahub_url, token=datahub_token, verify_ssl=verify_ssl)
+                return client
+                
+        except ImportError as e:
+            logger.warning(f"Could not import AppSettings: {str(e)}")
+        
+        # If we get here, either AppSettings import failed or settings weren't found
+        # Try Django settings
         datahub_url = getattr(settings, 'DATAHUB_SERVER_URL', None)
         datahub_token = getattr(settings, 'DATAHUB_TOKEN', None)
         
-        # Fall back to AppSettings if available (main web_ui approach)
+        # If not in Django settings, try environment variables
         if not datahub_url or not datahub_token:
-            try:
-                # Import here to avoid circular imports
-                from web_ui.web_ui.models import AppSettings
-                logger.debug("Getting DataHub settings from AppSettings")
-                datahub_url = AppSettings.get('datahub_url', os.environ.get('DATAHUB_GMS_URL', ''))
-                datahub_token = AppSettings.get('datahub_token', os.environ.get('DATAHUB_TOKEN', ''))
-                logger.debug(f"Retrieved datahub_url from AppSettings: {datahub_url is not None and len(datahub_url) > 0}")
-            except ImportError as e:
-                logger.warning(f"Could not import AppSettings: {str(e)}")
-                # If AppSettings is not available, fall back to env vars
-                datahub_url = os.environ.get('DATAHUB_GMS_URL', '')
-                datahub_token = os.environ.get('DATAHUB_TOKEN', '')
+            datahub_url = os.environ.get('DATAHUB_GMS_URL', '')
+            datahub_token = os.environ.get('DATAHUB_TOKEN', '')
         
-        # If we have a URL, create and return the client
-        if datahub_url:
-            logger.debug(f"Creating DataHub client with URL: {datahub_url}")
-            verify_ssl = True
-            try:
-                from web_ui.web_ui.models import AppSettings
-                verify_ssl_setting = AppSettings.get_bool('verify_ssl', True)
-                if verify_ssl_setting is not None:
-                    verify_ssl = verify_ssl_setting
-                    logger.debug(f"Using verify_ssl setting from AppSettings: {verify_ssl}")
-            except Exception as e:
-                logger.warning(f"Error getting verify_ssl setting: {str(e)}, using default: True")
-                logger.warning(f"Exception details: {e.__class__.__name__}: {str(e)}")
-            
-            # Configure client with proper SSL verification settings
-            client = DataHubRestClient(server_url=datahub_url, token=datahub_token, verify_ssl=verify_ssl)
-            logger.info(f"Successfully created DataHub client for URL: {datahub_url}, verify_ssl: {verify_ssl}")
+        # If we have both URL and token from any source, create and return the client
+        if datahub_url and datahub_token:
+            logger.info(f"Creating DataHub client with URL: {datahub_url}")
+            client = DataHubRestClient(server_url=datahub_url, token=datahub_token)
             return client
         else:
-            logger.warning("DataHub URL is not configured")
+            if not datahub_url:
+                logger.warning("DataHub URL is not configured")
+            if not datahub_token:
+                logger.warning("DataHub token is not configured")
             return None
+            
     except Exception as e:
         logger.error(f"Error creating DataHub client: {str(e)}")
         return None

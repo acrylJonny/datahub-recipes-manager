@@ -1116,9 +1116,10 @@ class GitIntegration:
             params_envs_dir = params_dir / 'environments'
             params_instances_dir = params_dir / 'instances'
             policies_dir = base_dir / 'policies'
+            metadata_tests_dir = base_dir / 'metadata_tests'
             
             # Create all necessary directories
-            for dir_path in [recipes_dir, templates_dir, instances_dir, params_dir, params_envs_dir, params_instances_dir, policies_dir]:
+            for dir_path in [recipes_dir, templates_dir, instances_dir, params_dir, params_envs_dir, params_instances_dir, policies_dir, metadata_tests_dir]:
                 dir_path.mkdir(parents=True, exist_ok=True)
             
             # Export to YAML/JSON based on object type
@@ -1428,6 +1429,38 @@ class GitIntegration:
                 
                 pr_title = f"Update environment variables instance: {instance_or_template.name}"
                 
+            # Handle metadata tests (identified by having id, name, definition, and environment attributes)
+            elif hasattr(instance_or_template, 'id') and hasattr(instance_or_template, 'name') and \
+                 hasattr(instance_or_template, 'definition') and hasattr(instance_or_template, 'environment'):
+                logger.info(f"Exporting metadata test: {instance_or_template.name}")
+                
+                # Get environment (default to 'prod' if not specified)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+                
+                # Create environment directory if it doesn't exist
+                env_tests_dir = metadata_tests_dir / environment
+                env_tests_dir.mkdir(exist_ok=True)
+                
+                # Generate a safe file name from the test name
+                import re
+                safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', instance_or_template.name.lower())
+                file_path = env_tests_dir / f"{safe_name}.yaml"
+                
+                # Get test content
+                if hasattr(instance_or_template, 'to_yaml'):
+                    content = instance_or_template.to_yaml()
+                else:
+                    content = instance_or_template.definition
+                
+                # Export the test content
+                with open(file_path, 'w') as f:
+                    f.write(content)
+                
+                pr_title = f"Add/update metadata test: {instance_or_template.name}"
+            
             else:
                 err_msg = f"Invalid object type: {type(instance_or_template)}"
                 logger.error(err_msg)
@@ -2005,6 +2038,22 @@ class GitIntegration:
             # Construct file path for Policy
             policy_name = instance_or_template.name.replace(' ', '_').lower()
             file_path = f"policies/{environment}/{policy_name}.json"
+        
+        # Handle metadata tests (identified by having id, name, definition, and environment attributes)
+        elif hasattr(instance_or_template, 'id') and hasattr(instance_or_template, 'name') and \
+             hasattr(instance_or_template, 'definition') and hasattr(instance_or_template, 'environment'):
+            # Get environment (default to 'prod' if not specified)
+            if instance_or_template.environment:
+                environment = instance_or_template.environment.name.lower()
+            else:
+                environment = Environment.get_default().name.lower()
+                
+            # Generate a safe file name from the test name
+            import re
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', instance_or_template.name.lower())
+            
+            # Construct file path for Metadata Test
+            file_path = f"metadata_tests/{environment}/{safe_name}.yaml"
         
         # Otherwise, wrap the result in a success response
         return {

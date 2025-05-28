@@ -1,10 +1,13 @@
+# Add parent directory to path to import utils
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse, FileResponse, Http404
 from django.contrib import messages
 from django.views.decorators.http import require_POST
 from django.urls import reverse
-import os
-import sys
 import json
 import yaml
 import subprocess
@@ -23,9 +26,8 @@ import base64
 import time
 from random import randint
 import uuid
-
-# Add parent directory to path to import utils
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from web_ui.models import AppSettings, GitSettings
 
 # Import custom forms
 from .forms import RecipeForm, RecipeImportForm, PolicyForm, PolicyImportForm, RecipeTemplateForm, RecipeDeployForm, RecipeTemplateImportForm, EnvVarsTemplateForm, EnvVarsInstanceForm, RecipeInstanceForm, GitSettingsForm
@@ -37,7 +39,7 @@ try:
 except ImportError:
     DATAHUB_CLIENT_AVAILABLE = False
 
-from .models import AppSettings, GitSettings, LogEntry, RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, RecipeInstance, GitHubPR, GitIntegration, Policy, EnvironmentInstance, Environment
+from .models import LogEntry, RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, RecipeInstance, GitHubPR, GitIntegration, Policy, EnvironmentInstance, Environment
 from .services.github_service import GitHubService
 from .services.git_service import GitService
 from .utils.workflow_analyzer import WorkflowAnalyzer
@@ -1204,175 +1206,66 @@ def export_all_templates(request):
         return redirect('recipe_templates')
 
 def settings(request):
-    """Settings page."""
-    # Initialize the config dictionary
-    config = {
-        'datahub_url': AppSettings.get('datahub_url', ''),
-        'datahub_token': AppSettings.get('datahub_token', ''),
-        'verify_ssl': AppSettings.get_bool('verify_ssl', True),
-        
-        # Policy settings
-        'policy_export_dir': AppSettings.get('policy_export_dir', ''),
-        'default_policy_type': AppSettings.get('default_policy_type', 'METADATA'),
-        'validate_on_import': AppSettings.get_bool('validate_on_import', True),
-        'auto_backup_policies': AppSettings.get_bool('auto_backup_policies', True),
-        
-        # Recipe settings
-        'recipe_dir': AppSettings.get('recipe_dir', ''),
-        'default_schedule': AppSettings.get('default_schedule', '0 0 * * *'),
-        'auto_enable_recipes': AppSettings.get_bool('auto_enable_recipes', False),
-        
-        # Advanced settings
-        'log_level': AppSettings.get('log_level', 'INFO'),
-        'timeout': AppSettings.get_int('timeout', 30),
-        'debug_mode': AppSettings.get_bool('debug_mode', False),
-        'refresh_rate': AppSettings.get_int('refresh_rate', 60),
-    }
-    
-    # Get connection status
-    client = get_datahub_client()
-    connected = client and client.test_connection()
-    
-    # Get GitHub settings form
-    github_settings = GitSettings.get_instance()
-    github_form = GitSettingsForm(instance=github_settings)
-    
-    if request.method == 'POST':
-        # Get the section being updated
-        section = request.POST.get('section', 'connection')
-        
-        if section == 'connection' or section == 'datahub_connection':
-            # Update connection settings
-            datahub_url = request.POST.get('datahub_url', '')
-            datahub_token = request.POST.get('datahub_token', '')
-            verify_ssl = 'verify_ssl' in request.POST
+    """View and update application settings"""
+    try:
+        if request.method == 'POST':
+            section = request.POST.get('section', '')
             
-            # Save settings to database
-            AppSettings.set('datahub_url', datahub_url)
-            if datahub_token:  # Only update token if provided
-                AppSettings.set('datahub_token', datahub_token)
-            AppSettings.set('verify_ssl', 'true' if verify_ssl else 'false')
-            
-            # Update environment variables for current session
-            os.environ['DATAHUB_GMS_URL'] = datahub_url
-            if datahub_token:
-                os.environ['DATAHUB_TOKEN'] = datahub_token
-            
-            # Test connection if requested
-            if 'test_connection' in request.POST:
-                if client and client.test_connection():
-                    messages.success(request, "Successfully connected to DataHub!")
-                    connected = True
+            if section == 'connection' or section == 'datahub_connection':
+                # Update connection settings
+                datahub_url = request.POST.get('datahub_url', '').strip()
+                datahub_token = request.POST.get('datahub_token', '').strip()
+                verify_ssl = 'verify_ssl' in request.POST
+                
+                # Save settings to database
+                AppSettings.set('datahub_url', datahub_url)
+                if datahub_token:  # Only update token if provided
+                    AppSettings.set('datahub_token', datahub_token)
+                AppSettings.set('verify_ssl', 'true' if verify_ssl else 'false')
+                
+                # Test connection if requested
+                if 'test_connection' in request.POST:
+                    # Force a new client instance with the updated settings
+                    connected, client = test_datahub_connection()
+                    
+                    if connected and client:
+                        messages.success(request, "Successfully connected to DataHub")
+                    else:
+                        messages.error(request, "Failed to connect to DataHub. Please check your settings.")
                 else:
-                    messages.error(request, "Failed to connect to DataHub. Please check your settings.")
-                    connected = False
-            else:
-                messages.success(request, "DataHub connection settings updated")
-        
-        elif section == 'policy_settings':
-            # Update policy settings
-            policy_export_dir = request.POST.get('policy_export_dir', '')
-            default_policy_type = request.POST.get('default_policy_type', 'METADATA')
-            validate_on_import = 'validate_on_import' in request.POST
-            auto_backup_policies = 'auto_backup_policies' in request.POST
-            
-            # Save settings to database
-            AppSettings.set('policy_export_dir', policy_export_dir)
-            AppSettings.set('default_policy_type', default_policy_type)
-            AppSettings.set('validate_on_import', 'true' if validate_on_import else 'false')
-            AppSettings.set('auto_backup_policies', 'true' if auto_backup_policies else 'false')
-            
-            messages.success(request, "Policy settings updated")
-        
-        elif section == 'recipe_settings':
-            # Update recipe settings
-            recipe_dir = request.POST.get('recipe_dir', '')
-            default_schedule = request.POST.get('default_schedule', '0 0 * * *')
-            auto_enable_recipes = 'auto_enable_recipes' in request.POST
-            
-            # Save settings to database
-            AppSettings.set('recipe_dir', recipe_dir)
-            AppSettings.set('default_schedule', default_schedule)
-            AppSettings.set('auto_enable_recipes', 'true' if auto_enable_recipes else 'false')
-            
-            messages.success(request, "Recipe settings updated")
-        
-        elif section == 'advanced_settings':
-            # Update advanced settings
-            timeout = request.POST.get('timeout', '30')
-            log_level = request.POST.get('log_level', 'INFO')
-            debug_mode = 'debug_mode' in request.POST
-            refresh_rate = request.POST.get('refresh_rate', '60')
-            
-            # Validate and save settings
-            try:
-                timeout = int(timeout)
-                if timeout < 5:
-                    timeout = 5
-                elif timeout > 300:
-                    timeout = 300
-                AppSettings.set('timeout', str(timeout))
+                    messages.success(request, "DataHub connection settings updated")
                 
-                refresh_rate = int(refresh_rate)
-                if refresh_rate < 0:
-                    refresh_rate = 0
-                elif refresh_rate > 3600:
-                    refresh_rate = 3600
-                AppSettings.set('refresh_rate', str(refresh_rate))
+                return redirect('settings')
                 
-                AppSettings.set('log_level', log_level)
-                AppSettings.set('debug_mode', 'true' if debug_mode else 'false')
-                
-                messages.success(request, "Advanced settings updated")
-            except ValueError:
-                messages.error(request, "Invalid value for timeout or refresh rate")
-        
-        elif section == 'github_settings':
-            # Update GitHub settings using the form
-            github_form = GitSettingsForm(request.POST, instance=github_settings)
-            if github_form.is_valid():
-                github_form.save()
-                messages.success(request, "GitHub settings updated successfully")
-                
-                # Test GitHub connection if requested
-                if 'test_github_connection' in request.POST:
-                    try:
-                        # Test connection with GitHub API
-                        headers = {
-                            'Authorization': f'token {github_settings.token}',
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                        
-                        # Test repo access
-                        repo_url = f'https://api.github.com/repos/{github_settings.username}/{github_settings.repository}'
-                        response = requests.get(repo_url, headers=headers)
-                        
-                        if response.status_code == 200:
-                            messages.success(request, "Successfully connected to GitHub!")
-                        else:
-                            error_message = response.json().get('message', 'Unknown error')
-                            messages.error(request, f"Failed to connect to GitHub: {error_message}")
-                    except Exception as e:
-                        messages.error(request, f"Error testing GitHub connection: {str(e)}")
-            else:
-                messages.error(request, "Please correct the errors in the GitHub settings form")
-    
-    # If the session-based connection method is being used, update it
-    if connected:
-        request.session['datahub_connected'] = True
-        request.session['datahub_url'] = config['datahub_url']
-    else:
-        request.session['datahub_connected'] = False
-        if 'datahub_url' in request.session:
-            del request.session['datahub_url']
-    
-    return render(request, 'settings.html', {
-        'title': 'Settings',
-        'config': config,
-        'connected': connected,
-        'github_configured': GitSettings.is_configured(),
-        'github_form': github_form
-    })
+            # ... rest of the settings view code ...
+            
+        # Get current settings for display
+        try:
+            datahub_url = AppSettings.get('datahub_url', '')
+            verify_ssl = AppSettings.get_bool('verify_ssl', True)
+            
+            # Test current connection
+            connected, client = test_datahub_connection()
+            
+            context = {
+                'datahub_url': datahub_url,
+                'verify_ssl': verify_ssl,
+                'has_token': bool(AppSettings.get('datahub_token')),
+                'is_connected': connected,
+                'page_title': 'Settings'
+            }
+            
+            return render(request, 'settings.html', context)
+            
+        except Exception as e:
+            logger.error(f"Error getting settings: {str(e)}")
+            messages.error(request, f"Error getting settings: {str(e)}")
+            return render(request, 'settings.html', {'error': str(e)})
+            
+    except Exception as e:
+        logger.error(f"Error in settings view: {str(e)}")
+        messages.error(request, f"An error occurred: {str(e)}")
+        return render(request, 'settings.html', {'error': str(e)})
 
 def health(request):
     """Health check endpoint."""

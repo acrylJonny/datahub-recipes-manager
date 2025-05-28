@@ -38,7 +38,38 @@ class SyncConfigListView(View):
     def post(self, request):
         """Create a new sync configuration"""
         try:
-            # Implementation will be added in the future
+            name = request.POST.get('name')
+            description = request.POST.get('description', '')
+            source_environment = request.POST.get('source_environment')
+            target_environment = request.POST.get('target_environment')
+            entity_types = request.POST.getlist('entity_types', [])
+            
+            # Validate required fields
+            if not name:
+                messages.error(request, "Name is required")
+                return redirect('sync_config_list')
+                
+            if not source_environment or not target_environment:
+                messages.error(request, "Source and target environments are required")
+                return redirect('sync_config_list')
+                
+            if not entity_types:
+                messages.error(request, "At least one entity type must be selected")
+                return redirect('sync_config_list')
+            
+            # Format entity types as JSON for storage
+            entity_types_json = json.dumps(entity_types)
+            
+            # Create the sync configuration
+            sync_config = SyncConfig.objects.create(
+                name=name,
+                description=description,
+                source_environment=source_environment,
+                target_environment=target_environment,
+                entity_types=entity_types_json
+            )
+            
+            messages.success(request, f"Sync configuration '{name}' created successfully")
             return redirect('sync_config_list')
         except Exception as e:
             logger.error(f"Error creating sync config: {str(e)}")

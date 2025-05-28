@@ -17,8 +17,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 # Import the deterministic URN utilities
 from utils.urn_utils import generate_deterministic_urn, get_full_urn_from_name
 from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_metadata_api import DataHubMetadataApiClient
+from utils.token_utils import get_token_from_env
 from .models import Domain
-from web_ui.models import GitSettings
+from web_ui.models import GitSettings, AppSettings
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +129,7 @@ class DomainListView(View):
             
             if not name:
                 messages.error(request, "Domain name is required")
-                return redirect('domain_list')
+                return redirect('metadata_manager:domain_list')
             
             # Generate deterministic URN
             deterministic_urn = get_full_urn_from_name("domain", name)
@@ -135,7 +137,7 @@ class DomainListView(View):
             # Check if domain with this URN already exists
             if Domain.objects.filter(deterministic_urn=deterministic_urn).exists():
                 messages.error(request, f"Domain with name '{name}' already exists")
-                return redirect('domain_list')
+                return redirect('metadata_manager:domain_list')
             
             # Create the domain
             domain = Domain.objects.create(
@@ -146,11 +148,11 @@ class DomainListView(View):
             )
             
             messages.success(request, f"Domain '{name}' created successfully")
-            return redirect('domain_list')
+            return redirect('metadata_manager:domain_list')
         except Exception as e:
             logger.error(f"Error creating domain: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('domain_list')
+            return redirect('metadata_manager:domain_list')
 
 
 class DomainDetailView(View):
@@ -229,7 +231,7 @@ class DomainDetailView(View):
         except Exception as e:
             logger.error(f"Error in domain detail view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('domain_list')
+            return redirect('metadata_manager:domain_list')
     
     def post(self, request, domain_id):
         """Update a domain"""
@@ -241,7 +243,7 @@ class DomainDetailView(View):
             
             if not name:
                 messages.error(request, "Domain name is required")
-                return redirect('domain_detail', domain_id=domain_id)
+                return redirect('metadata_manager:domain_detail', domain_id=domain_id)
             
             # Update the domain
             domain.name = name
@@ -254,11 +256,11 @@ class DomainDetailView(View):
             domain.save()
             
             messages.success(request, f"Domain '{name}' updated successfully")
-            return redirect('domain_detail', domain_id=domain_id)
+            return redirect('metadata_manager:domain_detail', domain_id=domain_id)
         except Exception as e:
             logger.error(f"Error updating domain: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('domain_list')
+            return redirect('metadata_manager:domain_list')
     
     def delete(self, request, domain_id):
         """Delete a domain"""
@@ -296,25 +298,32 @@ class DomainDeployView(View):
             # Check if the domain can be deployed
             if not domain.can_deploy:
                 messages.error(request, f"Domain '{domain.name}' cannot be deployed (current status: {domain.get_sync_status_display()})")
-                return redirect('domain_detail', domain_id=domain_id)
+                return redirect('metadata_manager:domain_detail', domain_id=domain_id)
             
             # Get the client
-            connected, client = test_datahub_connection()
-            
-            if not connected or not client:
-                messages.error(request, "Cannot connect to DataHub. Please check your connection settings.")
-                return redirect('domain_detail', domain_id=domain_id)
+            try:
+                token = get_token_from_env()
+                connected, client = test_datahub_connection()
+                if not connected or not client:
+                    messages.error(request, "Cannot connect to DataHub. Please check your connection settings.")
+                    return redirect('metadata_manager:domain_detail', domain_id=domain_id)
+            except Exception as e:
+                logger.error(f"Error initializing client: {str(e)}")
+                messages.error(request, "Failed to initialize DataHub client. Please check your connection settings.")
+                return redirect('metadata_manager:domain_detail', domain_id=domain_id)
             
             # Check if this is a new domain or an update
             if domain.sync_status == 'LOCAL_ONLY':
-                # New domain
+                # New domain - use createDomain mutation
                 try:
+                    # Generate domain ID from name
+                    domain_id = domain.name.lower().replace(" ", "_")
+                    
                     # Create domain in DataHub
-                    domain_id_part = domain.deterministic_urn.split(':')[-1]
                     result = client.create_domain(
-                        domain_id=domain_id_part,
+                        domain_id=domain_id,
                         name=domain.name,
-                        description=domain.description or ''
+                        description=domain.description or ""
                     )
                     
                     if result:
@@ -331,13 +340,13 @@ class DomainDeployView(View):
                     logger.error(f"Error deploying domain {domain.name}: {str(e)}")
                     messages.error(request, f"Error deploying domain: {str(e)}")
             else:
-                # Update existing domain
+                # Update existing domain - use updateDomain mutation
                 try:
                     # Update domain in DataHub
                     result = client.update_domain(
                         domain_urn=domain.deterministic_urn,
                         name=domain.name,
-                        description=domain.description or ''
+                        description=domain.description or ""
                     )
                     
                     if result:
@@ -353,11 +362,11 @@ class DomainDeployView(View):
                     logger.error(f"Error updating domain {domain.name}: {str(e)}")
                     messages.error(request, f"Error updating domain: {str(e)}")
             
-            return redirect('domain_detail', domain_id=domain_id)
+            return redirect('metadata_manager:domain_detail', domain_id=domain_id)
         except Exception as e:
             logger.error(f"Error in domain deploy view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('domain_list')
+            return redirect('metadata_manager:domain_list')
 
 
 class DomainGitPushView(View):
@@ -437,7 +446,7 @@ class DomainImportExportView(View):
                 # Import from uploaded JSON file
                 if 'json_file' not in request.FILES:
                     messages.error(request, "No file uploaded")
-                    return redirect('domain_import_export')
+                    return redirect('metadata_manager:domain_import_export')
                 
                 file = request.FILES['json_file']
                 try:
@@ -473,14 +482,14 @@ class DomainImportExportView(View):
                     logger.error(f"Error importing domain data: {str(e)}")
                     messages.error(request, f"Error importing data: {str(e)}")
                 
-                return redirect('domain_list')
+                return redirect('metadata_manager:domain_list')
             else:
                 messages.error(request, "Invalid action")
-                return redirect('domain_import_export')
+                return redirect('metadata_manager:domain_import_export')
         except Exception as e:
             logger.error(f"Error in domain import/export view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('domain_list')
+            return redirect('metadata_manager:domain_list')
 
 
 class DomainPullView(View):
@@ -507,7 +516,7 @@ class DomainPullView(View):
         except Exception as e:
             logger.error(f"Error in domain pull view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('domain_list')
+            return redirect('metadata_manager:domain_list')
     
     def post(self, request):
         """Pull domains from DataHub"""
@@ -521,7 +530,7 @@ class DomainPullView(View):
             
             if not connected or not client:
                 messages.error(request, "Cannot connect to DataHub. Please check your connection settings.")
-                return redirect('domain_list')
+                return redirect('metadata_manager:domain_list')
             
             results = []
             
@@ -541,7 +550,7 @@ class DomainPullView(View):
                         if existing_domain:
                             # Update existing domain
                             existing_domain.name = domain_data.get('name', existing_domain.name)
-                            existing_domain.description = domain_data.get('description', existing_domain.description)
+                            existing_domain.description = domain_data.get('description') or existing_domain.description or ''
                             existing_domain.original_urn = domain_urn
                             existing_domain.sync_status = 'SYNCED'
                             existing_domain.last_synced = timezone.now()
@@ -556,7 +565,7 @@ class DomainPullView(View):
                             # Create new domain
                             Domain.objects.create(
                                 name=domain_data.get('name'),
-                                description=domain_data.get('description', ''),
+                                description=domain_data.get('description') or '',
                                 deterministic_urn=domain_urn,
                                 original_urn=domain_urn,
                                 sync_status='SYNCED',
@@ -622,7 +631,7 @@ class DomainPullView(View):
                             if existing_domain:
                                 # Update existing domain
                                 existing_domain.name = domain_data.get('name', existing_domain.name)
-                                existing_domain.description = domain_data.get('description', existing_domain.description)
+                                existing_domain.description = domain_data.get('description') or existing_domain.description or ''
                                 existing_domain.original_urn = domain_urn
                                 existing_domain.sync_status = 'SYNCED'
                                 existing_domain.last_synced = timezone.now()
@@ -638,7 +647,7 @@ class DomainPullView(View):
                                 # Create new domain
                                 Domain.objects.create(
                                     name=domain_data.get('name'),
-                                    description=domain_data.get('description', ''),
+                                    description=domain_data.get('description') or '',
                                     deterministic_urn=domain_urn,
                                     original_urn=domain_urn,
                                     sync_status='SYNCED',
@@ -686,4 +695,4 @@ class DomainPullView(View):
         except Exception as e:
             logger.error(f"Error in domain pull view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('domain_list') 
+            return redirect('metadata_manager:domain_list') 
