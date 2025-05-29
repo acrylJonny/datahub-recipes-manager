@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Policy Details - DataHub CI/CD Manager{% endblock %}
+{% block title %}{{ title }} - DataHub CI/CD Manager{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -27,9 +27,18 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">Policy Details</h1>
         <div class="btn-group">
-            <a href="{% url 'policy_edit' policy.id %}" class="btn btn-primary">
-                <i class="fas fa-edit me-1"></i> Edit Policy
-            </a>
+            {% if is_local %}
+                <a href="{% url 'policy_edit' policy.id %}" class="btn btn-primary">
+                    <i class="fas fa-edit me-1"></i> Edit Policy
+                </a>
+                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#deployPolicyModal">
+                    <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                </button>
+            {% else %}
+                <a href="{% url 'policy_edit' policy.id %}" class="btn btn-primary">
+                    <i class="fas fa-edit me-1"></i> Edit Policy
+                </a>
+            {% endif %}
             <a href="{% url 'policy_download' policy.id %}" class="btn btn-outline-secondary">
                 <i class="fas fa-file-export me-1"></i> Export
             </a>
@@ -70,11 +79,29 @@
                         <dt class="col-sm-3">Description</dt>
                         <dd class="col-sm-9">{{ policy.description|default:"No description provided" }}</dd>
 
-                        <dt class="col-sm-3">Created</dt>
-                        <dd class="col-sm-9">{{ policy.created_at|date:"F d, Y H:i" }}</dd>
-
-                        <dt class="col-sm-3">Updated</dt>
-                        <dd class="col-sm-9">{{ policy.last_updated|date:"F d, Y H:i" }}</dd>
+                        {% if is_local %}
+                            <dt class="col-sm-3">Location</dt>
+                            <dd class="col-sm-9">
+                                <span class="badge bg-info">Local</span>
+                            </dd>
+                            {% if policy.environment %}
+                                <dt class="col-sm-3">Environment</dt>
+                                <dd class="col-sm-9">{{ policy.environment.name }}</dd>
+                            {% endif %}
+                            <dt class="col-sm-3">Created</dt>
+                            <dd class="col-sm-9">{{ policy.created_at|date:"F d, Y H:i" }}</dd>
+                            <dt class="col-sm-3">Updated</dt>
+                            <dd class="col-sm-9">{{ policy.updated_at|date:"F d, Y H:i" }}</dd>
+                        {% else %}
+                            <dt class="col-sm-3">Location</dt>
+                            <dd class="col-sm-9">
+                                <span class="badge bg-primary">DataHub</span>
+                            </dd>
+                            <dt class="col-sm-3">Created</dt>
+                            <dd class="col-sm-9">{{ policy.created_at|date:"F d, Y H:i"|default:"Unknown" }}</dd>
+                            <dt class="col-sm-3">Updated</dt>
+                            <dd class="col-sm-9">{{ policy.last_updated|date:"F d, Y H:i"|default:"Unknown" }}</dd>
+                        {% endif %}
                     </dl>
                 </div>
             </div>
@@ -113,21 +140,21 @@
                     <div class="tab-content pt-3" id="policyTabsContent">
                         <div class="tab-pane fade show active" id="resources" role="tabpanel" aria-labelledby="resources-tab">
                             {% if policy.resources %}
-                                <div class="json-content" id="resourcesDisplay">{{ policy.resources|safe }}</div>
+                                <div class="json-content" id="resourcesDisplay">{{ resources_json }}</div>
                             {% else %}
                                 <div class="alert alert-secondary">No resources defined for this policy.</div>
                             {% endif %}
                         </div>
                         <div class="tab-pane fade" id="privileges" role="tabpanel" aria-labelledby="privileges-tab">
                             {% if policy.privileges %}
-                                <div class="json-content" id="privilegesDisplay">{{ policy.privileges|safe }}</div>
+                                <div class="json-content" id="privilegesDisplay">{{ privileges_json }}</div>
                             {% else %}
                                 <div class="alert alert-secondary">No privileges defined for this policy.</div>
                             {% endif %}
                         </div>
                         <div class="tab-pane fade" id="actors" role="tabpanel" aria-labelledby="actors-tab">
                             {% if policy.actors %}
-                                <div class="json-content" id="actorsDisplay">{{ policy.actors|safe }}</div>
+                                <div class="json-content" id="actorsDisplay">{{ actors_json }}</div>
                             {% else %}
                                 <div class="alert alert-secondary">No actors defined for this policy.</div>
                             {% endif %}
@@ -181,6 +208,31 @@
         </div>
     </div>
 </div>
+
+<!-- Deploy Policy Modal -->
+{% if is_local %}
+<div class="modal fade" id="deployPolicyModal" tabindex="-1" aria-labelledby="deployPolicyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deployPolicyModalLabel">Deploy to DataHub</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to deploy the policy <strong>{{ policy.name }}</strong> to DataHub?</p>
+                <p class="text-warning">This will create or update the policy in DataHub.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="POST" action="{% url 'policy_deploy' policy.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary">Deploy</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block styles %}
@@ -217,11 +269,9 @@
             if (element && element.textContent) {
                 try {
                     const jsonObj = JSON.parse(element.textContent);
-                    const formatted = JSON.stringify(jsonObj, null, 2);
-                    element.textContent = formatted;
-                    hljs.highlightElement(element);
-                } catch(e) {
-                    console.error(`Error formatting JSON for ${elementId}:`, e);
+                    element.textContent = JSON.stringify(jsonObj, null, 2);
+                } catch (e) {
+                    console.error(`Error parsing JSON for ${elementId}:`, e);
                 }
             }
         }
@@ -231,39 +281,40 @@
         formatJsonElement('actorsDisplay');
         formatJsonElement('rawJsonDisplay');
         
-        // Copy JSON to clipboard
-        const copyBtn = document.getElementById('copyJsonBtn');
-        if (copyBtn) {
-            copyBtn.addEventListener('click', function() {
-                const jsonContent = document.getElementById('rawJsonDisplay').textContent;
-                navigator.clipboard.writeText(jsonContent).then(() => {
-                    // Temporarily change button text to show success
-                    const originalText = this.innerHTML;
-                    this.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
-                    setTimeout(() => {
-                        this.innerHTML = originalText;
-                    }, 2000);
-                }).catch(err => {
-                    console.error('Failed to copy: ', err);
-                    alert('Failed to copy JSON to clipboard');
-                });
+        // Toggle JSON visibility
+        const toggleJsonBtn = document.getElementById('toggleJsonBtn');
+        if (toggleJsonBtn) {
+            toggleJsonBtn.addEventListener('click', function() {
+                const icon = this.querySelector('span');
+                if (icon.textContent === 'Show') {
+                    icon.textContent = 'Hide';
+                } else {
+                    icon.textContent = 'Show';
+                }
             });
         }
         
-        // Toggle JSON visibility
-        const toggleJsonBtn = document.getElementById('toggleJsonBtn');
-        const jsonCollapse = document.getElementById('json-content-section');
-        
-        if (toggleJsonBtn && jsonCollapse) {
-            // Update button text when collapse state changes
-            jsonCollapse.addEventListener('shown.bs.collapse', function() {
-                toggleJsonBtn.innerHTML = '<i class="fas fa-eye-slash me-1"></i> <span>Hide</span>';
-                // Re-format the JSON when shown
-                formatJsonElement('rawJsonDisplay');
-            });
-            
-            jsonCollapse.addEventListener('hidden.bs.collapse', function() {
-                toggleJsonBtn.innerHTML = '<i class="fas fa-eye me-1"></i> <span>Show</span>';
+        // Copy JSON button
+        const copyJsonBtn = document.getElementById('copyJsonBtn');
+        if (copyJsonBtn) {
+            copyJsonBtn.addEventListener('click', function() {
+                const jsonContent = document.getElementById('rawJsonDisplay');
+                if (jsonContent) {
+                    navigator.clipboard.writeText(jsonContent.textContent)
+                        .then(() => {
+                            this.textContent = 'Copied!';
+                            setTimeout(() => {
+                                this.innerHTML = '<i class="fas fa-copy me-1"></i> Copy JSON';
+                            }, 2000);
+                        })
+                        .catch(err => {
+                            console.error('Failed to copy JSON:', err);
+                            this.textContent = 'Failed to copy';
+                            setTimeout(() => {
+                                this.innerHTML = '<i class="fas fa-copy me-1"></i> Copy JSON';
+                            }, 2000);
+                        });
+                }
             });
         }
     });

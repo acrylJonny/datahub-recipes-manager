@@ -126,6 +126,10 @@ class TagListView(View):
             description = request.POST.get('description', '')
             color = request.POST.get('color', '#0d6efd')
             
+            # If color is empty, set to default color rather than None
+            if not color or color.strip() == '':
+                color = '#0d6efd'  # Default bootstrap primary color
+            
             if not name:
                 messages.error(request, "Tag name is required")
                 return redirect('metadata_manager:tag_list')
@@ -247,6 +251,10 @@ class TagDetailView(View):
             name = request.POST.get('name')
             description = request.POST.get('description', '')
             color = request.POST.get('color', tag.color)
+            
+            # If color is empty, set to default color rather than None
+            if not color or color.strip() == '':
+                color = '#0d6efd'  # Default bootstrap primary color
             
             if not name:
                 messages.error(request, "Tag name is required")
@@ -417,8 +425,8 @@ class TagDeployView(View):
             )
             
             if result:
-                # Set color if specified
-                if tag.color:
+                # Set color if specified and not empty
+                if tag.color and tag.color.strip():
                     client.set_tag_color(result, tag.color)
                 
                 # Update tag with remote info
@@ -469,93 +477,147 @@ class TagPullView(View):
                 messages.error(request, "Could not connect to DataHub. Check your connection settings.")
                 return redirect('metadata_manager:tag_list')
             
-            # Fetch all tags from DataHub
-            tags = client.list_tags(query="*", count=1000)
+            # Check if a specific tag URN was provided
+            specific_tag_urn = request.POST.get('tag_urn')
             
             # Process and import tags
             imported_count = 0
             updated_count = 0
             error_count = 0
             
-            for tag_data in tags:
+            if specific_tag_urn:
+                # Import a single tag
                 try:
-                    # Extract the tag ID from the URN
-                    tag_urn = tag_data.get('urn')
-                    if not tag_urn:
-                        logger.warning(f"Skipping tag without URN: {tag_data}")
-                        error_count += 1
-                        continue
-                        
-                    name = tag_data.get('name')
-                    if not name:
-                        logger.warning(f"Skipping tag without name: {tag_data}")
-                        error_count += 1
-                        continue
+                    # Get the tag data from the form instead of making an API call
+                    tag_name = request.POST.get('tag_name')
+                    tag_description = request.POST.get('tag_description', '')
+                    tag_color_hex = request.POST.get('tag_color_hex', '')
                     
-                    # Extract properties
-                    properties = tag_data.get('properties', {})
-                    color_hex = properties.get('colorHex') if properties else None
-                    description = tag_data.get('description', '')
+                    if not tag_name:
+                        messages.error(request, f"Tag name is required for import")
+                        return redirect('metadata_manager:tag_list')
                     
-                    # Try to find an existing tag with the same URN
-                    # Ensure tag_urn is a string for database query
-                    existing_tag = Tag.objects.filter(deterministic_urn=str(tag_urn)).first()
+                    # Create tag data dictionary from form data
+                    tag_data = {
+                        'urn': specific_tag_urn,
+                        'name': tag_name,
+                        'description': tag_description,
+                        'properties': {
+                            'colorHex': tag_color_hex if tag_color_hex else None
+                        }
+                    }
                     
-                    if existing_tag:
-                        # Update the existing tag
-                        existing_tag.name = name
-                        existing_tag.description = description
-                        existing_tag.color = color_hex
-                        existing_tag.original_urn = tag_urn
-                        existing_tag.sync_status = 'SYNCED'
-                        existing_tag.last_synced = timezone.now()
-                        existing_tag.save()
-                        updated_count += 1
-                    else:
-                        # Create a new tag
-                        # Ensure tag_urn is a string before attempting to split it
-                        tag_id = str(tag_urn).split(':')[-1] if tag_urn else None
-                        
-                        Tag.objects.create(
-                            name=name,
-                            description=description,
-                            color=color_hex,
-                            deterministic_urn=tag_urn,
-                            original_urn=tag_urn,
-                            datahub_id=tag_id,
-                            sync_status='REMOTE_ONLY',
-                            last_synced=timezone.now()
-                        )
+                    # Process the tag
+                    result = self._process_tag(client, tag_data)
+                    if result == 'imported':
                         imported_count += 1
+                        messages.success(request, f"Successfully imported tag '{tag_name}' from DataHub")
+                    elif result == 'updated':
+                        updated_count += 1
+                        messages.success(request, f"Successfully updated tag '{tag_name}' from DataHub")
+                    elif result == 'error':
+                        error_count += 1
+                        messages.error(request, f"Error importing tag '{tag_name}' from DataHub")
                 except Exception as e:
-                    logger.error(f"Error processing tag {tag_data.get('name')}: {str(e)}")
+                    logger.error(f"Error processing tag with URN {specific_tag_urn}: {str(e)}")
+                    messages.error(request, f"Error importing tag: {str(e)}")
                     error_count += 1
+            else:
+                # Import all tags
+                tags = client.list_tags(query="*", count=1000)
+                
+                for tag_data in tags:
+                    try:
+                        result = self._process_tag(client, tag_data)
+                        if result == 'imported':
+                            imported_count += 1
+                        elif result == 'updated':
+                            updated_count += 1
+                        elif result == 'error':
+                            error_count += 1
+                    except Exception as e:
+                        logger.error(f"Error processing tag {tag_data.get('name')}: {str(e)}")
+                        error_count += 1
             
-            # Report results
-            if imported_count > 0:
-                messages.success(request, f"Successfully imported {imported_count} new tags from DataHub")
-            
-            if updated_count > 0:
-                messages.info(request, f"Updated {updated_count} existing tags")
-            
-            if error_count > 0:
-                messages.warning(request, f"Encountered {error_count} errors during tag import")
-            
-            if imported_count == 0 and updated_count == 0 and error_count == 0:
-                messages.info(request, "No tags found in DataHub")
+                # Report bulk import results
+                if imported_count > 0:
+                    messages.success(request, f"Successfully imported {imported_count} new tags from DataHub")
+                
+                if updated_count > 0:
+                    messages.info(request, f"Updated {updated_count} existing tags")
+                
+                if error_count > 0:
+                    messages.warning(request, f"Encountered {error_count} errors during tag import")
+                
+                if imported_count == 0 and updated_count == 0 and error_count == 0:
+                    messages.info(request, "No tags found in DataHub")
             
             return redirect('metadata_manager:tag_list')
         except Exception as e:
             logger.error(f"Error pulling tags from DataHub: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect('metadata_manager:tag_list')
+    
+    def _process_tag(self, client, tag_data):
+        """Process a single tag from DataHub. Returns 'imported', 'updated', or 'error'."""
+        # Extract the tag ID from the URN
+        tag_urn = tag_data.get('urn')
+        if not tag_urn:
+            logger.warning(f"Skipping tag without URN: {tag_data}")
+            return 'error'
+            
+        name = tag_data.get('name')
+        if not name:
+            logger.warning(f"Skipping tag without name: {tag_data}")
+            return 'error'
+        
+        # Extract properties
+        properties = tag_data.get('properties', {}) or {}  # Handle None case
+        color_hex = properties.get('colorHex')  # Will be None if not present
+        
+        # Use a default color if none provided (to satisfy NOT NULL constraint)
+        if color_hex is None or color_hex.strip() == '':
+            color_hex = '#0d6efd'  # Default bootstrap primary color
+            
+        description = tag_data.get('description', '')
+        
+        # Try to find an existing tag with the same URN
+        # Ensure tag_urn is a string for database query
+        existing_tag = Tag.objects.filter(deterministic_urn=str(tag_urn)).first()
+        
+        if existing_tag:
+            # Update the existing tag
+            existing_tag.name = name
+            existing_tag.description = description
+            existing_tag.color = color_hex  # Now has default value if none provided
+            existing_tag.original_urn = tag_urn
+            existing_tag.sync_status = 'SYNCED'
+            existing_tag.last_synced = timezone.now()
+            existing_tag.save()
+            return 'updated'
+        else:
+            # Create a new tag
+            # Ensure tag_urn is a string before attempting to split it
+            tag_id = str(tag_urn).split(':')[-1] if tag_urn else None
+            
+            Tag.objects.create(
+                name=name,
+                description=description,
+                color=color_hex,  # Now has default value if none provided
+                deterministic_urn=tag_urn,
+                original_urn=tag_urn,
+                datahub_id=tag_id,
+                sync_status='SYNCED',
+                last_synced=timezone.now()
+            )
+            return 'imported'
 
 @method_decorator(csrf_exempt, name='dispatch')
 class TagGitPushView(View):
-    """View to add a tag to Git PR"""
+    """View to handle adding a tag to a GitHub PR"""
     
     def post(self, request, tag_id):
-        """Add a tag to Git PR"""
+        """Add tag to GitHub PR"""
         try:
             tag = get_object_or_404(Tag, id=tag_id)
             
@@ -599,4 +661,115 @@ class TagGitPushView(View):
                 
         except Exception as e:
             logger.error(f"Error in tag Git push view: {str(e)}")
-            return JsonResponse({'success': False, 'error': str(e)}) 
+            return JsonResponse({
+                'success': False,
+                'message': f"An error occurred: {str(e)}"
+            }, status=500)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class TagEntityView(View):
+    """View to handle applying tags to entities"""
+    
+    def post(self, request):
+        """Apply a tag to an entity"""
+        try:
+            # Parse JSON request
+            data = json.loads(request.body)
+            entity_urn = data.get('entity_urn')
+            tag_urn = data.get('tag_urn')
+            color_hex = data.get('color_hex')
+            
+            if not entity_urn or not tag_urn:
+                return JsonResponse({
+                    'success': False,
+                    'message': "Entity URN and Tag URN are required"
+                }, status=400)
+            
+            # Get DataHub client
+            client = get_datahub_client()
+            if not client or not client.test_connection():
+                return JsonResponse({
+                    'success': False,
+                    'message': "Unable to connect to DataHub"
+                }, status=500)
+            
+            # Apply tag to entity with optional color
+            if color_hex and color_hex.strip():
+                result = client.add_tag_to_entity(entity_urn, tag_urn, color_hex)
+            else:
+                result = client.add_tag_to_entity(entity_urn, tag_urn, None)
+            
+            if result:
+                logger.info(f"Successfully applied tag {tag_urn} to entity {entity_urn}")
+                return JsonResponse({
+                    'success': True,
+                    'message': f"Tag applied successfully"
+                })
+            else:
+                logger.error(f"Failed to apply tag {tag_urn} to entity {entity_urn}")
+                return JsonResponse({
+                    'success': False,
+                    'message': "Failed to apply tag"
+                }, status=500)
+                
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'message': "Invalid JSON data"
+            }, status=400)
+        except Exception as e:
+            logger.error(f"Error applying tag to entity: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'message': f"An error occurred: {str(e)}"
+            }, status=500)
+    
+    def delete(self, request):
+        """Remove a tag from an entity"""
+        try:
+            # Parse JSON request
+            data = json.loads(request.body)
+            entity_urn = data.get('entity_urn')
+            tag_urn = data.get('tag_urn')
+            
+            if not entity_urn or not tag_urn:
+                return JsonResponse({
+                    'success': False,
+                    'message': "Entity URN and Tag URN are required"
+                }, status=400)
+            
+            # Get DataHub client
+            client = get_datahub_client()
+            if not client or not client.test_connection():
+                return JsonResponse({
+                    'success': False,
+                    'message': "Unable to connect to DataHub"
+                }, status=500)
+            
+            # Remove tag from entity
+            result = client.remove_tag_from_entity(entity_urn, tag_urn)
+            
+            if result:
+                logger.info(f"Successfully removed tag {tag_urn} from entity {entity_urn}")
+                return JsonResponse({
+                    'success': True,
+                    'message': f"Tag removed successfully"
+                })
+            else:
+                logger.error(f"Failed to remove tag {tag_urn} from entity {entity_urn}")
+                return JsonResponse({
+                    'success': False,
+                    'message': "Failed to remove tag"
+                }, status=500)
+                
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'message': "Invalid JSON data"
+            }, status=400)
+        except Exception as e:
+            logger.error(f"Error removing tag from entity: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'message': f"An error occurred: {str(e)}"
+            }, status=500) 

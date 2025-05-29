@@ -202,18 +202,15 @@
                 </div>
                 <div class="collapse" id="ci-workflows-section">
                     <div class="card-body">
-                        <div id="ci-workflows-loading" class="text-center text-muted">
-                            <span class="spinner-border spinner-border-sm"></span> Loading workflows...
-                        </div>
-                        <div id="ci-workflows-content" style="display:none;"></div>
-                        <div id="ci-workflows-error" class="alert alert-danger d-none"></div>
-                        
-                        <!-- Fallback content if JavaScript fails -->
-                        <noscript>
-                            <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle me-2"></i> JavaScript is required to load workflow information.
+                        <div id="current-branch-indicator" class="mb-2 text-muted small d-none"></div>
+                        <div id="ci-workflows-loading" class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
                             </div>
-                        </noscript>
+                            <div class="mt-2">Loading workflow information...</div>
+                        </div>
+                        <div id="ci-workflows-error" class="d-none"></div>
+                        <div id="ci-workflows-content" style="display: none;"></div>
                     </div>
                 </div>
             </div>
@@ -879,10 +876,23 @@
             const branch = "{{ github_settings.current_branch|default:'main' }}";
             console.log('Loading workflows for branch:', branch);
             
+            // Display current branch name in UI for debugging
+            const branchIndicator = document.getElementById('current-branch-indicator');
+            if (branchIndicator) {
+                branchIndicator.textContent = `Current branch: ${branch}`;
+                branchIndicator.classList.remove('d-none');
+            }
+            
             // Add timestamp to prevent caching
             fetch(`{% url 'github_workflows_overview' %}?ref=${branch}&_=${Date.now()}`)
                 .then(response => {
                     console.log('Workflow response status:', response.status);
+                    if (!response.ok) {
+                        // If response isn't OK, we'll throw an error
+                        return response.json().then(data => {
+                            throw new Error(`Server responded with status ${response.status}: ${data.error || 'Unknown error'}`);
+                        });
+                    }
                     return response.json();
                 })
                 .then(data => {
@@ -895,19 +905,39 @@
                             renderWorkflows(data.workflows);
                         } else {
                             console.log('No workflows found');
-                            contentElement.innerHTML = '<div class="alert alert-info">No workflow files found in the repository.</div>';
+                            contentElement.innerHTML = `<div class="alert alert-info">
+                                No workflow files found in branch "${branch}".
+                                <ul class="mt-2 mb-0">
+                                    <li>Check if the branch exists in your repository</li>
+                                    <li>Verify that you have workflows defined in the .github/workflows directory</li>
+                                    <li>Make sure your GitHub token has sufficient permissions</li>
+                                </ul>
+                            </div>`;
                             contentElement.style.display = 'block';
                         }
                     } else {
                         console.error('Error loading workflows:', data.error);
-                        errorElement.textContent = data.error || 'Unknown error loading workflows';
+                        errorElement.innerHTML = `<div class="alert alert-danger">
+                            <strong>Error loading workflows:</strong> ${data.error || 'Unknown error'}
+                            <div class="mt-2">
+                                <small>Branch: ${branch}</small>
+                            </div>
+                        </div>`;
                         errorElement.classList.remove('d-none');
                     }
                 })
                 .catch(error => {
                     console.error('Fetch error:', error);
                     loadingElement.style.display = 'none';
-                    errorElement.textContent = `Error: ${error.message}`;
+                    errorElement.innerHTML = `<div class="alert alert-danger">
+                        <strong>Error:</strong> ${error.message}
+                        <div class="mt-2">
+                            <small>This might be due to incorrect GitHub credentials, branch not existing, or network issues.</small>
+                        </div>
+                        <div class="mt-1">
+                            <small>Branch being used: "${branch}"</small>
+                        </div>
+                    </div>`;
                     errorElement.classList.remove('d-none');
                 });
         }

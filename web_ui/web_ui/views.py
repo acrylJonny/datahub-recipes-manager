@@ -674,12 +674,12 @@ def policy_create(request):
     is_local = request.GET.get('local', 'false').lower() in ('true', 't', 'yes', 'y', '1')
     
     # Only require DataHub connection for non-local policies
-    client = None
-    if not is_local:
-        client = get_datahub_client()
-        if not client or not client.test_connection():
-            messages.warning(request, "Not connected to DataHub. Please check your connection settings.")
-            return redirect('policies')
+    client = get_datahub_client()
+    connected = client and client.test_connection()
+    
+    if not is_local and not connected:
+        messages.warning(request, "Not connected to DataHub. Please check your connection settings.")
+        return redirect('policies')
     
     if request.method == 'POST':
         form = PolicyForm(request.POST)
@@ -711,6 +711,7 @@ def policy_create(request):
                         'title': 'Create Policy',
                         'form': form,
                         'is_local': is_local,
+                        'connected': connected,
                         'environments': Environment.objects.all()
                     })
             
@@ -763,6 +764,7 @@ def policy_create(request):
         'title': 'Create Policy',
         'form': form,
         'is_local': is_local,
+        'connected': connected,
         'environments': Environment.objects.all()
     })
 
@@ -1488,32 +1490,65 @@ def generate_test_logs():
 
 def policy_view(request, policy_id):
     """View a specific policy."""
-    client = get_datahub_client()
     policy = None
     
-    if client and client.test_connection():
-        try:
-            # First try to fetch by ID directly
-            policy = client.get_policy(policy_id)
+    # First try to fetch from local database
+    try:
+        policy = Policy.objects.get(id=policy_id)
+        # Format JSON fields for display
+        policy_json = json.dumps(policy.to_dict(), indent=2)
+        resources_json = policy.resources_json
+        privileges_json = policy.privileges_json
+        actors_json = policy.actors_json
+        
+        # Ensure the policy has an ID (for local policies this should always be set)
+        # But we double-check just to be safe
+        if not hasattr(policy, 'id') or not policy.id:
+            policy.id = policy_id
             
-            # If not found, try with URN format
-            if not policy and not policy_id.startswith('urn:'):
-                policy = client.get_policy(f"urn:li:policy:{policy_id}")
+        is_local = True
+    except Policy.DoesNotExist:
+        is_local = False
+        
+        # If not found locally, try to fetch from DataHub
+        client = get_datahub_client()
+        if client and client.test_connection():
+            try:
+                # First try to fetch by ID directly
+                policy = client.get_policy(policy_id)
                 
-            if policy:
-                # Format JSON fields for display
-                policy_json = json.dumps(policy, indent=2)
-                resources_json = json.dumps(policy.get('resources', []), indent=2)
-                privileges_json = json.dumps(policy.get('privileges', []), indent=2)
-                actors_json = json.dumps(policy.get('actors', {}), indent=2)
-            else:
-                messages.error(request, f"Policy with ID {policy_id} not found")
-                
-        except Exception as e:
-            messages.error(request, f"Error retrieving policy: {str(e)}")
-            logger.error(f"Error retrieving policy: {str(e)}")
-    else:
-        messages.warning(request, "Not connected to DataHub")
+                # If not found, try with URN format
+                if not policy and not policy_id.startswith('urn:'):
+                    policy = client.get_policy(f"urn:li:policy:{policy_id}")
+                    
+                if policy:
+                    # Ensure the policy has an ID
+                    if not policy.get('id'):
+                        if policy.get('urn'):
+                            parts = policy.get('urn').split(':')
+                            if len(parts) >= 4:
+                                policy['id'] = parts[3]
+                        else:
+                            # If no ID or URN is available, use the policy_id from the request
+                            policy['id'] = policy_id
+                            
+                    # Format JSON fields for display
+                    policy_json = json.dumps(policy, indent=2)
+                    resources_json = json.dumps(policy.get('resources', []), indent=2)
+                    privileges_json = json.dumps(policy.get('privileges', []), indent=2)
+                    actors_json = json.dumps(policy.get('actors', {}), indent=2)
+                else:
+                    messages.error(request, f"Policy with ID {policy_id} not found")
+                    
+            except Exception as e:
+                messages.error(request, f"Error retrieving policy: {str(e)}")
+                logger.error(f"Error retrieving policy: {str(e)}")
+        else:
+            messages.warning(request, "Not connected to DataHub")
+    
+    if not policy:
+        # If policy was not found in either place, redirect to policies list
+        return redirect('policies')
     
     return render(request, 'policies/view.html', {
         'title': 'Policy Details',
@@ -1521,7 +1556,8 @@ def policy_view(request, policy_id):
         'policy_json': policy_json if policy else "{}",
         'resources_json': resources_json if policy else "[]",
         'privileges_json': privileges_json if policy else "[]",
-        'actors_json': actors_json if policy else "{}"
+        'actors_json': actors_json if policy else "{}",
+        'is_local': is_local
     })
 
 # Recipe Templates Management Views
@@ -4100,28 +4136,45 @@ def github_workflows_overview(request):
     logger.info(f"Request POST data: {request.POST}")
     
     if not GitSettings.is_configured():
+        logger.error("GitHub integration is not configured, cannot fetch workflows")
         return JsonResponse({'success': False, 'error': 'GitHub integration is not configured.'})
     
     # Get settings
     settings = GitSettings.get_instance()
     
-    # Get branch from query params
+    # Get branch from query params - preserve case exactly as provided
     branch = request.GET.get('ref', settings.current_branch or 'main')
+    logger.info(f"Using branch: '{branch}' for workflow overview")
     
     try:
         # Initialize workflow analyzer
         from .utils.workflow_analyzer import WorkflowAnalyzer
+        
+        # Log credentials being used (without the token)
+        logger.info(f"Using credentials - Username: {settings.username}, Repository: {settings.repository}, Base URL: {settings.base_url or 'default'}")
         analyzer = WorkflowAnalyzer(settings.username, settings.repository, settings.token, settings.base_url)
         
         # Get workflow data
+        logger.info(f"Fetching workflows for branch: {branch}")
         workflows = analyzer.get_workflows(branch)
         
+        if not workflows:
+            logger.warning(f"No workflows found for branch: {branch}")
+            return JsonResponse({
+                'success': True,
+                'workflows': [],
+                'message': f"No workflows found in branch: {branch}"
+            })
+            
+        logger.info(f"Successfully retrieved {len(workflows)} workflows")
         return JsonResponse({
             'success': True,
             'workflows': workflows
         })
     except Exception as e:
         logger.error(f"Error analyzing workflows: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return JsonResponse({
             'success': False,
             'error': f"Error analyzing workflows: {str(e)}"

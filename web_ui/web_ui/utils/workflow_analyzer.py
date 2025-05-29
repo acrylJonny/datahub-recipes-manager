@@ -50,6 +50,7 @@ class WorkflowAnalyzer:
             # Determine the API endpoint based on the base URL
             if "github.com" in self.base_url:
                 # GitHub API
+                # NOTE: GitHub API is case-sensitive, so preserve the branch name exactly as provided
                 workflows_url = f"{self.base_url}/repos/{self.username}/{self.repository}/contents/.github/workflows?ref={branch}"
             elif "dev.azure.com" in self.base_url or "visualstudio.com" in self.base_url:
                 # Azure DevOps API
@@ -93,11 +94,12 @@ class WorkflowAnalyzer:
                     # Fetch the file content
                     file_url = file_info.get('url', None)
                     if not file_url:
+                        # Preserve case sensitivity of branch name
                         file_url = f"{self.base_url}/repos/{self.username}/{self.repository}/contents/.github/workflows/{file_info['name']}?ref={branch}"
                     
                     file_response = requests.get(file_url, headers=self.headers)
                     if file_response.status_code != 200:
-                        logger.error(f"Failed to fetch workflow file {file_info['name']}: {file_response.status_code}")
+                        logger.error(f"Failed to fetch workflow file {file_info['name']}: {file_response.status_code} {file_response.text}")
                         continue
                     
                     file_data = file_response.json()

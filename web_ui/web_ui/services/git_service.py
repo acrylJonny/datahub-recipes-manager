@@ -33,6 +33,7 @@ class GitService:
                 "Accept": "application/vnd.github.v3+json",
                 "Authorization": f"token {self.settings.token}",
             }
+            logger.info(f"Initialized GitHub API service for repository: {self.settings.username}/{self.settings.repository}")
         elif self.provider == 'azure_devops':
             # Azure DevOps API
             base_url = self.settings.base_url.rstrip('/') if self.settings.base_url else 'https://dev.azure.com'
@@ -50,6 +51,7 @@ class GitService:
                 "Authorization": f"Basic {auth_token}",
                 "Content-Type": "application/json"
             }
+            logger.info(f"Initialized Azure DevOps API service for repository: {self.settings.repository}")
         elif self.provider == 'gitlab':
             # GitLab API
             base_url = self.settings.base_url.rstrip('/') if self.settings.base_url else 'https://gitlab.com/api/v4'
@@ -60,6 +62,7 @@ class GitService:
                 "Private-Token": self.settings.token,
                 "Content-Type": "application/json"
             }
+            logger.info(f"Initialized GitLab API service for repository: {self.settings.username}/{self.settings.repository}")
         elif self.provider == 'bitbucket':
             # Bitbucket API
             if 'bitbucket.org' in (self.settings.base_url or 'bitbucket.org'):
@@ -71,6 +74,7 @@ class GitService:
                     "Authorization": f"Basic {auth_token}",
                     "Content-Type": "application/json"
                 }
+                logger.info(f"Initialized Bitbucket Cloud API service for repository: {self.settings.username}/{self.settings.repository}")
             else:
                 # Bitbucket Server
                 base_url = self.settings.base_url.rstrip('/')
@@ -79,6 +83,7 @@ class GitService:
                     "Authorization": f"Bearer {self.settings.token}",
                     "Content-Type": "application/json"
                 }
+                logger.info(f"Initialized Bitbucket Server API service for repository: {self.settings.username}/{self.settings.repository}")
         else:
             # Other/Custom Git provider
             self.api_base = f"{self.settings.base_url.rstrip('/')}/{self.settings.username}/{self.settings.repository}"
@@ -86,6 +91,7 @@ class GitService:
                 "Authorization": f"token {self.settings.token}",
                 "Content-Type": "application/json"
             }
+            logger.info(f"Initialized custom Git API service with URL: {self.api_base}")
     
     def is_configured(self) -> bool:
         """Check if Git integration is enabled and configured correctly"""
@@ -109,6 +115,7 @@ class GitService:
             request_headers.update(headers)
             
         try:
+            logger.debug(f"Making {method} request to {url}")
             response = requests.request(
                 method=method,
                 url=url,
@@ -119,10 +126,11 @@ class GitService:
             response.raise_for_status()
             return response
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error: {e}")
+            logger.error(f"HTTP error: {e} for URL: {url}")
+            logger.error(f"Response: {e.response.text}")
             return e.response
         except Exception as e:
-            logger.error(f"Error making API request: {e}")
+            logger.error(f"Error making API request to {url}: {e}")
             return None
     
     def get_file_content(self, path: str, ref: str = None) -> Optional[Dict]:
@@ -144,11 +152,13 @@ class GitService:
             ref = self.settings.current_branch or "main"
             
         if self.provider == "github":
-            # GitHub API
+            # GitHub API - case sensitive
             params = {"ref": ref}
             response = self.make_api_request("GET", f"/contents/{path}", params=params)
             if response and response.status_code == 200:
                 return response.json()
+            elif response:
+                logger.error(f"HTTP error: {response.status_code} {response.text} for URL: {response.url}")
             
         elif self.provider == "azure_devops":
             # Azure DevOps API

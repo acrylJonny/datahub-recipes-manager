@@ -100,8 +100,16 @@
                                 <div class="mb-3">
                                     <label for="color" class="form-label">Color</label>
                                     <div class="input-group">
-                                        <input type="color" class="form-control form-control-color" id="color" name="color" value="{{ tag.color }}" title="Choose tag color">
-                                        <input type="text" class="form-control" value="{{ tag.color }}" id="colorText" readonly>
+                                        <input type="color" class="form-control form-control-color" id="color" name="color" value="{{ tag.color|default:'#0d6efd' }}" title="Choose tag color" {% if not tag.color %}disabled{% endif %}>
+                                        <input type="text" class="form-control" value="{{ tag.color|default:'' }}" id="colorText" readonly>
+                                        <div class="input-group-text">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="noColorCheck" {% if not tag.color %}checked{% endif %}>
+                                                <label class="form-check-label" for="noColorCheck">
+                                                    No color
+                                                </label>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="mb-3">
@@ -288,6 +296,44 @@
     </div>
 </div>
 
+<!-- Apply Tag to Entity Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Apply Tag to Entity</h5>
+    </div>
+    <div class="card-body">
+        <form id="apply-tag-form" class="row g-3">
+            {% csrf_token %}
+            <div class="col-md-6">
+                <label for="entity-urn" class="form-label">Entity URN</label>
+                <input type="text" class="form-control" id="entity-urn" placeholder="urn:li:dataset:(urn:li:dataPlatform:hive,table_name,PROD)" required>
+            </div>
+            <div class="col-md-3">
+                <label for="tag-color" class="form-label">Tag Color (optional)</label>
+                <div class="input-group">
+                    <input type="color" class="form-control form-control-color" id="tag-color" value="{{ tag.color|default:'#0d6efd' }}" title="Choose tag color" {% if not tag.color %}disabled{% endif %}>
+                    <div class="input-group-text">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="entityNoColorCheck" {% if not tag.color %}checked{% endif %}>
+                            <label class="form-check-label" for="entityNoColorCheck">
+                                No color
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary">Apply Tag</button>
+            </div>
+            <div class="col-12">
+                <div class="form-text">
+                    This will apply the tag "{{ tag.name }}" to the specified entity with the selected color.
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 {% block extra_css %}
 <style>
     .tag-badge {
@@ -314,108 +360,112 @@
 {% endblock %}
 
 {% block extra_js %}
+{% load static %}
+<script src="{% static 'js/tag_utils.js' %}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Color picker 
-        const colorPicker = document.getElementById('color');
-        const colorText = document.getElementById('colorText');
+        // Handle main tag color checkbox
+        const noColorCheck = document.getElementById('noColorCheck');
+        const colorInput = document.getElementById('color');
+        const colorTextInput = document.getElementById('colorText');
         
-        colorPicker.addEventListener('input', function() {
-            colorText.value = this.value;
-        });
-        
-        // Handle delete tag button
-        const deleteTagBtn = document.getElementById('delete-tag');
-        const confirmDeleteBtn = document.getElementById('confirm-delete');
-        const deleteModal = new bootstrap.Modal(document.getElementById('deleteTagModal'));
-        
-        deleteTagBtn.addEventListener('click', function() {
-            deleteModal.show();
-        });
-        
-        confirmDeleteBtn.addEventListener('click', function() {
-            // Send DELETE request
-            fetch("{% url 'metadata_manager:tag_detail' tag.id %}", {
-                method: 'DELETE',
-                headers: {
-                    'X-CSRFToken': '{{ csrf_token }}',
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    window.location.href = "{% url 'metadata_manager:tag_list' %}";
+        if (noColorCheck && colorInput && colorTextInput) {
+            // Initial setup
+            if (noColorCheck.checked) {
+                colorInput.disabled = true;
+                colorTextInput.value = '';
+            }
+            
+            // Toggle color picker on checkbox change
+            noColorCheck.addEventListener('change', function() {
+                if (this.checked) {
+                    colorInput.disabled = true;
+                    colorTextInput.value = '';
+                    // Add a hidden input to signal no color
+                    let hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'hidden';
+                    hiddenInput.name = 'color';
+                    hiddenInput.value = '';
+                    hiddenInput.id = 'hiddenColorInput';
+                    colorInput.parentNode.appendChild(hiddenInput);
                 } else {
-                    alert("Error: " + data.message);
-                    deleteModal.hide();
+                    colorInput.disabled = false;
+                    colorTextInput.value = colorInput.value;
+                    // Remove hidden input if exists
+                    let hiddenInput = document.getElementById('hiddenColorInput');
+                    if (hiddenInput) hiddenInput.remove();
                 }
-            })
-            .catch(error => {
-                alert("Error: " + error);
-                deleteModal.hide();
             });
-        });
+            
+            // Update text input when color changes
+            colorInput.addEventListener('input', function() {
+                colorTextInput.value = this.value;
+            });
+        }
         
-        // Handle "Add to Git PR" button
-        const addToGitPrBtn = document.querySelector('.add-to-git-pr');
-        if (addToGitPrBtn) {
-            addToGitPrBtn.addEventListener('click', function() {
-                const tagId = this.getAttribute('data-tag-id');
+        // Handle entity tag color checkbox
+        const entityNoColorCheck = document.getElementById('entityNoColorCheck');
+        const entityColorInput = document.getElementById('tag-color');
+        
+        if (entityNoColorCheck && entityColorInput) {
+            // Initial setup
+            if (entityNoColorCheck.checked) {
+                entityColorInput.disabled = true;
+            }
+            
+            // Toggle color picker on checkbox change
+            entityNoColorCheck.addEventListener('change', function() {
+                entityColorInput.disabled = this.checked;
+            });
+        }
+        
+        // Handle tag application form
+        const applyTagForm = document.getElementById('apply-tag-form');
+        if (applyTagForm) {
+            applyTagForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const entityUrn = document.getElementById('entity-urn').value;
+                const tagUrn = '{{ tag.deterministic_urn }}';
+                let colorHex = null;
+                
+                // Only use color if the no color checkbox is not checked
+                if (!entityNoColorCheck.checked) {
+                    colorHex = entityColorInput.value;
+                }
                 
                 // Show loading state
-                const originalHTML = this.innerHTML;
-                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                this.disabled = true;
+                const submitButton = this.querySelector('button[type="submit"]');
+                const originalText = submitButton.innerHTML;
+                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Applying...';
+                submitButton.disabled = true;
                 
-                // Send POST request to add tag to GitHub PR
-                fetch(`/metadata/tags/${tagId}/push-github/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': '{{ csrf_token }}'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Create a toast notification
-                        const toast = document.createElement('div');
-                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
-                        toast.setAttribute('role', 'alert');
-                        toast.setAttribute('aria-live', 'assertive');
-                        toast.setAttribute('aria-atomic', 'true');
-                        toast.innerHTML = `
-                            <div class="d-flex">
-                                <div class="toast-body">
-                                    <i class="fas fa-check-circle me-2"></i>
-                                    Tag added to GitHub PR successfully!
-                                </div>
-                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                            </div>
-                        `;
-                        document.body.appendChild(toast);
+                // Apply tag to entity
+                applyTagToEntity(entityUrn, tagUrn, colorHex)
+                    .then(response => {
+                        // Show success message
+                        const alertHtml = `<div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+                            Tag applied successfully to entity.
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>`;
+                        applyTagForm.insertAdjacentHTML('afterend', alertHtml);
                         
-                        // Initialize and show the toast
-                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
-                        bsToast.show();
-                        
-                        // Refresh page to update status
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1000);
-                    } else {
-                        alert(`Error: ${data.error || 'Failed to add tag to GitHub PR'}`);
-                    }
-                })
-                .catch(error => {
-                    alert(`Error: ${error.message || error}`);
-                })
-                .finally(() => {
-                    // Restore button state
-                    this.innerHTML = originalHTML;
-                    this.disabled = false;
-                });
+                        // Reset form
+                        applyTagForm.reset();
+                    })
+                    .catch(error => {
+                        // Show error message
+                        const alertHtml = `<div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                            Error applying tag: ${error.message}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>`;
+                        applyTagForm.insertAdjacentHTML('afterend', alertHtml);
+                    })
+                    .finally(() => {
+                        // Reset button state
+                        submitButton.innerHTML = originalText;
+                        submitButton.disabled = false;
+                    });
             });
         }
     });

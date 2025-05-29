@@ -57,7 +57,7 @@ class BaseMetadataModel(models.Model):
 
 class Tag(BaseMetadataModel):
     """Model representing a DataHub tag"""
-    color = models.CharField(max_length=20, default='#0d6efd')
+    color = models.CharField(max_length=20, default='#0d6efd', null=True, blank=True)
     
     class Meta:
         ordering = ['name']

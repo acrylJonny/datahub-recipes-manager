@@ -903,12 +903,80 @@ class GitSettings(models.Model):
     @classmethod
     def get_branches(cls):
         """Fetch all branches from Git repository."""
-        settings = cls.get_instance()
+        settings = GitSettings.get_instance()
         if not cls.is_configured():
+            logger.warning("Git integration not configured, cannot fetch branches")
             return []
-
-        # Use GitIntegration to fetch branches
-        return GitIntegration.get_branches()
+            
+        provider = settings.provider_type
+        
+        try:
+            if provider == 'github':
+                # GitHub branches API
+                branches_url = cls.get_api_url('/branches')
+                logger.info(f"Fetching branches from: {branches_url}")
+                
+                try:
+                    response = cls._make_request('GET', branches_url)
+                    branches = [branch['name'] for branch in response.json()]
+                    logger.info(f"Successfully fetched {len(branches)} branches")
+                    return branches
+                except Exception as e:
+                    logger.error(f"Error in GitHub branches API call: {str(e)}")
+                    if isinstance(e, requests.exceptions.HTTPError) and hasattr(e, 'response'):
+                        logger.error(f"Response status: {e.response.status_code}, Text: {e.response.text}")
+                    return []
+                
+            elif provider == 'azure_devops':
+                # Azure DevOps branches API
+                branches_url = cls.get_api_url('/refs')
+                # Add filter for branches only
+                if '?' in branches_url:
+                    branches_url += "&filter=heads/"
+                else:
+                    branches_url += "?filter=heads/"
+                    
+                logger.info(f"Fetching branches from: {branches_url}")
+                response = cls._make_request('GET', branches_url)
+                # Format differs from GitHub
+                branches_data = response.json().get('value', [])
+                return [branch['name'].replace('refs/heads/', '') for branch in branches_data]
+                
+            elif provider == 'gitlab':
+                # GitLab branches API
+                branches_url = cls.get_api_url('/repository/branches')
+                logger.info(f"Fetching branches from: {branches_url}")
+                response = cls._make_request('GET', branches_url)
+                return [branch['name'] for branch in response.json()]
+                
+            elif provider == 'bitbucket':
+                # Bitbucket branches API
+                if 'bitbucket.org' in cls.get_api_url():
+                    # Bitbucket Cloud
+                    branches_url = cls.get_api_url('/refs/branches')
+                else:
+                    # Bitbucket Server
+                    branches_url = cls.get_api_url('/branches')
+                
+                logger.info(f"Fetching branches from: {branches_url}")
+                response = cls._make_request('GET', branches_url)
+                # Format differs between Cloud and Server
+                if 'values' in response.json():
+                    # Bitbucket Cloud
+                    return [branch['name'] for branch in response.json()['values']]
+                else:
+                    # Bitbucket Server
+                    return [branch['displayId'] for branch in response.json()]
+            else:
+                logger.error(f"Unsupported Git provider: {provider}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error fetching branches: {str(e)}")
+            # Include traceback for easier debugging
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
 
 class GitIntegration:
     """Helper class for Git operations with multiple providers."""
@@ -1043,6 +1111,7 @@ class GitIntegration:
         """Fetch all branches from Git repository."""
         settings = GitSettings.get_instance()
         if not cls.is_configured():
+            logger.warning("Git integration not configured, cannot fetch branches")
             return []
             
         provider = settings.provider_type
@@ -1051,8 +1120,18 @@ class GitIntegration:
             if provider == 'github':
                 # GitHub branches API
                 branches_url = cls.get_api_url('/branches')
-                response = cls._make_request('GET', branches_url)
-                return [branch['name'] for branch in response.json()]
+                logger.info(f"Fetching branches from: {branches_url}")
+                
+                try:
+                    response = cls._make_request('GET', branches_url)
+                    branches = [branch['name'] for branch in response.json()]
+                    logger.info(f"Successfully fetched {len(branches)} branches")
+                    return branches
+                except Exception as e:
+                    logger.error(f"Error in GitHub branches API call: {str(e)}")
+                    if isinstance(e, requests.exceptions.HTTPError) and hasattr(e, 'response'):
+                        logger.error(f"Response status: {e.response.status_code}, Text: {e.response.text}")
+                    return []
                 
             elif provider == 'azure_devops':
                 # Azure DevOps branches API
@@ -1063,6 +1142,7 @@ class GitIntegration:
                 else:
                     branches_url += "?filter=heads/"
                     
+                logger.info(f"Fetching branches from: {branches_url}")
                 response = cls._make_request('GET', branches_url)
                 # Format differs from GitHub
                 branches_data = response.json().get('value', [])
@@ -1071,6 +1151,7 @@ class GitIntegration:
             elif provider == 'gitlab':
                 # GitLab branches API
                 branches_url = cls.get_api_url('/repository/branches')
+                logger.info(f"Fetching branches from: {branches_url}")
                 response = cls._make_request('GET', branches_url)
                 return [branch['name'] for branch in response.json()]
                 
@@ -1082,7 +1163,8 @@ class GitIntegration:
                 else:
                     # Bitbucket Server
                     branches_url = cls.get_api_url('/branches')
-                    
+                
+                logger.info(f"Fetching branches from: {branches_url}")
                 response = cls._make_request('GET', branches_url)
                 # Format differs between Cloud and Server
                 if 'values' in response.json():
@@ -1097,6 +1179,9 @@ class GitIntegration:
                 
         except Exception as e:
             logger.error(f"Error fetching branches: {str(e)}")
+            # Include traceback for easier debugging
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return []
     
     @classmethod

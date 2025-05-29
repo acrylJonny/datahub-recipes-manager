@@ -1,0 +1,76 @@
+description: Environment variables for databricks
+name: databricks Variables
+recipe_type: databricks
+variables:
+  DBX_PLATFORM_INSTANCE:
+    data_type: text
+    default_value: ''
+    description: Variable for platform_instance
+    is_secret: false
+    required: true
+  DBX_TOKEN:
+    data_type: text
+    default_value: ''
+    description: Variable for token
+    is_secret: false
+    required: true
+  DBX_WAREHOUSE_ID:
+    data_type: text
+    default_value: ''
+    description: Variable for warehouse_id
+    is_secret: false
+    required: true
+  DBX_WORKSPACE_URL:
+    data_type: text
+    default_value: ''
+    description: Variable for workspace_url
+    is_secret: false
+    required: true
+  ENABLE_STATEFUL_PROFILING:
+    data_type: text
+    default_value: ''
+    description: Variable for enable_stateful_profiling
+    is_secret: false
+    required: true
+  FORMAT_SQL_QUERIES:
+    data_type: text
+    default_value: ''
+    description: Variable for format_sql_queries
+    is_secret: false
+    required: true
+  INCLUDE_COLUMN_LINEAGE:
+    data_type: text
+    default_value: ''
+    description: Variable for include_column_lineage
+    is_secret: false
+    required: true
+  INCLUDE_HIVE_METASTORE:
+    data_type: text
+    default_value: ''
+    description: Variable for include_hive_metastore
+    is_secret: false
+    required: true
+  INCLUDE_OWNERSHIP:
+    data_type: text
+    default_value: ''
+    description: Variable for include_ownership
+    is_secret: false
+    required: true
+  INCLUDE_READ_OPERATIONAL_STATS:
+    data_type: text
+    default_value: ''
+    description: Variable for include_read_operational_stats
+    is_secret: false
+    required: true
+  INCLUDE_TABLE_LINEAGE:
+    data_type: text
+    default_value: ''
+    description: Variable for include_table_lineage
+    is_secret: false
+    required: true
+  INCREMENTAL_LINEAGE:
+    data_type: text
+    default_value: ''
+    description: Variable for incremental_lineage
+    is_secret: false
+    required: true

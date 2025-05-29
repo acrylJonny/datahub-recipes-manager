@@ -30,6 +30,7 @@ urlpatterns = [
     path('tags/<uuid:tag_id>/push-github/', views_tags.TagGitPushView.as_view(), name='tag_push_github'),
     path('tags/import-export/', views_tags.TagImportExportView.as_view(), name='tag_import_export'),
     path('tags/pull/', views_tags.TagPullView.as_view(), name='tag_pull'),  # Support both GET and POST for pulling tags
+    path('tags/entity/', views_tags.TagEntityView.as_view(), name='tag_entity'),  # New endpoint for applying tags to entities
     
     # Glossary
     path('glossary/', views_glossary.GlossaryListView.as_view(), name='glossary_list'),

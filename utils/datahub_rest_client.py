@@ -3113,17 +3113,17 @@ class DataHubRestClient:
 
     def create_tag(self, tag_id: str, name: str, description: str = "") -> Optional[str]:
         """
-        Create a new tag in DataHub.
+        Create a new tag.
         
         Args:
-            tag_id (str): Tag ID (used in URN)
-            name (str): Display name of the tag
-            description (str): Description of the tag
+            tag_id (str): Tag ID
+            name (str): Tag name
+            description (str): Tag description
             
         Returns:
-            str: Tag URN if successful, None otherwise
+            str: URN of the created tag, or None if unsuccessful
         """
-        self.logger.info(f"Creating tag with ID: {tag_id}, name: {name}")
+        self.logger.info(f"Creating tag with ID {tag_id}")
         
         mutation = """
         mutation createTag($input: CreateTagInput!) {
@@ -3386,7 +3386,7 @@ class DataHubRestClient:
             self.logger.error(f"Error deleting tag: {str(e)}")
             return False
 
-    def add_tag_to_entity(self, entity_urn: str, tag_urn: str) -> bool:
+    def add_tag_to_entity(self, entity_urn: str, tag_urn: str, color_hex: str = None) -> bool:
         """
         Add a tag to an entity.
         
@@ -3408,7 +3408,8 @@ class DataHubRestClient:
         variables = {
             "input": {
                 "resourceUrn": entity_urn,
-                "tagUrn": tag_urn
+                "tag": tag_urn,
+                "colorHex": color_hex
             }
         }
         
