@@ -56,10 +56,53 @@ class MetadataIndexView(View):
                 'page_title': 'Metadata Manager'
             })
 
-# Editable Properties Views
+def ensure_default_environment():
+    """Ensure there's at least one default environment in the database."""
+    try:
+        default_env = Environment.objects.filter(is_default=True).first()
+        if not default_env:
+            logger.warning("No default environment found, checking for any environment...")
+            # Check if there's any environment we can make default
+            any_env = Environment.objects.first()
+            if any_env:
+                logger.info(f"Making environment '{any_env.name}' the default")
+                any_env.is_default = True
+                any_env.save(update_fields=['is_default'])
+            else:
+                logger.warning("No environments found, creating a default one")
+                # Create a default environment - user will need to update it
+                Environment.objects.create(
+                    name="Default Environment",
+                    description="Default environment for DataHub integration",
+                    is_default=True,
+                    datahub_url="http://localhost:8080",  # Default values
+                    datahub_token=""
+                )
+        return Environment.objects.filter(is_default=True).first()
+    except Exception as e:
+        logger.error(f"Error ensuring default environment: {str(e)}")
+        return None
+
 @login_required
 def editable_properties_view(request):
     """View for managing editable properties of all entities."""
+    # Ensure there's a default environment
+    environment = ensure_default_environment()
+    
+    # Check if there's a default environment and log its details
+    if environment:
+        logger.info(f"Default environment: {environment.name}, URL: {environment.datahub_url}")
+        # Try to create a client and test connection
+        try:
+            from utils.datahub_rest_client import DataHubRestClient
+            client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+            connection_working = client.test_connection()
+            logger.info(f"DataHub connection test result: {'SUCCESS' if connection_working else 'FAILED'}")
+        except Exception as e:
+            logger.error(f"Error testing DataHub connection: {str(e)}")
+    else:
+        logger.warning("No default environment configured!")
+    
     return render(request, 'metadata_manager/entities/editable_properties.html', {
         'page_title': 'Editable Properties'
     })
@@ -69,13 +112,20 @@ def editable_properties_view(request):
 def get_editable_entities(request):
     """Get entities with editable properties."""
     try:
+        # Add detailed logging
+        logger.info("==== get_editable_entities called ====")
+        logger.info(f"Request query params: {request.GET}")
+        
         # Get active environment
         environment = Environment.objects.filter(is_default=True).first()
         if not environment:
+            logger.error("No active environment configured")
             return JsonResponse({
                 'success': False,
                 'error': 'No active environment configured'
             })
+        
+        logger.info(f"Using environment: {environment.name}, URL: {environment.datahub_url}")
         
         # Initialize DataHub client
         client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
@@ -89,6 +139,8 @@ def get_editable_entities(request):
         if entity_type == '':
             entity_type = None
         
+        logger.info(f"Fetching entities with start={start}, count={count}, query={query}, entity_type={entity_type}")
+        
         # Use the client method to get editable entities
         result = client.get_editable_entities(
             start=start,
@@ -96,6 +148,8 @@ def get_editable_entities(request):
             query=query,
             entity_type=entity_type
         )
+        
+        logger.info(f"Got result with {len(result.get('searchResults', []))} entities")
         
         return JsonResponse({
             'success': True,

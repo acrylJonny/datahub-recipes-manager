@@ -903,12 +903,12 @@ class GitSettings(models.Model):
     @classmethod
     def get_branches(cls):
         """Fetch all branches from Git repository."""
-        settings = GitSettings.get_instance()
         if not cls.is_configured():
-            logger.warning("Git integration not configured, cannot fetch branches")
             return []
             
-        provider = settings.provider_type
+        provider = cls.get_provider_type()
+        settings = cls.get_instance()
+        logger = logging.getLogger(__name__)
         
         try:
             if provider == 'github':

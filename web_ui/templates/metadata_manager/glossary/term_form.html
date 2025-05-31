@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h1 class="h5 mb-0">{{ page_title }}</h1>
+                </div>
+                <div class="card-body">
+                    <form action="{% url 'metadata_manager:glossary_term_create' %}" method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="term-name" class="form-label">Term Name</label>
+                            <input type="text" class="form-control" id="term-name" name="name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="term-description" class="form-label">Description</label>
+                            <textarea class="form-control" id="term-description" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="term-source" class="form-label">Term Source (Optional)</label>
+                            <input type="text" class="form-control" id="term-source" name="term_source">
+                        </div>
+                        <div class="mb-3">
+                            <label for="term-parent-node" class="form-label">Parent Node (Optional)</label>
+                            <select class="form-control" id="term-parent-node" name="parent_node_id">
+                                <option value="">-- No Parent --</option>
+                                {% for node in nodes %}
+                                    <option value="{{ node.id }}">{{ node.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary">Create Term</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

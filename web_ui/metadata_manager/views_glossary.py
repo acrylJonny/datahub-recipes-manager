@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 
 # Add project root to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -39,6 +40,7 @@ class GlossaryListView(View):
             
             # Separate root terms (terms without a parent node)
             root_terms = terms.filter(parent_node=None).order_by('name')
+            logger.debug(f"Found {root_terms.count()} root-level terms (terms without a parent node)")
             
             # Group terms by sync status
             synced_terms = terms.filter(sync_status='SYNCED').order_by('name')
@@ -66,26 +68,37 @@ class GlossaryListView(View):
             local_only_root_nodes = local_only_nodes.filter(parent=None).order_by('name')
             logger.debug(f"Found {local_only_root_nodes.count()} local only root nodes")
             
-            # Build local node hierarchy
-            local_nodes_hierarchy = self._build_local_node_hierarchy(local_only_nodes)
-            logger.debug(f"Built hierarchy with {len(local_nodes_hierarchy)} root level local nodes")
-            
             # Group root terms by sync status
             synced_root_terms = root_terms.filter(sync_status='SYNCED').order_by('name')
             local_only_root_terms = root_terms.filter(sync_status='LOCAL_ONLY').order_by('name')
             remote_only_root_terms = root_terms.filter(sync_status='REMOTE_ONLY').order_by('name')
             modified_root_terms = root_terms.filter(sync_status='MODIFIED').order_by('name')
             
-            # Get remote items from DataHub
+            logger.debug(f"Root terms by sync status - Synced: {synced_root_terms.count()}, Local: {local_only_root_terms.count()}, Remote: {remote_only_root_terms.count() if isinstance(remote_only_root_terms, list) else '?'}, Modified: {modified_root_terms.count()}")
+            
+            # Prefetch related terms to avoid RelatedManager issues in templates
+            nodes = nodes.prefetch_related('terms')
+            synced_nodes = synced_nodes.prefetch_related('terms')
+            local_only_nodes = local_only_nodes.prefetch_related('terms')
+            modified_nodes = modified_nodes.prefetch_related('terms')
+            
+            # Build local node hierarchy
+            local_nodes_hierarchy = self._build_local_node_hierarchy(local_only_nodes)
+            logger.debug(f"Built hierarchy with {len(local_nodes_hierarchy)} root level local nodes")
+            
+            # Initialize variables
             connected, client = test_datahub_connection()
             remote_nodes_hierarchy = []
-            remote_terms_hierarchy = []
+            remote_terms_hierarchy = {}
             
             if connected and client:
                 try:
                     # First try to get nodes using REST API
                     try:
                         remote_nodes = client.list_glossary_nodes()
+                        logger.debug(f"Raw glossary nodes response type: {type(remote_nodes)}")
+                        logger.debug(f"First glossary node in response (sample): {next(iter(remote_nodes)) if remote_nodes and isinstance(remote_nodes, list) and len(remote_nodes) > 0 else 'No nodes'}")
+                        
                         if remote_nodes:
                             if isinstance(remote_nodes, dict) and 'nodes' in remote_nodes:
                                 remote_nodes_list = remote_nodes['nodes']
@@ -96,23 +109,32 @@ class GlossaryListView(View):
                             remote_nodes_hierarchy = self._build_remote_node_hierarchy(remote_nodes_list)
                             logger.debug(f"Found {len(remote_nodes_list)} remote nodes")
                     except Exception as e:
-                        logger.error(f"Error fetching glossary nodes: {str(e)}")
+                        logger.error(f"Error fetching glossary nodes: {str(e)}", exc_info=True)
                     
                     # Then try to get terms using REST API
                     try:
+                        logger.debug("About to fetch glossary terms from DataHub")
                         remote_terms = client.list_glossary_terms()
+                        logger.debug(f"Raw glossary terms response type: {type(remote_terms)}")
+                        
+                        # Log sample term for debugging
                         if remote_terms:
-                            if isinstance(remote_terms, dict) and 'terms' in remote_terms:
-                                remote_terms_list = remote_terms['terms']
+                            if isinstance(remote_terms, dict):
+                                logger.debug(f"Glossary terms response keys: {list(remote_terms.keys())}")
+                                if 'terms' in remote_terms and remote_terms['terms']:
+                                    logger.debug(f"First term in 'terms' key (sample): {remote_terms['terms'][0] if len(remote_terms['terms']) > 0 else 'No terms'}")
+                            elif isinstance(remote_terms, list) and len(remote_terms) > 0:
+                                logger.debug(f"First term in list (sample): {remote_terms[0]}")
                             else:
-                                # Handle case where we're getting a direct list from the updated method
-                                remote_terms_list = remote_terms
-                            # Build hierarchy for remote terms
-                            remote_terms_hierarchy = self._build_remote_term_hierarchy(remote_terms_list)
-                            logger.debug(f"Found {len(remote_terms_list)} remote terms")
+                                logger.warning("No glossary terms returned from API")
+                        
+                        # We'll pass the raw response to the hierarchy builder which now has logic to extract terms
+                        # from different response formats
+                        remote_terms_hierarchy = self._build_remote_term_hierarchy(remote_terms)
+                        logger.debug(f"Built terms hierarchy with keys: {list(remote_terms_hierarchy.keys()) if isinstance(remote_terms_hierarchy, dict) else 'Not a dict'}")
                     except Exception as e:
-                        logger.error(f"Error fetching glossary terms: {str(e)}")
-                    
+                        logger.error(f"Error fetching glossary terms: {str(e)}", exc_info=True)
+                        remote_terms_hierarchy = {}
                 except Exception as e:
                     logger.error(f"Error fetching remote items: {str(e)}")
             
@@ -144,7 +166,7 @@ class GlossaryListView(View):
                 'modified_nodes': modified_nodes,
                 'synced_root_terms': synced_root_terms,
                 'local_only_root_terms': local_only_root_terms,
-                'remote_only_root_terms': remote_terms_hierarchy,  # Now using hierarchy
+                'remote_only_root_terms': remote_terms_hierarchy.get('root_terms', []) if isinstance(remote_terms_hierarchy, dict) else [],  # Get root terms directly
                 'modified_root_terms': modified_root_terms,
                 'synced_count': synced_count,
                 'local_only_count': local_only_count,
@@ -157,6 +179,12 @@ class GlossaryListView(View):
                 github_settings = GitSettings.objects.first()
                 context['has_git_integration'] = github_settings and github_settings.enabled
                 logger.debug(f"Git integration enabled: {context['has_git_integration']}")
+                
+                # Add environments for GitHub PR modal
+                if context['has_git_integration']:
+                    environments = DjangoEnvironment.objects.filter(enabled=True).order_by('name')
+                    context['environments'] = environments
+                    logger.debug(f"Added {environments.count()} environments for GitHub PR modal")
             except Exception as e:
                 logger.warning(f"Error checking git integration: {str(e)}")
                 pass
@@ -166,120 +194,341 @@ class GlossaryListView(View):
         except Exception as e:
             logger.error(f"Error in glossary list view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect('metadata_manager:glossary_list')
+            
+            # Instead of redirecting back to the same view (which causes a loop),
+            # render a simple error template or the home page
+            error_context = {
+                'page_title': 'Error',
+                'error_message': str(e),
+                'error_details': "There was an error loading the glossary. This may be due to a database schema issue."
+            }
+            
+            # Return a simple error page instead of redirecting
+            return render(request, 'error.html', error_context)
 
     def _build_remote_node_hierarchy(self, nodes_list):
         """Build a hierarchical structure from flat remote nodes list"""
         nodes_by_urn = {}
         root_nodes = []
         
-        logger.debug(f"Building remote node hierarchy from {len(nodes_list)} nodes")
+        logger.debug(f"Building remote node hierarchy from {len(nodes_list) if nodes_list else 0} nodes")
+        
+        if not nodes_list:
+            logger.warning("No remote nodes to process")
+            return []
+        
+        # Log the structure of the first node to better understand the format
+        if nodes_list and len(nodes_list) > 0:
+            first_node = nodes_list[0]
+            logger.debug(f"First node structure: {first_node}")
+            logger.debug(f"First node keys: {list(first_node.keys()) if isinstance(first_node, dict) else 'Not a dict'}")
+            
+            # Check specific fields that we're interested in
+            if isinstance(first_node, dict):
+                if 'entity' in first_node:
+                    logger.debug("Node appears to be in GraphQL entity wrapper format")
+                if 'parentNode' in first_node:
+                    logger.debug(f"Node has 'parentNode' field: {first_node['parentNode']}")
+                if 'parentNodes' in first_node:
+                    logger.debug(f"Node has 'parentNodes' field: {first_node['parentNodes']}")
+                if 'properties' in first_node:
+                    logger.debug(f"Node has 'properties' field with keys: {list(first_node['properties'].keys()) if isinstance(first_node['properties'], dict) else 'Not a dict'}")
         
         # First pass: Create node objects and store by URN
         for node in nodes_list:
+            # Check if this is a wrapped entity response (from GraphQL)
+            if 'entity' in node:
+                node = node['entity']
+                
             # Handle different node formats from different API versions
-            properties = node.get('properties', {})
-            name = node.get('name', properties.get('name', 'Unknown'))
+            node_urn = node.get('urn')
+            if not node_urn:
+                logger.warning(f"Skipping node without URN: {node}")
+                continue
+                
+            # Extract properties in a way that works with multiple API response formats
+            if 'properties' in node:
+                properties = node['properties']
+            else:
+                # For newer API versions, properties might be directly on the node
+                properties = {
+                    'name': node.get('name', 'Unknown'),
+                    'description': node.get('description', '')
+                }
+                
+            # Get name from properties or directly from node
+            name = properties.get('name', 'Unknown')
+            if not name or name == 'Unknown':
+                name = node.get('name', 'Unknown')
+                
             description = properties.get('description', '')
-            
-            logger.debug(f"Processing remote node: urn={node['urn']}, name={name}")
-            
+            if not description:
+                description = node.get('description', '')
+                
+            # Create a node object
             node_obj = {
-                'urn': node['urn'],
-                'properties': {
+                'urn': node_urn,
                     'name': name,
-                    'description': description
-                },
-                'childNodes': [],
-                'terms': []
+                'description': description,
+                'children': [],
+                'terms': [],
+                'parent_urn': None
             }
-            nodes_by_urn[node['urn']] = node_obj
+            
+            # Extract the node ID from the URN for local lookup
+            try:
+                node_id = node_urn.split('/')[-1]
+                node_obj['id'] = node_id
+            except:
+                node_obj['id'] = 'unknown'
         
-        # Second pass: Establish parent-child relationships
-        for node in nodes_list:
-            # Handle different formats for parent node references
+            # Store in lookup dictionary
+            nodes_by_urn[node_urn] = node_obj
+            
+            # Check for parent node relationship
             parent_urn = None
             
-            # Handle v1 API format
-            if 'parentNode' in node and node['parentNode']:
-                parent_urn = node['parentNode'].get('urn')
-                
-            # Handle older format where parentNodes is a list
-            elif 'parentNodes' in node and node['parentNodes'] and 'nodes' in node['parentNodes']:
-                parent_nodes = node['parentNodes']['nodes']
-                if parent_nodes and len(parent_nodes) > 0:
-                    parent_urn = parent_nodes[0].get('urn')
+            # Try multiple ways to find the parent node URN:
             
-            # Add to appropriate collection based on parent status
-            if not parent_urn:
-                logger.debug(f"Adding root node: {node.get('name', node.get('properties', {}).get('name', 'Unknown'))}")
-                if node['urn'] in nodes_by_urn:
-                    root_nodes.append(nodes_by_urn[node['urn']])
-            else:
-                # Add to parent's children if parent exists
-                if parent_urn in nodes_by_urn:
-                    logger.debug(f"Adding child to parent {parent_urn}")
-                    nodes_by_urn[parent_urn]['childNodes'].append(nodes_by_urn[node['urn']])
+            # 1. Try parentNode (singular) for backward compatibility
+            parent_node = node.get('parentNode', {})
+            if parent_node:
+                if isinstance(parent_node, dict):
+                    parent_urn = parent_node.get('urn')
+                    logger.debug(f"Found parent node (singular dict) for node {name}: {parent_urn}")
                 else:
-                    # If parent not found, treat as root node
-                    logger.debug(f"Parent {parent_urn} not found, adding as root node")
-                    if node['urn'] in nodes_by_urn:
-                        root_nodes.append(nodes_by_urn[node['urn']])
+                    logger.debug(f"parentNode is not a dict, but: {type(parent_node)}")
+            
+            # 2. Try parentNodes (plural) which is the newer format
+            if not parent_urn and 'parentNodes' in node:
+                parent_nodes = node.get('parentNodes', {})
+                
+                # Handle different formats
+                if isinstance(parent_nodes, dict) and 'nodes' in parent_nodes:
+                    nodes_list = parent_nodes.get('nodes', [])
+                    if nodes_list and len(nodes_list) > 0:
+                        first_parent = nodes_list[0]
+                        if isinstance(first_parent, dict):
+                            parent_urn = first_parent.get('urn')
+                            logger.debug(f"Found parent node (plural/nodes) for node {name}: {parent_urn}")
+                elif isinstance(parent_nodes, list) and len(parent_nodes) > 0:
+                    first_parent = parent_nodes[0]
+                    if isinstance(first_parent, dict):
+                        parent_urn = first_parent.get('urn')
+                        logger.debug(f"Found parent node (plural/list) for node {name}: {parent_urn}")
+            
+            # 3. Try parent_urn directly
+            if not parent_urn and 'parent_urn' in node:
+                parent_urn = node.get('parent_urn')
+                logger.debug(f"Found parent_urn directly in node {name}: {parent_urn}")
+            
+            if parent_urn:
+                node_obj['parent_urn'] = parent_urn
+            else:
+                # No parent means this is a root node
+                root_nodes.append(node_obj)
+                logger.debug(f"Added root node '{name}' (no parent)")
+                
+        # Second pass: Build the hierarchy
+        for node_urn, node_obj in nodes_by_urn.items():
+            parent_urn = node_obj.get('parent_urn')
+            if parent_urn and parent_urn in nodes_by_urn:
+                # Add this node as a child of its parent
+                parent = nodes_by_urn[parent_urn]
+                parent['children'].append(node_obj)
+                logger.debug(f"Added node '{node_obj['name']}' as child of '{parent['name']}'")
         
-        logger.debug(f"Final remote node hierarchy contains {len(root_nodes)} root nodes")
+        logger.debug(f"Built remote node hierarchy with {len(root_nodes)} root nodes")
+        # Log the hierarchy structure for debugging
+        for root_node in root_nodes:
+            logger.debug(f"Root node: {root_node['name']} with {len(root_node['children'])} children")
+            
         return root_nodes
 
     def _build_remote_term_hierarchy(self, terms_list):
         """Build a hierarchical structure from flat remote terms list"""
-        terms_by_parent = {}
-        root_terms = []
+        terms_by_urn = {}
+        terms_by_parent_node = {}
         
-        logger.debug(f"Building remote term hierarchy from {len(terms_list)} terms")
+        logger.debug(f"Building remote term hierarchy, terms_list type: {type(terms_list)}")
         
-        # Process each term
+        # Check if we actually have a list or something else
+        if isinstance(terms_list, dict):
+            logger.debug(f"terms_list is a dictionary with keys: {list(terms_list.keys())}")
+            # If it's a dictionary, check for common patterns in DataHub API responses
+            if 'terms' in terms_list and isinstance(terms_list['terms'], list):
+                logger.debug(f"Found 'terms' key in dictionary with {len(terms_list['terms'])} items")
+                terms_list = terms_list['terms']
+            elif 'results' in terms_list and isinstance(terms_list['results'], list):
+                logger.debug(f"Found 'results' key in dictionary with {len(terms_list['results'])} items")
+                terms_list = terms_list['results']
+            elif 'data' in terms_list:
+                data = terms_list['data']
+                if isinstance(data, dict):
+                    # Look for common GraphQL response patterns
+                    if 'searchAcrossEntities' in data and 'searchResults' in data['searchAcrossEntities']:
+                        logger.debug("Found GraphQL searchAcrossEntities response pattern")
+                        terms_list = data['searchAcrossEntities']['searchResults']
+                    elif 'glossaryTerms' in data:
+                        logger.debug("Found GraphQL glossaryTerms response pattern")
+                        terms_list = data['glossaryTerms']
+            else:
+                # If we can't find a list, log all keys and try to extract terms another way
+                logger.warning(f"Couldn't find a list of terms in the dictionary, keys: {list(terms_list.keys())}")
+                
+                # Try to find any key that might contain a list of terms
+                for key, value in terms_list.items():
+                    if isinstance(value, list) and len(value) > 0:
+                        logger.debug(f"Found potential list of terms in key '{key}' with {len(value)} items")
+                        if isinstance(value[0], dict) and ('urn' in value[0] or 'name' in value[0]):
+                            logger.debug(f"Key '{key}' appears to contain term-like objects, using it")
+                            terms_list = value
+                            break
+        
+        # If terms_list is None or empty, return empty dictionary
+        if not terms_list:
+            logger.warning("No remote terms to process (empty or None)")
+            return {}
+            
+        # If terms_list is still not a list after all our attempts, log and return empty
+        if not isinstance(terms_list, list):
+            logger.warning(f"terms_list is not a list, but a {type(terms_list)}")
+            return {}
+            
+        logger.debug(f"Processing {len(terms_list)} terms")
+        
+        # Log the structure of the first term to better understand the format
+        if len(terms_list) > 0:
+            first_term = terms_list[0]
+            logger.debug(f"First term structure: {first_term}")
+            logger.debug(f"First term keys: {list(first_term.keys()) if isinstance(first_term, dict) else 'Not a dict'}")
+            
+            # Check specific fields that we're interested in
+            if isinstance(first_term, dict):
+                if 'entity' in first_term:
+                    logger.debug("Term appears to be in GraphQL entity wrapper format")
+                if 'parentNode' in first_term:
+                    logger.debug(f"Term has 'parentNode' field: {first_term['parentNode']}")
+                if 'parentNodes' in first_term:
+                    logger.debug(f"Term has 'parentNodes' field: {first_term['parentNodes']}")
+                if 'properties' in first_term:
+                    logger.debug(f"Term has 'properties' field with keys: {list(first_term['properties'].keys()) if isinstance(first_term['properties'], dict) else 'Not a dict'}")
+        
+        # First pass: Create term objects and organize by parent node
         for term in terms_list:
-            # Handle different term formats from different API versions
-            properties = term.get('properties', {})
-            name = term.get('name', properties.get('name', 'Unknown'))
+            # Handle GraphQL entity wrapper format
+            if 'entity' in term:
+                term = term['entity']
+            
+            # Extract URN
+            term_urn = term.get('urn')
+            if not term_urn:
+                logger.warning(f"Skipping term without URN: {term}")
+                continue
+                
+            # Extract properties in a way that works with multiple API response formats
+            if 'properties' in term:
+                properties = term['properties']
+            else:
+                # For newer API versions, properties might be directly on the term
+                properties = {
+                    'name': term.get('name', 'Unknown'),
+                    'description': term.get('description', ''),
+                    'termSource': term.get('termSource', '')
+                }
+                
+            # Get name from properties or directly from term
+            name = properties.get('name', 'Unknown')
+            if not name or name == 'Unknown':
+                name = term.get('name', 'Unknown')
+                
             description = properties.get('description', '')
+            if not description:
+                description = term.get('description', '')
+                
             term_source = properties.get('termSource', '')
             
-            logger.debug(f"Processing remote term: urn={term['urn']}, name={name}")
-            
+            # Create a term object
             term_obj = {
-                'urn': term['urn'],
-                'properties': {
+                'urn': term_urn,
                     'name': name,
                     'description': description,
-                    'termSource': term_source
-                }
+                'term_source': term_source,
+                'parent_node_urn': None
             }
             
-            # Handle different formats for parent node references
-            parent_urn = None
-            
-            # Handle v1 API format
-            if 'parentNode' in term and term['parentNode']:
-                parent_urn = term['parentNode'].get('urn')
+            # Extract the term ID from the URN for local lookup
+            try:
+                term_id = term_urn.split('/')[-1]
+                term_obj['id'] = term_id
+            except:
+                term_obj['id'] = 'unknown'
                 
-            # Handle older format where parentNodes is a list
-            elif 'parentNodes' in term and term['parentNodes'] and 'nodes' in term['parentNodes']:
-                parent_nodes = term['parentNodes']['nodes']
-                if parent_nodes and len(parent_nodes) > 0:
-                    parent_urn = parent_nodes[0].get('urn')
+            # Store in lookup dictionary
+            terms_by_urn[term_urn] = term_obj
             
-            # Add to appropriate collection based on parent status
-            if not parent_urn:
-                logger.debug(f"Adding root term: {name}")
-                root_terms.append(term_obj)
+            # Check for parent node relationship
+            parent_node_urn = None
+            
+            # Try multiple ways to find the parent node URN:
+            
+            # 1. Try parentNode (singular) for backward compatibility
+            parent_node = term.get('parentNode', {})
+            if parent_node:
+                if isinstance(parent_node, dict):
+                    parent_node_urn = parent_node.get('urn')
+                    logger.debug(f"Found parent node (singular dict) for term {name}: {parent_node_urn}")
             else:
-                # Group by parent node
-                if parent_urn not in terms_by_parent:
-                    terms_by_parent[parent_urn] = []
-                terms_by_parent[parent_urn].append(term_obj)
+                    logger.debug(f"parentNode is not a dict, but: {type(parent_node)}")
+            
+            # 2. Try parentNodes (plural) which is the newer format
+            if not parent_node_urn and 'parentNodes' in term:
+                parent_nodes = term.get('parentNodes', {})
+                
+                # Handle different formats
+                if isinstance(parent_nodes, dict) and 'nodes' in parent_nodes:
+                    nodes_list = parent_nodes.get('nodes', [])
+                    if nodes_list and len(nodes_list) > 0:
+                        first_parent = nodes_list[0]
+                        if isinstance(first_parent, dict):
+                            parent_node_urn = first_parent.get('urn')
+                            logger.debug(f"Found parent node (plural/nodes) for term {name}: {parent_node_urn}")
+                elif isinstance(parent_nodes, list) and len(parent_nodes) > 0:
+                    first_parent = parent_nodes[0]
+                    if isinstance(first_parent, dict):
+                        parent_node_urn = first_parent.get('urn')
+                        logger.debug(f"Found parent node (plural/list) for term {name}: {parent_node_urn}")
+            
+            # 3. Try parent_node_urn directly (our custom format)
+            if not parent_node_urn and 'parent_node_urn' in term:
+                parent_node_urn = term.get('parent_node_urn')
+                logger.debug(f"Found parent_node_urn directly in term {name}: {parent_node_urn}")
+            
+            if parent_node_urn:
+                term_obj['parent_node_urn'] = parent_node_urn
+                
+                # Group terms by parent node for easier lookup
+                if parent_node_urn not in terms_by_parent_node:
+                    terms_by_parent_node[parent_node_urn] = []
+                terms_by_parent_node[parent_node_urn].append(term_obj)
+                logger.debug(f"Added term '{name}' to parent node '{parent_node_urn}'")
+            else:
+                # No parent means this is a root term - add to special "root_terms" key
+                if "root_terms" not in terms_by_parent_node:
+                    terms_by_parent_node["root_terms"] = []
+                terms_by_parent_node["root_terms"].append(term_obj)
+                logger.debug(f"Added root term '{name}' (no parent)")
+                
+        logger.debug(f"Processed {len(terms_by_urn)} terms, grouped by {len(terms_by_parent_node)} parent nodes")
+        logger.debug(f"Found {len(terms_by_parent_node.get('root_terms', []))} root-level terms")
         
-        logger.debug(f"Final remote term hierarchy contains {len(root_terms)} root terms")
-        return root_terms
+        # Log all the parent node URNs to help with debugging
+        for parent_urn, terms in terms_by_parent_node.items():
+            if parent_urn != "root_terms":
+                logger.debug(f"Parent node {parent_urn} has {len(terms)} terms")
+        
+        # Return the organized terms by parent node for rendering
+        return terms_by_parent_node
     
     def post(self, request):
         """Handle glossary node creation and batch actions"""
@@ -635,9 +884,33 @@ class GlossaryListView(View):
                 
                 if node.id in nodes_by_id:
                     nodes_by_id[node.id]['terms'] = node_terms
+                    # Flag to indicate this node has terms (needed for UI expansion)
+                    nodes_by_id[node.id]['has_terms'] = len(node_terms) > 0
         
-        logger.debug(f"Final hierarchy contains {len(root_nodes)} root nodes")
-        return root_nodes
+        # Fourth pass: Add root terms (terms without a parent node)
+        root_terms = []
+        try:
+            root_term_objects = GlossaryTerm.objects.filter(parent_node=None, sync_status='LOCAL_ONLY').order_by('name')
+            logger.debug(f"Found {root_term_objects.count()} root terms (no parent node) with LOCAL_ONLY status")
+            
+            for term in root_term_objects:
+                term_obj = {
+                    'id': term.id,
+                    'name': term.name,
+                    'description': term.description,
+                    'sync_status': term.sync_status,
+                    'can_deploy': term.can_deploy if hasattr(term, 'can_deploy') else True,
+                    'is_root_term': True  # Flag to identify root terms
+                }
+                root_terms.append(term_obj)
+        except Exception as e:
+            logger.error(f"Error fetching root terms: {str(e)}")
+        
+        # Add root terms to the hierarchy
+        final_hierarchy = root_nodes + root_terms
+        
+        logger.debug(f"Final hierarchy contains {len(root_nodes)} root nodes and {len(root_terms)} root terms")
+        return final_hierarchy
 
 class GlossaryPullView(View):
     def get(self, request):
@@ -744,6 +1017,16 @@ class GlossaryImportExportView(View):
             return redirect('metadata_manager:glossary_list')
 
 class GlossaryNodeCreateView(View):
+    def get(self, request):
+        """Render the create node form."""
+        # Get all nodes for parent selection
+        nodes = GlossaryNode.objects.all().order_by('name')
+        context = {
+            'page_title': 'Create Glossary Node',
+            'nodes': nodes
+        }
+        return render(request, 'metadata_manager/glossary/node_form.html', context)
+    
     def post(self, request):
         try:
             name = request.POST.get('name')
@@ -797,6 +1080,7 @@ class GlossaryNodeDetailView(View):
             name = request.POST.get('name')
             description = request.POST.get('description', '')
             parent_id = request.POST.get('parent_id')
+            color_hex = request.POST.get('color_hex', '')
             
             if not name:
                 messages.error(request, "Glossary node name is required")
@@ -805,6 +1089,12 @@ class GlossaryNodeDetailView(View):
             # Update the node
             node.name = name
             node.description = description
+            
+            # Handle color_hex field safely (may not exist in database schema)
+            try:
+                node.color_hex = color_hex
+            except Exception as e:
+                logger.warning(f"Could not set color_hex field: {str(e)}")
             
             # Handle parent node if specified
             if parent_id:
@@ -866,6 +1156,16 @@ class GlossaryNodeDeployView(View):
             return redirect('metadata_manager:glossary_list')
 
 class GlossaryTermCreateView(View):
+    def get(self, request):
+        """Render the create term form."""
+        # Get all nodes for parent selection
+        nodes = GlossaryNode.objects.all().order_by('name')
+        context = {
+            'page_title': 'Create Glossary Term',
+            'nodes': nodes
+        }
+        return render(request, 'metadata_manager/glossary/term_form.html', context)
+    
     def post(self, request):
         try:
             name = request.POST.get('name')

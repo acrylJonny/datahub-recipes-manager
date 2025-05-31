@@ -400,7 +400,7 @@
             // Update text input when color changes
             colorInput.addEventListener('input', function() {
                 colorTextInput.value = this.value;
-            });
+        });
         }
         
         // Handle entity tag color checkbox
@@ -452,20 +452,20 @@
                         
                         // Reset form
                         applyTagForm.reset();
-                    })
-                    .catch(error => {
+                })
+                .catch(error => {
                         // Show error message
                         const alertHtml = `<div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
                             Error applying tag: ${error.message}
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>`;
                         applyTagForm.insertAdjacentHTML('afterend', alertHtml);
-                    })
-                    .finally(() => {
+                })
+                .finally(() => {
                         // Reset button state
                         submitButton.innerHTML = originalText;
                         submitButton.disabled = false;
-                    });
+                });
             });
         }
     });

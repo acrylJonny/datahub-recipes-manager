@@ -99,6 +99,7 @@ class Environment(models.Model):
 class GlossaryNode(BaseMetadataModel):
     """Represents a node in the DataHub Glossary"""
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
+    color_hex = models.CharField(max_length=20, blank=True, null=True, help_text="Color in hex format (e.g. #FF5733)")
     
     class Meta:
         verbose_name = "Glossary Node"
@@ -112,6 +113,13 @@ class GlossaryNode(BaseMetadataModel):
             'urn': self.deterministic_urn,
             'original_urn': self.original_urn if self.original_urn else None
         }
+        
+        # Add color_hex if it exists
+        try:
+            if hasattr(self, 'color_hex') and self.color_hex:
+                data['color_hex'] = self.color_hex
+        except:
+            pass
         
         if self.parent:
             data['parent_urn'] = self.parent.deterministic_urn

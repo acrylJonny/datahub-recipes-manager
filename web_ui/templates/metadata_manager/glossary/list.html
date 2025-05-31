@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load metadata_manager_filters %}
 
 {% block title %}DataHub Glossary{% endblock %}
 
@@ -72,12 +73,12 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>DataHub Glossary</h1>
         <div>
-            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createNodeModal">
+            <a href="{% url 'metadata_manager:glossary_node_create' %}" class="btn btn-primary">
                 <i class="fas fa-folder-plus me-1"></i> Create Node
-            </button>
-            <button type="button" class="btn btn-success ms-2" data-bs-toggle="modal" data-bs-target="#createTermModal">
+            </a>
+            <a href="{% url 'metadata_manager:glossary_term_create' %}" class="btn btn-success ms-2">
                 <i class="fas fa-tag me-1"></i> Create Term
-            </button>
+            </a>
             <div class="dropdown d-inline-block ms-2">
                 <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="batchActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="fas fa-tasks me-1"></i> Actions
@@ -170,61 +171,97 @@
                         </div>
                     </div>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover table-striped mb-0 responsive-table">
-                            <thead>
-                                <tr>
-                                    <th width="2%">
-                                        <input class="form-check-input" type="checkbox" id="select-all-server">
-                                    </th>
-                                    <th width="35%">Name</th>
-                                    <th width="40%">Description</th>
-                                    <th width="8%">Type</th>
-                                    <th width="15%">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Root level nodes section -->
-                                <tr class="glossary-tree-header">
-                                    <td colspan="5" class="bg-light">
+                <div class="card-body">
+                    <!-- Synced nodes (root level) -->
+                    {% if synced_nodes %}
+                    <div class="mb-3">
+                        <h6 class="border-bottom pb-2">Synced Glossary Items</h6>
+                        {% for node in synced_nodes %}
+                            {% render_node_hierarchy node "synced" 1 %}
+                        {% endfor %}
+                        
+                        <!-- Synced terms (root level) -->
+                        {% if synced_root_terms %}
+                            {% for term in synced_root_terms %}
+                            <div class="glossary-item py-2">
                                         <div class="d-flex align-items-center">
-                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#server-root-nodes" role="button" aria-expanded="true" aria-controls="server-root-nodes">
-                                                <i class="fas fa-caret-right"></i>
-                                            </span>
+                                    <div class="form-check">
+                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.id }}" data-item-type="term" data-sync-status="synced">
+                                    </div>
+                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
+                                        <span class="me-2" style="width:18px;"></span>
                                             <span class="node-icon me-2">
-                                                <i class="fas fa-folder text-warning"></i>
+                                            <i class="fas fa-tag text-info"></i>
                                             </span>
-                                            <span><strong>Root Level Nodes</strong></span>
-                                            {% with root_nodes_count=synced_nodes|length|add:remote_only_nodes|length %}
-                                            {% if root_nodes_count > 0 %}
-                                            <span class="badge bg-warning ms-2">{{ root_nodes_count }}</span>
+                                        <span>{{ term.name }}</span>
+                                        <span class="badge bg-success text-white ms-2 badge-category">Synced</span>
+                                    </div>
+                                    <div class="ms-2">
+                                        <span class="badge bg-info text-white">Term</span>
+                                    </div>
+                                    <div class="ms-3">
+                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
                                             {% endif %}
-                                            {% endwith %}
                                         </div>
-                                    </td>
-                                </tr>
+                    {% endif %}
                                 
-                                <!-- Include both synced and remote-only nodes in the server tab -->
-                                <tr class="collapse show" id="server-root-nodes">
-                                    <td colspan="5" class="p-0">
-                                        <table class="table table-hover mb-0 w-100">
-                                            {% for node in synced_nodes %}
-                                            <!-- Existing synced nodes code -->
+                    <!-- Remote only nodes (root level) -->
+                    {% if remote_only_nodes %}
+                    <div class="mb-3">
+                        <h6 class="border-bottom pb-2">Remote Glossary Items</h6>
+                        {% for node in remote_only_nodes %}
+                            {% render_node_hierarchy node "remote-only" 1 remote_only_terms %}
                                             {% endfor %}
                                             
-                                            {% for node in remote_only_nodes %}
-                                            <!-- Include remote-only nodes here -->
+                        <!-- Root level glossary terms (without parent nodes) -->
+                        {% if remote_only_terms.root_terms %}
+                            {% for term in remote_only_terms.root_terms %}
+                            <div class="glossary-item py-2">
+                                <div class="d-flex align-items-center">
+                                    <div class="form-check">
+                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.urn }}" data-item-type="term" data-sync-status="remote-only">
+                                    </div>
+                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
+                                        <span class="me-2" style="width:18px;"></span>
+                                        <span class="node-icon me-2">
+                                            <i class="fas fa-tag text-info"></i>
+                                        </span>
+                                        <span>{{ term.name }}</span>
+                                        <span class="badge bg-info text-white ms-2 badge-category">Remote</span>
+                                    </div>
+                                    <div class="ms-2">
+                                        <span class="badge bg-info text-white">Term</span>
+                                    </div>
+                                    <div class="ms-3">
+                                        <form action="{% url 'metadata_manager:glossary_pull' %}" method="post" class="d-inline">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="term_urn" value="{{ term.urn }}">
+                                            <input type="hidden" name="term_name" value="{{ term.name }}">
+                                            <input type="hidden" name="term_description" value="{{ term.description|default:'' }}">
+                                            <input type="hidden" name="term_source" value="{{ term.term_source|default:'' }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Import to Local">
+                                                <i class="fas fa-download"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
                                             {% endfor %}
-                                        </table>
-                                    </td>
-                                </tr>
-                                
-                                <!-- Root level terms section -->
-                                <!-- ... existing code ... -->
-                            </tbody>
-                        </table>
+                        {% endif %}
                     </div>
+                    {% endif %}
+                    
+                    {% if not synced_nodes and not remote_only_nodes and not synced_root_terms and not remote_only_terms %}
+                    <div class="text-center py-3">
+                        <em>No glossary items found in DataHub.</em>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -244,61 +281,110 @@
                         </div>
                     </div>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover table-striped mb-0" id="local-glossary-table">
-                            <thead>
-                                <tr>
-                                    <th width="2%">
-                                        <input class="form-check-input" type="checkbox" id="select-all-local">
-                                    </th>
-                                    <th width="35%">Name</th>
-                                    <th width="40%">Description</th>
-                                    <th width="8%">Type</th>
-                                    <th width="15%">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Include both local-only and modified items -->
-                                <!-- Root level nodes section -->
-                                <tr class="glossary-tree-header">
-                                    <td colspan="5" class="bg-light">
+                <div class="card-body">
+                    <!-- Local only nodes (root level) -->
+                    {% if local_only_nodes %}
+                    <div class="mb-3">
+                        <h6 class="border-bottom pb-2">Local Only Items</h6>
+                        {% for node in local_only_nodes %}
+                            {% render_node_hierarchy node "local-only" 1 %}
+                        {% endfor %}
+                        
+                        <!-- Local only root terms (without parent nodes) -->
+                        {% if local_only_root_terms %}
+                            {% for term in local_only_root_terms %}
+                            <div class="glossary-item py-2">
                                         <div class="d-flex align-items-center">
-                                            <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#local-root-nodes" role="button" aria-expanded="true" aria-controls="local-root-nodes">
-                                                <i class="fas fa-caret-right"></i>
-                                            </span>
+                                    <div class="form-check">
+                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.id }}" data-item-type="term" data-sync-status="local-only">
+                                    </div>
+                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
+                                        <span class="me-2" style="width:18px;"></span>
                                             <span class="node-icon me-2">
-                                                <i class="fas fa-folder text-warning"></i>
+                                            <i class="fas fa-tag text-info"></i>
                                             </span>
-                                            <span><strong>Local Root Level Nodes</strong></span>
-                                            {% with local_root_nodes_count=local_only_nodes|length|add:modified_nodes|length %}
-                                            {% if local_root_nodes_count > 0 %}
-                                            <span class="badge bg-warning ms-2">{{ local_root_nodes_count }}</span>
+                                        <span>{{ term.name }}</span>
+                                        <span class="badge bg-secondary text-white ms-2 badge-category">Local</span>
+                                    </div>
+                                    <div class="ms-2">
+                                        <span class="badge bg-info text-white">Term</span>
+                                    </div>
+                                    <div class="ms-3">
+                                        <div class="btn-group">
+                                            <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            {% if has_datahub_connection and term.can_deploy %}
+                                            <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                    <i class="fas fa-cloud-upload-alt"></i>
+                                                </button>
+                                            </form>
                                             {% endif %}
-                                            {% endwith %}
                                         </div>
-                                    </td>
-                                </tr>
-                                
-                                <tr class="collapse show" id="local-root-nodes">
-                                    <td colspan="5" class="p-0">
-                                        <table class="table table-hover mb-0 w-100">
-                                            {% for node in local_only_nodes %}
-                                            <!-- Local-only nodes code -->
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Modified nodes (root level) -->
+                    {% if modified_nodes %}
+                    <div class="mb-3">
+                        <h6 class="border-bottom pb-2">Modified Items</h6>
+                        {% for node in modified_nodes %}
+                            {% render_node_hierarchy node "modified" 1 %}
                                             {% endfor %}
                                             
-                                            {% for node in modified_nodes %}
-                                            <!-- Modified nodes code -->
+                        <!-- Modified root terms (without parent nodes) -->
+                        {% if modified_root_terms %}
+                            {% for term in modified_root_terms %}
+                            <div class="glossary-item py-2">
+                                <div class="d-flex align-items-center">
+                                    <div class="form-check">
+                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.id }}" data-item-type="term" data-sync-status="modified">
+                                    </div>
+                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
+                                        <span class="me-2" style="width:18px;"></span>
+                                        <span class="node-icon me-2">
+                                            <i class="fas fa-tag text-info"></i>
+                                        </span>
+                                        <span>{{ term.name }}</span>
+                                        <span class="badge bg-warning text-dark ms-2 badge-category">Modified</span>
+                                    </div>
+                                    <div class="ms-2">
+                                        <span class="badge bg-info text-white">Term</span>
+                                    </div>
+                                    <div class="ms-3">
+                                        <div class="btn-group">
+                                            <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            {% if has_datahub_connection and term.can_deploy %}
+                                            <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                                    <i class="fas fa-cloud-upload-alt"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                                             {% endfor %}
-                                        </table>
-                                    </td>
-                                </tr>
-                                
-                                <!-- Root level terms section -->
-                                <!-- ... existing code for local terms ... -->
-                            </tbody>
-                        </table>
+                        {% endif %}
                     </div>
+                    {% endif %}
+                    
+                    {% if not local_only_nodes and not modified_nodes and not local_only_root_terms and not modified_root_terms %}
+                    <div class="text-center py-3">
+                        <em>No local glossary items found.</em>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -307,14 +393,112 @@
 
 <!-- Existing modals and JavaScript -->
 <!-- ... existing code ... -->
+
+<!-- GitHub PR Modal -->
+<div class="modal fade" id="githubPrModal" tabindex="-1" aria-labelledby="githubPrModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="github-pr-form">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="githubPrModalLabel">Add to GitHub PR</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="github-environment" class="form-label">Target Environment</label>
+                        <select class="form-control" id="github-environment" name="environment" required>
+                            {% for env in environments %}
+                                <option value="{{ env.name }}">{{ env.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add to PR</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Node Modal -->
+<div class="modal fade" id="deleteNodeModal" tabindex="-1" aria-labelledby="deleteNodeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteNodeModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the node <strong id="delete-node-name"></strong>?</p>
+                <p class="text-danger">This will also delete all child nodes and terms associated with this node.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-node-form" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="_method" value="DELETE">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Term Modal -->
+<div class="modal fade" id="deleteTermModal" tabindex="-1" aria-labelledby="deleteTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTermModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the term <strong id="delete-term-name"></strong>?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="delete-term-form" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="_method" value="DELETE">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+// Debug info for terms
+console.log("Remote terms debug info available in the debug-info section");
+console.log("Nodes available:", {% if nodes %}true{% else %}false{% endif %});
+console.log("Nodes count:", {% if nodes %}{{ nodes|length }}{% else %}0{% endif %});
+
 $(document).ready(function() {
         // Toggle node children with animation
         $(document).on('click', '.toggle-node-children', function() {
             $(this).find('i').toggleClass('fa-rotate-90');
+        });
+        
+        // Debug the create node and term buttons
+        $('[data-bs-target="#createNodeModal"]').on('click', function() {
+            console.log("Create Node button clicked");
+        });
+        
+        $('[data-bs-target="#createTermModal"]').on('click', function() {
+            console.log("Create Term button clicked");
+        });
+        
+        // Debug form submissions
+        $('#createNodeModal form').on('submit', function() {
+            console.log("Create Node form submitted");
+        });
+        
+        $('#createTermModal form').on('submit', function() {
+            console.log("Create Term form submitted");
         });
         
         // Expand all nodes
@@ -480,6 +664,110 @@ $(document).ready(function() {
             // TODO: Implement download functionality
             alert('Download functionality not yet implemented.');
     });
+    
+    // Handle delete node modal
+    $(document).on('click', '.delete-node', function() {
+        const nodeId = $(this).data('node-id');
+        const nodeName = $(this).data('node-name');
+        
+        // Update modal content
+        $('#delete-node-name').text(nodeName);
+        
+        // Update form action
+        $('#delete-node-form').attr('action', `{% url 'metadata_manager:glossary_node_detail' 999999 %}`.replace('999999', nodeId));
+    });
+    
+    // Handle delete term modal
+    $(document).on('click', '.delete-term', function() {
+        const termId = $(this).data('term-id');
+        const termName = $(this).data('term-name');
+        
+        // Update modal content
+        $('#delete-term-name').text(termName);
+        
+        // Update form action
+        $('#delete-term-form').attr('action', `{% url 'metadata_manager:glossary_term_detail' 999999 %}`.replace('999999', termId));
+    });
 });
 </script>
+
+<!-- Create Node Modal -->
+<div class="modal fade" id="createNodeModal" tabindex="-1" aria-labelledby="createNodeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{% url 'metadata_manager:glossary_node_create' %}" method="post">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createNodeModalLabel">Create Glossary Node</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="node-name" class="form-label">Node Name</label>
+                        <input type="text" class="form-control" id="node-name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="node-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="node-description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="node-parent" class="form-label">Parent Node (Optional)</label>
+                        <select class="form-control" id="node-parent" name="parent_id">
+                            <option value="">-- No Parent --</option>
+                            {% for node in nodes %}
+                                <option value="{{ node.id }}">{{ node.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Node</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Create Term Modal -->
+<div class="modal fade" id="createTermModal" tabindex="-1" aria-labelledby="createTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{% url 'metadata_manager:glossary_term_create' %}" method="post">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createTermModalLabel">Create Glossary Term</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="term-name" class="form-label">Term Name</label>
+                        <input type="text" class="form-control" id="term-name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="term-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="term-description" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="term-source" class="form-label">Term Source (Optional)</label>
+                        <input type="text" class="form-control" id="term-source" name="term_source">
+                    </div>
+                    <div class="mb-3">
+                        <label for="term-parent-node" class="form-label">Parent Node (Optional)</label>
+                        <select class="form-control" id="term-parent-node" name="parent_node_id">
+                            <option value="">-- No Parent --</option>
+                            {% for node in nodes %}
+                                <option value="{{ node.id }}">{{ node.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Term</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %} 

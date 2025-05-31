@@ -20,6 +20,9 @@
             <p class="text-muted">Manage editable properties of DataHub entities</p>
         </div>
         <div>
+            <button type="button" class="btn btn-outline-secondary me-2" id="downloadButton">
+                <i class="fas fa-download me-1"></i> Download
+            </button>
             <button type="button" class="btn btn-primary" id="syncButton">
                 <i class="fas fa-sync me-1"></i> Sync with DataHub
             </button>
@@ -86,16 +89,17 @@
                 <table class="table table-hover table-striped mb-0">
                     <thead>
                         <tr>
-                            <th>Name</th>
+                            <th>Entity</th>
                             <th>Type</th>
-                            <th>Description</th>
+                            <th>Properties</th>
+                            <th>Browse Path</th>
                             <th>Last Updated</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="entitiesTableBody">
                         <tr>
-                            <td colspan="5" class="text-center py-4">
+                            <td colspan="6" class="text-center py-4">
                                 <div class="spinner-border text-primary" role="status">
                                     <span class="visually-hidden">Loading...</span>
                                 </div>
@@ -139,6 +143,13 @@
                         <textarea class="form-control" id="entityDescription" name="description" rows="3"></textarea>
                     </div>
                     
+                    <div id="editablePropertiesContainer">
+                        <h6 class="mb-3">Additional Properties</h6>
+                        <div id="editablePropertiesFields">
+                            <!-- Additional properties will be populated dynamically -->
+                        </div>
+                    </div>
+                    
                     <div id="schemaFieldsContainer" class="d-none">
                         <h6 class="mb-3">Schema Fields</h6>
                         <div id="schemaFields">
@@ -154,6 +165,51 @@
         </div>
     </div>
 </div>
+
+<!-- View Entity Properties Modal -->
+<div class="modal fade" id="viewEntityModal" tabindex="-1" aria-labelledby="viewEntityModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewEntityModalLabel">Entity Properties</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h6>Entity Details</h6>
+                    <dl class="row">
+                        <dt class="col-sm-3">Name</dt>
+                        <dd class="col-sm-9" id="viewEntityName"></dd>
+                        
+                        <dt class="col-sm-3">Type</dt>
+                        <dd class="col-sm-9" id="viewEntityType"></dd>
+                        
+                        <dt class="col-sm-3">URN</dt>
+                        <dd class="col-sm-9" id="viewEntityUrn"></dd>
+                    </dl>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>Editable Properties</h6>
+                    <div id="viewEntityProperties">
+                        <!-- Properties will be displayed here -->
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>Browse Path</h6>
+                    <div id="viewEntityBrowsePath">
+                        <!-- Browse path will be displayed here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" class="btn btn-primary" id="viewInDataHubButton" target="_blank">View in DataHub</a>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -161,6 +217,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     let currentPage = 1;
     const itemsPerPage = 20;
+    let allEntities = []; // Store all entities for download
     
     // Function to load entities
     function loadEntities(page = 1) {
@@ -168,10 +225,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const entityType = document.getElementById('entityType').value;
         const start = (page - 1) * itemsPerPage;
         
+        console.log(`Loading entities with: start=${start}, count=${itemsPerPage}, searchQuery=${searchQuery}, entityType=${entityType}`);
+        
         // Show loading state
         document.getElementById('entitiesTableBody').innerHTML = `
             <tr>
-                <td colspan="5" class="text-center py-4">
+                <td colspan="6" class="text-center py-4">
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
@@ -181,10 +240,22 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         
         // Fetch entities from the server
-        fetch(`/metadata/entities/editable/?start=${start}&count=${itemsPerPage}&searchQuery=${searchQuery}&entityType=${entityType}`)
-            .then(response => response.json())
+        const apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${itemsPerPage}&searchQuery=${searchQuery}&entityType=${entityType}`;
+        console.log(`Fetching from API: ${apiUrl}`);
+        
+        fetch(apiUrl)
+            .then(response => {
+                console.log(`API response status: ${response.status}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
+                console.log('API response data:', data);
                 if (data.success) {
+                    // Store entities for download
+                    allEntities = data.data.searchResults.map(result => result.entity);
                     updateEntitiesTable(data.data);
                     updatePagination(data.data.total);
                     document.getElementById('entityCount').textContent = `${data.data.total} entities`;
@@ -194,7 +265,22 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .catch(error => {
                 console.error('Error loading entities:', error);
-                showError('Failed to load entities');
+                showError(`Failed to load entities: ${error.message}`);
+                
+                // Show error in table instead of spinner
+                document.getElementById('entitiesTableBody').innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <div class="alert alert-danger">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                Error: ${error.message}
+                            </div>
+                            <button class="btn btn-outline-primary mt-3" onclick="loadEntities(${page})">
+                                <i class="fas fa-sync me-1"></i> Try Again
+                            </button>
+                        </td>
+                    </tr>
+                `;
             });
     }
     
@@ -208,18 +294,53 @@ document.addEventListener('DOMContentLoaded', function() {
                 const entity = result.entity;
                 if (!entity) return;
                 
-                const properties = entity.properties || {};
+                // Get properties from editableProperties directly
                 const editableProperties = entity.editableProperties || {};
+                
+                // For dataset entities, they have name in editableProperties
+                // For other entities, we'll use the last part of the URN as a fallback
+                let displayName = 'Unnamed';
+                if (editableProperties.name) {
+                    displayName = editableProperties.name;
+                } else {
+                    // Extract name from URN as fallback
+                    const urnParts = entity.urn.split('/');
+                    if (urnParts.length > 0) {
+                        displayName = urnParts[urnParts.length - 1];
+                    }
+                }
+                
+                // Format properties list
+                let propertiesList = '';
+                const propKeys = Object.keys(editableProperties).filter(key => key !== 'name' && key !== 'description');
+                if (propKeys.length > 0) {
+                    propertiesList = propKeys.map(key => {
+                        const value = editableProperties[key];
+                        return `<span class="badge bg-light text-dark me-1">${key}</span>`;
+                    }).join(' ');
+                } else {
+                    propertiesList = '<span class="text-muted">None</span>';
+                }
+                
+                // Format browse path (for non-glossary, non-domain, non-tag entities)
+                let browsePath = '<span class="text-muted">N/A</span>';
+                if (entity.browsePaths && entity.browsePaths.length > 0 && 
+                    !['GLOSSARY_TERM', 'GLOSSARY_NODE', 'DOMAIN', 'TAG'].includes(entity.type)) {
+                    browsePath = entity.browsePaths.map(path => 
+                        `<div class="small text-truncate">${path}</div>`
+                    ).join('');
+                }
                 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>
-                        <div class="fw-bold">${editableProperties.name || properties.name || 'Unnamed'}</div>
-                        <div class="text-muted small">${entity.urn}</div>
+                        <div class="fw-bold">${displayName}</div>
+                        <div class="text-muted small text-truncate" style="max-width: 250px;" title="${entity.urn}">${entity.urn}</div>
                     </td>
                     <td><span class="badge bg-primary">${entity.type}</span></td>
-                    <td>${editableProperties.description || properties.description || '<span class="text-muted">No description</span>'}</td>
-                    <td>${properties.lastModified ? new Date(properties.lastModified.time).toLocaleDateString() : 'Unknown'}</td>
+                    <td>${propertiesList}</td>
+                    <td>${browsePath}</td>
+                    <td>${result.lastModified ? new Date(result.lastModified).toLocaleString() : 'Unknown'}</td>
                     <td>
                         <div class="btn-group">
                             <button type="button" class="btn btn-sm btn-outline-primary edit-entity" 
@@ -236,6 +357,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 tbody.appendChild(tr);
             });
             
+            // Add event listeners to buttons
+            document.querySelectorAll('.edit-entity').forEach(button => {
+                button.addEventListener('click', function() {
+                    const urn = this.getAttribute('data-urn');
+                    const type = this.getAttribute('data-type');
+                    openEditModal(urn, type);
+                });
+            });
+            
+            document.querySelectorAll('.view-entity').forEach(button => {
+                button.addEventListener('click', function() {
+                    const urn = this.getAttribute('data-urn');
+                    const type = this.getAttribute('data-type');
+                    openViewModal(urn, type);
+                });
+            });
+            
             // Update pagination info if available
             const paginationInfo = document.getElementById('paginationInfo');
             if (paginationInfo) {
@@ -246,7 +384,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td colspan="5" class="text-center">
+                <td colspan="6" class="text-center">
                     <div class="py-4">
                         <i class="fas fa-search fa-3x text-muted mb-3"></i>
                         <h5>No entities found</h5>
@@ -342,11 +480,61 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Load entity details
         fetch(`/metadata/entities/${urn}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
-                if (data.success) {
-                    document.getElementById('entityName').value = data.entity.name || '';
-                    document.getElementById('entityDescription').value = data.entity.description || '';
+                if (data.success && data.entity) {
+                    console.log('Entity details:', data.entity);
+                    
+                    // Extract name and description, checking different possible locations
+                    let name = '';
+                    let description = '';
+                    
+                    // First try to get from editableProperties
+                    if (data.entity.editableProperties) {
+                        name = data.entity.editableProperties.name || '';
+                        description = data.entity.editableProperties.description || '';
+                        
+                        // Add additional editable properties
+                        const editablePropertiesFields = document.getElementById('editablePropertiesFields');
+                        editablePropertiesFields.innerHTML = '';
+                        
+                        Object.keys(data.entity.editableProperties).forEach(propKey => {
+                            if (propKey !== 'name' && propKey !== 'description') {
+                                const propValue = data.entity.editableProperties[propKey];
+                                editablePropertiesFields.innerHTML += `
+                                    <div class="mb-3">
+                                        <label class="form-label">${propKey}</label>
+                                        <input type="text" class="form-control" name="properties[${propKey}]" value="${propValue || ''}" />
+                                    </div>
+                                `;
+                            }
+                        });
+                    }
+                    
+                    // If still empty, try other possible locations
+                    if (!name && data.entity.properties && data.entity.properties.name) {
+                        name = data.entity.properties.name;
+                    }
+                    
+                    if (!description && data.entity.properties && data.entity.properties.description) {
+                        description = data.entity.properties.description;
+                    }
+                    
+                    // Last resort: extract name from URN
+                    if (!name) {
+                        const urnParts = urn.split('/');
+                        if (urnParts.length > 0) {
+                            name = urnParts[urnParts.length - 1];
+                        }
+                    }
+                    
+                    document.getElementById('entityName').value = name;
+                    document.getElementById('entityDescription').value = description;
                     modal.show();
                 } else {
                     showError(data.error || 'Failed to load entity details');
@@ -354,7 +542,90 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .catch(error => {
                 console.error('Error loading entity details:', error);
-                showError('Failed to load entity details');
+                showError(`Failed to load entity details: ${error.message}`);
+            });
+    }
+    
+    // Function to open view modal
+    function openViewModal(urn, type) {
+        const modal = new bootstrap.Modal(document.getElementById('viewEntityModal'));
+        
+        // Load entity details
+        fetch(`/metadata/entities/${urn}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.entity) {
+                    console.log('Entity details for viewing:', data.entity);
+                    
+                    // Set entity basic details
+                    document.getElementById('viewEntityName').textContent = 
+                        data.entity.editableProperties?.name || data.entity.properties?.name || 'Unnamed';
+                    document.getElementById('viewEntityType').textContent = data.entity.type;
+                    document.getElementById('viewEntityUrn').textContent = data.entity.urn;
+                    
+                    // Set DataHub link
+                    const datahubUrl = `${window.location.protocol}//${window.location.host}/entities/${encodeURIComponent(data.entity.type.toLowerCase())}/${encodeURIComponent(data.entity.urn)}`;
+                    document.getElementById('viewInDataHubButton').href = datahubUrl;
+                    
+                    // Display editable properties
+                    const propertiesContainer = document.getElementById('viewEntityProperties');
+                    propertiesContainer.innerHTML = '';
+                    
+                    if (data.entity.editableProperties && Object.keys(data.entity.editableProperties).length > 0) {
+                        const propsList = document.createElement('dl');
+                        propsList.className = 'row';
+                        
+                        Object.entries(data.entity.editableProperties).forEach(([key, value]) => {
+                            const dt = document.createElement('dt');
+                            dt.className = 'col-sm-3';
+                            dt.textContent = key;
+                            
+                            const dd = document.createElement('dd');
+                            dd.className = 'col-sm-9';
+                            dd.textContent = value || 'Not set';
+                            
+                            propsList.appendChild(dt);
+                            propsList.appendChild(dd);
+                        });
+                        
+                        propertiesContainer.appendChild(propsList);
+                    } else {
+                        propertiesContainer.innerHTML = '<p class="text-muted">No editable properties found</p>';
+                    }
+                    
+                    // Display browse path
+                    const browsePathContainer = document.getElementById('viewEntityBrowsePath');
+                    browsePathContainer.innerHTML = '';
+                    
+                    if (data.entity.browsePaths && data.entity.browsePaths.length > 0) {
+                        const pathList = document.createElement('ul');
+                        pathList.className = 'list-group';
+                        
+                        data.entity.browsePaths.forEach(path => {
+                            const pathItem = document.createElement('li');
+                            pathItem.className = 'list-group-item';
+                            pathItem.textContent = path;
+                            pathList.appendChild(pathItem);
+                        });
+                        
+                        browsePathContainer.appendChild(pathList);
+                    } else {
+                        browsePathContainer.innerHTML = '<p class="text-muted">No browse paths available</p>';
+                    }
+                    
+                    modal.show();
+                } else {
+                    showError(data.error || 'Failed to load entity details');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading entity details:', error);
+                showError(`Failed to load entity details: ${error.message}`);
             });
     }
     
@@ -395,6 +666,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 container.innerHTML = '<div class="alert alert-danger">Failed to load schema fields</div>';
             });
     }
+    
+    // Function to download entity data
+    document.getElementById('downloadButton').addEventListener('click', function() {
+        if (allEntities.length === 0) {
+            showError('No entities to download');
+            return;
+        }
+        
+        // Format the data for download
+        const downloadData = allEntities.map(entity => {
+            const properties = entity.editableProperties || {};
+            const name = properties.name || entity.urn.split('/').pop();
+            
+            return {
+                name: name,
+                urn: entity.urn,
+                type: entity.type,
+                properties: properties,
+                browsePaths: entity.browsePaths || []
+            };
+        });
+        
+        // Create a download link
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(downloadData, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "datahub_editable_properties.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    });
     
     // Function to save entity changes
     document.getElementById('saveEntityButton').addEventListener('click', function() {

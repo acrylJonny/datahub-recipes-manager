@@ -293,100 +293,100 @@
         
         // Initialize JSON editors
         try {
-            const resourcesEditor = initJsonEditor('resourcesEditor', [
-                {
-                    "type": "dataset",
-                    "resources": [
-                        "urn:li:dataset:(urn:li:dataPlatform:hive,example,PROD)"
-                    ]
-                }
-            ]);
-            
-            const privilegesEditor = initJsonEditor('privilegesEditor', [
-                "VIEW_ENTITY_PAGE",
-                "EDIT_ENTITY_TAGS"
-            ]);
-            
-            const actorsEditor = initJsonEditor('actorsEditor', [
-                {
-                    "type": "USER",
-                    "identity": "urn:li:corpuser:johndoe"
-                }
-            ]);
+        const resourcesEditor = initJsonEditor('resourcesEditor', [
+            {
+                "type": "dataset",
+                "resources": [
+                    "urn:li:dataset:(urn:li:dataPlatform:hive,example,PROD)"
+                ]
+            }
+        ]);
+        
+        const privilegesEditor = initJsonEditor('privilegesEditor', [
+            "VIEW_ENTITY_PAGE",
+            "EDIT_ENTITY_TAGS"
+        ]);
+        
+        const actorsEditor = initJsonEditor('actorsEditor', [
+            {
+                "type": "USER",
+                "identity": "urn:li:corpuser:johndoe"
+            }
+        ]);
             
             console.log("JSON editors initialized successfully");
+        
+        // Form validation
+        const form = document.getElementById('policyForm');
+        const resourcesInput = document.getElementById('resourcesInput');
+        const privilegesInput = document.getElementById('privilegesInput');
+        const actorsInput = document.getElementById('actorsInput');
+        
+        form.addEventListener('submit', function(event) {
+            let isValid = true;
             
-            // Form validation
-            const form = document.getElementById('policyForm');
-            const resourcesInput = document.getElementById('resourcesInput');
-            const privilegesInput = document.getElementById('privilegesInput');
-            const actorsInput = document.getElementById('actorsInput');
-            
-            form.addEventListener('submit', function(event) {
-                let isValid = true;
-                
-                // Get values from Ace editors
-                const resourcesValue = resourcesEditor.getValue();
-                const privilegesValue = privilegesEditor.getValue();
-                const actorsValue = actorsEditor.getValue();
+            // Get values from Ace editors
+            const resourcesValue = resourcesEditor.getValue();
+            const privilegesValue = privilegesEditor.getValue();
+            const actorsValue = actorsEditor.getValue();
                 
                 console.log("Form submitted, validating JSON values...");
-                
-                // Validate JSON format and set input values
-                try {
-                    resourcesInput.value = resourcesValue;
-                    const resourcesJson = JSON.parse(resourcesValue);
-                    if (!Array.isArray(resourcesJson)) {
-                        throw new Error('Resources must be an array');
-                    }
-                    document.getElementById('resourcesEditor').classList.remove('is-invalid');
-                    document.getElementById('resourcesError').style.display = 'none';
-                } catch (e) {
-                    document.getElementById('resourcesEditor').classList.add('is-invalid');
-                    document.getElementById('resourcesError').textContent = 'Invalid JSON format for resources: ' + e.message;
-                    document.getElementById('resourcesError').style.display = 'block';
-                    isValid = false;
+            
+            // Validate JSON format and set input values
+            try {
+                resourcesInput.value = resourcesValue;
+                const resourcesJson = JSON.parse(resourcesValue);
+                if (!Array.isArray(resourcesJson)) {
+                    throw new Error('Resources must be an array');
                 }
-                
-                try {
-                    privilegesInput.value = privilegesValue;
-                    const privilegesJson = JSON.parse(privilegesValue);
-                    if (!Array.isArray(privilegesJson)) {
-                        throw new Error('Privileges must be an array');
-                    }
-                    document.getElementById('privilegesEditor').classList.remove('is-invalid');
-                    document.getElementById('privilegesError').style.display = 'none';
-                } catch (e) {
-                    document.getElementById('privilegesEditor').classList.add('is-invalid');
-                    document.getElementById('privilegesError').textContent = 'Invalid JSON format for privileges: ' + e.message;
-                    document.getElementById('privilegesError').style.display = 'block';
-                    isValid = false;
+                document.getElementById('resourcesEditor').classList.remove('is-invalid');
+                document.getElementById('resourcesError').style.display = 'none';
+            } catch (e) {
+                document.getElementById('resourcesEditor').classList.add('is-invalid');
+                document.getElementById('resourcesError').textContent = 'Invalid JSON format for resources: ' + e.message;
+                document.getElementById('resourcesError').style.display = 'block';
+                isValid = false;
+            }
+            
+            try {
+                privilegesInput.value = privilegesValue;
+                const privilegesJson = JSON.parse(privilegesValue);
+                if (!Array.isArray(privilegesJson)) {
+                    throw new Error('Privileges must be an array');
                 }
-                
-                try {
-                    actorsInput.value = actorsValue;
-                    JSON.parse(actorsValue);  // Can be array or object depending on policy type
-                    document.getElementById('actorsEditor').classList.remove('is-invalid');
-                    document.getElementById('actorsError').style.display = 'none';
-                } catch (e) {
-                    document.getElementById('actorsEditor').classList.add('is-invalid');
-                    document.getElementById('actorsError').textContent = 'Invalid JSON format for actors: ' + e.message;
-                    document.getElementById('actorsError').style.display = 'block';
-                    isValid = false;
-                }
-                
-                // Standard form validation
-                if (!form.checkValidity()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    isValid = false;
-                }
-                
-                if (!isValid) {
-                    event.preventDefault();
-                    form.classList.add('was-validated');
-                }
-            });
+                document.getElementById('privilegesEditor').classList.remove('is-invalid');
+                document.getElementById('privilegesError').style.display = 'none';
+            } catch (e) {
+                document.getElementById('privilegesEditor').classList.add('is-invalid');
+                document.getElementById('privilegesError').textContent = 'Invalid JSON format for privileges: ' + e.message;
+                document.getElementById('privilegesError').style.display = 'block';
+                isValid = false;
+            }
+            
+            try {
+                actorsInput.value = actorsValue;
+                JSON.parse(actorsValue);  // Can be array or object depending on policy type
+                document.getElementById('actorsEditor').classList.remove('is-invalid');
+                document.getElementById('actorsError').style.display = 'none';
+            } catch (e) {
+                document.getElementById('actorsEditor').classList.add('is-invalid');
+                document.getElementById('actorsError').textContent = 'Invalid JSON format for actors: ' + e.message;
+                document.getElementById('actorsError').style.display = 'block';
+                isValid = false;
+            }
+            
+            // Standard form validation
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+                isValid = false;
+            }
+            
+            if (!isValid) {
+                event.preventDefault();
+                form.classList.add('was-validated');
+            }
+        });
         } catch (e) {
             console.error("Error initializing editors:", e);
             fallbackToTextareas();
@@ -404,22 +404,22 @@
             element.style.height = '150px';
             
             try {
-                const editor = ace.edit(elementId);
-                editor.setTheme("ace/theme/chrome");
-                editor.session.setMode("ace/mode/json");
-                editor.setOptions({
-                    fontSize: "12pt",
-                    showPrintMargin: false,
-                    showGutter: true,
-                    highlightActiveLine: true,
-                    wrap: true
-                });
-                
-                // Set initial content
-                editor.setValue(JSON.stringify(defaultValue, null, 2), -1);
-                
+            const editor = ace.edit(elementId);
+            editor.setTheme("ace/theme/chrome");
+            editor.session.setMode("ace/mode/json");
+            editor.setOptions({
+                fontSize: "12pt",
+                showPrintMargin: false,
+                showGutter: true,
+                highlightActiveLine: true,
+                wrap: true
+            });
+            
+            // Set initial content
+            editor.setValue(JSON.stringify(defaultValue, null, 2), -1);
+            
                 console.log(`Editor ${elementId} initialized`);
-                return editor;
+            return editor;
             } catch (e) {
                 console.error(`Error initializing editor ${elementId}:`, e);
                 // Create a fallback textarea for this specific editor

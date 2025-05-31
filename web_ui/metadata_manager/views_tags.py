@@ -537,20 +537,20 @@ class TagPullView(View):
                             error_count += 1
                     except Exception as e:
                         logger.error(f"Error processing tag {tag_data.get('name')}: {str(e)}")
-                        error_count += 1
+                    error_count += 1
             
                 # Report bulk import results
-                if imported_count > 0:
-                    messages.success(request, f"Successfully imported {imported_count} new tags from DataHub")
-                
-                if updated_count > 0:
-                    messages.info(request, f"Updated {updated_count} existing tags")
-                
-                if error_count > 0:
-                    messages.warning(request, f"Encountered {error_count} errors during tag import")
-                
-                if imported_count == 0 and updated_count == 0 and error_count == 0:
-                    messages.info(request, "No tags found in DataHub")
+            if imported_count > 0:
+                messages.success(request, f"Successfully imported {imported_count} new tags from DataHub")
+            
+            if updated_count > 0:
+                messages.info(request, f"Updated {updated_count} existing tags")
+            
+            if error_count > 0:
+                messages.warning(request, f"Encountered {error_count} errors during tag import")
+            
+            if imported_count == 0 and updated_count == 0 and error_count == 0:
+                messages.info(request, "No tags found in DataHub")
             
             return redirect('metadata_manager:tag_list')
         except Exception as e:

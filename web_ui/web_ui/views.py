@@ -271,7 +271,10 @@ def recipe_edit(request, recipe_id):
         return redirect('recipes')
     
     # Extract recipe content
-    recipe_content = recipe_data.get('config', {}).get('recipe', '{}')
+    config = recipe_data.get('config')
+    if config is None:
+        config = {}
+    recipe_content = config.get('recipe', '{}')
     if isinstance(recipe_content, dict):
         try:
             # Convert to YAML for display by default
@@ -281,7 +284,9 @@ def recipe_edit(request, recipe_id):
             recipe_content = json.dumps(recipe_content, indent=2)
     
     # Extract schedule information
-    schedule_info = recipe_data.get('schedule', {})
+    schedule_info = recipe_data.get('schedule')
+    if schedule_info is None:
+        schedule_info = {}
     schedule_cron = schedule_info.get('interval', '')
     schedule_timezone = schedule_info.get('timezone', 'UTC')
     
@@ -678,8 +683,8 @@ def policy_create(request):
     connected = client and client.test_connection()
     
     if not is_local and not connected:
-        messages.warning(request, "Not connected to DataHub. Please check your connection settings.")
-        return redirect('policies')
+            messages.warning(request, "Not connected to DataHub. Please check your connection settings.")
+            return redirect('policies')
     
     if request.method == 'POST':
         form = PolicyForm(request.POST)
@@ -1512,39 +1517,39 @@ def policy_view(request, policy_id):
         
         # If not found locally, try to fetch from DataHub
         client = get_datahub_client()
-        if client and client.test_connection():
-            try:
-                # First try to fetch by ID directly
-                policy = client.get_policy(policy_id)
+    if client and client.test_connection():
+        try:
+            # First try to fetch by ID directly
+            policy = client.get_policy(policy_id)
+            
+            # If not found, try with URN format
+            if not policy and not policy_id.startswith('urn:'):
+                policy = client.get_policy(f"urn:li:policy:{policy_id}")
                 
-                # If not found, try with URN format
-                if not policy and not policy_id.startswith('urn:'):
-                    policy = client.get_policy(f"urn:li:policy:{policy_id}")
-                    
-                if policy:
-                    # Ensure the policy has an ID
-                    if not policy.get('id'):
-                        if policy.get('urn'):
-                            parts = policy.get('urn').split(':')
-                            if len(parts) >= 4:
-                                policy['id'] = parts[3]
-                        else:
-                            # If no ID or URN is available, use the policy_id from the request
-                            policy['id'] = policy_id
+            if policy:
+                # Ensure the policy has an ID
+                if not policy.get('id'):
+                    if policy.get('urn'):
+                        parts = policy.get('urn').split(':')
+                        if len(parts) >= 4:
+                            policy['id'] = parts[3]
+                    else:
+                        # If no ID or URN is available, use the policy_id from the request
+                        policy['id'] = policy_id
                             
-                    # Format JSON fields for display
-                    policy_json = json.dumps(policy, indent=2)
-                    resources_json = json.dumps(policy.get('resources', []), indent=2)
-                    privileges_json = json.dumps(policy.get('privileges', []), indent=2)
-                    actors_json = json.dumps(policy.get('actors', {}), indent=2)
-                else:
-                    messages.error(request, f"Policy with ID {policy_id} not found")
-                    
-            except Exception as e:
-                messages.error(request, f"Error retrieving policy: {str(e)}")
-                logger.error(f"Error retrieving policy: {str(e)}")
-        else:
-            messages.warning(request, "Not connected to DataHub")
+                # Format JSON fields for display
+                policy_json = json.dumps(policy, indent=2)
+                resources_json = json.dumps(policy.get('resources', []), indent=2)
+                privileges_json = json.dumps(policy.get('privileges', []), indent=2)
+                actors_json = json.dumps(policy.get('actors', {}), indent=2)
+            else:
+                messages.error(request, f"Policy with ID {policy_id} not found")
+                
+        except Exception as e:
+            messages.error(request, f"Error retrieving policy: {str(e)}")
+            logger.error(f"Error retrieving policy: {str(e)}")
+    else:
+        messages.warning(request, "Not connected to DataHub")
     
     if not policy:
         # If policy was not found in either place, redirect to policies list
@@ -2062,7 +2067,7 @@ def recipe_save_as_template(request, recipe_id):
                     messages.warning(request, f"Could not create environment variables template: {str(e)}")
             
             messages.success(request, f"Recipe saved as template '{template.name}' successfully")
-            return redirect('recipe_templates')
+            return redirect('template_manager:recipe_templates')
     else:
         form = RecipeTemplateForm(initial={
             'name': f"{recipe_name} Template",

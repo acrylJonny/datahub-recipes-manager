@@ -35,9 +35,9 @@
                     <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
                 </button>
             {% else %}
-                <a href="{% url 'policy_edit' policy.id %}" class="btn btn-primary">
-                    <i class="fas fa-edit me-1"></i> Edit Policy
-                </a>
+            <a href="{% url 'policy_edit' policy.id %}" class="btn btn-primary">
+                <i class="fas fa-edit me-1"></i> Edit Policy
+            </a>
             {% endif %}
             <a href="{% url 'policy_download' policy.id %}" class="btn btn-outline-secondary">
                 <i class="fas fa-file-export me-1"></i> Export
@@ -88,8 +88,8 @@
                                 <dt class="col-sm-3">Environment</dt>
                                 <dd class="col-sm-9">{{ policy.environment.name }}</dd>
                             {% endif %}
-                            <dt class="col-sm-3">Created</dt>
-                            <dd class="col-sm-9">{{ policy.created_at|date:"F d, Y H:i" }}</dd>
+                        <dt class="col-sm-3">Created</dt>
+                        <dd class="col-sm-9">{{ policy.created_at|date:"F d, Y H:i" }}</dd>
                             <dt class="col-sm-3">Updated</dt>
                             <dd class="col-sm-9">{{ policy.updated_at|date:"F d, Y H:i" }}</dd>
                         {% else %}
@@ -99,7 +99,7 @@
                             </dd>
                             <dt class="col-sm-3">Created</dt>
                             <dd class="col-sm-9">{{ policy.created_at|date:"F d, Y H:i"|default:"Unknown" }}</dd>
-                            <dt class="col-sm-3">Updated</dt>
+                        <dt class="col-sm-3">Updated</dt>
                             <dd class="col-sm-9">{{ policy.last_updated|date:"F d, Y H:i"|default:"Unknown" }}</dd>
                         {% endif %}
                     </dl>

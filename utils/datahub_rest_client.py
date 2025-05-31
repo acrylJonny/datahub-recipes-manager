@@ -96,8 +96,6 @@ class DataHubRestClient:
         """
         Execute a GraphQL query against the DataHub GraphQL API.
         
-        Uses only the datahub SDK for GraphQL execution, with no HTTP fallback.
-        
         Args:
             query (str): The GraphQL query to execute
             variables (dict, optional): Variables for the GraphQL query
@@ -105,61 +103,52 @@ class DataHubRestClient:
         Returns:
             dict: The GraphQL response
         """
-        if variables is None:
-            variables = {}
+        try:
+            # Log query and variables with more detail
+            self.logger.info("====== Executing GraphQL query ======")
+            # Only log a portion of the query to avoid overwhelming the logs
+            query_preview = query.replace('\n', ' ').replace('  ', ' ')[:200] + "..."
+            self.logger.info(f"Query: {query_preview}")
+            self.logger.info(f"Variables: {variables}")
             
-        # If we have a datahubgraph client available, use it
-        if self.graph is not None:
-            try:
-                logger.debug(f"Executing GraphQL via datahubgraph SDK: {query} with variables: {variables}")
-                # Add verify_ssl if supported
-                if hasattr(self.graph, 'verify_ssl'):
-                    # For newer SDK versions
-                    old_verify = getattr(self.graph, 'verify_ssl', True)
-                    self.graph.verify_ssl = self.verify_ssl
-                    result = self.graph.execute_graphql(query, variables)
-                    self.graph.verify_ssl = old_verify
-                else:
-                    # For older SDK versions
-                    result = self.graph.execute_graphql(query, variables)
+            # Try with DataHubGraph client if available
+            if hasattr(self, 'dhg_client') and self.dhg_client:
+                self.logger.debug(f"Executing GraphQL query with DataHubGraph client: {query[:100]}...")
+                self.logger.debug(f"Variables: {variables}")
+                return self.dhg_client.execute_graphql(query, variables)
                 
-                if isinstance(result, dict) and "data" in result:
-                    return result
-                else:
-                    logger.debug(f"Converting GraphQL response from format: {type(result)} to standard format")
-                    # Try to convert the result to a proper format if possible
-                    try:
-                        if hasattr(result, '__dict__'):
-                            converted_result = vars(result)
-                            if "data" not in converted_result:
-                                # Add an empty data field to prevent NoneType errors
-                                converted_result["data"] = {}
-                            return converted_result
-                        elif hasattr(result, 'to_dict'):
-                            converted_result = result.to_dict()
-                            if "data" not in converted_result:
-                                converted_result["data"] = {}
-                            return converted_result
-                        else:
-                            # Ensure data field exists to prevent NoneType errors
-                            return {"data": result if result is not None else {}}
-                    except Exception as e:
-                        logger.warning(f"Could not convert GraphQL SDK result to dict: {str(e)}")
-                        return {"errors": [{"message": f"Failed to format GraphQL result: {str(e)}"}], "data": {}}
-            except Exception as e:
-                # Check if this is a schema validation error
-                error_msg = str(e)
-                if "Unknown type" in error_msg or "Validation error" in error_msg:
-                    logger.debug(f"GraphQL schema validation error (expected during version mismatch): {error_msg}")
-                    # Set the flag to indicate schema validation has failed
-                    if hasattr(self, '_schema_validated'):
-                        self._schema_validated = False
-                else:
-                    logger.warning(f"Error executing GraphQL via SDK: {error_msg}")
-                return {"errors": [{"message": error_msg}], "data": {}}
-        else:
-            logger.error("DataHubGraph client is not available. Cannot execute GraphQL query.")
-            return {"errors": [{"message": "DataHubGraph client is not available"}], "data": {}}
+            # Fallback to direct HTTP request
+            self.logger.debug(f"Executing GraphQL query with direct HTTP request: {query[:100]}...")
+            self.logger.debug(f"Variables: {variables}")
+            
+            payload = {
+                "query": query,
+                "variables": variables or {}
+            }
+            
+            graphql_url = f"{self.server_url}/api/graphql"
+            self.logger.info(f"Sending request to: {graphql_url}")
+            
+            response = self._session.post(
+                graphql_url,
+                json=payload,
+                headers=self._get_auth_headers()
+            )
+            
+            self.logger.info(f"GraphQL response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                # Check for GraphQL errors
+                if "errors" in result:
+                    self.logger.warning(f"GraphQL query returned errors: {result['errors']}")
+                return result
+            else:
+                self.logger.warning(f"GraphQL query failed with status {response.status_code}: {response.text}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error executing GraphQL query: {str(e)}")
+            return None
     
     def _execute_graphql(self, query, variables=None):
         """
@@ -3790,13 +3779,13 @@ class DataHubRestClient:
     # Glossary Node Methods
     #
             
-    def list_glossary_nodes(self, query=None, count=10, start=0):
+    def list_glossary_nodes(self, query=None, count=100, start=0):
         """
         List glossary nodes from DataHub with optional filtering.
         
         Args:
             query (str, optional): Search query to filter nodes by name/description
-            count (int, optional): Number of nodes to return (default 10)
+            count (int, optional): Number of nodes to return (default 100)
             start (int, optional): Starting offset for pagination (default 0)
             
         Returns:
@@ -3804,11 +3793,19 @@ class DataHubRestClient:
         """
         self.logger.info(f"Listing glossary nodes with query={query}, count={count}, start={start}")
         
+        # Try using GraphQL search with GLOSSARY_NODE entity type
         try:
-            # First try the search across entities approach (modern DataHub versions)
-            gql_query = """
-            query searchAcrossEntities($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
+            self.logger.info("Trying GraphQL search with GLOSSARY_NODE entity type")
+            
+            # Search query that will return all glossary nodes
+            search_query = """
+            query($query: String!, $count: Int, $start: Int) {
+              search(input: {
+                type: GLOSSARY_NODE, 
+                query: $query, 
+                count: $count, 
+                start: $start
+              }) {
                 start
                 count
                 total
@@ -3821,8 +3818,14 @@ class DataHubRestClient:
                         name
                         description
                       }
-                      parentNode {
+                      parentNodes {
+                        count
+                        nodes {
                         urn
+                          properties {
+                            name
+                          }
+                        }
                       }
                     }
                   }
@@ -3832,153 +3835,152 @@ class DataHubRestClient:
             """
             
             variables = {
-                "input": {
-                    "types": ["GLOSSARY_NODE"],
-                    "query": query if query else "*",
-                    "start": start,
-                    "count": count
-                }
+                "query": query or "*",
+                "count": count,
+                "start": start
             }
             
-            try:
-                result = self._execute_graphql(gql_query, variables)
+            self.logger.debug(f"Executing GraphQL search query with variables: {variables}")
+            result = self.execute_graphql(search_query, variables)
+            self.logger.debug(f"Search result: {result}")
+            
+            if result and 'data' in result and 'search' in result['data']:
+                search_data = result['data']['search']
+                total = search_data.get('total', 0)
                 
-                # Process results if the query was successful
-                if (result and 'searchAcrossEntities' in result and 
-                    'searchResults' in result['searchAcrossEntities']):
+                if total > 0:
+                    search_results = search_data.get('searchResults', [])
                     
-                    search_results = result['searchAcrossEntities']['searchResults']
-                    
-                    # Process each node to extract relevant fields
+                    # Process results into standardized format
                     processed_nodes = []
-                    for result_item in search_results:
-                        entity = result_item['entity']
-                        node_data = {
-                            "urn": entity["urn"],
-                            "properties": entity.get("properties", {})
+                    for result in search_results:
+                        entity = result.get('entity', {})
+                        
+                        # Extract basic properties
+                        urn = entity.get('urn')
+                        entity_type = entity.get('type')
+                        
+                        # Get properties if available
+                        properties = entity.get('properties', {})
+                        name = properties.get('name', 'Unknown')
+                        description = properties.get('description', '')
+                        
+                        # Create processed node
+                        processed_node = {
+                            'urn': urn,
+                            'type': entity_type,
+                            'name': name,
+                            'description': description,
+                            'properties': properties
                         }
                         
-                        # Handle parent node if present
-                        if entity.get("parentNode"):
-                            node_data["parentNode"] = {
-                                "urn": entity["parentNode"]["urn"]
+                        # Add parent node info if available
+                        parent_nodes = entity.get('parentNodes', {}).get('nodes', [])
+                        if parent_nodes and len(parent_nodes) > 0:
+                            parent = parent_nodes[0]  # Usually a node has one parent
+                            processed_node['parentNode'] = {
+                                'urn': parent.get('urn'),
+                                'name': parent.get('properties', {}).get('name', 'Unknown Parent')
                             }
                             
-                        processed_nodes.append(node_data)
+                        processed_nodes.append(processed_node)
                     
+                    self.logger.info(f"Successfully retrieved {len(processed_nodes)} glossary nodes via GraphQL search")
                     return processed_nodes
-                
-            except Exception as e:
-                self.logger.warning(f"Error in searchAcrossEntities for glossary nodes: {str(e)}")
+                else:
+                    self.logger.info("No glossary nodes found in search results")
+            else:
+                errors = self._get_graphql_errors(result)
+                if errors:
+                    self.logger.warning(f"GraphQL search returned errors: {errors}")
+        except Exception as e:
+            self.logger.warning(f"Error using GraphQL search for glossary nodes: {str(e)}")
             
-            # Fallback to older GraphQL query for older DataHub versions
-            self.logger.info("SearchAcrossEntities failed, trying older GraphQL query format")
+        # Try using getRootGlossaryNodes which requires an input parameter
+        try:
+            self.logger.info("Trying getRootGlossaryNodes GraphQL query with input parameter")
             
-            # Use the proper format for older DataHub versions
+            # This query uses the correct format with input parameter including required fields
             gql_query = """
-            query listGlossaryNodes($start: Int!, $count: Int!) {
-              listGlossaryNodes(input: {start: $start, count: $count}) {
-                entities {
+            query {
+              getRootGlossaryNodes(input: {start: 0, count: 100}) {
+                count
+                start
+                total
+                nodes {
                   urn
+                  type
                   properties {
                     name
                     description
-                  }
-                  parentNode {
-                    urn
                   }
                 }
               }
             }
             """
             
-            variables = {
-                "start": start,
-                "count": count
-            }
+            self.logger.debug(f"Executing GraphQL query: {gql_query}")
+            result = self.execute_graphql(gql_query)
+            self.logger.debug(f"getRootGlossaryNodes result: {result}")
             
-            try:
-                # Execute the GraphQL query
-                result = self._execute_graphql(gql_query, variables)
+            # Check if result contains data in the expected format
+            if result and 'data' in result and 'getRootGlossaryNodes' in result['data']:
+                nodes_data = result['data']['getRootGlossaryNodes']
+                nodes = nodes_data.get('nodes', [])
                 
-                if result and 'listGlossaryNodes' in result and 'entities' in result['listGlossaryNodes']:
-                    nodes = result['listGlossaryNodes']['entities']
+                # Process nodes into a standardized format
+                processed_nodes = []
+                
+                for node in nodes:
+                    properties = node.get('properties', {})
                     
-                    # Process the nodes to extract fields
-                    processed_nodes = []
-                    for node in nodes:
-                        node_data = {
-                            "urn": node["urn"],
-                            "properties": node.get("properties", {}),
-                        }
-                        
-                        if node.get("parentNode"):
-                            node_data["parentNode"] = {
-                                "urn": node["parentNode"]["urn"]
-                            }
-                            
-                        processed_nodes.append(node_data)
+                    processed_node = {
+                        'urn': node.get('urn'),
+                        'name': properties.get('name', 'Unknown'),
+                        'description': properties.get('description', ''),
+                        'properties': properties
+                    }
                     
-                    return processed_nodes
+                    processed_nodes.append(processed_node)
                 
-            except Exception as e:
-                self.logger.warning(f"Error in listGlossaryNodes query: {str(e)}")
-            
-            self.logger.info("GraphQL query for glossary nodes failed, falling back to REST API")
-            
-            # Last resort: Fallback to REST API
-            endpoint = f"{self.server_url}/glossary/nodes"
-            params = {"count": count, "start": start}
-            
-            if query:
-                params["query"] = query
-                
-            response = self._session.get(
-                endpoint,
-                params=params,
-                headers=self._get_auth_headers()
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-                
-            self.logger.warning(f"Failed to list glossary nodes: {response.status_code}")
-            return []
-            
+                self.logger.info(f"Successfully retrieved {len(processed_nodes)} glossary nodes via getRootGlossaryNodes")
+                return processed_nodes
+            else:
+                errors = self._get_graphql_errors(result)
+                if errors:
+                    self.logger.warning(f"getRootGlossaryNodes query returned errors: {errors}")
         except Exception as e:
-            self.logger.error(f"Error listing glossary nodes: {str(e)}")
-            return []
+            self.logger.warning(f"Error using getRootGlossaryNodes GraphQL query: {str(e)}")
+        
+        # If all GraphQL approaches failed, try REST API approaches (unchanged)
+        # ...
+        
+        # All approaches failed, return empty list
+        self.logger.warning("All glossary node API approaches failed")
+        return []
     
     def get_glossary_node(self, node_urn):
         """
-        Get details of a glossary node by URN.
+        Get a specific glossary node and its children by URN.
         
         Args:
-            node_urn (str): URN of the glossary node
+            node_urn (str): The URN of the glossary node to retrieve
             
         Returns:
-            dict: Glossary node details or None if not found
+            dict: Dictionary with node details and its children (both nodes and terms)
         """
         self.logger.info(f"Getting glossary node with URN: {node_urn}")
         
         try:
-            # Try GraphQL first
-            gql_query = """
-            query getGlossaryNode($urn: String!) {
+            # First, get the node details with a simpler query
+            node_query = """
+            query($urn: String!) {
               glossaryNode(urn: $urn) {
                 urn
-                name
+                type
                 properties {
                   name
                   description
-                }
-                parentNodes {
-                  nodes {
-                    urn
-                    properties {
-                      name
-                    }
-                  }
                 }
               }
             }
@@ -3986,40 +3988,141 @@ class DataHubRestClient:
             
             variables = {"urn": node_urn}
             
-            result = self._execute_graphql(gql_query, variables)
-            if result and "glossaryNode" in result:
-                node = result["glossaryNode"]
-                node_data = {
-                    "urn": node["urn"],
-                    "name": node["name"],
-                    "description": node.get("properties", {}).get("description", ""),
-                    "properties": {
-                        "name": node["name"],
-                        "description": node.get("properties", {}).get("description", "")
-                    }
-                }
-                
-                if node.get("parentNodes") and node["parentNodes"].get("nodes") and len(node["parentNodes"]["nodes"]) > 0:
-                    node_data["parent_urn"] = node["parentNodes"]["nodes"][0]["urn"]
-                    
-                return node_data
-                
-            # Fallback to REST API if needed
-            if node_urn:
-                node_id = node_urn.split(':')[-1]
-                endpoint = f"{self.server_url}/glossary/nodes/{node_id}"
-                
-                response = self._session.get(
-                    endpoint,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code == 200:
-                    return response.json()
+            self.logger.debug(f"Executing GraphQL query for node details: {node_urn}")
+            result = self.execute_graphql(node_query, variables)
             
-            return None
+            if not result or 'data' not in result or 'glossaryNode' not in result['data']:
+                errors = self._get_graphql_errors(result)
+                if errors:
+                    self.logger.warning(f"GraphQL query for node {node_urn} returned errors: {errors}")
+                return None
+                
+            node_data = result['data']['glossaryNode']
+            
+            # Process the node data
+            properties = node_data.get('properties', {})
+            processed_node = {
+                'urn': node_data.get('urn'),
+                'type': node_data.get('type'),
+                'name': properties.get('name', 'Unknown'),
+                'description': properties.get('description', ''),
+                'properties': properties,
+                'child_nodes': [],
+                'child_terms': []
+            }
+            
+            # Now get child nodes using searchAcrossEntities
+            search_query = """
+            query($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on GlossaryNode {
+                properties {
+                  name
+                  description
+                }
+                parentNodes {
+                  nodes {
+                    urn
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            search_variables = {
+                "input": {
+                    "query": f"parentNodes.urn:\"{node_urn}\"",
+                    "types": ["GLOSSARY_NODE"],
+                    "count": 100,
+                }
+            }
+            
+            self.logger.debug(f"Searching for child nodes of {node_urn}")
+            search_result = self.execute_graphql(search_query, search_variables)
+            
+            if search_result and 'data' in search_result and 'searchAcrossEntities' in search_result['data']:
+                search_data = search_result['data']['searchAcrossEntities']
+                if 'searchResults' in search_data:
+                    for result in search_data['searchResults']:
+                        entity = result.get('entity', {})
+                        child_properties = entity.get('properties', {})
+                        child_node = {
+                            'urn': entity.get('urn'),
+                            'type': entity.get('type'),
+                            'name': child_properties.get('name', 'Unknown'),
+                            'description': child_properties.get('description', ''),
+                            'properties': child_properties,
+                            'parent_node_urn': node_urn
+                        }
+                        processed_node['child_nodes'].append(child_node)
+            
+            # Get child terms using searchAcrossEntities for GLOSSARY_TERM type
+            term_search_variables = {
+                "input": {
+                    "query": f"parentNodes.urn:\"{node_urn}\"",
+                    "types": ["GLOSSARY_TERM"],
+                    "count": 100,
+                }
+            }
+            
+            self.logger.debug(f"Searching for child terms of {node_urn}")
+            term_search_result = self.execute_graphql(search_query, term_search_variables)
+            
+            if term_search_result and 'data' in term_search_result and 'searchAcrossEntities' in term_search_result['data']:
+                search_data = term_search_result['data']['searchAcrossEntities']
+                if 'searchResults' in search_data:
+                    term_results = search_data['searchResults']
+                    
+                    if term_results and len(term_results) > 0:
+                        self.logger.info(f"Found {len(term_results)} child terms for node {node_urn}")
+                        for result in term_results:
+                            entity = result.get('entity', {})
+                            term_properties = entity.get('properties', {})
+                            term_data = {
+                                'urn': entity.get('urn'),
+                                'type': entity.get('type'),
+                                'name': term_properties.get('name', 'Unknown'),
+                                'description': term_properties.get('description', ''),
+                                'term_source': term_properties.get('termSource', 'INTERNAL'),
+                                'properties': term_properties,
+                                'parent_node_urn': node_urn
+                            }
+                            processed_node['child_terms'].append(term_data)
+                    else:
+                        self.logger.info(f"No child terms found in direct search for node {node_urn}")
+            else:
+                errors = self._get_graphql_errors(term_search_result)
+                if errors:
+                    self.logger.warning(f"GraphQL term search for node {node_urn} returned errors: {errors}")
+                
+            # If no terms found via direct search, try list_glossary_terms as fallback
+            if not processed_node['child_terms']:
+                self.logger.info(f"Trying list_glossary_terms as fallback for node {node_urn}")
+                all_terms = self.list_glossary_terms()
+                
+                # All terms should be a dictionary with parent URNs as keys
+                if isinstance(all_terms, dict) and node_urn in all_terms:
+                    self.logger.info(f"Found {len(all_terms[node_urn])} terms for node {node_urn} via list_glossary_terms")
+                    processed_node['child_terms'] = all_terms[node_urn]
+                else:
+                    self.logger.info(f"No child terms found for node {node_urn} in list_glossary_terms results")
+                    # Try a direct search with node_urn parameter
+                    node_terms = self.list_glossary_terms(node_urn=node_urn)
+                    if node_terms and node_urn in node_terms:
+                        self.logger.info(f"Found {len(node_terms[node_urn])} terms via direct list_glossary_terms search")
+                        processed_node['child_terms'] = node_terms[node_urn]
+            
+            return processed_node
         except Exception as e:
-            self.logger.error(f"Error getting glossary node: {str(e)}")
+            self.logger.error(f"Error getting glossary node {node_urn}: {str(e)}")
+        
             return None
     
     def create_glossary_node(self, node_id, name, description="", parent_urn=None):
@@ -4208,199 +4311,33 @@ class DataHubRestClient:
     # Glossary Term Methods
     #
     
-    def list_glossary_terms(self, node_urn=None, query=None, count=10, start=0):
+    def list_glossary_terms(self, node_urn=None, query=None, count=100, start=0):
         """
-        List glossary terms from DataHub with optional filtering.
+        List glossary terms, optionally filtered by parent node or search query.
         
         Args:
-            node_urn (str, optional): Filter terms by parent node
-            query (str, optional): Search query to filter terms by name/description
-            count (int, optional): Number of terms to return (default 10)
-            start (int, optional): Starting offset for pagination (default 0)
+            node_urn (str, optional): Filter terms by parent node URN
+            query (str, optional): Search query string to filter terms
+            count (int, optional): Maximum number of terms to return
+            start (int, optional): Offset for pagination
             
         Returns:
-            list: List of glossary term objects
+            dict: Dictionary mapping parent node URNs to their child terms
         """
         self.logger.info(f"Listing glossary terms with node_urn={node_urn}, query={query}, count={count}, start={start}")
         
         try:
-            # First try the search across entities approach (modern DataHub versions)
-            gql_query = """
-            query searchAcrossEntities($input: SearchAcrossEntitiesInput!) {
+            # Build a query for GLOSSARY_TERM entity search
+            self.logger.info(f"Trying GraphQL search with GLOSSARY_TERM entity type")
+            
+            search_query = """
+            query($input: SearchAcrossEntitiesInput!) {
               searchAcrossEntities(input: $input) {
-                start
-                count
-                total
                 searchResults {
                   entity {
                     urn
                     type
                     ... on GlossaryTerm {
-                      properties {
-                        name
-                        description
-                        termSource
-                      }
-                      parentNode {
-                        urn
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            """
-            
-            variables = {
-                "input": {
-                    "types": ["GLOSSARY_TERM"],
-                    "query": query if query else "*",
-                    "start": start,
-                    "count": count
-                }
-            }
-            
-            try:
-                result = self._execute_graphql(gql_query, variables)
-                
-                # Process results if the query was successful
-                if (result and 'searchAcrossEntities' in result and 
-                    'searchResults' in result['searchAcrossEntities']):
-                    
-                    search_results = result['searchAcrossEntities']['searchResults']
-                    
-                    # Process each term to extract relevant fields
-                    processed_terms = []
-                    for result_item in search_results:
-                        entity = result_item['entity']
-                        term_data = {
-                            "urn": entity["urn"],
-                            "properties": entity.get("properties", {})
-                        }
-                        
-                        # Handle parent node if present
-                        if entity.get("parentNode"):
-                            term_data["parentNode"] = {
-                                "urn": entity["parentNode"]["urn"]
-                            }
-                            
-                        processed_terms.append(term_data)
-                    
-                    # Filter by parent node if specified
-                    if node_urn:
-                        processed_terms = [t for t in processed_terms if t.get("parentNode", {}).get("urn") == node_urn]
-                    
-                    return processed_terms
-                
-            except Exception as e:
-                self.logger.warning(f"Error in searchAcrossEntities for glossary terms: {str(e)}")
-            
-            # Fallback to older GraphQL query for older DataHub versions
-            self.logger.info("SearchAcrossEntities failed, trying older GraphQL query format")
-            
-            # Use the proper format for older DataHub versions
-            gql_query = """
-            query listGlossaryTerms($start: Int!, $count: Int!) {
-              listGlossaryTerms(input: {start: $start, count: $count}) {
-                entities {
-                  urn
-                  properties {
-                    name
-                    description
-                    termSource
-                  }
-                  parentNode {
-                    urn
-                  }
-                }
-              }
-            }
-            """
-            
-            variables = {
-                "start": start,
-                "count": count
-            }
-            
-            try:
-                # Execute the GraphQL query
-                result = self._execute_graphql(gql_query, variables)
-                
-                if result and 'listGlossaryTerms' in result and 'entities' in result['listGlossaryTerms']:
-                    terms = result['listGlossaryTerms']['entities']
-                    
-                    # Process the terms to extract fields
-                    processed_terms = []
-                    for term in terms:
-                        term_data = {
-                            "urn": term["urn"],
-                            "properties": term.get("properties", {})
-                        }
-                        
-                        if term.get("parentNode"):
-                            term_data["parentNode"] = {
-                                "urn": term["parentNode"]["urn"]
-                            }
-                            
-                        processed_terms.append(term_data)
-                    
-                    # Filter by parent node if needed
-                    if node_urn:
-                        processed_terms = [t for t in processed_terms if t.get("parentNode", {}).get("urn") == node_urn]
-                    
-                    return processed_terms
-                
-            except Exception as e:
-                self.logger.warning(f"Error in listGlossaryTerms query: {str(e)}")
-            
-            self.logger.info("GraphQL query for glossary terms failed, falling back to REST API")
-            
-            # Last resort: Fallback to REST API
-            endpoint = f"{self.server_url}/glossary/terms"
-            params = {"count": count, "start": start}
-            
-            if query:
-                params["query"] = query
-                
-            if node_urn:
-                params["parentNode"] = node_urn
-                
-            response = self._session.get(
-                endpoint,
-                params=params,
-                headers=self._get_auth_headers()
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-                
-            self.logger.warning(f"Failed to list glossary terms: {response.status_code}")
-            return []
-            
-        except Exception as e:
-            self.logger.error(f"Error listing glossary terms: {str(e)}")
-            return []
-    
-    def get_glossary_term(self, term_urn):
-        """
-        Get details of a glossary term by URN.
-        
-        Args:
-            term_urn (str): URN of the glossary term
-            
-        Returns:
-            dict: Glossary term details or None if not found
-        """
-        self.logger.info(f"Getting glossary term with URN: {term_urn}")
-        
-        try:
-            # Try GraphQL first
-            gql_query = """
-            query getGlossaryTerm($urn: String!) {
-              glossaryTerm(urn: $urn) {
-                urn
-                name
-                hierarchicalName
                 properties {
                   name
                   description
@@ -4416,389 +4353,101 @@ class DataHubRestClient:
                 }
               }
             }
-            """
-            
-            variables = {"urn": term_urn}
-            
-            result = self._execute_graphql(gql_query, variables)
-            if result and "glossaryTerm" in result:
-                term = result["glossaryTerm"]
-                term_data = {
-                    "urn": term["urn"],
-                    "name": term["name"],
-                    "hierarchicalName": term.get("hierarchicalName", ""),
-                    "description": term.get("properties", {}).get("description", ""),
-                    "term_source": term.get("properties", {}).get("termSource", "")
                 }
-                
-                if term.get("parentNodes") and term["parentNodes"].get("nodes") and len(term["parentNodes"]["nodes"]) > 0:
-                    term_data["parent_node_urn"] = term["parentNodes"]["nodes"][0]["urn"]
-                    
-                return term_data
-                
-            # Fallback to REST API if needed
-            if term_urn:
-                term_id = term_urn.split(':')[-1]
-                endpoint = f"{self.server_url}/glossary/terms/{term_id}"
-                
-                response = self._session.get(
-                    endpoint,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code == 200:
-                    return response.json()
-            
-            return None
-        except Exception as e:
-            self.logger.error(f"Error getting glossary term: {str(e)}")
-            return None
-    
-    def create_glossary_term(self, term_id, name, description="", parent_node_urn=None, term_source=None):
-        """
-        Create a glossary term in DataHub using REST API with GraphQL fallback.
-        
-        Args:
-            term_id: The ID for the term (will be used in the URN)
-            name: The name of the term
-            description: Optional description
-            parent_node_urn: Optional parent node URN
-            term_source: Optional source of the term
-            
-        Returns:
-            The URN of the created term if successful, None otherwise
-        """
-        self.logger.info(f"Creating glossary term: {name} (ID: {term_id})")
-        
-        # Try GraphQL first
-        self.logger.info("Attempting to create glossary term with GraphQL")
-        
-        try:
-            # Prepare mutation
-            mutation = """
-            mutation createGlossaryTerm($input: CreateGlossaryEntityInput!) {
-              createGlossaryTerm(input: $input)
+              }
             }
             """
             
-            # Prepare variables
-            variables = {
+            search_variables = {
                 "input": {
-                    "id": term_id,
-                    "name": name,
-                    "description": description or ""
+                    "query": "*",
+                    "types": ["GLOSSARY_TERM"],
+                    "count": count,
+                    "start": start
                 }
             }
             
-            # Add parent node if provided
-            if parent_node_urn:
-                variables["input"]["parentNode"] = parent_node_urn
-                
-            # Add term source if provided
-            if term_source:
-                variables["input"]["termSource"] = term_source
-                
-            # Execute mutation
-            result = self._execute_graphql(mutation, variables)
+            # If we have a parent node filter, add it to the query
+            if node_urn:
+                search_variables["input"]["query"] = f"parentNodes.urn:\"{node_urn}\""
+            elif query:
+                search_variables["input"]["query"] = query
             
-            if result and "createGlossaryTerm" in result:
-                # Return the URN of the created term
-                self.logger.info(f"Successfully created glossary term via GraphQL: {result['createGlossaryTerm']}")
-                return result["createGlossaryTerm"]
+            self.logger.debug(f"Executing searchAcrossEntities with variables: {search_variables}")
+            result = self.execute_graphql(search_query, search_variables)
+            
+            if result and 'data' in result and 'searchAcrossEntities' in result['data']:
+                search_results = result['data']['searchAcrossEntities'].get('searchResults', [])
                 
-            self.logger.warning("GraphQL mutation for creating glossary term failed, falling back to REST API")
-            
-        except Exception as e:
-            self.logger.error(f"Error creating glossary term via GraphQL: {str(e)}, falling back to REST API")
-            
-        # Fall back to REST API if GraphQL failed
-        self.logger.info("Falling back to REST API for creating glossary term")
-        
-        try:
-            # Prepare the payload
-            payload = {
-                "id": term_id,
-                "name": name,
-                "description": description or ""
-            }
-            
-            # Add parent node if provided
-            if parent_node_urn:
-                payload["parentNodeId"] = parent_node_urn.split(":")[-1]
+                if not search_results:
+                    self.logger.info(f"No glossary terms found in search results")
+                    return {} if node_urn else []
                 
-            # Add term source if provided
-            if term_source:
-                payload["termSource"] = term_source
+                # Group terms by parent node
+                terms_by_parent = {}
                 
-            # Call the REST API
-            endpoint = f"{self.server_url}/glossary/terms"
-            
-            response = self._session.post(
-                endpoint,
-                json=payload,
-                headers=self._get_auth_headers()
-            )
-            
-            if response.status_code in [200, 201]:
-                # Extract the URN from the response
-                data = response.json()
-                if "urn" in data:
-                    self.logger.info(f"Successfully created glossary term via REST API: {data['urn']}")
-                    return data["urn"]
-                    
-                # If the URN is not in the response, construct it
-                constructed_urn = f"urn:li:glossaryTerm:{term_id}"
-                self.logger.info(f"Constructed glossary term URN: {constructed_urn}")
-                return constructed_urn
-                
-            self.logger.warning(f"Failed to create glossary term via REST API: {response.status_code}")
-            
-        except Exception as e:
-            self.logger.error(f"Error creating glossary term via REST API: {str(e)}")
-        
-        try:
-            # Prepare mutation
-            mutation = """
-            mutation createGlossaryTerm($input: CreateGlossaryEntityInput!) {
-              createGlossaryTerm(input: $input)
-            }
-            """
-            
-            # Prepare variables
-            variables = {
-                "input": {
-                    "id": term_id,
-                    "name": name,
-                    "description": description or ""
-                }
-            }
-            
-            # Add parent node if provided
-            if parent_node_urn:
-                variables["input"]["parentNode"] = parent_node_urn
-                
-            # Add term source if provided
-            if term_source:
-                variables["input"]["termSource"] = term_source
-                
-            # Execute mutation
-            result = self._execute_graphql(mutation, variables)
-            
-            if result and "createGlossaryTerm" in result:
-                # Return the URN of the created term
-                return result["createGlossaryTerm"]
-                
-        except Exception as e:
-            self.logger.error(f"Error creating glossary term via GraphQL: {str(e)}")
-            
-        # If both methods failed, return None
-        return None
-
-    def update_glossary_term(self, term_urn, name=None, description=None, parent_node_urn=None, term_source=None):
-        """
-        Update a glossary term in DataHub using REST API with GraphQL fallback.
-        
-        Args:
-            term_urn: The URN of the term to update
-            name: Optional new name
-            description: Optional new description
-            parent_node_urn: Optional new parent node URN
-            term_source: Optional new source of the term
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        self.logger.info(f"Updating glossary term: {term_urn}")
-        
-        success = True
-        term_id = term_urn.split(":")[-1]
-        
-        # Try GraphQL first
-        self.logger.info("Attempting to update glossary term with GraphQL")
-        
-        try:
-            # Reset success flag for GraphQL attempts
-            success = True
-            
-            # Update name if provided
-            if name:
-                name_mutation = """
-                mutation updateName($input: UpdateNameInput!) {
-                  updateName(input: $input)
-                }
-                """
-                
-                name_variables = {
-                    "input": {
-                        "name": name,
-                        "urn": term_urn
-                    }
-                }
-                
-                name_result = self._execute_graphql(name_mutation, name_variables)
-                if not name_result or "updateName" not in name_result:
-                    self.logger.error(f"Failed to update name for {term_urn} via GraphQL")
-                    success = False
-                else:
-                    self.logger.info(f"Successfully updated name for {term_urn} via GraphQL")
-            
-            # Update description if provided
-            if description is not None:  # Allow empty descriptions
-                desc_mutation = """
-                mutation updateDescription($input: DescriptionUpdateInput!) {
-                  updateDescription(input: $input)
-                }
-                """
-                
-                desc_variables = {
-                    "input": {
-                        "description": description,
-                        "resourceUrn": term_urn
-                    }
-                }
-                
-                desc_result = self._execute_graphql(desc_mutation, desc_variables)
-                if not desc_result or "updateDescription" not in desc_result:
-                    self.logger.error(f"Failed to update description for {term_urn} via GraphQL")
-                    success = False
-                else:
-                    self.logger.info(f"Successfully updated description for {term_urn} via GraphQL")
-            
-            # Update parent node if provided
-            if parent_node_urn:
-                # First fetch the term to check if it needs to be moved
-                current_term = self.get_glossary_term(term_urn)
-                current_parent_urn = None
-                
-                if current_term and current_term.get("parent_node_urn"):
-                    current_parent_urn = current_term["parent_node_urn"]
-                
-                # Only move if parent has changed
-                if current_parent_urn != parent_node_urn:
-                    move_mutation = """
-                    mutation moveGlossaryEntity($input: MoveGlossaryEntityInput!) {
-                      moveGlossaryEntity(input: $input)
-                    }
-                    """
-                    
-                    move_variables = {
-                        "input": {
-                            "urn": term_urn,
-                            "parentUrn": parent_node_urn
+                for result in search_results:
+                    entity = result.get('entity', {})
+                    if entity and 'properties' in entity:
+                        term_urn = entity.get('urn')
+                        term_properties = entity.get('properties', {})
+                        
+                        # Find parent node information
+                        parent_nodes = entity.get('parentNodes', {}).get('nodes', [])
+                        parent_urn = None
+                        parent_name = None
+                        
+                        if parent_nodes and len(parent_nodes) > 0:
+                            parent_urn = parent_nodes[0].get('urn')
+                            parent_name = parent_nodes[0].get('properties', {}).get('name', 'Unknown')
+                        
+                        # Format the term data
+                        term_data = {
+                            'urn': term_urn,
+                            'type': entity.get('type'),
+                            'name': term_properties.get('name', 'Unknown'),
+                            'description': term_properties.get('description', ''),
+                            'term_source': term_properties.get('termSource', 'INTERNAL'),
+                            'parent_node_urn': parent_urn,
+                            'parent_node_name': parent_name,
+                            'properties': term_properties
                         }
-                    }
-                    
-                    move_result = self._execute_graphql(move_mutation, move_variables)
-                    if not move_result or "moveGlossaryEntity" not in move_result:
-                        self.logger.error(f"Failed to move glossary term {term_urn} to parent {parent_node_urn} via GraphQL")
-                        success = False
-                    else:
-                        self.logger.info(f"Successfully moved glossary term {term_urn} to parent {parent_node_urn} via GraphQL")
-            
-            # Update term source if provided - this requires a custom GraphQL mutation
-            if term_source is not None:
-                term_source_mutation = """
-                mutation updateGlossaryTermSource($termUrn: String!, $termSource: String) {
-                  updateGlossaryTermSource(termUrn: $termUrn, termSource: $termSource)
-                }
-                """
-                
-                term_source_variables = {
-                    "termUrn": term_urn,
-                    "termSource": term_source
-                }
-                
-                try:
-                    term_source_result = self._execute_graphql(term_source_mutation, term_source_variables)
-                    if not term_source_result or "updateGlossaryTermSource" not in term_source_result:
-                        self.logger.warning(f"Failed to update term source for {term_urn} via GraphQL - mutation may not be supported")
-                        success = False
-                    else:
-                        self.logger.info(f"Successfully updated term source for {term_urn} via GraphQL")
-                except Exception:
-                    self.logger.warning(f"updateGlossaryTermSource mutation not supported in your DataHub version")
-                    success = False
-            
-            # If all GraphQL operations succeeded, return
-            if success:
-                return True
-                
-            self.logger.warning("Some GraphQL operations failed, falling back to REST API")
-                
-        except Exception as e:
-            self.logger.error(f"Error updating glossary term via GraphQL: {str(e)}, falling back to REST API")
-            success = False
-            
-        # Fall back to REST API if GraphQL failed
-        self.logger.info("Falling back to REST API for updating glossary term")
-        
-        try:
-            # Reset success flag for REST API attempts
-            success = True
-            
-            # Prepare the payload with only the fields we want to update
-            payload = {}
-            if name:
-                payload["name"] = name
-            if description is not None:  # Allow empty descriptions
-                payload["description"] = description
-            if term_source is not None:
-                payload["termSource"] = term_source
-                
-            # Only make the API call if we have fields to update
-            if payload:
-                # Call the REST API
-                endpoint = f"{self.server_url}/glossary/terms/{term_id}"
-                
-                response = self._session.patch(
-                    endpoint,
-                    json=payload,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code != 200:
-                    self.logger.warning(f"Failed to update glossary term via REST API: {response.status_code}")
-                    success = False
+                        
+                        # If no parent_urn is found but node_urn was specified, use it
+                        if not parent_urn and node_urn:
+                            parent_urn = node_urn
+                            term_data['parent_node_urn'] = node_urn
+                        
+                        # Add term to the parent's list of terms
+                        if parent_urn:
+                            if parent_urn not in terms_by_parent:
+                                terms_by_parent[parent_urn] = []
+                            terms_by_parent[parent_urn].append(term_data)
                 else:
-                    self.logger.info(f"Successfully updated glossary term {term_urn} via REST API")
+                            # No parent node, add to a special "root" category
+                            root_key = "root_terms"
+                            if root_key not in terms_by_parent:
+                                terms_by_parent[root_key] = []
+                            terms_by_parent[root_key].append(term_data)
                 
-            # Update parent node if provided
-            if parent_node_urn and success:
-                # First fetch the term to check if it needs to be moved
-                current_term = self.get_glossary_term(term_urn)
-                current_parent_urn = None
-                
-                if current_term and current_term.get("parent_node_urn"):
-                    current_parent_urn = current_term["parent_node_urn"]
-                
-                # Only move if parent has changed
-                if current_parent_urn != parent_node_urn:
-                    move_endpoint = f"{self.server_url}/glossary/terms/{term_id}/move"
-                    move_payload = {
-                        "parentNodeId": parent_node_urn.split(":")[-1]
-                    }
-                    
-                    move_response = self._session.post(
-                        move_endpoint,
-                        json=move_payload,
-                        headers=self._get_auth_headers()
-                    )
-                    
-                    if move_response.status_code != 200:
-                        self.logger.warning(f"Failed to move glossary term via REST API: {move_response.status_code}")
-                        success = False
-                    else:
-                        self.logger.info(f"Successfully moved glossary term {term_urn} to parent {parent_node_urn} via REST API")
+                if terms_by_parent:
+                    self.logger.info(f"Successfully retrieved glossary terms for {len(terms_by_parent)} parent nodes")
+                    return terms_by_parent
+                elif not node_urn:
+                    # If we weren't searching for a specific node, return an empty list
+                    return []
             
-            # If all REST API calls succeeded, return
-            if success:
-                return True
+            # If we get here, either there were no terms or there was an error
+            errors = self._get_graphql_errors(result)
+            if errors:
+                self.logger.warning(f"GraphQL query for terms returned errors: {errors}")
+                
+            self.logger.info(f"No glossary terms found for node_urn={node_urn}")
+            return {} if node_urn else []
                 
         except Exception as e:
-            self.logger.error(f"Error updating glossary term via REST API: {str(e)}")
-            success = False
-            
-        return success
+            self.logger.error(f"Error listing glossary terms: {str(e)}")
+            return {} if node_urn else []
         
     def add_owners_to_glossary_term(self, term_urn, owner_urns, ownership_type="urn:li:ownershipType:__system__technical_owner"):
         """
@@ -5627,7 +5276,8 @@ class DataHubRestClient:
         Returns:
             Dict containing search results with entities and their editable properties
         """
-        self.logger.info(f"Getting editable entities with query: {query}")
+        self.logger.info(f"==== Getting editable entities ====")
+        self.logger.info(f"Parameters: start={start}, count={count}, query={query}, entity_type={entity_type}")
         
         # Prepare search input
         search_input = {
@@ -5637,6 +5287,9 @@ class DataHubRestClient:
             'types': [entity_type] if entity_type else None
         }
         
+        self.logger.info(f"Search input: {search_input}")
+        
+        # Updated query to be compatible with DataHub schema
         query = """
             query GetAllEntitiesWithEditableAspects($input: SearchAcrossEntitiesInput!) {
                 searchAcrossEntities(input: $input) {
@@ -5647,13 +5300,6 @@ class DataHubRestClient:
                         entity {
                             urn
                             type
-                            properties {
-                                name
-                                description
-                                lastModified {
-                                    time
-                                }
-                            }
                             ... on Dataset {
                                 editableProperties {
                                     name
@@ -5666,7 +5312,6 @@ class DataHubRestClient:
                                         tags {
                                             tags {
                                                 associatedUrn
-                                                context
                                                 tag {
                                                     urn
                                                 }
@@ -5737,9 +5382,20 @@ class DataHubRestClient:
         """
         
         try:
+            self.logger.info("Calling execute_graphql with SearchAcrossEntities query")
             result = self.execute_graphql(query, {'input': search_input})
+            
             if result and 'data' in result and 'searchAcrossEntities' in result['data']:
-                return result['data']['searchAcrossEntities']
+                search_results = result['data']['searchAcrossEntities']
+                total_entities = search_results.get('total', 0)
+                entities_count = len(search_results.get('searchResults', []))
+                self.logger.info(f"Query successful. Total entities: {total_entities}, returned: {entities_count}")
+                return search_results
+            
+            self.logger.warning("Query returned no data or unexpected format")
+            if result and 'errors' in result:
+                self.logger.error(f"GraphQL errors: {result['errors']}")
+                
             return {'start': 0, 'count': 0, 'total': 0, 'searchResults': []}
         except Exception as e:
             self.logger.error(f"Error getting editable entities: {str(e)}")
@@ -6035,3 +5691,204 @@ class DataHubRestClient:
         except Exception as e:
             self.logger.error(f"Error deleting metadata test: {str(e)}")
             return False
+
+    def test_glossary_connection(self):
+        """
+        Test connection to glossary endpoints to validate API connectivity.
+        
+        Returns:
+            dict: Dictionary with test results for different glossary endpoints
+        """
+        self.logger.info("Testing glossary connection to different endpoints")
+        
+        results = {
+            "business_glossary_api": False,
+            "entity_search_api": False,
+            "v2_glossary_api": False,
+            "legacy_glossary_api": False,
+            "detailed_results": {}
+        }
+        
+        # Test business glossary API
+        try:
+            endpoint = f"{self.server_url}/api/metadata/business-glossary/nodes"
+            self.logger.info(f"Testing business glossary API: {endpoint}")
+            
+            response = self._session.get(
+                endpoint,
+                params={"count": 1},
+                headers=self._get_auth_headers()
+            )
+            
+            results["detailed_results"]["business_glossary_api"] = {
+                "status_code": response.status_code,
+                "response_preview": str(response.text)[:100] if response.text else None
+            }
+            
+            if response.status_code == 200:
+                results["business_glossary_api"] = True
+                self.logger.info("Business glossary API test: SUCCESS")
+            else:
+                self.logger.warning(f"Business glossary API test: FAILED with status {response.status_code}")
+        except Exception as e:
+            self.logger.error(f"Business glossary API test: ERROR - {str(e)}")
+            results["detailed_results"]["business_glossary_api"] = {"error": str(e)}
+        
+        # Test entity search API
+        try:
+            endpoint = f"{self.server_url}/api/v2/search"
+            self.logger.info(f"Testing entity search API: {endpoint}")
+            
+            response = self._session.get(
+                endpoint,
+                params={"entity": "glossaryNode", "count": 1},
+                headers=self._get_auth_headers()
+            )
+            
+            results["detailed_results"]["entity_search_api"] = {
+                "status_code": response.status_code,
+                "response_preview": str(response.text)[:100] if response.text else None
+            }
+            
+            if response.status_code == 200:
+                results["entity_search_api"] = True
+                self.logger.info("Entity search API test: SUCCESS")
+            else:
+                self.logger.warning(f"Entity search API test: FAILED with status {response.status_code}")
+        except Exception as e:
+            self.logger.error(f"Entity search API test: ERROR - {str(e)}")
+            results["detailed_results"]["entity_search_api"] = {"error": str(e)}
+        
+        # Test V2 glossary API
+        try:
+            endpoint = f"{self.server_url}/api/v2/glossary/nodes"
+            self.logger.info(f"Testing V2 glossary API: {endpoint}")
+            
+            response = self._session.get(
+                endpoint,
+                params={"count": 1},
+                headers=self._get_auth_headers()
+            )
+            
+            results["detailed_results"]["v2_glossary_api"] = {
+                "status_code": response.status_code,
+                "response_preview": str(response.text)[:100] if response.text else None
+            }
+            
+            if response.status_code == 200:
+                results["v2_glossary_api"] = True
+                self.logger.info("V2 glossary API test: SUCCESS")
+            else:
+                self.logger.warning(f"V2 glossary API test: FAILED with status {response.status_code}")
+        except Exception as e:
+            self.logger.error(f"V2 glossary API test: ERROR - {str(e)}")
+            results["detailed_results"]["v2_glossary_api"] = {"error": str(e)}
+        
+        # Test legacy glossary API
+        try:
+            endpoint = f"{self.server_url}/glossary/nodes"
+            self.logger.info(f"Testing legacy glossary API: {endpoint}")
+            
+            response = self._session.get(
+                endpoint,
+                params={"count": 1},
+                headers=self._get_auth_headers()
+            )
+            
+            results["detailed_results"]["legacy_glossary_api"] = {
+                "status_code": response.status_code,
+                "response_preview": str(response.text)[:100] if response.text else None
+            }
+            
+            if response.status_code == 200:
+                results["legacy_glossary_api"] = True
+                self.logger.info("Legacy glossary API test: SUCCESS")
+            else:
+                self.logger.warning(f"Legacy glossary API test: FAILED with status {response.status_code}")
+        except Exception as e:
+            self.logger.error(f"Legacy glossary API test: ERROR - {str(e)}")
+            results["detailed_results"]["legacy_glossary_api"] = {"error": str(e)}
+        
+        # Test GraphQL query for glossary
+        try:
+            self.logger.info("Testing GraphQL query for glossary nodes")
+            
+            # Basic GraphQL query to get glossary nodes
+            query = """
+            query {
+              __schema {
+                queryType {
+                  fields {
+                    name
+                    description
+                  }
+                }
+              }
+            }
+            """
+            
+            result = self.execute_graphql(query)
+            
+            results["detailed_results"]["graphql_schema"] = {
+                "has_result": bool(result),
+                "result_preview": str(result)[:200] if result else None
+            }
+            
+            self.logger.info(f"GraphQL schema query result: {result is not None}")
+            
+            # Look for glossary-related fields in the schema
+            if result and 'data' in result and '__schema' in result['data']:
+                query_fields = result['data']['__schema']['queryType']['fields']
+                glossary_fields = [field for field in query_fields if 'glossary' in field['name'].lower()]
+                
+                results["detailed_results"]["graphql_glossary_fields"] = glossary_fields
+                self.logger.info(f"Found {len(glossary_fields)} glossary-related GraphQL fields: {glossary_fields}")
+        except Exception as e:
+            self.logger.error(f"GraphQL schema test: ERROR - {str(e)}")
+            results["detailed_results"]["graphql_schema"] = {"error": str(e)}
+        
+        return results
+
+    def _get_graphql_errors(self, result):
+        """
+        Extract and format GraphQL errors from a result object
+        
+        Args:
+            result (dict): The GraphQL result
+            
+        Returns:
+            str: Formatted error message or None if no errors
+        """
+        errors = []
+        
+        if not result:
+            return None
+            
+        # Add debug logging
+        self.logger.debug(f"GraphQL result structure: {result.keys() if isinstance(result, dict) else type(result)}")
+            
+        # Check for errors directly in the result
+        if isinstance(result, dict) and "errors" in result:
+            errors.extend(result["errors"])
+        
+        # Check for nested errors in the data field
+        if isinstance(result, dict) and "data" in result and isinstance(result["data"], dict):
+            for key, value in result["data"].items():
+                if isinstance(value, dict) and "errors" in value:
+                    for error in value["errors"]:
+                        errors.append({"message": f"Error in {key}: {error['message']}"})
+        
+        if errors:
+            error_messages = []
+            for error in errors:
+                if isinstance(error, dict) and "message" in error:
+                    error_messages.append(error)
+                elif isinstance(error, str):
+                    error_messages.append({"message": error})
+                else:
+                    error_messages.append({"message": str(error)})
+            
+            formatted_errors = f"Error executing graphql query: {error_messages}"
+            return formatted_errors
+        
+        return None

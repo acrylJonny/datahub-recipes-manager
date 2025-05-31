@@ -162,6 +162,18 @@
                             <textarea class="form-control" id="description" name="description" rows="5">{{ node.description }}</textarea>
                         </div>
                         
+                        <div class="mb-3">
+                            <label for="color_hex" class="form-label">Color (Hex)</label>
+                            <div class="input-group">
+                                <input type="color" class="form-control form-control-color" id="color_picker" 
+                                       value="{{ node.color_hex|default:'#007bff' }}" title="Choose color">
+                                <input type="text" class="form-control" id="color_hex" name="color_hex" 
+                                       value="{{ node.color_hex|default:'' }}" placeholder="#RRGGBB">
+                                <button class="btn btn-outline-secondary" type="button" id="apply_color">Apply</button>
+                            </div>
+                            <small class="form-text text-muted">Color used for visual display in DataHub UI (may require database schema update)</small>
+                        </div>
+                        
                         <div class="d-flex justify-content-between">
                             <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteNodeModal">
                                 <i class="fas fa-trash-alt me-1"></i> Delete Node
@@ -688,6 +700,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
             });
         });
+    }
+    
+    // Color picker syncing
+    const colorPicker = document.getElementById('color_picker');
+    const colorHexInput = document.getElementById('color_hex');
+    const applyColorBtn = document.getElementById('apply_color');
+    
+    if (colorPicker && colorHexInput) {
+        colorPicker.addEventListener('input', function() {
+            colorHexInput.value = this.value;
+        });
+        
+        colorHexInput.addEventListener('input', function() {
+            const hexValue = this.value;
+            if (/^#[0-9A-F]{6}$/i.test(hexValue)) {
+                colorPicker.value = hexValue;
+            }
+        });
+        
+        if (applyColorBtn) {
+            applyColorBtn.addEventListener('click', function() {
+                colorHexInput.value = colorPicker.value;
+            });
+        }
+        
+        // Make sure we have a valid initial color
+        if (colorHexInput.value && /^#[0-9A-F]{6}$/i.test(colorHexInput.value)) {
+            colorPicker.value = colorHexInput.value;
+        } else if (colorPicker.value) {
+            colorHexInput.value = colorPicker.value;
+        } else {
+            // Set default color if none is provided
+            const defaultColor = '#007bff';
+            colorPicker.value = defaultColor;
+            colorHexInput.value = defaultColor;
+        }
     }
 });
 </script>
