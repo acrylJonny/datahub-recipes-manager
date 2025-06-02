@@ -5892,3 +5892,447 @@ class DataHubRestClient:
             return formatted_errors
         
         return None
+
+    def list_structured_properties(self, start=0, count=100) -> List[Dict[str, Any]]:
+        """
+        List all structured properties in DataHub.
+        
+        Args:
+            start: The offset to start from
+            count: The number of properties to return
+            
+        Returns:
+            List of structured property objects
+        """
+        query = """
+        query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+                type
+                ... on StructuredPropertyEntity {
+                  definition {
+                    displayName
+                    qualifiedName
+                    description
+                    cardinality
+                    immutable
+                    valueType {
+                      urn
+                      type
+                      info {
+                        type
+                        displayName
+                        __typename
+                      }
+                      __typename
+                    }
+                    entityTypes {
+                      urn
+                      type
+                      info {
+                        type
+                        __typename
+                      }
+                      __typename
+                    }
+                    filterStatus
+                    typeQualifier {
+                      allowedTypes {
+                        urn
+                        type
+                        info {
+                          type
+                          displayName
+                          __typename
+                        }
+                        __typename
+                      }
+                      __typename
+                    }
+                    allowedValues {
+                      value {
+                        ... on StringValue {
+                          stringValue
+                          __typename
+                        }
+                        ... on NumberValue {
+                          numberValue
+                          __typename
+                        }
+                        __typename
+                      }
+                      description
+                      __typename
+                    }
+                    __typename
+                  }
+                  settings {
+                    isHidden
+                    showInSearchFilters
+                    showAsAssetBadge
+                    showInAssetSummary
+                    showInColumnsTable
+                    __typename
+                  }
+                  __typename
+                }
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+        }
+        """
+        
+        variables = {
+            "input": {
+                "types": ["STRUCTURED_PROPERTY"],
+                "query": "*",
+                "start": start,
+                "count": count
+            }
+        }
+        
+        result = self.execute_graphql(query, variables)
+        
+        if not result or "errors" in result or "data" not in result:
+            self._handle_error(result, "Error listing structured properties")
+            return []
+        
+        search_results = result.get("data", {}).get("searchAcrossEntities", {}).get("searchResults", [])
+        props = [result.get("entity") for result in search_results if result.get("entity", {}).get("type") == "STRUCTURED_PROPERTY"]
+        
+        return props
+    
+    def get_structured_property(self, property_urn: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a structured property by URN.
+        
+        Args:
+            property_urn: The URN of the structured property
+            
+        Returns:
+            The structured property object if found, None otherwise
+        """
+        query = """
+        query getStructuredProperty($urn: String!) {
+          structuredPropertyEntity(urn: $urn) {
+            urn
+            type
+            definition {
+              displayName
+              qualifiedName
+              description
+              cardinality
+              immutable
+              valueType {
+                urn
+                type
+                info {
+                  type
+                  displayName
+                  __typename
+                }
+                __typename
+              }
+              entityTypes {
+                urn
+                type
+                info {
+                  type
+                  __typename
+                }
+                __typename
+              }
+              filterStatus
+              typeQualifier {
+                allowedTypes {
+                  urn
+                  type
+                  info {
+                    type
+                    displayName
+                    __typename
+                  }
+                  __typename
+                }
+                __typename
+              }
+              allowedValues {
+                value {
+                  ... on StringValue {
+                    stringValue
+                    __typename
+                  }
+                  ... on NumberValue {
+                    numberValue
+                    __typename
+                  }
+                  __typename
+                }
+                description
+                __typename
+              }
+              __typename
+            }
+            settings {
+              isHidden
+              showInSearchFilters
+              showAsAssetBadge
+              showInAssetSummary
+              showInColumnsTable
+              __typename
+            }
+            __typename
+          }
+        }
+        """
+        
+        variables = {
+            "urn": property_urn
+        }
+        
+        result = self.execute_graphql(query, variables)
+        
+        if not result or "errors" in result or "data" not in result:
+            self._handle_error(result, f"Error fetching structured property {property_urn}")
+            return None
+        
+        return result.get("data", {}).get("structuredPropertyEntity")
+    
+    def create_structured_property(self, 
+                                 display_name: str,
+                                 description: str = "",
+                                 value_type: str = "STRING",
+                                 entity_types: List[str] = None,
+                                 cardinality: str = "SINGLE",
+                                 allowed_values: List[Dict[str, Any]] = None,
+                                 immutable: bool = False,
+                                 show_in_search: bool = True,
+                                 show_as_badge: bool = True,
+                                 show_in_summary: bool = True,
+                                 qualified_name: Optional[str] = None) -> Optional[str]:
+        """
+        Create a new structured property in DataHub.
+        
+        Args:
+            display_name: The display name of the property
+            description: The description of the property
+            value_type: The type of value (STRING, NUMBER, BOOLEAN, etc.)
+            entity_types: List of entity types this property applies to (DATASET, DASHBOARD, etc.)
+            cardinality: SINGLE or MULTIPLE
+            allowed_values: List of allowed values with their descriptions
+            immutable: Whether the property is immutable once set
+            show_in_search: Whether to show in search filters
+            show_as_badge: Whether to show as asset badge
+            show_in_summary: Whether to show in asset summary
+            qualified_name: The qualified name (will be generated from display_name if not provided)
+            
+        Returns:
+            The URN of the created property if successful, None otherwise
+        """
+        if not qualified_name:
+            # Generate qualified name from display name
+            qualified_name = display_name.lower().replace(" ", "_")
+        
+        if not entity_types:
+            entity_types = ["DATASET", "DASHBOARD", "CHART", "DATA_FLOW", "DATA_JOB"]
+        
+        mutation = """
+        mutation createStructuredProperty($input: CreateStructuredPropertyEntityInput!) {
+          createStructuredPropertyEntity(input: $input) {
+            urn
+          }
+        }
+        """
+        
+        # Prepare entity types input
+        entity_type_inputs = []
+        for entity_type in entity_types:
+            entity_type_inputs.append({
+                "type": entity_type
+            })
+        
+        # Prepare allowed values input if provided
+        allowed_value_inputs = []
+        if allowed_values:
+            for value_item in allowed_values:
+                value = value_item.get("value")
+                desc = value_item.get("description", "")
+                
+                value_input = None
+                if value_type == "STRING":
+                    value_input = {"string": value}
+                elif value_type == "NUMBER":
+                    value_input = {"number": float(value)}
+                elif value_type == "BOOLEAN":
+                    value_input = {"boolean": value.lower() == "true"}
+                
+                if value_input:
+                    allowed_value_inputs.append({
+                        "value": value_input,
+                        "description": desc
+                    })
+        
+        variables = {
+            "input": {
+                "definition": {
+                    "displayName": display_name,
+                    "qualifiedName": qualified_name,
+                    "description": description,
+                    "cardinality": cardinality,
+                    "immutable": immutable,
+                    "valueType": {
+                        "type": value_type
+                    },
+                    "entityTypes": entity_type_inputs
+                },
+                "settings": {
+                    "showInSearchFilters": show_in_search,
+                    "showAsAssetBadge": show_as_badge,
+                    "showInAssetSummary": show_in_summary
+                }
+            }
+        }
+        
+        # Add allowed values if provided
+        if allowed_value_inputs:
+            variables["input"]["definition"]["allowedValues"] = allowed_value_inputs
+        
+        result = self.execute_graphql(mutation, variables)
+        
+        if not result or "errors" in result or "data" not in result:
+            self._handle_error(result, f"Error creating structured property {display_name}")
+            return None
+        
+        return result.get("data", {}).get("createStructuredPropertyEntity", {}).get("urn")
+    
+    def update_structured_property(self, 
+                                 property_urn: str,
+                                 display_name: Optional[str] = None,
+                                 description: Optional[str] = None,
+                                 show_in_search: Optional[bool] = None,
+                                 show_as_badge: Optional[bool] = None,
+                                 show_in_summary: Optional[bool] = None) -> bool:
+        """
+        Update a structured property in DataHub.
+        
+        Args:
+            property_urn: The URN of the property to update
+            display_name: New display name (optional)
+            description: New description (optional)
+            show_in_search: Whether to show in search filters (optional)
+            show_as_badge: Whether to show as asset badge (optional)
+            show_in_summary: Whether to show in asset summary (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        mutation = """
+        mutation updateStructuredProperty($urn: String!, $input: UpdateStructuredPropertyEntityInput!) {
+          updateStructuredPropertyEntity(urn: $urn, input: $input) {
+            urn
+          }
+        }
+        """
+        
+        update_input = {}
+        
+        # Add definition updates if provided
+        definition_updates = {}
+        if display_name is not None:
+            definition_updates["displayName"] = display_name
+        if description is not None:
+            definition_updates["description"] = description
+        
+        if definition_updates:
+            update_input["definition"] = definition_updates
+        
+        # Add settings updates if provided
+        settings_updates = {}
+        if show_in_search is not None:
+            settings_updates["showInSearchFilters"] = show_in_search
+        if show_as_badge is not None:
+            settings_updates["showAsAssetBadge"] = show_as_badge
+        if show_in_summary is not None:
+            settings_updates["showInAssetSummary"] = show_in_summary
+        
+        if settings_updates:
+            update_input["settings"] = settings_updates
+        
+        # If nothing to update, return success
+        if not update_input:
+            return True
+        
+        variables = {
+            "urn": property_urn,
+            "input": update_input
+        }
+        
+        result = self.execute_graphql(mutation, variables)
+        
+        if not result or "errors" in result or "data" not in result:
+            self._handle_error(result, f"Error updating structured property {property_urn}")
+            return False
+        
+        return True
+    
+    def delete_structured_property(self, property_urn: str) -> bool:
+        """
+        Delete a structured property from DataHub.
+        
+        Args:
+            property_urn: The URN of the property to delete
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        mutation = """
+        mutation deleteStructuredProperty($urn: String!) {
+          deleteStructuredPropertyEntity(urn: $urn)
+        }
+        """
+        
+        variables = {
+            "urn": property_urn
+        }
+        
+        result = self.execute_graphql(mutation, variables)
+        
+        if not result or "errors" in result or "data" not in result:
+            self._handle_error(result, f"Error deleting structured property {property_urn}")
+            return False
+        
+        return result.get("data", {}).get("deleteStructuredPropertyEntity", False)
+    
+    def get_property_values(self, property_urn: str, search_term: str = "", limit: int = 20) -> List[Dict[str, Any]]:
+        """Get entities that have values for a specific property
+        
+        Args:
+            property_urn: URN of the structured property
+            search_term: Optional search term to filter entities
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of entities with their property values
+        """
+        from utils.graphql_queries import PROPERTY_VALUES_QUERY
+        
+        try:
+            result = self._execute_graphql(
+                PROPERTY_VALUES_QUERY,
+                {"propertyUrn": property_urn, "search": search_term or "*", "limit": limit}
+            )
+            
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                return result["data"]["searchAcrossEntities"]["searchResults"]
+            return []
+        except Exception as e:
+            logger.error(f"Error getting property values for {property_urn}: {e}")
+            return []

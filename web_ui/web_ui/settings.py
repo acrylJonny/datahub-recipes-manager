@@ -63,9 +63,9 @@ ROOT_URLCONF = "web_ui.urls"
 
 # Tell Django to ignore migration checking for metadata_manager app
 # This prevents the warnings about model changes that aren't reflected in migrations
-MIGRATION_MODULES = {
-    'metadata_manager': None,
-}
+# MIGRATION_MODULES = {
+#     'metadata_manager': None,
+# }
 
 TEMPLATES = [
     {

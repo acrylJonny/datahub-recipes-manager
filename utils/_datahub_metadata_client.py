@@ -456,7 +456,7 @@ class DataHubMetadataClient:
         
         variables = {
             "input": {
-                "types": ["STRUCTURED_PROPERTY_ENTITY"],
+                "types": ["STRUCTURED_PROPERTY"],
                 "query": "*",
                 "start": 0,
                 "count": 1000  # Reasonable limit
@@ -474,7 +474,7 @@ class DataHubMetadataClient:
                 return []
             
             search_results = result.get("data", {}).get("searchAcrossEntities", {}).get("searchResults", [])
-            props = [result.get("entity") for result in search_results if result.get("entity", {}).get("type") == "STRUCTURED_PROPERTY_ENTITY"]
+            props = [result.get("entity") for result in search_results if result.get("entity", {}).get("type") == "STRUCTURED_PROPERTY"]
             
             return props
         except Exception as e:

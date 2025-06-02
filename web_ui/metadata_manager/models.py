@@ -228,4 +228,52 @@ class SyncConfig(models.Model):
     
     class Meta:
         verbose_name = "Sync Configuration"
-        verbose_name_plural = "Sync Configurations" 
+        verbose_name_plural = "Sync Configurations"
+
+class StructuredProperty(BaseMetadataModel):
+    """Represents a DataHub Structured Property"""
+    qualified_name = models.CharField(max_length=255, unique=True)
+    value_type = models.CharField(max_length=50, default="STRING")
+    cardinality = models.CharField(max_length=50, default="SINGLE")
+    immutable = models.BooleanField(default=False)
+    entity_types = models.JSONField(default=list)
+    allowed_values = models.JSONField(default=list, blank=True, null=True)
+    
+    # Display settings
+    show_in_search_filters = models.BooleanField(default=True)
+    show_as_asset_badge = models.BooleanField(default=True)
+    show_in_asset_summary = models.BooleanField(default=True)
+    show_in_columns_table = models.BooleanField(default=False)
+    is_hidden = models.BooleanField(default=False)
+    
+    class Meta:
+        verbose_name = "Structured Property"
+        verbose_name_plural = "Structured Properties"
+        ordering = ['name']
+        
+    def to_dict(self):
+        """Convert structured property to dictionary for export/syncing purposes"""
+        return {
+            'name': self.name,
+            'description': self.description,
+            'urn': self.deterministic_urn,
+            'original_urn': self.original_urn if self.original_urn else None,
+            'qualified_name': self.qualified_name,
+            'value_type': self.value_type,
+            'cardinality': self.cardinality,
+            'immutable': self.immutable,
+            'entity_types': self.entity_types,
+            'allowed_values': self.allowed_values,
+            'settings': {
+                'show_in_search_filters': self.show_in_search_filters,
+                'show_as_asset_badge': self.show_as_asset_badge,
+                'show_in_asset_summary': self.show_in_asset_summary,
+                'show_in_columns_table': self.show_in_columns_table,
+                'is_hidden': self.is_hidden
+            }
+        }
+        
+    @property
+    def can_deploy(self):
+        """Check if this property can be deployed to DataHub"""
+        return self.sync_status in ['LOCAL_ONLY', 'MODIFIED'] 

@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('metadata_manager', '0004_fix_environment_reference'),
+        ('metadata_manager', '0004_add_missing_columns'),
     ]
 
     operations = [

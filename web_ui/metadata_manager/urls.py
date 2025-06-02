@@ -6,6 +6,7 @@ from . import views_domains
 from . import views_assertions
 from . import views_sync
 from . import views_tests
+from . import views_properties
 
 app_name = 'metadata_manager'
 
@@ -20,6 +21,14 @@ urlpatterns = [
     path('entities/<str:urn>/schema/', views.get_entity_schema, name='get_entity_schema'),
     path('entities/update/', views.update_entity_properties, name='update_entity_properties'),
     path('sync/', views.sync_metadata, name='sync_metadata'),
+
+    # Structured Properties
+    path('properties/', views_properties.PropertyListView.as_view(), name='property_list'),
+    path('properties/<uuid:property_id>/', views_properties.PropertyDetailView.as_view(), name='property_detail'),
+    path('properties/<uuid:property_id>/delete/', views_properties.PropertyDetailView.as_view(), name='property_delete'),
+    path('properties/<uuid:property_id>/deploy/', views_properties.PropertyDeployView.as_view(), name='property_deploy'),
+    path('properties/pull/', views_properties.PropertyPullView.as_view(), name='property_pull'),
+    path('properties/values/', views_properties.PropertyValuesView.as_view(), name='property_values'),
 
     # Tags
     path('tags/', views_tags.TagListView.as_view(), name='tag_list'),
