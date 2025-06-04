@@ -1825,3 +1825,51 @@ def get_common_browse_paths(client, entity_type=None):
     except Exception as e:
         logger.error(f"Error getting common browse paths: {str(e)}")
         return ['/']  # Return at least the root path
+
+def metadata_entities_editable_list(request):
+    """List entities that have editable properties or schema metadata."""
+    try:
+        # Get search parameters from request
+        start = int(request.GET.get('start', 0))
+        count = int(request.GET.get('count', 20))
+        search_query = request.GET.get('searchQuery', '*')
+        entity_type = request.GET.get('entityType', '')
+        platform = request.GET.get('platform', '')
+        use_platform_pagination = request.GET.get('use_platform_pagination', 'false').lower() == 'true'
+        sort_by = request.GET.get('sortBy', 'name')
+        editable_only = request.GET.get('editable_only', 'true').lower() == 'true'
+        
+        # Get client
+        client = get_datahub_client()
+        
+        # Call the improved get_editable_entities method with all parameters
+        result = client.get_editable_entities(
+            start=start,
+            count=count,
+            query=search_query,
+            entity_type=entity_type if entity_type else None,
+            platform=platform if platform else None,
+            use_platform_pagination=use_platform_pagination,
+            sort_by=sort_by,
+            editable_only=editable_only
+        )
+        
+        if not result.get('success', False):
+            logger.error(f"Error getting editable entities: {result.get('error', 'Unknown error')}")
+            return JsonResponse({
+                'success': False,
+                'error': f"Failed to retrieve entities: {result.get('error', 'Unknown error')}"
+            })
+        
+        # Return the data from the improved client method
+        return JsonResponse({
+            'success': True,
+            'data': result.get('data')
+        })
+        
+    except Exception as e:
+        logger.exception(f"Error in metadata_entities_editable_list: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': f"Failed to retrieve entities: {str(e)}"
+        })

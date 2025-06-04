@@ -5264,142 +5264,370 @@ class DataHubRestClient:
             self.logger.error(f"Error removing owner from glossary entity: {str(e)}")
             return False
 
-    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None):
-        """Get entities with editable properties.
+    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None, platform=None, use_platform_pagination=False, sort_by="name", editable_only=True):
+        """
+        Get entities with editable properties or schema metadata.
         
         Args:
-            start (int): Pagination start index
-            count (int): Number of entities to return
-            query (str): Search query string
-            entity_type (str, optional): Filter by entity type
+            start: Start index for pagination
+            count: Number of entities to return
+            query: Search query
+            entity_type: Type of entity to filter by
+            platform: Platform to filter by
+            use_platform_pagination: Whether to use platform-based pagination for complete results
+            sort_by: Field to sort by (name, type, updated)
+            editable_only: If True, only return entities with editableProperties or editableSchemaMetadata
             
         Returns:
-            Dict containing search results with entities and their editable properties
+            Dictionary with search results
         """
-        self.logger.info(f"==== Getting editable entities ====")
-        self.logger.info(f"Parameters: start={start}, count={count}, query={query}, entity_type={entity_type}")
-        
-        # Prepare search input
-        search_input = {
-            'start': start,
-            'count': count,
-            'query': query,
-            'types': [entity_type] if entity_type else None
+        variables = {
+            "input": {
+                "query": query,
+                "start": start,
+                "count": count,
+                "orFilters": []
+            }
         }
         
-        self.logger.info(f"Search input: {search_input}")
-        
-        # Updated query to be compatible with DataHub schema
-        query = """
-            query GetAllEntitiesWithEditableAspects($input: SearchAcrossEntitiesInput!) {
-                searchAcrossEntities(input: $input) {
-                    start
-                    count
-                    total
-                    searchResults {
-                        entity {
-                            urn
-                            type
-                            ... on Dataset {
-                                editableProperties {
-                                    name
-                                    description
-                                }
-                                editableSchemaMetadata {
-                                    editableSchemaFieldInfo {
-                                        fieldPath
-                                        description
-                                        tags {
-                                            tags {
-                                                associatedUrn
-                                                tag {
-                                                    urn
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            ... on Container {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on Chart {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on Dashboard {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on DataFlow {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on DataJob {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on MLFeature {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on MLFeatureTable {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on MLModel {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on MLModelGroup {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on MLPrimaryKey {
-                                editableProperties {
-                                    description
-                                }
-                            }
-                            ... on Notebook {
-                                editableProperties {
-                                    description
-                                }
-                            }
+        if entity_type:
+            variables["input"]["types"] = [entity_type]
+            
+        if platform:
+            variables["input"]["filters"] = [{
+                "field": "platform",
+                "value": platform
+            }]
+            
+        # Set sorting based on sort_by parameter
+        if sort_by == "updated":
+            variables["input"]["sortCriteria"] = [{
+                "field": "lastIngested",
+                "order": "DESCENDING"
+            }]
+        elif sort_by == "type":
+            variables["input"]["sortCriteria"] = [{
+                "field": "entityType",
+                "order": "ASCENDING"
+            }]
+        else:  # Default: sort by name
+            variables["input"]["sortCriteria"] = [{
+                "field": "name",
+                "order": "ASCENDING"
+            }]
+            
+        # Use platform pagination if specified (for comprehensive search)
+        if use_platform_pagination and platform:
+            variables["input"]["orFilters"] = [{
+                "and": [{
+                    "field": "platform",
+                    "value": platform
+                }]
+            }]
+
+        # Comprehensive query that gets all necessary metadata including editableProperties and browsePathV2
+        graphql_query = """
+            query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on Dataset {
+                      name
+                      description
+                      platform {
+                        name
+                        info {
+                          displayName
                         }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                        }
+                      }
+                      browsePaths
+                      editableProperties {
+                        name
+                        description
+                        documentation
+                      }
+                      editableSchemaMetadata {
+                        editableSchemaFieldInfo {
+                          fieldPath
+                          description
+                          tags {
+                            tags {
+                              associatedUrn
+                              tag {
+                                urn
+                              }
+                            }
+                          }
+                        }
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        customProperties
+                        browsePaths
+                      }
+                      globalTags {
+                        tags {
+                          tag {
+                            name
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            name
+                            urn
+                          }
+                        }
+                      }
+                      container {
+                        path
+                      }
+                      dataset {
+                        name
+                        origin {
+                          browsePaths
+                        }
+                      }
                     }
+                    ... on Container {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                        }
+                      }
+                      browsePaths
+                      platform {
+                        name
+                      }
+                      container {
+                        path
+                      }
+                    }
+                    ... on Chart {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                        }
+                      }
+                      browsePaths
+                      platform {
+                        name
+                      }
+                      chart {
+                        info {
+                          name
+                        }
+                      }
+                    }
+                    ... on Dashboard {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                        }
+                      }
+                      browsePaths
+                      platform {
+                        name
+                      }
+                      dashboard {
+                        info {
+                          name
+                        }
+                      }
+                    }
+                    ... on DataFlow {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                        }
+                      }
+                      browsePaths
+                      platform {
+                        name
+                      }
+                    }
+                    ... on DataJob {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                        }
+                      }
+                      browsePaths
+                      dataFlow {
+                        platform {
+                          name
+                        }
+                      }
+                    }
+                    ... on Domain {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                    }
+                    ... on GlossaryTerm {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                    }
+                    ... on GlossaryNode {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                    }
+                    ... on Tag {
+                      editableProperties {
+                        description
+                        name
+                      }
+                      properties {
+                        name
+                        description
+                        displayName
+                        browsePaths
+                      }
+                    }
+                  }
+                  matchedFields {
+                    name
+                    value
+                  }
+                  insights {
+                    text
+                  }
+                  lastModified
                 }
+              }
             }
         """
         
-        try:
-            self.logger.info("Calling execute_graphql with SearchAcrossEntities query")
-            result = self.execute_graphql(query, {'input': search_input})
+        result = self.execute_graphql(graphql_query, variables)
+        
+        if "errors" in result:
+            self._log_graphql_errors(result)
+            return {"success": False, "error": f"GraphQL error: {result['errors'][0]['message']}"}
             
-            if result and 'data' in result and 'searchAcrossEntities' in result['data']:
-                search_results = result['data']['searchAcrossEntities']
-                total_entities = search_results.get('total', 0)
-                entities_count = len(search_results.get('searchResults', []))
-                self.logger.info(f"Query successful. Total entities: {total_entities}, returned: {entities_count}")
-                return search_results
+        search_results = result.get("data", {}).get("searchAcrossEntities", {})
+        
+        # If editable_only is True, filter results to only include entities with 
+        # editableProperties or editableSchemaMetadata
+        if editable_only and "searchResults" in search_results:
+            filtered_results = []
+            total_count = 0
             
-            self.logger.warning("Query returned no data or unexpected format")
-            if result and 'errors' in result:
-                self.logger.error(f"GraphQL errors: {result['errors']}")
+            for result in search_results.get("searchResults", []):
+                entity = result.get("entity", {})
                 
-            return {'start': 0, 'count': 0, 'total': 0, 'searchResults': []}
-        except Exception as e:
-            self.logger.error(f"Error getting editable entities: {str(e)}")
-            return {'start': 0, 'count': 0, 'total': 0, 'searchResults': []}
+                # Check if entity has editable properties or schema metadata
+                has_editable_properties = entity.get("editableProperties") is not None
+                has_editable_schema = entity.get("editableSchemaMetadata") is not None
+                
+                if has_editable_properties or has_editable_schema:
+                    filtered_results.append(result)
+                    total_count += 1
+            
+            # Replace the search results with the filtered results
+            filtered_search_results = {
+                "start": search_results.get("start", 0),
+                "count": len(filtered_results),
+                "total": search_results.get("total", 0),
+                "filtered_total": total_count,
+                "searchResults": filtered_results
+            }
+            
+            return {"success": True, "data": filtered_search_results}
+        
+        return {"success": True, "data": search_results}
 
     def update_entity_properties(self, entity_urn: str, entity_type: str, properties: dict) -> bool:
         """Update editable properties of an entity.

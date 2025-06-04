@@ -23,6 +23,9 @@
             <button type="button" class="btn btn-outline-secondary me-2" id="downloadButton">
                 <i class="fas fa-download me-1"></i> Download
             </button>
+            <button type="button" class="btn btn-success me-2" id="addAllToPrButton">
+                <i class="fas fa-code-branch me-1"></i> Add All to PR
+            </button>
             <button type="button" class="btn btn-primary" id="syncButton">
                 <i class="fas fa-sync me-1"></i> Sync with DataHub
             </button>
@@ -759,7 +762,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Format properties list
                 let propertiesList = formatEntityProperties(entity);
                 
-                // Format browse path (using our new browsePathV2 knowledge)
+                // Format browse path
                 let browsePath = formatBrowsePath(entity);
                 
                 const tr = document.createElement('tr');
@@ -775,10 +778,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td>${result.lastModified ? new Date(result.lastModified).toLocaleString() : 'Unknown'}</td>
                     <td>
                         <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-outline-primary edit-entity" 
-                                    data-urn="${entity.urn}" data-type="${entity.type}">
-                                <i class="fas fa-edit"></i>
-                            </button>
                             <button type="button" class="btn btn-sm btn-outline-secondary view-entity"
                                     data-urn="${entity.urn}" data-type="${entity.type}">
                                 <i class="fas fa-eye"></i>
@@ -789,15 +788,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 tbody.appendChild(tr);
             });
             
-            // Add event listeners to buttons
-            document.querySelectorAll('.edit-entity').forEach(button => {
-                button.addEventListener('click', function() {
-                    const urn = this.getAttribute('data-urn');
-                    const type = this.getAttribute('data-type');
-                    openEditModal(urn, type);
-                });
-            });
-            
+            // Add event listeners to the view button only
             document.querySelectorAll('.view-entity').forEach(button => {
                 button.addEventListener('click', function() {
                     const urn = this.getAttribute('data-urn');
@@ -830,33 +821,74 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Helper function to get entity name from various locations
     function getEntityName(entity) {
-        // Check for direct name property (used by Dataset, MLFeature, etc.)
-        if (entity.name) {
-            return entity.name;
-        }
+        // Priority order for entity name extraction:
         
-        // Check for properties.name (used by Container, Chart, Dashboard, etc.)
-        if (entity.properties && entity.properties.name) {
-            return entity.properties.name;
-        }
-        
-        // Check for info.title (used by Notebook)
-        if (entity.info && entity.info.title) {
-            return entity.info.title;
-        }
-        
-        // Check for editableProperties.name
+        // First check editableProperties.name
         if (entity.editableProperties && entity.editableProperties.name) {
             return entity.editableProperties.name;
         }
         
-        // Last resort: extract name from URN
-        const urnParts = entity.urn.split('/');
-        if (urnParts.length > 0) {
-            return urnParts[urnParts.length - 1];
+        // For datasets, extract name from dataset part
+        if (entity.type === 'DATASET') {
+            // Try to extract from URN for datasets
+            try {
+                const urnMatch = entity.urn.match(/urn:li:dataset:\(urn:li:dataPlatform:([^,]+),([^,)]+)/);
+                if (urnMatch && urnMatch[2]) {
+                    return urnMatch[2]; // This is the dataset name part
+                }
+            } catch (e) {
+                console.error("Error extracting dataset name from URN:", e);
+            }
         }
         
-        return 'Unnamed';
+        // Check for direct name property
+        if (entity.name) {
+            return entity.name;
+        }
+        
+        // Check for properties.name
+        if (entity.properties && entity.properties.name) {
+            return entity.properties.name;
+        }
+        
+        // Check for displayName in properties
+        if (entity.properties && entity.properties.displayName) {
+            return entity.properties.displayName;
+        }
+        
+        // Check specific entity type structures
+        if (entity.type === 'DATASET' && entity.dataset && entity.dataset.name) {
+            return entity.dataset.name;
+        }
+        
+        if (entity.type === 'CHART' && entity.chart && entity.chart.info && entity.chart.info.name) {
+            return entity.chart.info.name;
+        }
+        
+        if (entity.type === 'DASHBOARD' && entity.dashboard && entity.dashboard.info && entity.dashboard.info.name) {
+            return entity.dashboard.info.name;
+        }
+        
+        // Fallback: extract name from URN
+        try {
+            if (entity.type === 'DATASET') {
+                // For datasets, try to get the second part of the URN
+                const parts = entity.urn.split(',');
+                if (parts.length > 1) {
+                    return parts[1].trim();
+                }
+            }
+            
+            // For other entities, try getting the last part of the URN
+            const pathParts = entity.urn.split('/');
+            if (pathParts.length > 0) {
+                return pathParts[pathParts.length - 1].replace(/\)$/, '');
+            }
+        } catch (e) {
+            console.error("Error extracting name from URN:", e);
+        }
+        
+        return 'Unnamed Entity';
     }
     
     // Helper function to get entity description
@@ -919,13 +951,13 @@ document.addEventListener('DOMContentLoaded', function() {
         return '<span class="text-muted">N/A</span>';
     }
     
-    // Helper function to format browse paths
+    // Update formatBrowsePath to correctly handle the browsePathV2 structure
     function formatBrowsePath(entity) {
-        console.log("Formatting browse path for entity:", entity.urn);
-        
-        // First try to extract from browsePathV2 (preferred format)
+        // First priority: browsePathV2
         if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
-            console.log("Using browsePathV2:", entity.browsePathV2);
+            console.log("Using browsePathV2 for entity:", entity.urn);
+            
+            // Extract path names from browsePathV2.path (each element represents a step from root to leaf)
             const pathNames = [];
             for (const pathEntry of entity.browsePathV2.path) {
                 if (pathEntry && pathEntry.name) {
@@ -934,18 +966,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             if (pathNames.length > 0) {
-                return `<div class="small text-truncate">/${pathNames.join('/')}</div>`;
+                const fullPath = '/' + pathNames.join('/');
+                return `<div class="small">${fullPath}</div>`;
             }
         }
         
-        // Fall back to browsePaths
+        // Second priority: browsePaths array
         if (entity.browsePaths && Array.isArray(entity.browsePaths) && entity.browsePaths.length > 0) {
-            console.log("Using browsePaths:", entity.browsePaths);
-            
             // Handle various formats of browsePaths
-            const formattedPaths = entity.browsePaths.map(path => {
-                // Handle both string paths and object paths
+            const formattedPaths = [];
+            
+            entity.browsePaths.forEach(path => {
                 let pathValue = '';
+                
+                // Handle different path formats
                 if (typeof path === 'string') {
                     pathValue = path;
                 } else if (path && path.path) {
@@ -955,32 +989,72 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 if (pathValue) {
-                    return `<div class="small text-truncate">${pathValue}</div>`;
+                    // Make sure path starts with /
+                    if (!pathValue.startsWith('/')) {
+                        pathValue = '/' + pathValue;
+                    }
+                    formattedPaths.push(`<div class="small">${pathValue}</div>`);
                 }
-                return '';
-            }).filter(p => p);
+            });
             
             if (formattedPaths.length > 0) {
                 return formattedPaths.join('');
             }
         }
         
-        // Extract browse path from entity properties if available
+        // Additional fallbacks
+        
+        // Check properties.browsePaths
         if (entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
-            console.log("Using properties.browsePaths:", entity.properties.browsePaths);
-            const formattedPaths = entity.properties.browsePaths.map(path => {
+            const formattedPaths = [];
+            
+            entity.properties.browsePaths.forEach(path => {
                 if (path) {
-                    return `<div class="small text-truncate">${path}</div>`;
+                    let pathValue = path;
+                    if (!pathValue.startsWith('/')) {
+                        pathValue = '/' + pathValue;
+                    }
+                    formattedPaths.push(`<div class="small">${pathValue}</div>`);
                 }
-                return '';
-            }).filter(p => p);
+            });
             
             if (formattedPaths.length > 0) {
                 return formattedPaths.join('');
             }
         }
         
-        console.log("No browse path found for entity:", entity.urn);
+        // Check for dataset origin browse paths
+        if (entity.type === 'DATASET' && entity.dataset && entity.dataset.origin && 
+            entity.dataset.origin.browsePaths && Array.isArray(entity.dataset.origin.browsePaths)) {
+            
+            const formattedPaths = [];
+            
+            entity.dataset.origin.browsePaths.forEach(path => {
+                if (path) {
+                    let pathValue = path;
+                    if (!pathValue.startsWith('/')) {
+                        pathValue = '/' + pathValue;
+                    }
+                    formattedPaths.push(`<div class="small">${pathValue}</div>`);
+                }
+            });
+            
+            if (formattedPaths.length > 0) {
+                return formattedPaths.join('');
+            }
+        }
+        
+        // Check for container path
+        if ((entity.type === 'CONTAINER' || entity.type === 'DATASET') && 
+            entity.container && entity.container.path) {
+            
+            let containerPath = entity.container.path;
+            if (!containerPath.startsWith('/')) {
+                containerPath = '/' + containerPath;
+            }
+            return `<div class="small">${containerPath}</div>`;
+        }
+        
         return '<span class="text-muted">N/A</span>';
     }
     
@@ -1271,7 +1345,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function getBrowsePaths(entity) {
         let paths = [];
         
-        // Try browsePathV2 first
+        // Try browsePathV2 first (priority)
         if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
             const pathNames = [];
             for (const pathEntry of entity.browsePathV2.path) {
@@ -1288,12 +1362,21 @@ document.addEventListener('DOMContentLoaded', function() {
         // Try browsePaths
         if (entity.browsePaths && Array.isArray(entity.browsePaths)) {
             entity.browsePaths.forEach(path => {
+                let pathValue = '';
                 if (typeof path === 'string') {
-                    paths.push(path);
+                    pathValue = path;
                 } else if (path && path.path) {
-                    paths.push(path.path);
+                    pathValue = path.path;
                 } else if (path && path.elements && Array.isArray(path.elements)) {
-                    paths.push('/' + path.elements.join('/'));
+                    pathValue = '/' + path.elements.join('/');
+                }
+                
+                if (pathValue) {
+                    // Make sure path starts with /
+                    if (!pathValue.startsWith('/')) {
+                        pathValue = '/' + pathValue;
+                    }
+                    paths.push(pathValue);
                 }
             });
         }
@@ -1302,9 +1385,36 @@ document.addEventListener('DOMContentLoaded', function() {
         if (entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
             entity.properties.browsePaths.forEach(path => {
                 if (path) {
-                    paths.push(path);
+                    // Make sure path starts with /
+                    let pathValue = path;
+                    if (!pathValue.startsWith('/')) {
+                        pathValue = '/' + pathValue;
+                    }
+                    paths.push(pathValue);
                 }
             });
+        }
+        
+        // Check for origin browse paths in datasets
+        if (entity.type === 'DATASET' && entity.dataset && entity.dataset.origin && 
+            entity.dataset.origin.browsePaths && Array.isArray(entity.dataset.origin.browsePaths)) {
+            
+            entity.dataset.origin.browsePaths.forEach(path => {
+                if (path) {
+                    // Make sure path starts with /
+                    let pathValue = path;
+                    if (!pathValue.startsWith('/')) {
+                        pathValue = '/' + pathValue;
+                    }
+                    paths.push(pathValue);
+                }
+            });
+        }
+        
+        // Check for container path in containers
+        if ((entity.type === 'CONTAINER' || entity.type === 'DATASET') && 
+            entity.container && entity.container.path) {
+            paths.push(entity.container.path);
         }
         
         return paths;
@@ -1478,36 +1588,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add a dedicated function for formatting entity properties
     function formatEntityProperties(entity) {
-        let propertiesList = '';
-        
-        // Check for description (from multiple possible locations)
-        let description = getEntityDescription(entity);
-        
-        // Check for editable properties
+        // Check for editable properties first - this is the priority
         const editableProperties = entity.editableProperties || {};
         const propKeys = Object.keys(editableProperties).filter(key => 
             key !== 'name' && key !== 'description'
         );
         
-        // Check for tags
-        let tags = [];
-        if (entity.globalTags && entity.globalTags.tags) {
-            tags = entity.globalTags.tags.map(tag => tag.tag.name || tag.tag);
-        } else if (entity.tags && entity.tags.tags) {
-            tags = entity.tags.tags.map(tag => tag.tag.name || tag.tag);
-        }
-        
-        // Check for glossary terms
-        let terms = [];
-        if (entity.glossaryTerms && entity.glossaryTerms.terms) {
-            terms = entity.glossaryTerms.terms.map(term => term.term.name || term.term);
-        }
-        
         // Start building the properties HTML
         let html = '';
         
-        // Add description preview if available
-        if (description) {
+        // Get description from editable properties
+        let description = '';
+        if (editableProperties.description) {
+            description = editableProperties.description;
             const shortDesc = description.length > 50 ? description.substring(0, 50) + '...' : description;
             html += `<div class="text-muted small mb-1">${shortDesc}</div>`;
         }
@@ -1526,34 +1619,59 @@ document.addEventListener('DOMContentLoaded', function() {
             html += '</div>';
         }
         
-        // Add tags if available
-        if (tags.length > 0) {
-            html += '<div class="mb-1">';
-            html += tags.slice(0, 3).map(tag => {
-                const tagName = typeof tag === 'string' ? tag : tag.name || tag.toString();
-                return `<span class="badge bg-info text-white me-1">${tagName}</span>`;
-            }).join(' ');
-            if (tags.length > 3) {
-                html += ` <span class="badge bg-secondary">+${tags.length - 3} more</span>`;
-            }
-            html += '</div>';
+        // If nothing found in editable properties, indicate that
+        if (html === '') {
+            html = '<span class="text-muted">No editable properties</span>';
         }
         
-        // Add glossary terms if available
-        if (terms.length > 0) {
-            html += '<div>';
-            html += terms.slice(0, 2).map(term => {
-                const termName = typeof term === 'string' ? term : term.name || term.toString();
-                return `<span class="badge bg-success text-white me-1">${termName}</span>`;
-            }).join(' ');
-            if (terms.length > 2) {
-                html += ` <span class="badge bg-secondary">+${terms.length - 2} more</span>`;
-            }
-            html += '</div>';
-        }
-        
-        return html || '<span class="text-muted">None</span>';
+        return html;
     }
+
+    // Add the Add All to PR functionality
+    document.getElementById('addAllToPrButton').addEventListener('click', function() {
+        // Disable the button and show loading state
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Processing...';
+        
+        // Show a confirmation dialog
+        if (confirm('This will add all editable properties to a new pull request. This process may take some time. Continue?')) {
+            // Call the API endpoint to create a PR with all editable properties
+            fetch('/metadata/entities/editable/create-pr/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success message with PR link if available
+                    let message = 'Successfully created pull request with all editable properties.';
+                    if (data.pr_url) {
+                        message += ` <a href="${data.pr_url}" target="_blank">View PR <i class="fas fa-external-link-alt"></i></a>`;
+                    }
+                    showSuccess(message);
+                } else {
+                    // Show error message
+                    showError(data.error || 'Failed to create pull request');
+                }
+            })
+            .catch(error => {
+                console.error('Error creating pull request:', error);
+                showError('Failed to create pull request: ' + error.message);
+            })
+            .finally(() => {
+                // Reset button state
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
+            });
+        } else {
+            // Reset button if user cancels
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
+        }
+    });
 });
 </script>
 {% endblock %} 
