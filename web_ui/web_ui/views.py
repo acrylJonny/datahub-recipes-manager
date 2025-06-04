@@ -1230,6 +1230,21 @@ def settings(request):
                     AppSettings.set('datahub_token', datahub_token)
                 AppSettings.set('verify_ssl', 'true' if verify_ssl else 'false')
                 
+                # Sync settings with metadata_manager Environment model
+                try:
+                    from metadata_manager.models import Environment as MetadataEnvironment
+                    default_env = MetadataEnvironment.objects.filter(is_default=True).first()
+                    if default_env:
+                        default_env.datahub_url = datahub_url
+                        if datahub_token:
+                            default_env.datahub_token = datahub_token
+                        default_env.save()
+                        logger.info(f"Synced settings with metadata manager default environment: {default_env.name}")
+                    else:
+                        logger.warning("No default environment found in metadata_manager")
+                except Exception as e:
+                    logger.error(f"Error syncing settings with metadata_manager: {str(e)}")
+                
                 # Test connection if requested
                 if 'test_connection' in request.POST:
                     # Force a new client instance with the updated settings
