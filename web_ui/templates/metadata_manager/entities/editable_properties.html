@@ -750,7 +750,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const entity = result.entity;
                 if (!entity) return;
                 
-                // Get entity name using enhanced helper function
+                // Get entity name using helper that checks all possible locations
                 let displayName = getEntityName(entity);
                 
                 // Get entity platform information
@@ -759,7 +759,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Format properties list
                 let propertiesList = formatEntityProperties(entity);
                 
-                // Format browse path (using our improved browse path helper)
+                // Format browse path (using our new browsePathV2 knowledge)
                 let browsePath = formatBrowsePath(entity);
                 
                 const tr = document.createElement('tr');
@@ -830,91 +830,32 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Helper function to get entity name from various locations
     function getEntityName(entity) {
-        // Debug
-        console.log("Getting name for entity:", entity.urn);
-        
-        // Check for direct editable properties name (highest priority)
-        if (entity.editableProperties && entity.editableProperties.name) {
-            console.log("Found name in editableProperties:", entity.editableProperties.name);
-            return entity.editableProperties.name;
-        }
-        
-        // Check for properties.name
-        if (entity.properties && entity.properties.name) {
-            console.log("Found name in properties:", entity.properties.name);
-            return entity.properties.name;
-        }
-        
-        // Check for direct name property
+        // Check for direct name property (used by Dataset, MLFeature, etc.)
         if (entity.name) {
-            console.log("Found direct name property:", entity.name);
             return entity.name;
         }
         
-        // Check for displayName
-        if (entity.displayName) {
-            console.log("Found displayName:", entity.displayName);
-            return entity.displayName;
+        // Check for properties.name (used by Container, Chart, Dashboard, etc.)
+        if (entity.properties && entity.properties.name) {
+            return entity.properties.name;
         }
         
-        // Check for info.displayName
-        if (entity.info && entity.info.displayName) {
-            console.log("Found info.displayName:", entity.info.displayName);
-            return entity.info.displayName;
-        }
-        
-        // Check for info.title
+        // Check for info.title (used by Notebook)
         if (entity.info && entity.info.title) {
-            console.log("Found info.title:", entity.info.title);
             return entity.info.title;
         }
         
-        // Extract entity name from dataset name in URN
-        if (entity.type === 'DATASET' && entity.urn.includes('urn:li:dataset:')) {
-            try {
-                // Parse name from the dataset URN
-                const datasetMatch = entity.urn.match(/urn:li:dataset:\([^,]+,[^,]+,([^)]+)\)/);
-                if (datasetMatch && datasetMatch[1]) {
-                    const datasetName = datasetMatch[1];
-                    console.log("Extracted name from dataset URN:", datasetName);
-                    return datasetName;
-                }
-            } catch (e) {
-                console.error("Error extracting name from dataset URN:", e);
-            }
+        // Check for editableProperties.name
+        if (entity.editableProperties && entity.editableProperties.name) {
+            return entity.editableProperties.name;
         }
         
-        // Try to extract a meaningful name from the URN for any entity type
-        try {
-            // Get the last component of the URN
-            const urnComponents = entity.urn.split(':');
-            if (urnComponents.length > 0) {
-                const lastComponent = urnComponents[urnComponents.length - 1];
-                
-                // If the last component contains parentheses with commas (like in dataset URNs)
-                if (lastComponent.includes('(') && lastComponent.includes(')')) {
-                    const match = lastComponent.match(/\(([^,]+),([^,]+),([^)]+)\)/);
-                    if (match && match[3]) {
-                        console.log("Extracted name from complex URN:", match[3]);
-                        return match[3];
-                    }
-                }
-                
-                // Otherwise just use the last part of the URN
-                if (lastComponent.includes('/')) {
-                    const parts = lastComponent.split('/');
-                    console.log("Extracted name from URN path:", parts[parts.length - 1]);
-                    return parts[parts.length - 1];
-                }
-                
-                console.log("Using last URN component:", lastComponent);
-                return lastComponent;
-            }
-        } catch (e) {
-            console.error("Error extracting name from URN:", e);
+        // Last resort: extract name from URN
+        const urnParts = entity.urn.split('/');
+        if (urnParts.length > 0) {
+            return urnParts[urnParts.length - 1];
         }
         
-        console.log("No name found, using 'Unnamed'");
         return 'Unnamed';
     }
     
@@ -982,97 +923,65 @@ document.addEventListener('DOMContentLoaded', function() {
     function formatBrowsePath(entity) {
         console.log("Formatting browse path for entity:", entity.urn);
         
-        const paths = getAllBrowsePaths(entity);
+        // First try to extract from browsePathV2 (preferred format)
+        if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
+            console.log("Using browsePathV2:", entity.browsePathV2);
+            const pathNames = [];
+            for (const pathEntry of entity.browsePathV2.path) {
+                if (pathEntry && pathEntry.name) {
+                    pathNames.push(pathEntry.name);
+                }
+            }
+            
+            if (pathNames.length > 0) {
+                return `<div class="small text-truncate">/${pathNames.join('/')}</div>`;
+            }
+        }
         
-        if (paths && paths.length > 0) {
-            // Format each path as a separate line with proper styling
-            return paths.map(path => 
-                `<div class="small text-truncate">${path}</div>`
-            ).join('');
+        // Fall back to browsePaths
+        if (entity.browsePaths && Array.isArray(entity.browsePaths) && entity.browsePaths.length > 0) {
+            console.log("Using browsePaths:", entity.browsePaths);
+            
+            // Handle various formats of browsePaths
+            const formattedPaths = entity.browsePaths.map(path => {
+                // Handle both string paths and object paths
+                let pathValue = '';
+                if (typeof path === 'string') {
+                    pathValue = path;
+                } else if (path && path.path) {
+                    pathValue = path.path;
+                } else if (path && path.elements && Array.isArray(path.elements)) {
+                    pathValue = '/' + path.elements.join('/');
+                }
+                
+                if (pathValue) {
+                    return `<div class="small text-truncate">${pathValue}</div>`;
+                }
+                return '';
+            }).filter(p => p);
+            
+            if (formattedPaths.length > 0) {
+                return formattedPaths.join('');
+            }
+        }
+        
+        // Extract browse path from entity properties if available
+        if (entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
+            console.log("Using properties.browsePaths:", entity.properties.browsePaths);
+            const formattedPaths = entity.properties.browsePaths.map(path => {
+                if (path) {
+                    return `<div class="small text-truncate">${path}</div>`;
+                }
+                return '';
+            }).filter(p => p);
+            
+            if (formattedPaths.length > 0) {
+                return formattedPaths.join('');
+            }
         }
         
         console.log("No browse path found for entity:", entity.urn);
         return '<span class="text-muted">N/A</span>';
-    }
-    
-    // Comprehensive function to extract all browse paths from all possible locations
-    function getAllBrowsePaths(entity) {
-        let paths = [];
-        
-        // Try browsePathV2 first (highest priority)
-        if (entity.browsePathV2) {
-            console.log("Found browsePathV2:", entity.browsePathV2);
-            
-            // Handle different formats of browsePathV2
-            if (entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
-                const pathNames = [];
-                for (const pathEntry of entity.browsePathV2.path) {
-                    if (pathEntry && pathEntry.name) {
-                        pathNames.push(pathEntry.name);
-                    }
-                }
-                
-                if (pathNames.length > 0) {
-                    paths.push('/' + pathNames.join('/'));
-                }
-            } else if (entity.browsePathV2.elements && Array.isArray(entity.browsePathV2.elements)) {
-                // Alternative format with elements array
-                if (entity.browsePathV2.elements.length > 0) {
-                    paths.push('/' + entity.browsePathV2.elements.join('/'));
-                }
-            } else if (typeof entity.browsePathV2 === 'string') {
-                // Sometimes it's just a string
-                paths.push(entity.browsePathV2);
-            }
-        }
-        
-        // Try browsePaths (second priority)
-        if (entity.browsePaths) {
-            console.log("Found browsePaths:", entity.browsePaths);
-            
-            if (Array.isArray(entity.browsePaths)) {
-                entity.browsePaths.forEach(path => {
-                    // Handle string paths
-                    if (typeof path === 'string') {
-                        paths.push(path);
-                    } 
-                    // Handle object paths with path property
-                    else if (path && path.path) {
-                        paths.push(path.path);
-                    } 
-                    // Handle object paths with elements array
-                    else if (path && path.elements && Array.isArray(path.elements)) {
-                        paths.push('/' + path.elements.join('/'));
-                    }
-                });
-            } else if (typeof entity.browsePaths === 'string') {
-                // Sometimes it's just a string
-                paths.push(entity.browsePaths);
-            }
-        }
-        
-        // Try properties.browsePaths (third priority)
-        if (entity.properties && entity.properties.browsePaths) {
-            console.log("Found properties.browsePaths:", entity.properties.browsePaths);
-            
-            if (Array.isArray(entity.properties.browsePaths)) {
-                entity.properties.browsePaths.forEach(path => {
-                    if (path) {
-                        paths.push(path);
-                    }
-                });
-            } else if (typeof entity.properties.browsePaths === 'string') {
-                paths.push(entity.properties.browsePaths);
-            }
-        }
-        
-        // Try in the correct format for the view modal
-        if (paths.length > 0) {
-            console.log("Found browse paths:", paths);
-            return paths;
-        }
-        
-        return [];
     }
     
     // Helper function to get appropriate badge class for entity type
@@ -1356,6 +1265,49 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             browsePathContainer.innerHTML = '<p class="text-muted">No browse paths available</p>';
         }
+    }
+    
+    // Helper function to get browse paths from an entity
+    function getBrowsePaths(entity) {
+        let paths = [];
+        
+        // Try browsePathV2 first
+        if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
+            const pathNames = [];
+            for (const pathEntry of entity.browsePathV2.path) {
+                if (pathEntry && pathEntry.name) {
+                    pathNames.push(pathEntry.name);
+                }
+            }
+            
+            if (pathNames.length > 0) {
+                paths.push('/' + pathNames.join('/'));
+            }
+        }
+        
+        // Try browsePaths
+        if (entity.browsePaths && Array.isArray(entity.browsePaths)) {
+            entity.browsePaths.forEach(path => {
+                if (typeof path === 'string') {
+                    paths.push(path);
+                } else if (path && path.path) {
+                    paths.push(path.path);
+                } else if (path && path.elements && Array.isArray(path.elements)) {
+                    paths.push('/' + path.elements.join('/'));
+                }
+            });
+        }
+        
+        // Try properties.browsePaths
+        if (entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
+            entity.properties.browsePaths.forEach(path => {
+                if (path) {
+                    paths.push(path);
+                }
+            });
+        }
+        
+        return paths;
     }
     
     // Function to load schema fields
