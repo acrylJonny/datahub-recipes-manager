@@ -23,11 +23,11 @@
             <button type="button" class="btn btn-outline-secondary me-2" id="downloadButton">
                 <i class="fas fa-download me-1"></i> Download
             </button>
+            <button type="button" class="btn btn-outline-info me-2" id="refreshCacheButton" title="Clear cache and refresh data">
+                <i class="fas fa-sync-alt me-1"></i> Refresh Cache
+            </button>
             <button type="button" class="btn btn-success me-2" id="addAllToPrButton">
                 <i class="fas fa-code-branch me-1"></i> Add All to PR
-            </button>
-            <button type="button" class="btn btn-primary" id="syncButton">
-                <i class="fas fa-sync me-1"></i> Sync with DataHub
             </button>
         </div>
     </div>
@@ -161,6 +161,22 @@
         </div>
     </div>
 
+    <!-- Cache Status -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div id="cacheStatus" class="text-muted small">
+                    <i class="fas fa-clock me-1"></i>
+                    <span id="cacheStatusText">Ready to search...</span>
+                </div>
+                <div class="text-muted small">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Results are cached for 5 minutes for better performance
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Entities List -->
     <div class="card">
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
@@ -177,9 +193,9 @@
                             <th>Entity</th>
                             <th>Type</th>
                             <th>Platform</th>
-                            <th>Properties</th>
+                            <th>Editable Properties</th>
+                            <th>Schema Metadata</th>
                             <th>Browse Path</th>
-                            <th>Last Updated</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -316,28 +332,39 @@ document.addEventListener('DOMContentLoaded', function() {
         'DATAJOB': ['airflow', 'glue', 'databricks', 'azure']
     };
     
+    console.log('Platforms by entity type loaded:', platformsByEntityType);
+    
     // Update platform dropdown based on entity type selection
     document.getElementById('entityType').addEventListener('change', function() {
         const entityType = this.value;
         const platformSelect = document.getElementById('platform');
+        
+        console.log('Entity type changed to:', entityType);
+        console.log('Platform select element:', platformSelect);
+        console.log('Available platforms for type:', platformsByEntityType[entityType]);
         
         // Clear existing options
         platformSelect.innerHTML = '<option value="">All Platforms</option>';
         
         // Add platform options based on entity type
         if (entityType && platformsByEntityType[entityType]) {
+            console.log('Adding platforms for entity type:', entityType);
             platformsByEntityType[entityType].forEach(platform => {
                 const option = document.createElement('option');
                 option.value = platform;
                 option.textContent = platform.charAt(0).toUpperCase() + platform.slice(1); // Capitalize
                 platformSelect.appendChild(option);
+                console.log('Added platform option:', platform);
             });
             
             // Enable platform dropdown
             platformSelect.disabled = false;
+            console.log('Platform dropdown enabled');
         } else {
             // Disable platform dropdown for entity types that don't have platforms
-            platformSelect.disabled = ['TAG', 'GLOSSARY_TERM', 'GLOSSARY_NODE', 'DOMAIN'].includes(entityType);
+            const shouldDisable = ['TAG', 'GLOSSARY_TERM', 'GLOSSARY_NODE', 'DOMAIN'].includes(entityType);
+            platformSelect.disabled = shouldDisable;
+            console.log('Platform dropdown disabled:', shouldDisable, 'for entity type:', entityType);
         }
     });
     
@@ -627,6 +654,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const cachedResults = resultsCache.get(searchParams, start, itemsPerPage);
         if (cachedResults) {
             console.log('Using cached results');
+            updateCacheStatus('Using cached results (loaded ' + new Date(cachedResults.timestamp).toLocaleTimeString() + ')');
             
             // Use the cached results
             allEntities = cachedResults.data.searchResults.map(result => result.entity);
@@ -649,7 +677,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 // Add a cache indicator
-                entityCount.innerHTML += `<br><small class="text-muted">(from cache)</small>`;
+                entityCount.innerHTML += `<br><small class="text-success"><i class="fas fa-check-circle me-1"></i>from cache</small>`;
             } else {
                 entityCount.textContent = 'No entities found';
             }
@@ -658,8 +686,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // If not in cache, fetch from server
+        updateCacheStatus('Loading fresh data from DataHub...');
+        
         // Construct the API URL with all parameters
-        const apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${itemsPerPage * 5}&searchQuery=${encodeURIComponent(query)}&entityType=${entityType}&platform=${platform}&use_platform_pagination=${usePlatformPagination}&sortBy=${sortBy}&editable_only=${editablePropertiesOnly}`;
+        const apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${itemsPerPage * 10}&searchQuery=${encodeURIComponent(query)}&entityType=${entityType}&platform=${platform}&use_platform_pagination=${usePlatformPagination}&sortBy=${sortBy}&editable_only=${editablePropertiesOnly}`;
         console.log(`Fetching from API: ${apiUrl}`);
         
         fetch(apiUrl)
@@ -673,10 +703,12 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 console.log('API response data:', data);
                 if (data.success) {
-                    // Store the results in cache - we request 5x the items per page to reduce API calls
+                    updateCacheStatus('Data loaded and cached (' + new Date().toLocaleTimeString() + ')');
+                    
+                    // Store the results in cache - we request 10x the items per page to reduce API calls
                     resultsCache.store(searchParams, data.data);
                     
-                    // Store entities for download
+                    // Store entities for download (all entities from this search)
                     allEntities = data.data.searchResults.map(result => result.entity);
                     
                     // Only show the current page
@@ -706,11 +738,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         entityCount.textContent = 'No entities found';
                     }
                 } else {
+                    updateCacheStatus('Error loading data');
                     showError(data.error || 'Failed to load entities');
                 }
             })
             .catch(error => {
                 console.error('Error loading entities:', error);
+                updateCacheStatus('Error loading data');
                 showError(`Failed to load entities: ${error.message}`);
                 
                 // Show error in table instead of spinner
@@ -759,8 +793,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Get entity platform information
                 let platformInfo = getEntityPlatform(entity);
                 
-                // Format properties list
-                let propertiesList = formatEntityProperties(entity);
+                // Format editable properties
+                let editablePropertiesHtml = formatEditableProperties(entity);
+                
+                // Format schema metadata
+                let schemaMetadataHtml = formatSchemaMetadata(entity);
                 
                 // Format browse path
                 let browsePath = formatBrowsePath(entity);
@@ -773,9 +810,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     </td>
                     <td><span class="badge ${getEntityTypeBadgeClass(entity.type)}">${entity.type}</span></td>
                     <td>${platformInfo}</td>
-                    <td>${propertiesList}</td>
+                    <td>${editablePropertiesHtml}</td>
+                    <td>${schemaMetadataHtml}</td>
                     <td>${browsePath}</td>
-                    <td>${result.lastModified ? new Date(result.lastModified).toLocaleString() : 'Unknown'}</td>
                     <td>
                         <div class="btn-group">
                             <button type="button" class="btn btn-sm btn-outline-secondary view-entity"
@@ -788,7 +825,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 tbody.appendChild(tr);
             });
             
-            // Add event listeners to the view button only
+            // Add event listeners to the view button
             document.querySelectorAll('.view-entity').forEach(button => {
                 button.addEventListener('click', function() {
                     const urn = this.getAttribute('data-urn');
@@ -908,35 +945,39 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Helper function to format platform info
     function getEntityPlatform(entity) {
-        // Check direct platform reference
+        // Priority 1: Check direct platform reference from GraphQL
         if (entity.platform) {
             const platformName = entity.platform.name || 
                                 (entity.platform.properties && entity.platform.properties.displayName) || 
-                                (entity.platform.info && entity.platform.info.displayName) ||
                                 'Unknown';
-            return `<span class="badge bg-info">${platformName}</span>`;
+            let platformHtml = `<span class="badge bg-info">${platformName}</span>`;
+            
+            // Add instance information if available
+            if (entity.dataPlatformInstance && entity.dataPlatformInstance.instanceId) {
+                platformHtml += `<br><small class="text-muted">Instance: ${entity.dataPlatformInstance.instanceId}</small>`;
+            }
+            
+            return platformHtml;
         }
         
-        // Check for platform in dataFlow for DataJobs
-        if (entity.type === 'DATA_JOB' && entity.dataFlow && entity.dataFlow.platform) {
-            const platformName = entity.dataFlow.platform.name || 
-                                (entity.dataFlow.platform.properties && entity.dataFlow.platform.properties.displayName) || 
-                                (entity.dataFlow.platform.info && entity.dataFlow.platform.info.displayName) ||
-                                'Unknown';
-            return `<span class="badge bg-info">${platformName}</span>`;
-        }
-        
-        // Check for dataPlatformInstance
+        // Priority 2: Check for dataPlatformInstance
         if (entity.dataPlatformInstance && entity.dataPlatformInstance.platform) {
             const platformName = entity.dataPlatformInstance.platform.name || 
                                 (entity.dataPlatformInstance.platform.properties && entity.dataPlatformInstance.platform.properties.displayName) || 
-                                (entity.dataPlatformInstance.platform.info && entity.dataPlatformInstance.platform.info.displayName) ||
                                 'Unknown';
             const instanceId = entity.dataPlatformInstance.instanceId || '';
-            return `<span class="badge bg-info">${platformName}</span>${instanceId ? `<br><small class="text-muted">${instanceId}</small>` : ''}`;
+            return `<span class="badge bg-info">${platformName}</span>${instanceId ? `<br><small class="text-muted">Instance: ${instanceId}</small>` : ''}`;
         }
         
-        // Try to extract from URN for datasets and similar entities
+        // Priority 3: Check for platform in dataFlow for DataJobs
+        if (entity.type === 'DATA_JOB' && entity.dataFlow && entity.dataFlow.platform) {
+            const platformName = entity.dataFlow.platform.name || 
+                                (entity.dataFlow.platform.properties && entity.dataFlow.platform.properties.displayName) || 
+                                'Unknown';
+            return `<span class="badge bg-info">${platformName}</span>`;
+        }
+        
+        // Priority 4: Try to extract from URN for datasets and similar entities
         if (entity.urn && entity.urn.includes('urn:li:dataPlatform:')) {
             try {
                 const matches = entity.urn.match(/urn:li:dataPlatform:([^,)]+)/);
@@ -951,110 +992,173 @@ document.addEventListener('DOMContentLoaded', function() {
         return '<span class="text-muted">N/A</span>';
     }
     
-    // Update formatBrowsePath to correctly handle the browsePathV2 structure
+    // Function to format editable properties
+    function formatEditableProperties(entity) {
+        // Check for editable properties
+        if (!entity.editableProperties) {
+            return '<span class="text-muted">None</span>';
+        }
+        
+        const properties = entity.editableProperties;
+        let html = '';
+        
+        // Add name if available
+        if (properties.name) {
+            html += `<div class="mb-1"><span class="badge bg-primary me-1">name</span> ${properties.name}</div>`;
+        }
+        
+        // Add description if available
+        if (properties.description) {
+            const shortDesc = properties.description.length > 50 ? 
+                properties.description.substring(0, 50) + '...' : properties.description;
+            html += `<div class="mb-1"><span class="badge bg-info me-1">description</span> ${shortDesc}</div>`;
+        }
+        
+        // Add other properties
+        const otherProps = Object.keys(properties).filter(key => key !== 'name' && key !== 'description');
+        if (otherProps.length > 0) {
+            html += '<div class="mt-1">';
+            otherProps.forEach(key => {
+                const value = properties[key];
+                if (value) {
+                    const shortValue = typeof value === 'string' && value.length > 15 ? 
+                        value.substring(0, 15) + '...' : value;
+                    html += `<span class="badge bg-light text-dark me-1" title="${key}: ${value}">${key}: ${shortValue}</span>`;
+                } else {
+                    html += `<span class="badge bg-light text-dark me-1">${key}</span>`;
+                }
+            });
+            html += '</div>';
+        }
+        
+        return html || '<span class="text-muted">None</span>';
+    }
+    
+    // Function to format schema metadata
+    function formatSchemaMetadata(entity) {
+        if (!entity.editableSchemaMetadata || !entity.editableSchemaMetadata.editableSchemaFieldInfo) {
+            return '<span class="text-muted">None</span>';
+        }
+        
+        const fields = entity.editableSchemaMetadata.editableSchemaFieldInfo;
+        if (!fields.length) {
+            return '<span class="text-muted">None</span>';
+        }
+        
+        // Show count of schema fields with descriptions or tags
+        const fieldsWithDescription = fields.filter(field => field.description).length;
+        const fieldsWithTags = fields.filter(field => field.tags && field.tags.tags && field.tags.tags.length > 0).length;
+        
+        let html = '';
+        if (fieldsWithDescription > 0) {
+            html += `<div><span class="badge bg-success">${fieldsWithDescription} fields with descriptions</span></div>`;
+        }
+        
+        if (fieldsWithTags > 0) {
+            html += `<div class="mt-1"><span class="badge bg-info">${fieldsWithTags} fields with tags</span></div>`;
+        }
+        
+        // Show the first field as an example
+        if (fields.length > 0) {
+            const firstField = fields[0];
+            html += `<div class="small text-muted mt-1">e.g. ${firstField.fieldPath}</div>`;
+        }
+        
+        return html;
+    }
+    
+    // Helper function to extract human-readable name from URN
+    function extractNameFromUrn(urn) {
+        // Handle container URNs - display the ID in shortened form
+        if (urn.startsWith('urn:li:container:')) {
+            return 'container-' + urn.split(':').pop().substring(0, 6);
+        }
+        
+        // Handle dataset URNs in format: urn:li:dataset:(urn:li:dataPlatform:platform,dataset_name,ENV)
+        if (urn.startsWith('urn:li:dataset:')) {
+            try {
+                const matches = urn.match(/urn:li:dataset:\(urn:li:dataPlatform:([^,]+),([^,)]+)/);
+                if (matches && matches[2]) {
+                    return matches[2]; // Return the dataset name part
+                }
+            } catch (e) {
+                console.error("Error extracting dataset name from URN:", e);
+            }
+        }
+        
+        // Handle other entity URNs by extracting the last part
+        const parts = urn.split(':');
+        if (parts.length > 0) {
+            const lastPart = parts[parts.length - 1];
+            if (lastPart.includes('/')) {
+                return lastPart.split('/').pop();
+            }
+            return lastPart;
+        }
+        
+        return urn;
+    }
+    
+    // Update browse path formatting to correctly handle browsePathV2 and extract readable names
     function formatBrowsePath(entity) {
-        // First priority: browsePathV2
+        // First priority: extract readable path from browsePathV2
         if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
-            console.log("Using browsePathV2 for entity:", entity.urn);
+            // Extract names from the path
+            let pathParts = [];
             
-            // Extract path names from browsePathV2.path (each element represents a step from root to leaf)
-            const pathNames = [];
-            for (const pathEntry of entity.browsePathV2.path) {
-                if (pathEntry && pathEntry.name) {
-                    pathNames.push(pathEntry.name);
+            for (const pathItem of entity.browsePathV2.path) {
+                // Check if it has a container with a name
+                if (pathItem.entity && 
+                    pathItem.entity.container && 
+                    pathItem.entity.container.properties && 
+                    pathItem.entity.container.properties.name) {
+                    
+                    pathParts.push(pathItem.entity.container.properties.name);
+                } 
+                // Fallback to the raw name (usually a URN)
+                else if (pathItem.name) {
+                    // Extract a human-readable name from the URN
+                    const readableName = extractNameFromUrn(pathItem.name);
+                    pathParts.push(readableName);
                 }
             }
             
-            if (pathNames.length > 0) {
-                const fullPath = '/' + pathNames.join('/');
-                return `<div class="small">${fullPath}</div>`;
+            if (pathParts.length > 0) {
+                return `<div class="small">/${pathParts.join('/')}</div>`;
             }
         }
         
         // Second priority: browsePaths array
-        if (entity.browsePaths && Array.isArray(entity.browsePaths) && entity.browsePaths.length > 0) {
-            // Handle various formats of browsePaths
-            const formattedPaths = [];
-            
-            entity.browsePaths.forEach(path => {
-                let pathValue = '';
+        if (entity.browsePaths && Array.isArray(entity.browsePaths)) {
+            // Process browsePaths that have a path property
+            if (entity.browsePaths.length > 0 && entity.browsePaths[0].path) {
+                const paths = entity.browsePaths.map(bp => {
+                    if (bp.path && Array.isArray(bp.path)) {
+                        return `<div class="small">/${bp.path.join('/')}</div>`;
+                    }
+                    return '';
+                }).filter(p => p);
                 
-                // Handle different path formats
-                if (typeof path === 'string') {
-                    pathValue = path;
-                } else if (path && path.path) {
-                    pathValue = path.path;
-                } else if (path && path.elements && Array.isArray(path.elements)) {
-                    pathValue = '/' + path.elements.join('/');
+                if (paths.length > 0) {
+                    return paths.join('');
                 }
+            }
+            // Process string browsePaths
+            else if (entity.browsePaths.length > 0 && typeof entity.browsePaths[0] === 'string') {
+                const paths = entity.browsePaths.map(path => {
+                    if (!path.startsWith('/')) {
+                        path = '/' + path;
+                    }
+                    return `<div class="small">${path}</div>`;
+                });
                 
-                if (pathValue) {
-                    // Make sure path starts with /
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    formattedPaths.push(`<div class="small">${pathValue}</div>`);
+                if (paths.length > 0) {
+                    return paths.join('');
                 }
-            });
-            
-            if (formattedPaths.length > 0) {
-                return formattedPaths.join('');
             }
         }
         
-        // Additional fallbacks
-        
-        // Check properties.browsePaths
-        if (entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
-            const formattedPaths = [];
-            
-            entity.properties.browsePaths.forEach(path => {
-                if (path) {
-                    let pathValue = path;
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    formattedPaths.push(`<div class="small">${pathValue}</div>`);
-                }
-            });
-            
-            if (formattedPaths.length > 0) {
-                return formattedPaths.join('');
-            }
-        }
-        
-        // Check for dataset origin browse paths
-        if (entity.type === 'DATASET' && entity.dataset && entity.dataset.origin && 
-            entity.dataset.origin.browsePaths && Array.isArray(entity.dataset.origin.browsePaths)) {
-            
-            const formattedPaths = [];
-            
-            entity.dataset.origin.browsePaths.forEach(path => {
-                if (path) {
-                    let pathValue = path;
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    formattedPaths.push(`<div class="small">${pathValue}</div>`);
-                }
-            });
-            
-            if (formattedPaths.length > 0) {
-                return formattedPaths.join('');
-            }
-        }
-        
-        // Check for container path
-        if ((entity.type === 'CONTAINER' || entity.type === 'DATASET') && 
-            entity.container && entity.container.path) {
-            
-            let containerPath = entity.container.path;
-            if (!containerPath.startsWith('/')) {
-                containerPath = '/' + containerPath;
-            }
-            return `<div class="small">${containerPath}</div>`;
-        }
-        
+        // If no readable path found
         return '<span class="text-muted">N/A</span>';
     }
     
@@ -1243,7 +1347,7 @@ document.addEventListener('DOMContentLoaded', function() {
             modal.show();
         } else {
             // Load entity details using the entity details endpoint
-            fetch(`/metadata/entities/editable/details/?urn=${encodeURIComponent(urn)}`)
+            fetch(`/metadata/entities/${encodeURIComponent(urn)}/`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`HTTP error! Status: ${response.status}`);
@@ -1411,10 +1515,15 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Check for container path in containers
+        // Check for container path
         if ((entity.type === 'CONTAINER' || entity.type === 'DATASET') && 
             entity.container && entity.container.path) {
-            paths.push(entity.container.path);
+            
+            let containerPath = entity.container.path;
+            if (!containerPath.startsWith('/')) {
+                containerPath = '/' + containerPath;
+            }
+            paths.push(containerPath);
         }
         
         return paths;
@@ -1556,75 +1665,48 @@ document.addEventListener('DOMContentLoaded', function() {
         loadEntities();
     });
     
-    // Handle sync button click
-    document.getElementById('syncButton').addEventListener('click', function() {
-        this.disabled = true;
-        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Syncing...';
-        
-        fetch('/metadata/sync/', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showSuccess('Metadata synced successfully');
-                loadEntities(currentPage);
-            } else {
-                showError(data.error || 'Failed to sync metadata');
-            }
-        })
-        .catch(error => {
-            console.error('Error syncing metadata:', error);
-            showError('Failed to sync metadata');
-        })
-        .finally(() => {
-            this.disabled = false;
-            this.innerHTML = '<i class="fas fa-sync me-1"></i> Sync with DataHub';
-        });
-    });
-
-    // Add a dedicated function for formatting entity properties
-    function formatEntityProperties(entity) {
-        // Check for editable properties first - this is the priority
-        const editableProperties = entity.editableProperties || {};
-        const propKeys = Object.keys(editableProperties).filter(key => 
-            key !== 'name' && key !== 'description'
-        );
-        
-        // Start building the properties HTML
-        let html = '';
-        
-        // Get description from editable properties
-        let description = '';
-        if (editableProperties.description) {
-            description = editableProperties.description;
-            const shortDesc = description.length > 50 ? description.substring(0, 50) + '...' : description;
-            html += `<div class="text-muted small mb-1">${shortDesc}</div>`;
+    // Function to update cache status
+    function updateCacheStatus(message) {
+        const statusElement = document.getElementById('cacheStatusText');
+        if (statusElement) {
+            statusElement.textContent = message;
         }
+    }
+    
+    // Function to show notifications  
+    function showNotification(message, type = 'info') {
+        // Create a toast notification
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+        toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+        toast.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        document.body.appendChild(toast);
         
-        // Add editable properties with values
-        if (propKeys.length > 0) {
-            html += '<div class="mb-1">';
-            html += propKeys.map(key => {
-                const value = editableProperties[key];
-                if (value && typeof value === 'string') {
-                    const shortValue = value.length > 15 ? value.substring(0, 15) + '...' : value;
-                    return `<span class="badge bg-light text-dark me-1" title="${key}: ${value}">${key}: ${shortValue}</span>`;
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 5000);
+    }
+    
+    // Helper function to get CSRF cookie
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
                 }
-                return `<span class="badge bg-light text-dark me-1">${key}</span>`;
-            }).join(' ');
-            html += '</div>';
+            }
         }
-        
-        // If nothing found in editable properties, indicate that
-        if (html === '') {
-            html = '<span class="text-muted">No editable properties</span>';
-        }
-        
-        return html;
+        return cookieValue;
     }
 
     // Add the Add All to PR functionality
@@ -1671,6 +1753,50 @@ document.addEventListener('DOMContentLoaded', function() {
             this.disabled = false;
             this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
         }
+    });
+
+    // Add the Refresh button
+    document.getElementById('refreshCacheButton').addEventListener('click', function() {
+        const button = this;
+        const originalText = button.innerHTML;
+        
+        // Show loading state
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Clearing...';
+        
+        // Clear server-side cache
+        fetch('{% url "metadata_manager:clear_editable_entities_cache" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Clear client-side cache and reload data
+                resultsCache.clear();
+                loadEntities();
+                
+                // Update cache status
+                updateCacheStatus('Cache cleared - loading fresh data');
+                
+                // Show success message
+                showNotification('Cache cleared successfully!', 'success');
+            } else {
+                throw new Error(data.error || 'Failed to clear cache');
+            }
+        })
+        .catch(error => {
+            console.error('Error clearing cache:', error);
+            showNotification('Error clearing cache: ' + error.message, 'error');
+        })
+        .finally(() => {
+            // Restore button state
+            button.disabled = false;
+            button.innerHTML = originalText;
+        });
     });
 });
 </script>

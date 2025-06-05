@@ -67,6 +67,20 @@ def get_datahub_client():
 
 def index(request):
     """Main dashboard view."""
+    # Return basic dashboard without expensive API calls
+    # API calls will be made asynchronously via AJAX
+    return render(request, 'dashboard.html', {
+        'title': 'Dashboard',
+        'connected': False,  # Will be populated via AJAX
+        'recipes_count': 0,  # Will be populated via AJAX
+        'active_schedules_count': 0,  # Will be populated via AJAX
+        'policies_count': 0,  # Will be populated via AJAX
+        'recent_recipes': [],  # Will be populated via AJAX
+        'recent_policies': []  # Will be populated via AJAX
+    })
+
+def dashboard_data(request):
+    """AJAX endpoint to load dashboard data asynchronously."""
     client = get_datahub_client()
     connected = False
     recipes_count = 0
@@ -99,7 +113,6 @@ def index(request):
                         recent_recipes = sorted_recipes
                 except Exception as e:
                     logger.error(f"Error fetching recipes for dashboard: {str(e)}")
-                    messages.warning(request, "Unable to fetch recipe information. Please check your DataHub connection.")
                 
                 # Get policies
                 try:
@@ -129,13 +142,10 @@ def index(request):
                         )[:5]
                 except Exception as e:
                     logger.error(f"Error fetching policies for dashboard: {str(e)}")
-                    messages.warning(request, "Unable to fetch policy information. Please check your DataHub connection.")
         except Exception as e:
             logger.error(f"Error connecting to DataHub: {str(e)}")
-            messages.error(request, f"Error connecting to DataHub: {str(e)}")
     
-    return render(request, 'dashboard.html', {
-        'title': 'Dashboard',
+    return JsonResponse({
         'connected': connected,
         'recipes_count': recipes_count,
         'active_schedules_count': active_schedules_count,
@@ -4149,8 +4159,6 @@ def github_file_diff(request):
 @csrf_exempt
 def github_workflows_overview(request):
     """Get an overview of GitHub workflows."""
-    # Log some debug info
-    logger.info("========== WORKFLOW OVERVIEW REQUEST ==========")
     logger.info(f"Request method: {request.method}")
     logger.info(f"Request GET data: {request.GET}")
     logger.info(f"Request POST data: {request.POST}")

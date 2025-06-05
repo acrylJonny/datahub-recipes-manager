@@ -182,12 +182,6 @@
                                             </td>
                                             <td>
                                                 <div class="btn-group">
-                                                    <form method="post" action="{% url 'metadata_manager:assertion_pull' assertion.id %}" class="d-inline">
-                                                        {% csrf_token %}
-                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Pull to Local">
-                                                            <i class="fas fa-cloud-download-alt"></i>
-                                                        </button>
-                                                    </form>
                                                     {% if datahub_url %}
                                                     <a href="{{ datahub_url }}/assertion/{{ assertion.urn|urlencode:'' }}" 
                                                        target="_blank" class="btn btn-sm btn-outline-secondary" title="View in DataHub">

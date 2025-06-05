@@ -10,6 +10,9 @@ import json
 import logging
 import sys
 import importlib
+import re
+from django.core.cache import cache
+import hashlib
 
 # Add project root to sys.path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -132,38 +135,43 @@ def editable_properties_view(request):
 
 def has_editable_properties(entity):
     """
-    Check if an entity has editable properties that we want to display.
+    Check if an entity has editable properties or editable schema metadata.
     
     Args:
-        entity (dict): The entity dictionary from DataHub
+        entity (dict): The entity dictionary from the API response
         
     Returns:
-        bool: True if the entity has editable properties, False otherwise
+        bool: True if the entity has editable properties or schema metadata, False otherwise
     """
-    # Safety check - if entity is None or not a dict, it has no properties
-    if not entity or not isinstance(entity, dict):
+    if not entity:
         return False
-        
+    
     # Check for editableProperties
-    editable_props = entity.get('editableProperties', {})
-    if editable_props and isinstance(editable_props, dict):
-        # Check if there are any non-empty editable properties
-        if any(value for key, value in editable_props.items() if key not in ('created', 'lastModified')):
-            return True
-    
-    # Check for editableSchemaMetadata (for datasets)
-    if entity.get('type') == 'DATASET':
-        schema_metadata = entity.get('editableSchemaMetadata', {})
-        if isinstance(schema_metadata, dict):
-            schema_fields = schema_metadata.get('editableSchemaFieldInfo', [])
-            if schema_fields and isinstance(schema_fields, list) and len(schema_fields) > 0:
-                return True
-    
-    # For some entity types, we want to include them even if they don't have
-    # explicit editable properties in the response
-    always_include_types = ['TAG', 'GLOSSARY_TERM', 'GLOSSARY_NODE', 'DOMAIN']
-    if entity.get('type') in always_include_types:
+    if entity.get('editableProperties'):
+        editable_props = entity['editableProperties']
+        logger.debug(f"Entity has editableProperties: {editable_props}")
+        # If editableProperties exists, consider it as having editable properties
+        # even if some fields are empty
         return True
+    
+    # Check for editableSchemaMetadata
+    if entity.get('editableSchemaMetadata'):
+        schema_metadata = entity['editableSchemaMetadata']
+        logger.debug(f"Entity has editableSchemaMetadata: {schema_metadata}")
+        
+        # Check if there are editable schema field info entries
+        if schema_metadata.get('editableSchemaFieldInfo'):
+            field_info = schema_metadata['editableSchemaFieldInfo']
+            if isinstance(field_info, list) and len(field_info) > 0:
+                logger.debug(f"Entity has {len(field_info)} editable schema fields")
+                return True
+        
+        # If editableSchemaMetadata exists but no field info, still consider it editable
+        return True
+    
+    # For debugging: log what properties the entity does have
+    entity_keys = list(entity.keys()) if isinstance(entity, dict) else []
+    logger.debug(f"Entity with URN {entity.get('urn', 'unknown')} has keys: {entity_keys}")
     
     return False
 
@@ -266,567 +274,217 @@ def get_platform_list(client, entity_type):
 @login_required
 @require_http_methods(["GET"])
 def get_editable_entities(request):
-    """Get entities with editable properties."""
+    """
+    Get entities with editable properties and return them as JSON.
+    Results are cached for 5 minutes.
+    
+    Args:
+        request: The HTTP request
+        
+    Returns:
+        JsonResponse: The entities in JSON format
+    """
     try:
-        # Add detailed logging
-        logger.info("==== get_editable_entities called ====")
-        logger.info(f"Request query params: {request.GET}")
-        
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
-            logger.error("No active environment configured")
-            return JsonResponse({
-                'success': False,
-                'error': 'No active environment configured'
-            })
-        
-        logger.info(f"Using environment: {environment.name}, URL: {environment.datahub_url}")
-        
-        # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-        
-        # Check if the client has the ability to execute custom GraphQL queries
-        has_graphql_capability = hasattr(client, 'execute_graphql') and callable(getattr(client, 'execute_graphql'))
-        logger.info(f"Client has GraphQL capability: {has_graphql_capability}")
-
-        # Extract and clean search parameters
-        try:
-            start = int(request.GET.get('start', 0))
-            count = int(request.GET.get('count', 20))
-        except (ValueError, TypeError) as e:
-            logger.error(f"Invalid pagination parameters: {e}")
-            start = 0
-            count = 20
-
-        # Extract and clean search parameters
-        query = request.GET.get('searchQuery', '*').strip()
-        entity_type = request.GET.get('entityType', '').strip()
-        platform = request.GET.get('platform', '').strip()
-        sort_by = request.GET.get('sortBy', 'name').strip()
+        # Get query parameters - handle both old and new parameter names for compatibility
+        query = request.GET.get('query') or request.GET.get('searchQuery', '*')
+        start = int(request.GET.get('start', 0))
+        count = int(request.GET.get('count', 100))
+        entity_type = request.GET.get('entity_type') or request.GET.get('entityType')
+        platform = request.GET.get('platform')
+        sort_by = request.GET.get('sort_by') or request.GET.get('sortBy', 'name')
+        editable_only = request.GET.get('editable_only', 'false').lower() == 'true'  # Temporarily set to false
         use_platform_pagination = request.GET.get('use_platform_pagination', 'false').lower() == 'true'
+        
+        logger.info(f"Search parameters: query='{query}', entity_type='{entity_type}', platform='{platform}', editable_only={editable_only}, use_platform_pagination={use_platform_pagination}")
+        
+        # Create cache key based on all parameters
+        cache_params = f"{query}_{start}_{count}_{entity_type}_{platform}_{sort_by}_{editable_only}_{use_platform_pagination}"
+        cache_key = f"editable_entities_{hashlib.md5(cache_params.encode()).hexdigest()}"
+        
+        # Try to get from cache first
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            logger.info(f"Returning cached results for query: {query}")
+            return JsonResponse(cached_result)
+        
+        # Get client from session
+        client = get_client_from_session(request)
+        if not client:
+            return JsonResponse({'success': False, 'error': 'Not connected to DataHub'}, status=400)
+        
+        # Temporarily always use direct search for debugging
+        batch_size = min(count * 5, 500)  # Request 5x the needed amount or up to 500
+        
+        result = client.get_editable_entities(
+            start=start, 
+            count=batch_size, 
+            query=query, 
+            entity_type=entity_type,
+            platform=platform,
+            sort_by=sort_by,
+            editable_only=False  # We'll filter ourselves
+        )
+        
+        # Handle the client response
+        if result:
+            if not result.get('success', True):
+                logger.error(f"Client returned error: {result.get('error', 'Unknown error')}")
+                return JsonResponse({'success': False, 'error': result.get('error', 'Unknown error')}, status=500)
+            
+            # Extract the actual data from the client response
+            if 'data' in result:
+                result = result['data']
+        
+        if not result or 'searchResults' not in result:
+            logger.error("Failed to get entities from DataHub or empty response")
+            return JsonResponse({'success': False, 'error': 'Failed to get entities from DataHub'}, status=500)
+        
+        # Get all search results
+        search_results = result.get('searchResults', [])
+        
+        # Filter to only include entities with editable properties if requested
+        if editable_only:
+            filtered_results = []
+            for search_result in search_results:
+                entity = search_result.get('entity')
+                if entity and has_editable_properties(entity):
+                    filtered_results.append(search_result)
+            
+            search_results = filtered_results
+        
+        # Update the result with filtered search results
+        result['searchResults'] = search_results
+        
+        # Structure the response
+        response_data = {
+            'start': result.get('start', 0),
+            'count': len(search_results),  # Use actual count of filtered results
+            'total': len(search_results),  # Use actual total of filtered results
+            'searchResults': search_results
+        }
+        
+        # Wrap in the expected structure for the frontend
+        response = {
+            'success': True,
+            'data': response_data
+        }
+        
+        # Cache the result for 5 minutes (300 seconds)
+        cache.set(cache_key, response, 300)
+        logger.info(f"Cached results for query: {query}, found {len(search_results)} entities")
+        
+        return JsonResponse(response)
+    except Exception as e:
+        logger.error(f"Error in get_editable_entities: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-        # Validate and clean parameters
-        if entity_type == '':
-            entity_type = None
-        
-        # Log what we're going to do
-        logger.info(f"Fetching entities with start={start}, count={count}, query={query}, entity_type={entity_type}, "
-                    f"platform={platform}, sort_by={sort_by}, use_platform_pagination={use_platform_pagination}")
-        
-        # Define all supported entity types for multi-type pagination
-        all_entity_types = [
-            'DATASET', 'CONTAINER', 'DASHBOARD', 'CHART', 
-            'DATAFLOW', 'DATAJOB', 'DOMAIN', 'GLOSSARY_TERM', 
-            'GLOSSARY_NODE', 'TAG'
-        ]
-        
-        # Handle comprehensive pagination (cycle through entity types and platforms)
-        if use_platform_pagination and not platform:
-            # Initialize an empty result set
-            combined_result = {
-                'searchResults': [],
-                'start': start,
-                'count': count,
-                'total': 0
-            }
+def get_comprehensive_search_results(client, query, start, count, entity_type, platform, sort_by, editable_only):
+    """
+    Perform comprehensive search across platforms and entity types to gather more results.
+    """
+    # Define all supported entity types for multi-type pagination
+    all_entity_types = [
+        'DATASET', 'CONTAINER', 'DASHBOARD', 'CHART', 
+        'DATAFLOW', 'DATAJOB', 'DOMAIN', 'GLOSSARY_TERM', 
+        'GLOSSARY_NODE', 'TAG'
+    ]
+    
+    # Initialize an empty result set
+    combined_result = {
+        'searchResults': [],
+        'start': start,
+        'count': count,
+        'total': 0
+    }
+    
+    # Keep track of seen URNs to avoid duplicates
+    seen_urns = set()
+    target_count = count * 3  # Try to get 3x the requested amount for better pagination
+    
+    # If no entity type is specified, cycle through all types
+    entity_types_to_query = [entity_type] if entity_type else all_entity_types
+    
+    logger.info(f"Starting comprehensive search for {target_count} results across {len(entity_types_to_query)} entity types")
+    
+    # First pass: Direct entity type searches with larger batch sizes
+    for current_entity_type in entity_types_to_query:
+        if len(combined_result['searchResults']) >= target_count:
+            break
             
-            # Keep track of how many entities we've processed
-            processed_count = 0
+        logger.info(f"Processing entity type: {current_entity_type}")
+        
+        try:
+            # Use a larger batch size 
+            batch_size = min(target_count, 500)
             
-            # If no entity type is specified, cycle through all types
-            entity_types_to_query = [entity_type] if entity_type else all_entity_types
+            type_result = client.get_editable_entities(
+                start=0,
+                count=batch_size,
+                query=query,
+                entity_type=current_entity_type,
+                platform=platform,
+                sort_by=sort_by,
+                editable_only=False
+            )
             
-            for current_entity_type in entity_types_to_query:
-                # Skip entity types that don't make sense to query
-                if not current_entity_type:
-                    continue
-                
-                logger.info(f"Processing entity type: {current_entity_type}")
-                
-                # Get platforms for this entity type
-                platforms = get_platform_list(client, current_entity_type)
-                
-                # If there are no specific platforms or the entity type doesn't use platforms,
-                # try a direct query without platform filter
-                if not platforms or current_entity_type in ['TAG', 'GLOSSARY_TERM', 'GLOSSARY_NODE', 'DOMAIN']:
-                    try:
-                        logger.info(f"Querying entity type {current_entity_type} without platform filter")
-                        
-                        type_result = client.get_editable_entities(
-                            start=0,  # Start from beginning for each type
-                            count=min(count * 2, 100),  # Fetch enough to account for filtering
-                            query=query,
-                            entity_type=current_entity_type
-                        )
-                        
-                        if type_result is None:
-                            logger.warning(f"Received None result for entity type {current_entity_type}")
-                            continue
-                        
-                        # Filter results
-                        filtered_type_results = []
-                        for search_result in type_result.get('searchResults', []):
-                            entity = search_result.get('entity', {})
-                            if has_editable_properties(entity):
-                                filtered_type_results.append(search_result)
-                        
-                        # Add filtered results to the combined set
-                        type_filtered_count = len(filtered_type_results)
-                        
-                        if type_filtered_count > 0:
-                            logger.info(f"Found {type_filtered_count} entities with editable properties for type {current_entity_type}")
-                            
-                            # Add type total to the combined total
-                            combined_result['total'] += type_result.get('total', type_filtered_count)
-                            
-                            # Add results, considering pagination
-                            if processed_count < start:
-                                # Skip results that come before our start position
-                                if processed_count + type_filtered_count <= start:
-                                    # All results from this type are before our start
-                                    processed_count += type_filtered_count
-                                else:
-                                    # Some results are after our start position
-                                    skip_count = start - processed_count
-                                    take_count = min(count - len(combined_result['searchResults']), 
-                                                   type_filtered_count - skip_count)
-                                    
-                                    combined_result['searchResults'].extend(
-                                        filtered_type_results[skip_count:skip_count + take_count]
-                                    )
-                                    processed_count += type_filtered_count
-                            else:
-                                # We're already past our start position
-                                take_count = min(count - len(combined_result['searchResults']), 
-                                                type_filtered_count)
-                                combined_result['searchResults'].extend(
-                                    filtered_type_results[:take_count]
-                                )
-                                processed_count += type_filtered_count
-                            
-                            # Check if we have enough results for this page
-                            if len(combined_result['searchResults']) >= count:
-                                break
-                    except Exception as e:
-                        logger.error(f"Error processing entity type {current_entity_type} without platform: {str(e)}")
+            if type_result and 'searchResults' in type_result:
+                # Filter and add results
+                for search_result in type_result.get('searchResults', []):
+                    entity = search_result.get('entity')
+                    if not entity or 'urn' not in entity:
                         continue
-                
-                # If we need more results and this entity type uses platforms, query by platform
-                if len(combined_result['searchResults']) < count and platforms:
-                    # Try each platform until we have enough results
-                    for platform_name in platforms:
-                        try:
-                            # Get platform instances for this platform
-                            platform_instances = get_platform_instances(client, platform_name, current_entity_type)
-                            
-                            # If we found specific instances, query each one separately
-                            if platform_instances and len(platform_instances) > 0:
-                                logger.info(f"Found {len(platform_instances)} instances for platform {platform_name}")
-                                
-                                for instance_id in platform_instances:
-                                    # Build instance-specific query
-                                    instance_query = f"{query}"
-                                    if query and query != '*':
-                                        instance_query += f" AND platform:{platform_name} AND instance:{instance_id}"
-                                    else:
-                                        instance_query = f"platform:{platform_name} AND instance:{instance_id}"
-                                        
-                                    logger.info(f"Fetching entities for type {current_entity_type}, platform: {platform_name}, instance: {instance_id}")
-                                    
-                                    # Fetch entities for this platform instance
-                                    instance_result = client.get_editable_entities(
-                                        start=0,
-                                        count=min(count * 2, 100),
-                                        query=instance_query,
-                                        entity_type=current_entity_type
-                                    )
-                                    
-                                    if instance_result is None:
-                                        logger.warning(f"Received None result for platform {platform_name}, instance {instance_id}")
-                                        continue
-                                    
-                                    # Filter results
-                                    filtered_instance_results = []
-                                    for search_result in instance_result.get('searchResults', []):
-                                        entity = search_result.get('entity', {})
-                                        if has_editable_properties(entity):
-                                            filtered_instance_results.append(search_result)
-                                    
-                                    # Add filtered results to the combined set
-                                    instance_filtered_count = len(filtered_instance_results)
-                                    if instance_filtered_count > 0:
-                                        logger.info(f"Found {instance_filtered_count} entities with editable properties for platform {platform_name}, instance {instance_id}")
-                                        
-                                        # Add instance total to the combined total
-                                        combined_result['total'] += instance_result.get('total', instance_filtered_count)
-                                        
-                                        # Add results, considering pagination
-                                        if processed_count < start:
-                                            # Skip results that come before our start position
-                                            if processed_count + instance_filtered_count <= start:
-                                                # All results from this instance are before our start
-                                                processed_count += instance_filtered_count
-                                            else:
-                                                # Some results are after our start position
-                                                skip_count = start - processed_count
-                                                take_count = min(count - len(combined_result['searchResults']), 
-                                                                instance_filtered_count - skip_count)
-                                                
-                                                combined_result['searchResults'].extend(
-                                                    filtered_instance_results[skip_count:skip_count + take_count]
-                                                )
-                                                processed_count += instance_filtered_count
-                                        else:
-                                            # We're already past our start position
-                                            take_count = min(count - len(combined_result['searchResults']), 
-                                                            instance_filtered_count)
-                                            combined_result['searchResults'].extend(
-                                                filtered_instance_results[:take_count]
-                                            )
-                                            processed_count += instance_filtered_count
-                                        
-                                        # Check if we have enough results for this page
-                                        if len(combined_result['searchResults']) >= count:
-                                            break
-                                
-                                # If we have enough results from instances, don't do the general platform query
-                                if len(combined_result['searchResults']) >= count:
-                                    break
-                            
-                            # If we didn't get enough results from instances, or couldn't identify instances,
-                            # do a general platform query
-                            if len(combined_result['searchResults']) < count:
-                                # Build platform-specific query
-                                platform_query = f"{query}"
-                                if query and query != '*':
-                                    platform_query += f" AND platform:{platform_name}"
-                                else:
-                                    platform_query = f"platform:{platform_name}"
-                                    
-                                logger.info(f"Fetching entities for type {current_entity_type}, platform: {platform_name} with query: {platform_query}")
-                                
-                                # Fetch entities for this platform
-                                platform_result = client.get_editable_entities(
-                                    start=0,  # Start from beginning for each platform
-                                    count=min(count * 2, 100),  # Fetch enough to account for filtering
-                                    query=platform_query,
-                                    entity_type=current_entity_type
-                                )
-                                
-                                if platform_result is None:
-                                    logger.warning(f"Received None result for platform {platform_name}")
-                                    continue
-                                
-                                # Filter results
-                                filtered_platform_results = []
-                                for search_result in platform_result.get('searchResults', []):
-                                    entity = search_result.get('entity', {})
-                                    if has_editable_properties(entity):
-                                        filtered_platform_results.append(search_result)
-                                
-                                # Add filtered results to the combined set
-                                platform_filtered_count = len(filtered_platform_results)
-                                if platform_filtered_count > 0:
-                                    logger.info(f"Found {platform_filtered_count} entities with editable properties for platform {platform_name}")
-                                    
-                                    # Add platform total to the combined total
-                                    combined_result['total'] += platform_result.get('total', platform_filtered_count)
-                                    
-                                    # Add results, considering pagination
-                                    if processed_count < start:
-                                        # Skip results that come before our start position
-                                        if processed_count + platform_filtered_count <= start:
-                                            # All results from this platform are before our start
-                                            processed_count += platform_filtered_count
-                                        else:
-                                            # Some results are after our start position
-                                            skip_count = start - processed_count
-                                            take_count = min(count - len(combined_result['searchResults']), 
-                                                            platform_filtered_count - skip_count)
-                                            
-                                            combined_result['searchResults'].extend(
-                                                filtered_platform_results[skip_count:skip_count + take_count]
-                                            )
-                                            processed_count += platform_filtered_count
-                                    else:
-                                        # We're already past our start position
-                                        take_count = min(count - len(combined_result['searchResults']), 
-                                                        platform_filtered_count)
-                                        combined_result['searchResults'].extend(
-                                            filtered_platform_results[:take_count]
-                                        )
-                                        processed_count += platform_filtered_count
-                                    
-                                    # Check if we have enough results for this page
-                                    if len(combined_result['searchResults']) >= count:
-                                        break
-                                    
-                        except Exception as e:
-                            logger.error(f"Error processing platform {platform_name}: {str(e)}")
-                            continue
-                
-                # If we have enough results, stop querying more entity types
-                if len(combined_result['searchResults']) >= count:
-                    break
-            
-            logger.info(f"Combined results: {len(combined_result['searchResults'])} entities")
-            
-            # Check if we need more results and if browse path pagination could help
-            if len(combined_result['searchResults']) < count:
-                logger.info("Attempting to fetch additional results using browse paths")
-                
-                # Track URNs we've already seen to avoid duplicates
-                seen_urns = set()
-                for result in combined_result['searchResults']:
-                    if 'entity' in result and 'urn' in result['entity']:
-                        seen_urns.add(result['entity']['urn'])
-                
-                # Get common browse paths to query - this will include both static and discovered paths
-                browse_paths = get_common_browse_paths(client, entity_type)
-                logger.info(f"Using {len(browse_paths)} browse paths for searching")
-                
-                # Track how many additional entities we've found
-                additional_entities_count = 0
-                
-                for browse_path in browse_paths:
-                    # Skip if we already have enough results
-                    if len(combined_result['searchResults']) >= count:
+                        
+                    entity_urn = entity['urn']
+                    
+                    # Skip if we've already seen this entity
+                    if entity_urn in seen_urns:
+                        continue
+                    
+                    # Check if it has editable properties if filtering is enabled
+                    if editable_only and not has_editable_properties(entity):
+                        continue
+                    
+                    # Add to results
+                    combined_result['searchResults'].append(search_result)
+                    seen_urns.add(entity_urn)
+                    
+                    if len(combined_result['searchResults']) >= target_count:
                         break
-                        
-                    # Build browse path query
-                    browse_query = f"{query}"
-                    if query and query != '*':
-                        browse_query += f" AND browsePaths:\"{browse_path}*\""
-                    else:
-                        browse_query = f"browsePaths:\"{browse_path}*\""
-                        
-                    logger.info(f"Fetching entities with browse path: {browse_path}")
-                    
-                    # Add entity type if specified
-                    entity_type_param = entity_type if entity_type else None
-                    
-                    # Use a custom GraphQL query if the client supports it
-                    browse_result = None
-                    if has_graphql_capability:
-                        try:
-                            # Construct a GraphQL query that properly uses browsePathV2 filters
-                            graphql_query = """
-                            query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
-                              searchAcrossEntities(input: $input) {
-                                start
-                                count
-                                total
-                                searchResults {
-                                  entity {
-                                    urn
-                                    type
-                                    ... on Dataset {
-                                      name
-                                      browsePaths { path }
-                                      browsePathV2 {
-                                        path {
-                                          name
-                                          entity {
-                                            ... on Container {
-                                              container {
-                                                urn
-                                                properties { name }
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                      editableProperties {
-                                        name
-                                        description
-                                      }
-                                      editableSchemaMetadata {
-                                        editableSchemaFieldInfo {
-                                          fieldPath
-                                          description
-                                          tags {
-                                            tags {
-                                              associatedUrn
-                                              tag { urn }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }
-                                    ... on Container {
-                                      properties { name }
-                                      browsePathV2 {
-                                        path {
-                                          name
-                                          entity {
-                                            ... on Container {
-                                              container {
-                                                urn
-                                                properties { name }
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                      editableProperties {
-                                        description
-                                      }
-                                    }
-                                    ... on Chart {
-                                      properties { name }
-                                      browsePaths { path }
-                                      browsePathV2 {
-                                        path {
-                                          name
-                                          entity {
-                                            ... on Container {
-                                              container {
-                                                urn
-                                                properties { name }
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                      editableProperties {
-                                        description
-                                      }
-                                    }
-                                    ... on Dashboard {
-                                      properties { name }
-                                      browsePaths { path }
-                                      browsePathV2 {
-                                        path {
-                                          name
-                                          entity {
-                                            ... on Container {
-                                              container {
-                                                urn
-                                                properties { name }
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                      editableProperties {
-                                        description
-                                      }
-                                    }
-                                    ... on DataFlow {
-                                      properties { name }
-                                      browsePaths { path }
-                                      browsePathV2 {
-                                        path {
-                                          name
-                                          entity {
-                                            ... on Container {
-                                              container {
-                                                urn
-                                                properties { name }
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                      editableProperties {
-                                        description
-                                      }
-                                    }
-                                    ... on DataJob {
-                                      properties { name }
-                                      browsePaths { path }
-                                      browsePathV2 {
-                                        path {
-                                          name
-                                          entity {
-                                            ... on Container {
-                                              container {
-                                                urn
-                                                properties { name }
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                      editableProperties {
-                                        description
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                            """
-                            
-                            # Extract the path name from the browse path - remove leading/trailing slashes
-                            path_name = browse_path.strip('/')
-                            
-                            # Set up variables for the GraphQL query using the proper browsePathV2 filter format
-                            variables = {
-                                "input": {
-                                    "query": query if query and query != '*' else "",
-                                    "start": 0,
-                                    "count": min(count * 2, 100)
-                                }
-                            }
-                            
-                            # Add entity type filter if specified
-                            if entity_type_param:
-                                variables["input"]["types"] = [entity_type_param]
-                                
-                            # Add the browsePathV2 filter using the proper format
-                            # DataHub uses a special character (␟) before the path name
-                            if path_name:
-                                variables["input"]["orFilters"] = [
-                                    {
-                                        "and": [
-                                            {
-                                                "field": "browsePathV2",
-                                                "condition": "EQUAL",
-                                                "values": [f"␟{path_name}"],
-                                                "negated": False
-                                            }
-                                        ]
-                                    }
-                                ]
-                            
-                            # Execute the query
-                            result = client.execute_graphql(graphql_query, variables)
-                            
-                            # Extract the search results
-                            if result and 'data' in result and 'searchAcrossEntities' in result['data']:
-                                browse_result = {
-                                    'searchResults': result['data']['searchAcrossEntities']['searchResults'],
-                                    'total': result['data']['searchAcrossEntities']['total']
-                                }
-                        except Exception as e:
-                            logger.warning(f"Error executing custom GraphQL for browse path search: {str(e)}")
-                            # Fall back to regular search
-                    
-                    # Use regular search if GraphQL approach failed or isn't available
-                    if browse_result is None:
-                        try:
-                            # Fetch entities with this browse path
-                            browse_result = client.get_editable_entities(
-                                start=0,
-                                count=min(count * 2, 100),
-                                query=browse_query,
-                                entity_type=entity_type_param
-                            )
-                        except Exception as e:
-                            logger.error(f"Error processing browse path {browse_path}: {str(e)}")
-                            continue
-                    
-                    if browse_result is None:
-                        logger.warning(f"Received None result for browse path {browse_path}")
-                        continue
-                    
-                    # Filter results
-                    filtered_browse_results = []
-                    for search_result in browse_result.get('searchResults', []):
-                        entity = search_result.get('entity', {})
-                        
+                
+                # Add to total count
+                combined_result['total'] += type_result.get('total', 0)
+                
+        except Exception as e:
+            logger.error(f"Error processing entity type {current_entity_type}: {str(e)}")
+            continue
+    
+    # Second pass: Platform-based search with common platforms only
+    if len(combined_result['searchResults']) < target_count and not platform:
+        logger.info("Attempting platform-based search for additional results")
+        
+        # Use a simple list of common platforms instead of calling get_platform_list
+        common_platforms = ['postgres', 'mysql', 'snowflake', 'bigquery', 'redshift', 'databricks', 'glue', 'hive', 'kafka']
+        
+        for platform_name in common_platforms:
+            if len(combined_result['searchResults']) >= target_count:
+                break
+                
+            logger.info(f"Searching platform: {platform_name}")
+            
+            try:
+                platform_result = client.get_editable_entities(
+                    start=0,
+                    count=min(200, target_count - len(combined_result['searchResults'])),
+                    query=query,
+                    entity_type=entity_type,
+                    platform=platform_name,
+                    sort_by=sort_by,
+                    editable_only=False
+                )
+                
+                if platform_result and 'searchResults' in platform_result:
+                    for search_result in platform_result.get('searchResults', []):
+                        entity = search_result.get('entity')
                         if not entity or 'urn' not in entity:
                             continue
                             
@@ -835,358 +493,27 @@ def get_editable_entities(request):
                         # Skip if we've already seen this entity
                         if entity_urn in seen_urns:
                             continue
-                            
-                        # Check if it has editable properties
-                        if has_editable_properties(entity):
-                            # Enhance the entity with extracted browse paths if needed
-                            if 'browsePaths' not in entity or not entity['browsePaths']:
-                                entity['browsePaths'] = extract_browse_paths(entity)
-                                
-                            # Ensure the entity has a name using our helper
-                            if ('name' not in entity and 'properties' not in entity) or \
-                               ('properties' in entity and 'name' not in entity['properties']):
-                                entity_name = extract_entity_name(entity)
-                                # Add the name to the appropriate place based on entity type
-                                if entity['type'] == 'DATASET':
-                                    entity['name'] = entity_name
-                                else:
-                                    if 'properties' not in entity:
-                                        entity['properties'] = {}
-                                    entity['properties']['name'] = entity_name
-                                
-                            filtered_browse_results.append(search_result)
-                            seen_urns.add(entity_urn)  # Mark as seen
-                    
-                    # Add filtered results to the combined set
-                    browse_filtered_count = len(filtered_browse_results)
-                    if browse_filtered_count > 0:
-                        logger.info(f"Found {browse_filtered_count} additional entities with browse path {browse_path}")
                         
-                        # Add browse path total to the combined total
-                        combined_result['total'] += browse_filtered_count
+                        # Check if it has editable properties if filtering is enabled
+                        if editable_only and not has_editable_properties(entity):
+                            continue
                         
-                        # Add results, considering pagination
-                        take_count = min(count - len(combined_result['searchResults']), browse_filtered_count)
-                        combined_result['searchResults'].extend(filtered_browse_results[:take_count])
-                        additional_entities_count += take_count
+                        # Add to results
+                        combined_result['searchResults'].append(search_result)
+                        seen_urns.add(entity_urn)
                         
-                        # Check if we have enough results
-                        if len(combined_result['searchResults']) >= count:
+                        if len(combined_result['searchResults']) >= target_count:
                             break
-                
-                logger.info(f"Browse path search added {additional_entities_count} entities to results")
-            
-            try:
-                return JsonResponse({
-                    'success': True,
-                    'data': combined_result
-                })
-            except Exception as e:
-                logger.error(f"Error creating JSON response: {str(e)}")
-                return JsonResponse({
-                    'success': False,
-                    'error': f"Error processing results: {str(e)}"
-                })
-        
-        # Handle platform-based pagination for a specific entity type
-        elif use_platform_pagination and entity_type and not platform:
-            # Get list of platforms for this entity type
-            platforms = get_platform_list(client, entity_type)
-            
-            if platforms:
-                logger.info(f"Using platform-based pagination with platforms: {platforms}")
-                
-                # Initialize an empty result set
-                combined_result = {
-                    'searchResults': [],
-                    'start': start,
-                    'count': count,
-                    'total': 0
-                }
-                
-                # Keep track of how many entities we've processed
-                processed_count = 0
-                
-                # Try each platform until we have enough results
-                for platform_name in platforms:
-                    try:
-                        # Get platform instances for this platform
-                        platform_instances = get_platform_instances(client, platform_name, entity_type)
-                        
-                        # If we found specific instances, query each one separately
-                        if platform_instances and len(platform_instances) > 0:
-                            logger.info(f"Found {len(platform_instances)} instances for platform {platform_name}")
-                            
-                            for instance_id in platform_instances:
-                                # Build instance-specific query
-                                instance_query = f"{query}"
-                                if query and query != '*':
-                                    instance_query += f" AND platform:{platform_name} AND instance:{instance_id}"
-                                else:
-                                    instance_query = f"platform:{platform_name} AND instance:{instance_id}"
-                                    
-                                    logger.info(f"Fetching entities for type {entity_type}, platform: {platform_name}, instance: {instance_id}")
-                                    
-                                    # Fetch entities for this platform instance
-                                    instance_result = client.get_editable_entities(
-                                        start=0,
-                                        count=min(count * 2, 100),
-                                        query=instance_query,
-                                        entity_type=entity_type
-                                    )
-                                    
-                                    if instance_result is None:
-                                        logger.warning(f"Received None result for platform {platform_name}, instance {instance_id}")
-                                        continue
-                                    
-                                    # Filter results
-                                    filtered_instance_results = []
-                                    for search_result in instance_result.get('searchResults', []):
-                                        entity = search_result.get('entity', {})
-                                        if has_editable_properties(entity):
-                                            filtered_instance_results.append(search_result)
-                                    
-                                    # Add filtered results to the combined set
-                                    instance_filtered_count = len(filtered_instance_results)
-                                    if instance_filtered_count > 0:
-                                        logger.info(f"Found {instance_filtered_count} entities with editable properties for platform {platform_name}, instance {instance_id}")
-                                        
-                                        # Add instance total to the combined total
-                                        combined_result['total'] += instance_result.get('total', instance_filtered_count)
-                                        
-                                        # Add results, considering pagination
-                                        if processed_count < start:
-                                            # Skip results that come before our start position
-                                            if processed_count + instance_filtered_count <= start:
-                                                # All results from this instance are before our start
-                                                processed_count += instance_filtered_count
-                                            else:
-                                                # Some results are after our start position
-                                                skip_count = start - processed_count
-                                                take_count = min(count - len(combined_result['searchResults']), 
-                                                                instance_filtered_count - skip_count)
-                                                
-                                                combined_result['searchResults'].extend(
-                                                    filtered_instance_results[skip_count:skip_count + take_count]
-                                                )
-                                                processed_count += instance_filtered_count
-                                        else:
-                                            # We're already past our start position
-                                            take_count = min(count - len(combined_result['searchResults']), 
-                                                            instance_filtered_count)
-                                            combined_result['searchResults'].extend(
-                                                filtered_instance_results[:take_count]
-                                            )
-                                            processed_count += instance_filtered_count
-                                        
-                                        # Check if we have enough results for this page
-                                        if len(combined_result['searchResults']) >= count:
-                                            break
-                                
-                            # If we have enough results from instances, don't do the general platform query
-                            if len(combined_result['searchResults']) >= count:
-                                break
-                        
-                        # If we didn't get enough results from instances, or couldn't identify instances,
-                        # do a general platform query
-                        if len(combined_result['searchResults']) < count:
-                            # Build platform-specific query
-                            platform_query = f"{query}"
-                            if query and query != '*':
-                                platform_query += f" AND platform:{platform_name}"
-                            else:
-                                platform_query = f"platform:{platform_name}"
-                                
-                            logger.info(f"Fetching entities for type {entity_type}, platform: {platform_name} with query: {platform_query}")
-                            
-                            # Fetch entities for this platform
-                            platform_result = client.get_editable_entities(
-                                start=0,  # Start from beginning for each platform
-                                count=min(count * 2, 100),  # Fetch enough to account for filtering
-                                query=platform_query,
-                                entity_type=entity_type
-                            )
-                            
-                            if platform_result is None:
-                                logger.warning(f"Received None result for platform {platform_name}")
-                                continue
-                            
-                            # Filter results
-                            filtered_platform_results = []
-                            for search_result in platform_result.get('searchResults', []):
-                                entity = search_result.get('entity', {})
-                                if has_editable_properties(entity):
-                                    filtered_platform_results.append(search_result)
-                            
-                            # Add filtered results to the combined set
-                            platform_filtered_count = len(filtered_platform_results)
-                            if platform_filtered_count > 0:
-                                logger.info(f"Found {platform_filtered_count} entities with editable properties for platform {platform_name}")
-                                
-                                # Add platform total to the combined total
-                                combined_result['total'] += platform_result.get('total', platform_filtered_count)
-                                
-                                # Add results, considering pagination
-                                if processed_count < start:
-                                    # Skip results that come before our start position
-                                    if processed_count + platform_filtered_count <= start:
-                                        # All results from this platform are before our start
-                                        processed_count += platform_filtered_count
-                                    else:
-                                        # Some results are after our start position
-                                        skip_count = start - processed_count
-                                        take_count = min(count - len(combined_result['searchResults']), 
-                                                        platform_filtered_count - skip_count)
-                                        
-                                        combined_result['searchResults'].extend(
-                                            filtered_platform_results[skip_count:skip_count + take_count]
-                                        )
-                                        processed_count += platform_filtered_count
-                                else:
-                                    # We're already past our start position
-                                    take_count = min(count - len(combined_result['searchResults']), 
-                                                    platform_filtered_count)
-                                    combined_result['searchResults'].extend(
-                                        filtered_platform_results[:take_count]
-                                    )
-                                    processed_count += platform_filtered_count
-                                
-                                # Check if we have enough results for this page
-                                if len(combined_result['searchResults']) >= count:
-                                    break
-                                
-                    except Exception as e:
-                        logger.error(f"Error processing platform {platform_name}: {str(e)}")
-                        continue
-                
-                logger.info(f"Combined results from {len(platforms)} platforms: {len(combined_result['searchResults'])} entities")
-                return JsonResponse({
-                    'success': True,
-                    'data': combined_result
-                })
-        
-        # If not using platform pagination or if platform is specified, use regular approach
-        try:
-            # If platform is specified, add it to the query
-            if platform:
-                if query and query != '*':
-                    query = f"{query} AND platform:{platform}"
-                else:
-                    query = f"platform:{platform}"
-            
-            result = client.get_editable_entities(
-                start=start,
-                count=count,
-                query=query,
-                entity_type=entity_type
-            )
-        except Exception as e:
-            logger.error(f"Error calling get_editable_entities: {str(e)}")
-            return JsonResponse({
-                'success': False,
-                'error': f'Error retrieving entities: {str(e)}'
-            })
-        
-        # Check if result is None (which can happen if there's an error in the GraphQL request)
-        if result is None:
-            logger.error("Received None result from get_editable_entities call")
-            return JsonResponse({
-                'success': False,
-                'error': 'Failed to fetch entities from DataHub. Check connection settings and logs for details.'
-            })
-        
-        logger.info(f"Got result with {len(result.get('searchResults', []))} entities")
-        
-        # Filter entities to only include those with actual editable properties
-        if 'searchResults' in result:
-            filtered_results = []
-            
-            for search_result in result['searchResults']:
-                entity = search_result.get('entity', {})
-                
-                if has_editable_properties(entity):
-                    filtered_results.append(search_result)
-            
-            # Update the results with filtered list
-            result['searchResults'] = filtered_results
-            
-            # If we have filtered out a significant number of results and we're not
-            # on the last page, we may need to fetch more results to fill the page
-            original_total = result.get('total', 0)
-            filtered_count = len(filtered_results)
-            
-            # Only update the total if it makes sense (some DataHub versions don't return accurate totals)
-            if original_total > 0 and filtered_count < count and original_total > (start + count):
-                # Calculate approximately how many more entities we might need to fetch
-                # based on the filter ratio we've observed
-                original_count = len(result.get('searchResults', []))
-                if original_count > 0:  # Avoid division by zero
-                    filter_ratio = filtered_count / original_count
                     
-                    # Only attempt to fetch more if our filter ratio suggests it's worth it
-                    if filter_ratio > 0 and filter_ratio < 0.8:
-                        logger.info(f"Filter ratio: {filter_ratio}, attempting to fetch more entities")
-                        
-                        # Fetch additional entities to try to fill the page
-                        additional_start = start + count
-                        additional_count = min(count * 2, 100)  # Don't fetch too many
-                        
-                        try:
-                            additional_result = client.get_editable_entities(
-                                start=additional_start,
-                                count=additional_count,
-                                query=query,
-                                entity_type=entity_type
-                            )
-                            
-                            # Skip processing if the additional result is None
-                            if additional_result is None:
-                                logger.warning("Received None for additional results")
-                            else:
-                                additional_filtered = []
-                                for search_result in additional_result.get('searchResults', []):
-                                    if isinstance(search_result, dict) and 'entity' in search_result:
-                                        entity = search_result.get('entity', {})
-                                        
-                                        # Use the helper function
-                                        if has_editable_properties(entity):
-                                            additional_filtered.append(search_result)
-                                
-                                # Add the additional filtered results until we reach the requested count
-                                needed = count - filtered_count
-                                if needed > 0 and additional_filtered:
-                                    result['searchResults'].extend(additional_filtered[:needed])
-                                    logger.info(f"Added {min(needed, len(additional_filtered))} additional entities")
-                        except Exception as e:
-                            logger.error(f"Error fetching additional entities: {str(e)}")
-            
-            # Update the total count in the result
-            try:
-                result['total'] = original_total  # Keep the original total for proper pagination
-                result['filtered_total'] = len(filtered_results)  # Add the filtered total for client info
+                    combined_result['total'] += platform_result.get('total', 0)
+                    
             except Exception as e:
-                logger.error(f"Error updating result totals: {str(e)}")
-            
-            logger.info(f"Filtered down to {len(result['searchResults'])} entities with editable properties")
-        
-        try:
-            return JsonResponse({
-                'success': True,
-                'data': result
-            })
-        except Exception as e:
-            logger.error(f"Error creating JSON response: {str(e)}")
-            return JsonResponse({
-                'success': False,
-                'error': f"Error processing results: {str(e)}"
-            })
-        
-    except Exception as e:
-        logger.error(f"Error getting editable entities: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        })
+                logger.error(f"Error processing platform {platform_name}: {str(e)}")
+                continue
+    
+    logger.info(f"Comprehensive search completed: {len(combined_result['searchResults'])} entities found from {len(seen_urns)} unique entities")
+    
+    return combined_result
 
 @login_required
 @require_http_methods(["POST"])
@@ -1385,99 +712,134 @@ def sync_metadata(request):
 
 def extract_entity_name(entity):
     """
-    Extract the name of an entity based on its type and available properties.
-    Different entity types store names in different ways.
+    Extract the name from an entity, prioritizing different sources.
     
     Args:
-        entity: The entity object from DataHub API response
+        entity (dict): The entity dictionary from the GraphQL response
         
     Returns:
-        str: The entity name or a default if not found
+        str: The entity name or a fallback
     """
-    try:
-        if not entity:
-            return "Unnamed Entity"
-            
-        # Check entity type to determine where to find the name
-        entity_type = entity.get('type', '')
+    # Priority 1: Check editableProperties.name (if available)
+    if entity.get('editableProperties') and entity['editableProperties'].get('name'):
+        return entity['editableProperties']['name']
+    
+    # Priority 2: Check for direct name property (often available for datasets)
+    if 'name' in entity:
+        return entity['name']
+    
+    # Priority 3: Check properties.name (container and other entities)
+    if entity.get('properties') and entity['properties'].get('name'):
+        return entity['properties']['name']
+    
+    # Priority 4: For containers, charts, dashboards, etc. check in entity-specific structure
+    entity_type = entity.get('type', '').lower()
+    if entity_type in ['container', 'chart', 'dashboard', 'dataflow', 'datajob']:
+        # Check for info.name inside entity-specific object
+        entity_obj = entity.get(entity_type)
+        if entity_obj and entity_obj.get('info') and entity_obj['info'].get('name'):
+            return entity_obj['info']['name']
+    
+    # Fallback: Extract from URN
+    if 'urn' in entity:
+        urn = entity['urn']
+        # For datasets, extract the name from the URN pattern: urn:li:dataset:(platform,name,env)
+        if urn.startswith('urn:li:dataset:'):
+            try:
+                # Parse the complex URN structure for datasets
+                matches = re.search(r'urn:li:dataset:\(urn:li:dataPlatform:([^,]+),([^,)]+)', urn)
+                if matches and matches.group(2):
+                    return matches.group(2)
+            except Exception as e:
+                logger.error(f"Error extracting name from dataset URN: {str(e)}")
         
-        # Check for direct name property (used by Dataset, MLFeature, etc.)
-        if 'name' in entity:
-            return entity['name']
-            
-        # Check for properties.name (used by Container, Chart, Dashboard, etc.)
-        if 'properties' in entity and isinstance(entity['properties'], dict):
-            if 'name' in entity['properties']:
-                return entity['properties']['name']
-                
-        # Check for info.title (used by Notebook)
-        if 'info' in entity and isinstance(entity['info'], dict):
-            if 'title' in entity['info']:
-                return entity['info']['title']
-                
-        # Check for editableProperties.name (might be present for some entities)
-        if 'editableProperties' in entity and isinstance(entity['editableProperties'], dict):
-            if 'name' in entity['editableProperties']:
-                return entity['editableProperties']['name']
-                
-        # Last resort: extract name from URN
-        urn = entity.get('urn', '')
-        if urn:
-            # Extract the last part of the URN as a fallback name
-            urn_parts = urn.split('/')
-            if urn_parts:
-                return urn_parts[-1]
-                
-        return "Unnamed Entity"
-    except Exception as e:
-        logger.error(f"Error extracting entity name: {str(e)}")
-        return "Unnamed Entity"
+        # For other entities, just return the last part of the URN
+        parts = urn.split(':')
+        if len(parts) > 0:
+            last_part = parts[-1]
+            if '/' in last_part:
+                return last_part.split('/')[-1]
+            return last_part
+    
+    # Final fallback
+    return "Unnamed Entity"
 
 def extract_browse_paths(entity):
     """
-    Extract browse paths from an entity, preferring browsePathV2 when available.
+    Extract browse paths from an entity, prioritizing different sources.
     
     Args:
-        entity: The entity object from DataHub API response
+        entity (dict): The entity dictionary from the GraphQL response
         
     Returns:
-        list: List of browse paths as strings
+        list: List of browse paths
     """
-    try:
-        if not entity:
-            return []
+    paths = []
+    
+    # Priority 1: browsePathV2 - this is the most detailed browse path information
+    if entity.get('browsePathV2') and entity['browsePathV2'].get('path'):
+        try:
+            # Extract container names from the path
+            path_parts = []
+            for path_item in entity['browsePathV2']['path']:
+                # Check if it has a container with a name
+                if path_item.get('entity') and path_item['entity'].get('container') and \
+                   path_item['entity']['container'].get('properties') and \
+                   path_item['entity']['container']['properties'].get('name'):
+                    path_parts.append(path_item['entity']['container']['properties']['name'])
+                # Fallback to the raw name (usually a URN)
+                elif path_item.get('name'):
+                    # Extract a more readable name from the URN
+                    if path_item['name'].startswith('urn:li:container:'):
+                        path_parts.append(f"container-{path_item['name'].split(':')[-1][:6]}")
+                    else:
+                        path_parts.append(path_item['name'])
             
-        paths = []
-        
-        # First try to extract from browsePathV2 (preferred format)
-        if 'browsePathV2' in entity and entity['browsePathV2']:
-            browse_path_v2 = entity['browsePathV2']
-            
-            # browsePathV2 contains a list of path entries
-            if 'path' in browse_path_v2:
-                for path_entry in browse_path_v2['path']:
-                    if 'entity' in path_entry and 'container' in path_entry['entity']:
-                        container = path_entry['entity']['container']
-                        if 'properties' in container and 'name' in container['properties']:
-                            container_name = container['properties']['name']
-                            paths.append(f"/{container_name}")
-                            
-        # If we couldn't extract from browsePathV2 or it's empty, try browsePaths
-        if not paths and 'browsePaths' in entity and entity['browsePaths']:
-            for browse_path in entity['browsePaths']:
-                if 'path' in browse_path:
-                    paths.append(browse_path['path'])
-                    
-        # Legacy approach: entity might have browsePaths as simple string array
-        if not paths and 'browsePaths' in entity and isinstance(entity['browsePaths'], list):
-            for path in entity['browsePaths']:
+            if path_parts:
+                paths.append('/' + '/'.join(path_parts))
+        except Exception as e:
+            logger.error(f"Error extracting browsePathV2: {str(e)}")
+    
+    # Priority 2: browsePaths with path property (array format)
+    if entity.get('browsePaths') and isinstance(entity['browsePaths'], list):
+        for browse_path in entity['browsePaths']:
+            if isinstance(browse_path, dict) and browse_path.get('path'):
+                if isinstance(browse_path['path'], list):
+                    path_str = '/' + '/'.join(browse_path['path'])
+                    paths.append(path_str)
+                elif isinstance(browse_path['path'], str):
+                    path_str = browse_path['path'] if browse_path['path'].startswith('/') else '/' + browse_path['path']
+                    paths.append(path_str)
+            # Handle simple string format
+            elif isinstance(browse_path, str):
+                path_str = browse_path if browse_path.startswith('/') else '/' + browse_path
+                paths.append(path_str)
+    
+    # Priority 3: Check properties.browsePaths
+    if entity.get('properties') and entity['properties'].get('browsePaths'):
+        browse_paths = entity['properties']['browsePaths']
+        if isinstance(browse_paths, list):
+            for path in browse_paths:
                 if isinstance(path, str):
-                    paths.append(path)
-                    
-        return paths
-    except Exception as e:
-        logger.error(f"Error extracting browse paths: {str(e)}")
-        return []
+                    path_str = path if path.startswith('/') else '/' + path
+                    paths.append(path_str)
+    
+    # Priority 4: For datasets, check origin browsePaths
+    if entity.get('type') == 'DATASET' and entity.get('dataset') and entity['dataset'].get('origin'):
+        origin = entity['dataset']['origin']
+        if origin.get('browsePaths') and isinstance(origin['browsePaths'], list):
+            for path in origin['browsePaths']:
+                if isinstance(path, str):
+                    path_str = path if path.startswith('/') else '/' + path
+                    paths.append(path_str)
+    
+    # Check for container path
+    if (entity.get('type') in ['CONTAINER', 'DATASET']) and entity.get('container') and entity['container'].get('path'):
+        container_path = entity['container']['path']
+        path_str = container_path if container_path.startswith('/') else '/' + container_path
+        paths.append(path_str)
+    
+    return paths
 
 def get_browse_paths_hierarchy(client, entity_type=None, parent_path='/'):
     """
@@ -1873,3 +1235,54 @@ def metadata_entities_editable_list(request):
             'success': False,
             'error': f"Failed to retrieve entities: {str(e)}"
         })
+
+def get_client_from_session(request):
+    """
+    Get a DataHub client from the session or create a new one.
+    
+    Args:
+        request (HttpRequest): The request object
+        
+    Returns:
+        DataHubRestClient: The client instance or None if not connected
+    """
+    try:
+        # Get active environment
+        environment = Environment.objects.filter(is_default=True).first()
+        if not environment:
+            logger.error("No active environment configured")
+            return None
+            
+        # Initialize and return a client
+        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        return client
+    except Exception as e:
+        logger.error(f"Error creating DataHub client: {str(e)}")
+        return None
+
+@login_required
+@require_http_methods(["POST"])
+def clear_editable_entities_cache(request):
+    """
+    Clear the cache for editable entities to force a fresh search.
+    
+    Returns:
+        JsonResponse: Success/error message
+    """
+    try:
+        # Clear all cache keys that start with 'editable_entities_'
+        cache_pattern = 'editable_entities_*'
+        
+        # Django's cache doesn't have a pattern-based delete, so we'll use a simple approach
+        # and just clear all cache if we can't find a better way
+        if hasattr(cache, 'delete_pattern'):
+            cache.delete_pattern('editable_entities_*')
+        else:
+            # Fallback: clear the entire cache (not ideal but works)
+            cache.clear()
+        
+        logger.info("Cleared editable entities cache")
+        return JsonResponse({'success': True, 'message': 'Cache cleared successfully'})
+    except Exception as e:
+        logger.error(f"Error clearing cache: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)

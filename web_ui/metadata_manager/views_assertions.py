@@ -1,26 +1,37 @@
-from django.shortcuts import render, redirect, get_object_or_404
+import logging
+import json
+from django.shortcuts import render, get_object_or_404, redirect
+from django.http import JsonResponse, HttpResponse
 from django.views import View
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponse
-from django.views.decorators.http import require_POST
-from django.utils.decorators import method_decorator
 from django.utils import timezone
-import json
-import logging
-import os
-import sys
+from django.views.decorators.http import require_POST, require_http_methods
+from django.utils.decorators import method_decorator
+from django.views.generic import CreateView, UpdateView
 import yaml
-from datetime import datetime
 
 # Add project root to sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import sys
+import os
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
 
 # Import the deterministic URN utilities
 from utils.urn_utils import generate_deterministic_urn, get_full_urn_from_name
 from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_rest_client import DataHubRestClient
 from .models import Assertion, AssertionResult, Domain, Environment
 from web_ui.models import Environment as DjangoEnvironment
-from web_ui.models import GitSettings, GitIntegration
+
+# Optional git integration imports
+try:
+    from git_integration.models import GitSettings
+    from git_integration.core import GitIntegration
+    GIT_INTEGRATION_AVAILABLE = True
+except ImportError:
+    GitSettings = None
+    GitIntegration = None
+    GIT_INTEGRATION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -32,22 +43,60 @@ class AssertionListView(View):
         try:
             logger.info("Starting AssertionListView.get")
             
-            # Get all assertions and domains for domain assertions
-            assertions = Assertion.objects.all().order_by('name')
+            # Get all local assertions and domains for domain assertions
+            local_assertions = Assertion.objects.all().order_by('name')
             domains = Domain.objects.all().order_by('name')
             
-            logger.debug(f"Found {assertions.count()} assertions and {domains.count()} domains")
+            logger.debug(f"Found {local_assertions.count()} local assertions and {domains.count()} domains")
             
             # Get DataHub connection info
             logger.debug("Testing DataHub connection from AssertionListView")
             connected, client = test_datahub_connection()
             logger.debug(f"DataHub connection test result: {connected}")
             
+            # Get remote assertions from DataHub
+            remote_assertions = []
+            datahub_url = None
+            if connected and client:
+                try:
+                    logger.info("Fetching remote assertions from DataHub")
+                    # Get DataHub URL from environment for links
+                    environment = DjangoEnvironment.objects.filter(is_default=True).first()
+                    if environment:
+                        datahub_url = environment.datahub_url
+                    
+                    result = client.get_assertions(start=0, count=100, query="*")
+                    if result.get('success', False) and 'data' in result:
+                        search_results = result['data'].get('searchResults', [])
+                        for assertion_result in search_results:
+                            entity = assertion_result.get('entity', {})
+                            if entity.get('type') == 'ASSERTION':
+                                # Extract assertion information
+                                info = entity.get('info', {})
+                                remote_assertion = {
+                                    'urn': entity.get('urn', ''),
+                                    'name': info.get('description', entity.get('urn', 'Unnamed Assertion').split(':')[-1]),
+                                    'description': info.get('description', ''),
+                                    'type': info.get('type', 'UNKNOWN'),
+                                    'last_run': None,  # Would need run events to determine
+                                    'last_status': 'UNKNOWN',  # Would need run events to determine
+                                    'schedule_type': 'unknown',
+                                }
+                                remote_assertions.append(remote_assertion)
+                        logger.info(f"Found {len(remote_assertions)} remote assertions")
+                    else:
+                        logger.warning(f"Failed to get remote assertions: {result.get('error', 'Unknown error')}")
+                except Exception as e:
+                    logger.error(f"Error fetching remote assertions: {str(e)}")
+            
             # Initialize context
             context = {
-                'assertions': assertions,
+                'local_assertions': local_assertions,
+                'remote_assertions': remote_assertions,
+                'synced_assertions': [],  # TODO: Implement synced assertions logic
                 'domains': domains,
                 'has_datahub_connection': connected,
+                'datahub_url': datahub_url,
                 'page_title': 'Metadata Assertions'
             }
             
@@ -571,7 +620,7 @@ class AssertionRunView(View):
                 )
                 
                 # Update assertion with last run info
-                assertion.last_run = datetime.now()
+                assertion.last_run = timezone.now()
                 assertion.last_status = status
                 assertion.save()
                 
@@ -605,6 +654,13 @@ class AssertionGitPushView(View):
         """Add assertion to GitHub PR"""
         try:
             assertion = get_object_or_404(Assertion, id=assertion_id)
+            
+            # Check if Git integration is available
+            if not GIT_INTEGRATION_AVAILABLE:
+                return JsonResponse({
+                    'success': False,
+                    'message': "Git integration not available"
+                })
             
             # Check if GitHub integration is enabled
             github_settings = GitSettings.objects.first()
@@ -701,4 +757,90 @@ class AssertionGitPushView(View):
             return JsonResponse({
                 'success': False,
                 'message': f"Error: {str(e)}"
-            }) 
+            })
+
+def get_client_from_session(request):
+    """
+    Get a DataHub client from the session or create a new one.
+    
+    Args:
+        request (HttpRequest): The request object
+        
+    Returns:
+        DataHubRestClient: The client instance or None if not connected
+    """
+    try:
+        # Get active environment
+        environment = DjangoEnvironment.objects.filter(is_default=True).first()
+        if not environment:
+            logger.error("No active environment configured")
+            return None
+            
+        # Initialize and return a client
+        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        return client
+    except Exception as e:
+        logger.error(f"Error creating DataHub client: {str(e)}")
+        return None
+
+@require_http_methods(["GET"])
+def get_datahub_assertions(request):
+    """
+    Get assertions from DataHub and return them as JSON.
+    
+    Args:
+        request: The HTTP request
+        
+    Returns:
+        JsonResponse: The assertions in JSON format
+    """
+    try:
+        # Get query parameters
+        query = request.GET.get('query', '*')
+        start = int(request.GET.get('start', 0))
+        count = int(request.GET.get('count', 20))
+        status = request.GET.get('status')
+        entity_urn = request.GET.get('entity_urn')
+        run_events_limit = int(request.GET.get('run_events_limit', 10))
+        
+        logger.info(f"Getting DataHub assertions: query='{query}', start={start}, count={count}")
+        
+        # Get client from session
+        client = get_client_from_session(request)
+        if not client:
+            return JsonResponse({'success': False, 'error': 'Not connected to DataHub'}, status=400)
+        
+        # Get assertions from DataHub
+        result = client.get_assertions(
+            start=start,
+            count=count,
+            query=query,
+            status=status,
+            entity_urn=entity_urn,
+            run_events_limit=run_events_limit
+        )
+        
+        if not result.get('success', False):
+            logger.error(f"Error getting assertions from DataHub: {result.get('error', 'Unknown error')}")
+            return JsonResponse({'success': False, 'error': result.get('error', 'Failed to get assertions from DataHub')}, status=500)
+        
+        # Structure the response
+        response_data = {
+            'start': result['data'].get('start', 0),
+            'count': result['data'].get('count', 0),
+            'total': result['data'].get('total', 0),
+            'searchResults': result['data'].get('searchResults', [])
+        }
+        
+        # Wrap in the expected structure for the frontend
+        response = {
+            'success': True,
+            'data': response_data
+        }
+        
+        logger.info(f"Found {len(response_data['searchResults'])} assertions")
+        
+        return JsonResponse(response)
+    except Exception as e:
+        logger.error(f"Error in get_datahub_assertions: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500) 

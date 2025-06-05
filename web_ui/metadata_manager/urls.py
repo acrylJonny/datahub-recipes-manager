@@ -17,6 +17,7 @@ urlpatterns = [
     # Editable Properties
     path('entities/editable/', views.editable_properties_view, name='editable_properties'),
     path('entities/editable/list/', views.get_editable_entities, name='get_editable_entities'),
+    path('entities/editable/clear-cache/', views.clear_editable_entities_cache, name='clear_editable_entities_cache'),
     path('entities/<str:urn>/', views.get_entity_details, name='get_entity_details'),
     path('entities/<str:urn>/schema/', views.get_entity_schema, name='get_entity_schema'),
     path('entities/update/', views.update_entity_properties, name='update_entity_properties'),
@@ -75,6 +76,7 @@ urlpatterns = [
     
     # Assertions
     path('assertions/', views_assertions.AssertionListView.as_view(), name='assertion_list'),
+    path('assertions/datahub/', views_assertions.get_datahub_assertions, name='get_datahub_assertions'),
     path('assertions/create/', views_assertions.AssertionListView.as_view(), name='assertion_create'),
     path('assertions/<int:assertion_id>/', views_assertions.AssertionDetailView.as_view(), name='assertion_detail'),
     path('assertions/<int:assertion_id>/run/', views_assertions.AssertionRunView.as_view(), name='assertion_run'),

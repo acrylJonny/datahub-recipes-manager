@@ -104,8 +104,6 @@ class DataHubRestClient:
             dict: The GraphQL response
         """
         try:
-            # Log query and variables with more detail
-            self.logger.info("====== Executing GraphQL query ======")
             # Only log a portion of the query to avoid overwhelming the logs
             query_preview = query.replace('\n', ' ').replace('  ', ' ')[:200] + "..."
             self.logger.info(f"Query: {query_preview}")
@@ -5300,21 +5298,17 @@ class DataHubRestClient:
             }]
             
         # Set sorting based on sort_by parameter
+        # Note: sortCriteria is not supported in SearchAcrossEntitiesInput  
+        # DataHub uses its default relevance-based sorting
         if sort_by == "updated":
-            variables["input"]["sortCriteria"] = [{
-                "field": "lastIngested",
-                "order": "DESCENDING"
-            }]
+            # sortCriteria not supported in SearchAcrossEntitiesInput
+            pass
         elif sort_by == "type":
-            variables["input"]["sortCriteria"] = [{
-                "field": "entityType",
-                "order": "ASCENDING"
-            }]
+            # sortCriteria not supported in SearchAcrossEntitiesInput
+            pass
         else:  # Default: sort by name
-            variables["input"]["sortCriteria"] = [{
-                "field": "name",
-                "order": "ASCENDING"
-            }]
+            # sortCriteria not supported in SearchAcrossEntitiesInput
+            pass
             
         # Use platform pagination if specified (for comprehensive search)
         if use_platform_pagination and platform:
@@ -5338,29 +5332,31 @@ class DataHubRestClient:
                     type
                     ... on Dataset {
                       name
-                      description
-                      platform {
+                      platform { 
                         name
-                        info {
-                          displayName
-                        }
+                        properties { displayName }
                       }
                       dataPlatformInstance {
                         instanceId
-                        platform {
-                          name
-                        }
+                        platform { name }
                       }
+                      browsePaths { path }
                       browsePathV2 {
                         path {
                           name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
                         }
                       }
-                      browsePaths
                       editableProperties {
                         name
                         description
-                        documentation
                       }
                       editableSchemaMetadata {
                         editableSchemaFieldInfo {
@@ -5369,223 +5365,152 @@ class DataHubRestClient:
                           tags {
                             tags {
                               associatedUrn
-                              tag {
+                              tag { urn }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    ... on Container {
+                      properties { name }
+                      platform { 
+                        name
+                        properties { displayName }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                          entity {
+                            ... on Container {
+                              container {
                                 urn
+                                properties { name }
                               }
                             }
                           }
                         }
                       }
-                      properties {
-                        name
-                        description
-                        displayName
-                        customProperties
-                        browsePaths
-                      }
-                      globalTags {
-                        tags {
-                          tag {
-                            name
-                            urn
-                          }
-                        }
-                      }
-                      glossaryTerms {
-                        terms {
-                          term {
-                            name
-                            urn
-                          }
-                        }
-                      }
-                      container {
-                        path
-                      }
-                      dataset {
-                        name
-                        origin {
-                          browsePaths
-                        }
-                      }
-                    }
-                    ... on Container {
                       editableProperties {
                         description
-                        name
-                      }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
-                      }
-                      browsePathV2 {
-                        path {
-                          name
-                        }
-                      }
-                      browsePaths
-                      platform {
-                        name
-                      }
-                      container {
-                        path
                       }
                     }
                     ... on Chart {
-                      editableProperties {
-                        description
+                      properties { name }
+                      platform { 
                         name
+                        properties { displayName }
                       }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
                       }
+                      browsePaths { path }
                       browsePathV2 {
                         path {
                           name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
                         }
                       }
-                      browsePaths
-                      platform {
-                        name
-                      }
-                      chart {
-                        info {
-                          name
-                        }
+                      editableProperties {
+                        description
                       }
                     }
                     ... on Dashboard {
-                      editableProperties {
-                        description
+                      properties { name }
+                      platform { 
                         name
+                        properties { displayName }
                       }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
                       }
+                      browsePaths { path }
                       browsePathV2 {
                         path {
                           name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
                         }
                       }
-                      browsePaths
-                      platform {
-                        name
-                      }
-                      dashboard {
-                        info {
-                          name
-                        }
+                      editableProperties {
+                        description
                       }
                     }
                     ... on DataFlow {
-                      editableProperties {
-                        description
+                      properties { name }
+                      platform { 
                         name
+                        properties { displayName }
                       }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
                       }
+                      browsePaths { path }
                       browsePathV2 {
                         path {
                           name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
                         }
                       }
-                      browsePaths
-                      platform {
-                        name
+                      editableProperties {
+                        description
                       }
                     }
                     ... on DataJob {
-                      editableProperties {
-                        description
-                        name
+                      properties { name }
+                      dataFlow { 
+                        flowId
+                        properties { name }
                       }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
                       }
+                      browsePaths { path }
                       browsePathV2 {
                         path {
                           name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
                         }
                       }
-                      browsePaths
-                      dataFlow {
-                        platform {
-                          name
-                        }
-                      }
-                    }
-                    ... on Domain {
                       editableProperties {
                         description
-                        name
-                      }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
-                      }
-                    }
-                    ... on GlossaryTerm {
-                      editableProperties {
-                        description
-                        name
-                      }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
-                      }
-                    }
-                    ... on GlossaryNode {
-                      editableProperties {
-                        description
-                        name
-                      }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
-                      }
-                    }
-                    ... on Tag {
-                      editableProperties {
-                        description
-                        name
-                      }
-                      properties {
-                        name
-                        description
-                        displayName
-                        browsePaths
                       }
                     }
                   }
-                  matchedFields {
-                    name
-                    value
-                  }
-                  insights {
-                    text
-                  }
-                  lastModified
                 }
               }
             }
@@ -6564,3 +6489,587 @@ class DataHubRestClient:
         except Exception as e:
             logger.error(f"Error getting property values for {property_urn}: {e}")
             return []
+
+    def _get_graphql_errors(self, result):
+        """
+        Extract error messages from a GraphQL result.
+        
+        Args:
+            result (dict): The GraphQL response
+            
+        Returns:
+            list: List of error messages
+        """
+        errors = []
+        if isinstance(result, dict) and 'errors' in result:
+            for error in result['errors']:
+                if isinstance(error, dict) and 'message' in error:
+                    errors.append(error['message'])
+                else:
+                    errors.append(str(error))
+        return errors
+
+    def _log_graphql_errors(self, result):
+        """
+        Log GraphQL errors from a result.
+        
+        Args:
+            result (dict): The GraphQL response with errors
+        """
+        errors = self._get_graphql_errors(result)
+        for error in errors:
+            logger.error(f"GraphQL error: {error}")
+        
+        # Also log any extensions if available
+        if isinstance(result, dict) and 'errors' in result:
+            for error in result['errors']:
+                if isinstance(error, dict) and 'extensions' in error:
+                    logger.debug(f"GraphQL error extensions: {error['extensions']}")
+
+    def get_assertions(self, start=0, count=20, query="*", status=None, entity_urn=None, start_time_millis=None, end_time_millis=None, run_events_limit=10):
+        """
+        Get assertions from DataHub using GraphQL.
+        
+        Args:
+            start (int): Starting offset for pagination
+            count (int): Number of results to return
+            query (str): Search query
+            status (str): Filter by assertion run status
+            entity_urn (str): Filter by entity URN
+            start_time_millis (int): Start time for run events filter
+            end_time_millis (int): End time for run events filter
+            run_events_limit (int): Limit for run events
+            
+        Returns:
+            dict: Response containing assertions data
+        """
+        variables = {
+            "input": {
+                "types": ["ASSERTION"],
+                "query": query,
+                "start": start,
+                "count": count
+            }
+        }
+
+        # Corrected GraphQL query for assertions
+        graphql_query = """
+            query GetAssertions($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on Assertion {
+                      urn
+                      type
+                      platform {
+                        name
+                        urn
+                      }
+                      info {
+                        type
+                        description
+                        externalUrl
+                        datasetAssertion {
+                          datasetUrn
+                          scope
+                          fields {
+                            urn
+                            path
+                          }
+                          aggregation
+                          operator
+                          parameters {
+                            value {
+                              value
+                              type
+                            }
+                            minValue {
+                              value
+                              type
+                            }
+                            maxValue {
+                              value
+                              type
+                            }
+                          }
+                          nativeType
+                          nativeParameters {
+                            key
+                            value
+                          }
+                          logic
+                        }
+                        freshnessAssertion {
+                          entityUrn
+                          type
+                          schedule {
+                            type
+                            cron {
+                              cron
+                              timezone
+                              windowStartOffsetMs
+                            }
+                            fixedInterval {
+                              unit
+                              multiple
+                            }
+                            exclusions {
+                              type
+                              displayName
+                              fixedRange {
+                                startTimeMillis
+                                endTimeMillis
+                              }
+                              weekly {
+                                daysOfWeek
+                                startTime
+                                endTime
+                                timezone
+                              }
+                              holiday {
+                                name
+                                region
+                                timezone
+                              }
+                            }
+                          }
+                          filter {
+                            type
+                            sql
+                          }
+                        }
+                        volumeAssertion {
+                          entityUrn
+                          type
+                          rowCountTotal {
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          rowCountChange {
+                            type
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          incrementingSegmentRowCountTotal {
+                            segment {
+                              field {
+                                path
+                                type
+                                nativeType
+                              }
+                              transformer {
+                                type
+                                nativeType
+                              }
+                            }
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          filter {
+                            type
+                            sql
+                          }
+                        }
+                        sqlAssertion {
+                          type
+                          entityUrn
+                          statement
+                          changeType
+                          operator
+                          parameters {
+                            value {
+                              value
+                              type
+                            }
+                            minValue {
+                              value
+                              type
+                            }
+                            maxValue {
+                              value
+                              type
+                            }
+                          }
+                        }
+                        fieldAssertion {
+                          type
+                          entityUrn
+                          fieldValuesAssertion {
+                            field {
+                              path
+                              type
+                              nativeType
+                            }
+                            transform {
+                              type
+                            }
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                            failThreshold {
+                              type
+                              value
+                            }
+                            excludeNulls
+                          }
+                          fieldMetricAssertion {
+                            field {
+                              path
+                              type
+                              nativeType
+                            }
+                            metric
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          filter {
+                            type
+                            sql
+                          }
+                        }
+                        schemaAssertion {
+                          entityUrn
+                          fields {
+                            path
+                            type
+                            nativeType
+                          }
+                          schema {
+                            aspectVersion
+                            datasetUrn
+                            name
+                            platformUrn
+                            version
+                            cluster
+                            hash
+                            platformSchema {
+                              ... on TableSchema {
+                                schema
+                              }
+                              ... on KeyValueSchema {
+                                keySchema
+                                valueSchema
+                              }
+                            }
+                            fields {
+                              fieldPath
+                              jsonPath
+                              label
+                              nullable
+                              description
+                              type
+                              nativeDataType
+                              recursive
+                              tags {
+                                tags {
+                                  tag {
+                                    urn
+                                    type
+                                    properties {
+                                      name
+                                      description
+                                      colorHex
+                                    }
+                                    ownership {
+                                      owners {
+                                        owner {
+                                          ... on CorpUser {
+                                            urn
+                                          }
+                                          ... on CorpGroup {
+                                            urn
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                              glossaryTerms {
+                                terms {
+                                  term {
+                                    urn
+                                  }
+                                  actor {
+                                    urn
+                                  }
+                                }
+                              }
+                              isPartOfKey
+                              isPartitioningKey
+                              jsonProps
+                              schemaFieldEntity {
+                                urn
+                              }
+                            }
+                            createdAt
+                          }
+                          compatibility
+                        }
+                        customAssertion {
+                          type
+                          entityUrn
+                          field {
+                            urn
+                            path
+                          }
+                          logic
+                        }
+                        source {
+                          type
+                          created {
+                            actor
+                          }
+                        }
+                        lastUpdated {
+                          actor
+                        }
+                      }
+                      runEvents(limit: %s) {
+                        ... on AssertionRunEventsResult {
+                          total
+                          failed
+                          succeeded
+                          errored
+                          runEvents {
+                            timestampMillis
+                            runId
+                            status
+                            asserteeUrn
+                            batchSpec {
+                              nativeBatchId
+                              query
+                              limit
+                            }
+                            result {
+                              type
+                              rowCount
+                              missingCount
+                              unexpectedCount
+                              actualAggValue
+                              externalUrl
+                              nativeResults {
+                                key
+                                value
+                              }
+                            }
+                            runtimeContext {
+                              key
+                              value
+                            }
+                          }
+                        }
+                      } 
+                      status {
+                        removed
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                            type
+                            properties {
+                              name
+                              description
+                              colorHex
+                            }
+                            ownership {
+                              owners {
+                                owner {
+                                  ... on CorpUser {
+                                    urn
+                                  }
+                                  ... on CorpGroup {
+                                    urn
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      actions {
+                        onSuccess {
+                          type
+                        }
+                        onFailure {
+                          type
+                        }
+                      }
+                      monitor {
+                        urn
+                        type
+                        entity {
+                          urn
+                        }
+                        info {
+                          type
+                          assertionMonitor {
+                            assertions {
+                              assertion {
+                                urn
+                              }
+                              schedule {
+                                cron
+                              }
+                              parameters {
+                                type
+                                datasetFieldParameters {
+                                  sourceType
+                                  changedRowsField {
+                                    path
+                                    type
+                                    nativeType
+                                    kind
+                                  }
+                                }
+                                datasetVolumeParameters {
+                                  sourceType
+                                }
+                                datasetSchemaParameters {
+                                  sourceType
+                                }
+                                datasetFreshnessParameters {
+                                  sourceType
+                                }
+                              }
+                              context {
+                                embeddedAssertions {
+                                  rawAssertion
+                                }
+                                stdDev
+                                inferenceDetails {
+                                  modelId
+                                  modelVersion
+                                  confidence
+                                  parameters {
+                                    value
+                                  }
+                                  adjustmentSettings {
+                                    algorithm
+                                    algorithmName
+                                    context {
+                                      value
+                                    }
+                                    exclusionWindows {
+                                      type
+                                      displayName
+                                      fixedRange {
+                                        startTimeMillis
+                                        endTimeMillis
+                                      }
+                                      weekly {
+                                        daysOfWeek
+                                        startTime
+                                        endTime
+                                        timezone
+                                      }
+                                      holiday {
+                                        name
+                                        region
+                                        timezone
+                                      }
+                                    }
+                                    trainingDataLookbackWindowDays
+                                    sensitivity {
+                                      level
+                                    }
+                                  }
+                                  generatedAt
+                                }
+                              }  
+                              rawParameters
+                            }
+                            bootstrapStatus {
+                              metricsCubeBootstrapStatus {
+                                state
+                                message
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """ % run_events_limit
+
+        result = self.execute_graphql(graphql_query, variables)
+        
+        if "errors" in result:
+            self._log_graphql_errors(result)
+            return {"success": False, "error": f"GraphQL error: {result['errors'][0]['message']}"}
+            
+        search_results = result.get("data", {}).get("searchAcrossEntities", {})
+        return {"success": True, "data": search_results}
