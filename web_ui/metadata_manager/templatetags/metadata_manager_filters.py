@@ -210,47 +210,59 @@ def debug(value):
 def node_to_json(node):
     """Convert a GlossaryNode model instance to JSON for JavaScript use"""
     try:
-        return json.dumps({
-            'id': node.id,
-            'name': node.name,
-            'description': node.description or '',
-            'urn': str(node.deterministic_urn),
-            'sync_status': node.sync_status,
-            'parent_urn': str(node.parent.deterministic_urn) if node.parent else None,
-            'has_children': node.children.exists() or node.terms.exists(),
-            'related_items': [],  # Local nodes don't have relationship data by default
-            'owners': [],  # Local nodes don't have owner data loaded by default
-            'custom_properties': []
-        }, default=str)
+        return json.dumps(
+            {
+                "id": node.id,
+                "name": node.name,
+                "description": node.description or "",
+                "urn": str(node.deterministic_urn),
+                "sync_status": node.sync_status,
+                "parent_urn": str(node.parent.deterministic_urn)
+                if node.parent
+                else None,
+                "has_children": node.children.exists() or node.terms.exists(),
+                "related_items": [],  # Local nodes don't have relationship data by default
+                "owners": [],  # Local nodes don't have owner data loaded by default
+                "custom_properties": [],
+            },
+            default=str,
+        )
     except Exception as e:
         import logging
+
         logger = logging.getLogger(__name__)
         logger.error(f"Error converting node to JSON: {str(e)}")
         return json.dumps({})
 
 
-@register.filter  
+@register.filter
 def term_to_json(term):
     """Convert a GlossaryTerm model instance to JSON for JavaScript use"""
     try:
-        return json.dumps({
-            'id': term.id,
-            'name': term.name,
-            'description': term.description or '',
-            'urn': str(term.deterministic_urn),
-            'sync_status': term.sync_status,
-            'parent_node_urn': str(term.parent_node.deterministic_urn) if term.parent_node else None,
-            'related_items': [],  # Local terms don't have relationship data by default
-            'owners': [],  # Local terms don't have owner data loaded by default
-            'domain': None,  # Local terms don't have domain data loaded by default
-            'term_source': term.term_source,
-            'source_ref': getattr(term, 'source_ref', None),
-            'source_url': getattr(term, 'source_url', None), 
-            'custom_properties': [],
-            'deprecated': getattr(term, 'deprecated', False)
-        }, default=str)
+        return json.dumps(
+            {
+                "id": term.id,
+                "name": term.name,
+                "description": term.description or "",
+                "urn": str(term.deterministic_urn),
+                "sync_status": term.sync_status,
+                "parent_node_urn": str(term.parent_node.deterministic_urn)
+                if term.parent_node
+                else None,
+                "related_items": [],  # Local terms don't have relationship data by default
+                "owners": [],  # Local terms don't have owner data loaded by default
+                "domain": None,  # Local terms don't have domain data loaded by default
+                "term_source": term.term_source,
+                "source_ref": getattr(term, "source_ref", None),
+                "source_url": getattr(term, "source_url", None),
+                "custom_properties": [],
+                "deprecated": getattr(term, "deprecated", False),
+            },
+            default=str,
+        )
     except Exception as e:
         import logging
+
         logger = logging.getLogger(__name__)
         logger.error(f"Error converting term to JSON: {str(e)}")
         return json.dumps({})

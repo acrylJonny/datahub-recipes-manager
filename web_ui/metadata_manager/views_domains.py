@@ -98,7 +98,7 @@ class DomainListView(View):
                 return redirect("metadata_manager:domain_list")
 
             # Create the domain
-            domain = Domain.objects.create(
+            Domain.objects.create(
                 name=name,
                 description=description,
                 deterministic_urn=deterministic_urn,
@@ -279,7 +279,7 @@ class DomainDeployView(View):
 
             # Get the client
             try:
-                token = get_token_from_env()
+                get_token_from_env()
                 connected, client = test_datahub_connection()
                 if not connected or not client:
                     messages.error(

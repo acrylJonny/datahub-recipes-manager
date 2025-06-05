@@ -1103,7 +1103,7 @@ def policy_import(request):
             try:
                 # Read and parse the policy file
                 content = policy_file.read().decode("utf-8")
-                policy = json.loads(content)
+                json.loads(content)
 
                 # Run the import_policy.py script
                 with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp:
@@ -1119,7 +1119,7 @@ def policy_import(request):
                 )
 
                 try:
-                    result = subprocess.run(
+                    subprocess.run(
                         [sys.executable, script_path, "--input-file", temp_path],
                         capture_output=True,
                         text=True,
@@ -1265,7 +1265,7 @@ def policy_export_all(request):
         )
 
         # Run the export script
-        result = subprocess.run(
+        subprocess.run(
             [sys.executable, script_path, "--output-dir", output_dir],
             capture_output=True,
             text=True,
@@ -1628,10 +1628,6 @@ def logs(request):
     sources = LogEntry.objects.values_list("source", flat=True).distinct()
 
     # Create some test data for debugging the expand/collapse functionality
-    test_message_short = "This is a short message."
-    test_message_long = (
-        "This is a very long message that exceeds 200 characters. " * 10
-    )  # Repeat to make it long
 
     return render(
         request,
@@ -2585,7 +2581,7 @@ def env_vars_templates(request):
 
 def env_vars_template_create(request):
     """Create a new environment variables template."""
-    template_exists = EnvVarsTemplate.objects.count() > 0
+    EnvVarsTemplate.objects.count() > 0
 
     # Get all environments
     environments = Environment.objects.all().order_by("name")
@@ -3053,10 +3049,10 @@ def recipe_instance_undeploy(request, instance_id):
 @login_required
 def recipe_instance_redeploy(request, instance_id):
     """Redeploy a recipe instance by undeploying and deploying it again."""
-    instance = get_object_or_404(RecipeInstance, id=instance_id)
+    get_object_or_404(RecipeInstance, id=instance_id)
 
     # First undeploy the instance
-    response = recipe_instance_undeploy(request, instance_id)
+    recipe_instance_undeploy(request, instance_id)
 
     # Then deploy it again
     return recipe_instance_deploy(request, instance_id)
@@ -3163,8 +3159,8 @@ def github_test_connection(request):
     """Test Git provider connection."""
     try:
         data = json.loads(request.body)
-        provider_type = data.get("provider_type", "github")
-        base_url = data.get("base_url", "")
+        data.get("provider_type", "github")
+        data.get("base_url", "")
         username = data.get("username")
         repository = data.get("repository")
         token = data.get("token")
@@ -3773,7 +3769,7 @@ def environment_create(request):
         is_default = request.POST.get("is_default") == "on"
 
         # Create the environment
-        environment = Environment.objects.create(
+        Environment.objects.create(
             name=name, description=description, is_default=is_default
         )
 
@@ -3980,7 +3976,7 @@ def github_push_changes(request):
         messages.error(request, "GitHub integration is not configured.")
         return redirect("github_settings")
 
-    settings = GitSettings.get_instance()
+    GitSettings.get_instance()
 
     # Get changed files from Git
     all_changed_files = GitIntegration.get_staged_changes()
@@ -4071,7 +4067,7 @@ def github_fetch_prs(request):
         messages.error(request, "GitHub integration is not configured.")
         return redirect("github_settings")
 
-    settings = GitSettings.get_instance()
+    GitSettings.get_instance()
 
     try:
         # Get all PRs from database
@@ -4253,7 +4249,7 @@ def github_sync_recipe(request, recipe_id):
         branch_name = request.POST.get("branch_name")
 
         # Get recipe data
-        recipe_data = recipe.get_content()
+        recipe.get_content()
         recipe_id = recipe.get_recipe_id()
 
         try:
@@ -4609,11 +4605,7 @@ def github_delete_branch(request):
         messages.error(request, "Cannot delete main/master branch")
         return redirect("github")
 
-    settings = GitSettings.get_instance()
-    headers = {
-        "Authorization": f"token {settings.token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
+    GitSettings.get_instance()
 
 
 @require_POST

@@ -114,10 +114,10 @@ def parse_args():
     delete_parser.add_argument("policy_id", help="Policy ID or URN to delete")
 
     # Add info about export and import
-    export_info = subparsers.add_parser(
+    subparsers.add_parser(
         "export-info", help="Show information about exporting policies"
     )
-    import_info = subparsers.add_parser(
+    subparsers.add_parser(
         "import-info", help="Show information about importing policies"
     )
 

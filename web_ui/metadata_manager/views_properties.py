@@ -206,7 +206,7 @@ class PropertyListView(View):
                 return redirect("metadata_manager:property_list")
 
             # Create the property
-            property = StructuredProperty.objects.create(
+            StructuredProperty.objects.create(
                 name=name,
                 description=description,
                 qualified_name=qualified_name,

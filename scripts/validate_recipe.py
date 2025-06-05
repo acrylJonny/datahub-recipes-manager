@@ -103,7 +103,7 @@ def validate_instance_file(instance_path: str) -> List[str]:
         return [f"Missing recipe_type in {instance_path}"]
 
     # Use a consistent base path for template resolution
-    instance_dir = Path(instance_path).parent
+    Path(instance_path).parent
     project_root = Path(
         os.path.abspath(__file__)
     ).parent.parent  # Go up from scripts to root

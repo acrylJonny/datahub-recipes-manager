@@ -101,7 +101,7 @@ class GitHubIntegration:
         if not cls.is_configured():
             return None
 
-        settings = GitSettings.objects.first()
+        GitSettings.objects.first()
         headers = cls.get_headers()
 
         # Create a unique branch name

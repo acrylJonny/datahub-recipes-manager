@@ -244,7 +244,7 @@ def recipe_template_preview(request, template_id):
 @login_required
 def template_env_vars_instances(request, template_id):
     """Get environment variables instances for a template."""
-    template = get_object_or_404(RecipeTemplate, id=template_id)
+    get_object_or_404(RecipeTemplate, id=template_id)
     instances = EnvVarsInstance.objects.filter(template_id=template_id)
     return JsonResponse({"instances": list(instances.values())})
 

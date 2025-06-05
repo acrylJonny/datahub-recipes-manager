@@ -309,7 +309,7 @@ def load_tests(
     if config_file:
         try:
             with open(config_file, "r") as f:
-                config = json.load(f)
+                json.load(f)
 
             # Apply configuration to tests
             # (Implementation would depend on what customization is needed)

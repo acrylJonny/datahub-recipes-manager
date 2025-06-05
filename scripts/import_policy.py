@@ -85,7 +85,7 @@ def import_policy(
     Returns:
         True if successful, False otherwise
     """
-    policy_id = policy_data.get("id")
+    policy_data.get("id")
     policy_name = policy_data.get("name", "Unknown policy")
 
     # Remove metadata fields that should not be sent to DataHub

@@ -53,7 +53,7 @@ def export_policy(policy: Dict[str, Any], output_dir: str) -> str:
     """
     policy_id = policy.get("id", "unknown")
     policy_name = policy.get("name", f"policy_{policy_id}")
-    policy_type = policy.get("type", "policy").lower()
+    policy.get("type", "policy").lower()
 
     # Create sanitized filename
     filename = f"{sanitize_filename(policy_name)}_{policy_id}.json"

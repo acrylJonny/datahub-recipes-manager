@@ -985,7 +985,7 @@ class GitSettings(models.Model):
             return []
 
         provider = cls.get_provider_type()
-        settings = cls.get_instance()
+        cls.get_instance()
         logger = logging.getLogger(__name__)
 
         try:
@@ -1999,7 +1999,7 @@ class GitIntegration:
                 html_url = pr_data.get("html_url")
 
                 # Create a record of the PR
-                pr = GitHubPR.objects.create(
+                GitHubPR.objects.create(
                     recipe_id="multiple",  # Generic ID for multi-resource PRs
                     pr_url=html_url,
                     pr_number=pr_number,
@@ -2067,7 +2067,7 @@ class GitIntegration:
                 web_url = result.get("url")
 
                 # Create a record of the PR
-                pr = GitHubPR.objects.create(
+                GitHubPR.objects.create(
                     recipe_id="multiple",  # Generic ID for multi-resource PRs
                     pr_url=web_url,
                     pr_number=pr_id,
@@ -2103,7 +2103,7 @@ class GitIntegration:
                 web_url = result.get("web_url")
 
                 # Create a record of the PR
-                pr = GitHubPR.objects.create(
+                GitHubPR.objects.create(
                     recipe_id="multiple",  # Generic ID for multi-resource PRs
                     pr_url=web_url,
                     pr_number=mr_id,
@@ -2169,7 +2169,7 @@ class GitIntegration:
                     web_url = result.get("links", {}).get("self", [{}])[0].get("href")
 
                 # Create a record of the PR (common for both Cloud and Server)
-                pr = GitHubPR.objects.create(
+                GitHubPR.objects.create(
                     recipe_id="multiple",  # Generic ID for multi-resource PRs
                     pr_url=web_url,
                     pr_number=pr_id,

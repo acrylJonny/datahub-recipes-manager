@@ -103,7 +103,7 @@ class TagListView(View):
                 return redirect("metadata_manager:tag_list")
 
             # Create the tag
-            tag = Tag.objects.create(
+            Tag.objects.create(
                 name=name,
                 description=description,
                 color=color,
@@ -658,7 +658,6 @@ class TagGitPushView(View):
 
             try:
                 # Get default environment or use current
-                environment = tag.environment
 
                 # Try to stage the file in Git
                 from web_ui.views import github_add_file_to_staging

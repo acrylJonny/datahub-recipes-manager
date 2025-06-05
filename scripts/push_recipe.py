@@ -32,7 +32,6 @@ def resolve_secrets(config: Dict[str, Any], env_vars: Dict[str, str]) -> Dict[st
     """
     Resolve secrets referenced in the config from environment variables.
     """
-    resolved_config = {}
 
     def _resolve_value(value):
         if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
@@ -167,21 +166,21 @@ def create_datahub_recipe(
         if extra_args:
             ingestion_source["config"]["extraArgs"] = extra_args
 
-        result = client.create_ingestion_source(ingestion_source)
+        source_result = client.create_ingestion_source(ingestion_source)
 
-        if not result:
+        if not source_result:
             raise Exception(
                 "Failed to create ingestion source. Check logs for details."
             )
 
         # Handle different possible response formats
         source_urn = None
-        if isinstance(result, dict):
-            source_urn = result.get("urn")
+        if isinstance(source_result, dict):
+            source_urn = source_result.get("urn")
         elif (
-            isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict)
+            isinstance(source_result, list) and len(source_result) > 0 and isinstance(source_result[0], dict)
         ):
-            source_urn = result[0].get("urn")
+            source_urn = source_result[0].get("urn")
 
         if not source_urn:
             source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
@@ -201,9 +200,9 @@ def create_datahub_recipe(
             else:
                 print(f"Failed to trigger ingestion for source: {source_urn}")
 
-            result["ingestion_triggered"] = ingestion_success
+            source_result["ingestion_triggered"] = ingestion_success
 
-        return result
+        return source_result
 
     except Exception as e:
         print(f"Error creating/updating recipe: {str(e)}")
@@ -292,7 +291,7 @@ def main():
     source_id = instance_config.get("recipe_id", str(uuid.uuid4()))
 
     # Push recipe to DataHub using the SDK
-    result = create_datahub_recipe(
+    create_datahub_recipe(
         recipe_config=rendered_template,
         datahub_config=datahub_config,
         source_id=source_id,

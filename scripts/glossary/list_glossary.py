@@ -117,7 +117,7 @@ def build_hierarchy(
         Dictionary with hierarchical glossary structure
     """
     # Create a map of URNs to nodes for easy lookup
-    node_map = {node["urn"]: node for node in nodes}
+    {node["urn"]: node for node in nodes}
 
     # Find root nodes
     root_nodes = []

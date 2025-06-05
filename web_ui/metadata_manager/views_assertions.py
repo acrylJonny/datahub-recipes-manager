@@ -148,7 +148,7 @@ class AssertionListView(View):
                 config = {"term_name": term_name}
 
             # Create the assertion
-            assertion = Assertion.objects.create(
+            Assertion.objects.create(
                 name=name, description=description, type=assertion_type, config=config
             )
 
@@ -456,7 +456,7 @@ class AssertionListView(View):
             }
 
             # Create the assertion
-            assertion = Assertion.objects.create(
+            Assertion.objects.create(
                 name=name, description=description, type=assertion_type, config=config
             )
 

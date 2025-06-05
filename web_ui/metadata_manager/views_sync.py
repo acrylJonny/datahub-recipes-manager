@@ -64,7 +64,7 @@ class SyncConfigListView(View):
             entity_types_json = json.dumps(entity_types)
 
             # Create the sync configuration
-            sync_config = SyncConfig.objects.create(
+            SyncConfig.objects.create(
                 name=name,
                 description=description,
                 source_environment=source_environment,

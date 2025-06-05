@@ -294,9 +294,7 @@ class GitService:
                 return False
 
             repo_info = response.json()
-            default_branch = repo_info.get("defaultBranch", "refs/heads/main").replace(
-                "refs/heads/", ""
-            )
+            repo_info.get("defaultBranch", "refs/heads/main").replace("refs/heads/", "")
 
             # Get latest commit on branch
             response = self.make_api_request(
@@ -506,7 +504,6 @@ class GitService:
             if "bitbucket.org" in (self.settings.base_url or "bitbucket.org"):
                 # Bitbucket Cloud
                 # Uses multipart form data
-                files = {path: (path, content)}
                 response = self.make_api_request(
                     "POST",
                     f"/src/{branch}",

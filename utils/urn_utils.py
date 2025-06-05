@@ -159,48 +159,6 @@ def sanitize_name(name):
     return sanitized.lower()
 
 
-def get_full_urn_from_name(entity_type, name, parent_path=None):
-    """
-    Generate a full URN string for an entity based on its name and type
-    Includes parent path if provided (for nested entities)
-
-    Args:
-        entity_type (str): The type of entity (e.g., 'tag', 'glossaryTerm')
-        name (str): The entity name
-        parent_path (str, optional): The parent path for nested entities
-
-    Returns:
-        str: The full URN
-    """
-    # Sanitize the name
-    sanitized_name = sanitize_name(name)
-
-    # Handle parent path for nested entities
-    path_component = ""
-    if parent_path:
-        path_component = f".{parent_path}"
-
-    # Generate the URN
-    urn = f"urn:li:{entity_type}:{sanitized_name}{path_component}"
-    return urn
-
-
-def get_parent_path(node):
-    """
-    Get the full path from root to a node
-    Used for generating nested URNs
-
-    Args:
-        node: A node-like object with 'name' and 'parent' attributes
-
-    Returns:
-        str: The full path from root to the node
-    """
-    if not node:
-        return ""
-
-    path_parts = []
-    current = node
 
     # Traverse up the tree to get the full path
     while current:
