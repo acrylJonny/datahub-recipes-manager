@@ -27,7 +27,10 @@ DATAHUB_URL = os.environ.get("DATAHUB_GMS_URL", "http://localhost:8080")
 DATAHUB_TOKEN = os.environ.get("DATAHUB_TOKEN", "")
 
 # Check if running in CI environment
-IN_CI = os.environ.get("CI", "false").lower() == "true" or os.environ.get("GITHUB_ACTIONS", "false").lower() == "true"
+IN_CI = (
+    os.environ.get("CI", "false").lower() == "true"
+    or os.environ.get("GITHUB_ACTIONS", "false").lower() == "true"
+)
 
 # Skip message for CI environments
 CI_SKIP_MESSAGE = "Skipping live integration tests in CI environment"
@@ -196,7 +199,7 @@ class TestRecipeIntegration(unittest.TestCase):
             # Verify fallback worked
             final_source = self.client.get_ingestion_source(self.source_id)
             self.assertIsNotNone(
-                final_source, f"Failed to retrieve source after REST fallback"
+                final_source, "Failed to retrieve source after REST fallback"
             )
             self.assertEqual(
                 final_source.get("name"),
@@ -226,7 +229,7 @@ def test_recipe_integration():
     if IN_CI:
         logger.info(CI_SKIP_MESSAGE)
         return True  # Return success in CI environments
-        
+
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(TestRecipeIntegration))
     runner = unittest.TextTestRunner(verbosity=2)

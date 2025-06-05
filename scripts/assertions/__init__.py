@@ -21,4 +21,4 @@ for py_file in package_dir.glob("*.py"):
         module_name = py_file.stem
         __all__.append(module_name)
 
-__version__ = "1.0.0" 
+__version__ = "1.0.0"

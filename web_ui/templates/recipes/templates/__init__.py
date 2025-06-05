@@ -1,1 +1,1 @@
-# Recipe templates folder 
+# Recipe templates folder

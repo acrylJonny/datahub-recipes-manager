@@ -10,7 +10,7 @@ import json
 import logging
 import argparse
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 sys.path.append(str(Path(__file__).parent.parent))
 from utils.datahub_rest_client import DataHubRestClient

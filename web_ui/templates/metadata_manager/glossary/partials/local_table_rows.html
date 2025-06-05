@@ -1,0 +1,87 @@
+{% load metadata_manager_filters %}
+
+{% for node in local_nodes %}
+<tr data-item='{{ node|node_to_json|safe }}' data-type="node">
+    <td>
+        <input type="checkbox" class="item-checkbox" value="{{ node.deterministic_urn }}">
+    </td>
+    <td>
+        <i class="fas fa-folder text-warning"></i>
+        <span class="badge bg-warning ms-1">Node</span>
+    </td>
+    <td>
+        <div class="fw-medium">{{ node.name|default:"Unnamed" }}</div>
+    </td>
+    <td class="description-cell">
+        {% if node.description %}
+            {% if node.description|length > 100 %}
+                <div class="description-preview">{{ node.description|slice:":100" }}...</div>
+            {% else %}
+                <div class="description-preview">{{ node.description }}</div>
+            {% endif %}
+        {% endif %}
+    </td>
+    <td class="related-items-cell">
+        <!-- Local nodes don't have relationship data loaded by default -->
+        <span class="text-muted">View details for relationships</span>
+    </td>
+    <td>
+        {% with node.sync_status as status %}
+            <span class="badge {% if status == 'LOCAL_ONLY' %}bg-secondary text-white{% elif status == 'SYNCED' %}bg-success text-white{% elif status == 'MODIFIED' %}bg-warning text-dark{% else %}bg-light text-dark{% endif %} status-badge">
+                {% if status == 'LOCAL_ONLY' %}Local Only{% elif status == 'SYNCED' %}Synced{% elif status == 'MODIFIED' %}Modified{% else %}{{ status }}{% endif %}
+            </span>
+        {% endwith %}
+    </td>
+    <td>
+        <button class="btn btn-sm btn-outline-secondary me-1" onclick="showItemDetail(this)" title="View Details">
+            <i class="fas fa-eye"></i>
+        </button>
+        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-success" title="Edit">
+            <i class="fas fa-edit"></i>
+        </a>
+    </td>
+</tr>
+{% endfor %}
+
+{% for term in local_terms %}
+<tr data-item='{{ term|term_to_json|safe }}' data-type="term">
+    <td>
+        <input type="checkbox" class="item-checkbox" value="{{ term.deterministic_urn }}">
+    </td>
+    <td>
+        <i class="fas fa-tag text-info"></i>
+        <span class="badge bg-info ms-1">Term</span>
+    </td>
+    <td>
+        <div class="fw-medium">{{ term.name|default:"Unnamed" }}</div>
+    </td>
+    <td class="description-cell">
+        {% if term.description %}
+            {% if term.description|length > 100 %}
+                <div class="description-preview">{{ term.description|slice:":100" }}...</div>
+            {% else %}
+                <div class="description-preview">{{ term.description }}</div>
+            {% endif %}
+        {% endif %}
+    </td>
+    <td class="related-items-cell">
+        <!-- Local terms don't have relationship data loaded by default -->
+        <span class="text-muted">View details for relationships</span>
+    </td>
+    <td>
+        {% with term.sync_status as status %}
+            <span class="badge {% if status == 'LOCAL_ONLY' %}bg-secondary text-white{% elif status == 'SYNCED' %}bg-success text-white{% elif status == 'MODIFIED' %}bg-warning text-dark{% else %}bg-light text-dark{% endif %} status-badge">
+                {% if status == 'LOCAL_ONLY' %}Local Only{% elif status == 'SYNCED' %}Synced{% elif status == 'MODIFIED' %}Modified{% else %}{{ status }}{% endif %}
+            </span>
+        {% endwith %}
+    </td>
+    <td>
+        <button class="btn btn-sm btn-outline-secondary me-1" onclick="showItemDetail(this)" title="View Details">
+            <i class="fas fa-eye"></i>
+        </button>
+        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-success" title="Edit">
+            <i class="fas fa-edit"></i>
+        </a>
+    </td>
+</tr>
+{% endfor %} 

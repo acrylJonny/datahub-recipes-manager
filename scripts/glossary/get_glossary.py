@@ -8,14 +8,18 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, Any, Optional
 
 # Add the parent directory to the sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from utils.datahub_metadata_api import DataHubMetadataApiClient
 from utils.token_utils import get_token_from_env
-from scripts.glossary.glossary_utils import save_glossary_node_to_file, save_glossary_term_to_file
+from scripts.glossary.glossary_utils import (
+    save_glossary_node_to_file,
+    save_glossary_term_to_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,80 +42,82 @@ def parse_args():
     """
     Parse command line arguments
     """
-    parser = argparse.ArgumentParser(description="Get glossary node or term information from DataHub")
-    
+    parser = argparse.ArgumentParser(
+        description="Get glossary node or term information from DataHub"
+    )
+
     parser.add_argument(
         "--server-url",
         "-s",
         required=True,
         help="DataHub server URL (e.g., http://localhost:8080)",
     )
-    
+
     # Create subparsers for node and term commands
     subparsers = parser.add_subparsers(dest="entity_type", help="Entity type to get")
-    
+
     # Node subparser
     node_parser = subparsers.add_parser("node", help="Get a glossary node")
-    
+
     node_parser.add_argument(
         "--urn",
         required=True,
         help="URN of the glossary node to get",
     )
-    
+
     node_parser.add_argument(
         "--include-children",
         action="store_true",
         help="Include children nodes and terms in the retrieved node data",
     )
-    
+
     # Term subparser
     term_parser = subparsers.add_parser("term", help="Get a glossary term")
-    
+
     term_parser.add_argument(
         "--urn",
         required=True,
         help="URN of the glossary term to get",
     )
-    
+
     term_parser.add_argument(
         "--include-related",
         action="store_true",
         help="Include related entities in the retrieved term data",
     )
-    
+
     # Common arguments
     parser.add_argument(
         "--output-file",
         "-o",
         help="Output file to save the glossary entity data",
     )
-    
+
     parser.add_argument(
         "--token-file",
         help="File containing DataHub access token",
     )
-    
+
     parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Logging level (default: INFO)",
     )
-    
+
     parser.add_argument(
         "--pretty-print",
         action="store_true",
         help="Pretty print JSON output",
     )
-    
+
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     setup_logging(args.log_level)
-    
+
     # Get token from file or environment
     token = None
     if args.token_file:
@@ -123,68 +129,88 @@ def main():
             sys.exit(1)
     else:
         token = get_token_from_env()
-    
+
     # Initialize the client
     try:
         client = DataHubMetadataApiClient(args.server_url, token)
     except Exception as e:
         logger.error(f"Error initializing client: {str(e)}")
         sys.exit(1)
-    
+
     try:
         # Determine entity type and retrieve accordingly
         if args.entity_type == "node":
             # Get glossary node
             logger.info(f"Getting glossary node: {args.urn}")
-            node = client.export_glossary_node(args.urn, include_children=args.include_children)
-            
+            node = client.export_glossary_node(
+                args.urn, include_children=args.include_children
+            )
+
             if not node:
                 logger.error(f"Failed to get glossary node: {args.urn}")
                 sys.exit(1)
-            
-            logger.info(f"Successfully retrieved glossary node: {node.get('properties', {}).get('name', args.urn)}")
-            
+
+            logger.info(
+                f"Successfully retrieved glossary node: {node.get('properties', {}).get('name', args.urn)}"
+            )
+
             # Output results
             if args.output_file:
-                if save_glossary_node_to_file(node, args.output_file, args.pretty_print):
-                    logger.info(f"Successfully saved glossary node data to {args.output_file}")
+                if save_glossary_node_to_file(
+                    node, args.output_file, args.pretty_print
+                ):
+                    logger.info(
+                        f"Successfully saved glossary node data to {args.output_file}"
+                    )
                 else:
-                    logger.error(f"Failed to save glossary node data to {args.output_file}")
+                    logger.error(
+                        f"Failed to save glossary node data to {args.output_file}"
+                    )
                     sys.exit(1)
             else:
                 # Print to stdout
                 print(json.dumps(node, indent=4 if args.pretty_print else None))
-                
+
         elif args.entity_type == "term":
             # Get glossary term
             logger.info(f"Getting glossary term: {args.urn}")
-            term = client.export_glossary_term(args.urn, include_related=args.include_related)
-            
+            term = client.export_glossary_term(
+                args.urn, include_related=args.include_related
+            )
+
             if not term:
                 logger.error(f"Failed to get glossary term: {args.urn}")
                 sys.exit(1)
-            
-            logger.info(f"Successfully retrieved glossary term: {term.get('properties', {}).get('name', args.urn)}")
-            
+
+            logger.info(
+                f"Successfully retrieved glossary term: {term.get('properties', {}).get('name', args.urn)}"
+            )
+
             # Output results
             if args.output_file:
-                if save_glossary_term_to_file(term, args.output_file, args.pretty_print):
-                    logger.info(f"Successfully saved glossary term data to {args.output_file}")
+                if save_glossary_term_to_file(
+                    term, args.output_file, args.pretty_print
+                ):
+                    logger.info(
+                        f"Successfully saved glossary term data to {args.output_file}"
+                    )
                 else:
-                    logger.error(f"Failed to save glossary term data to {args.output_file}")
+                    logger.error(
+                        f"Failed to save glossary term data to {args.output_file}"
+                    )
                     sys.exit(1)
             else:
                 # Print to stdout
                 print(json.dumps(term, indent=4 if args.pretty_print else None))
-                
+
         else:
             logger.error("Entity type must be specified (node or term)")
             sys.exit(1)
-    
+
     except Exception as e:
         logger.error(f"Error getting glossary entity: {str(e)}")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main() 
+    main()

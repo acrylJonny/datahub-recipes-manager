@@ -8,9 +8,8 @@ import argparse
 import json
 import os
 import sys
-import requests
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Tuple
 import logging
 
 import yaml

@@ -3,8 +3,6 @@
 Utility for rendering DataHub recipe templates with parameters.
 """
 
-import os
-import re
 from typing import Dict, Any
 
 import yaml

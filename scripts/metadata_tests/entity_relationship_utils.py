@@ -9,10 +9,12 @@ with glossary terms, tags, and structured properties.
 import logging
 import os
 import sys
-from typing import Dict, Any, List, Optional, Set, Tuple, Union
+from typing import Dict, Any, List, Optional
 
 # Add the parent directory to the sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from utils.datahub_metadata_api import DataHubMetadataApiClient
 
@@ -20,18 +22,18 @@ logger = logging.getLogger(__name__)
 
 
 def get_entities_with_glossary_term(
-    client: DataHubMetadataApiClient, 
+    client: DataHubMetadataApiClient,
     term_urn: str,
-    entity_types: Optional[List[str]] = None
+    entity_types: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Get all entities that have a specific glossary term applied to them.
-    
+
     Args:
         client: DataHub metadata client
         term_urn: URN of the glossary term
         entity_types: Optional list of entity types to filter by (e.g., "dataset", "dashboard")
-        
+
     Returns:
         List of entities with the specified glossary term
     """
@@ -103,54 +105,57 @@ def get_entities_with_glossary_term(
       }
     }
     """
-    
-    variables = {
-        "termUrn": term_urn,
-        "types": entity_types
-    }
-    
+
+    variables = {"termUrn": term_urn, "types": entity_types}
+
     # Execute the query
     try:
         result = client.execute_graphql(query, variables)
-        
+
         if (
-            result 
-            and "data" in result 
+            result
+            and "data" in result
             and "searchAcrossEntities" in result["data"]
             and "searchResults" in result["data"]["searchAcrossEntities"]
         ):
             entities = []
-            for search_result in result["data"]["searchAcrossEntities"]["searchResults"]:
+            for search_result in result["data"]["searchAcrossEntities"][
+                "searchResults"
+            ]:
                 entity = search_result.get("entity")
                 if entity:
                     entities.append(entity)
-            
+
             total = result["data"]["searchAcrossEntities"].get("total", 0)
-            logger.info(f"Found {len(entities)} entities (out of {total}) with glossary term {term_urn}")
-            
+            logger.info(
+                f"Found {len(entities)} entities (out of {total}) with glossary term {term_urn}"
+            )
+
             return entities
         else:
-            logger.error(f"Unexpected response format when querying entities with glossary term {term_urn}")
+            logger.error(
+                f"Unexpected response format when querying entities with glossary term {term_urn}"
+            )
             return []
-    
+
     except Exception as e:
         logger.error(f"Error querying entities with glossary term {term_urn}: {str(e)}")
         return []
 
 
 def get_entities_with_tag(
-    client: DataHubMetadataApiClient, 
+    client: DataHubMetadataApiClient,
     tag_urn: str,
-    entity_types: Optional[List[str]] = None
+    entity_types: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Get all entities that have a specific tag applied to them.
-    
+
     Args:
         client: DataHub metadata client
         tag_urn: URN of the tag
         entity_types: Optional list of entity types to filter by (e.g., "dataset", "dashboard")
-        
+
     Returns:
         List of entities with the specified tag
     """
@@ -222,52 +227,54 @@ def get_entities_with_tag(
       }
     }
     """
-    
-    variables = {
-        "tagUrn": tag_urn,
-        "types": entity_types
-    }
-    
+
+    variables = {"tagUrn": tag_urn, "types": entity_types}
+
     # Execute the query
     try:
         result = client.execute_graphql(query, variables)
-        
+
         if (
-            result 
-            and "data" in result 
+            result
+            and "data" in result
             and "searchAcrossEntities" in result["data"]
             and "searchResults" in result["data"]["searchAcrossEntities"]
         ):
             entities = []
-            for search_result in result["data"]["searchAcrossEntities"]["searchResults"]:
+            for search_result in result["data"]["searchAcrossEntities"][
+                "searchResults"
+            ]:
                 entity = search_result.get("entity")
                 if entity:
                     entities.append(entity)
-            
+
             total = result["data"]["searchAcrossEntities"].get("total", 0)
-            logger.info(f"Found {len(entities)} entities (out of {total}) with tag {tag_urn}")
-            
+            logger.info(
+                f"Found {len(entities)} entities (out of {total}) with tag {tag_urn}"
+            )
+
             return entities
         else:
-            logger.error(f"Unexpected response format when querying entities with tag {tag_urn}")
+            logger.error(
+                f"Unexpected response format when querying entities with tag {tag_urn}"
+            )
             return []
-    
+
     except Exception as e:
         logger.error(f"Error querying entities with tag {tag_urn}: {str(e)}")
         return []
 
 
 def get_entity_structured_properties(
-    client: DataHubMetadataApiClient, 
-    entity_urn: str
+    client: DataHubMetadataApiClient, entity_urn: str
 ) -> Dict[str, Any]:
     """
     Get all structured properties for a specific entity.
-    
+
     Args:
         client: DataHub metadata client
         entity_urn: URN of the entity
-        
+
     Returns:
         Dictionary of structured properties
     """
@@ -281,47 +288,49 @@ def get_entity_structured_properties(
       }
     }
     """
-    
-    variables = {
-        "urn": entity_urn
-    }
-    
+
+    variables = {"urn": entity_urn}
+
     # Execute the query
     try:
         result = client.execute_graphql(query, variables)
-        
+
         if (
-            result 
-            and "data" in result 
+            result
+            and "data" in result
             and "entity" in result["data"]
             and "structuredProperties" in result["data"]["entity"]
             and "properties" in result["data"]["entity"]["structuredProperties"]
         ):
             return result["data"]["entity"]["structuredProperties"]["properties"]
         else:
-            logger.error(f"Unexpected response format when querying structured properties for entity {entity_urn}")
+            logger.error(
+                f"Unexpected response format when querying structured properties for entity {entity_urn}"
+            )
             return {}
-    
+
     except Exception as e:
-        logger.error(f"Error querying structured properties for entity {entity_urn}: {str(e)}")
+        logger.error(
+            f"Error querying structured properties for entity {entity_urn}: {str(e)}"
+        )
         return {}
 
 
 def set_entity_structured_property(
-    client: DataHubMetadataApiClient, 
+    client: DataHubMetadataApiClient,
     entity_urn: str,
     property_name: str,
-    property_value: Any
+    property_value: Any,
 ) -> bool:
     """
     Set a structured property for a specific entity.
-    
+
     Args:
         client: DataHub metadata client
         entity_urn: URN of the entity
         property_name: Name of the property to set
         property_value: Value to set for the property
-        
+
     Returns:
         True if the operation was successful, False otherwise
     """
@@ -333,38 +342,46 @@ def set_entity_structured_property(
       }
     }
     """
-    
+
     variables = {
         "input": {
             "entityUrn": entity_urn,
             "name": property_name,
-            "value": property_value
+            "value": property_value,
         }
     }
-    
+
     # Execute the mutation
     try:
         result = client.execute_graphql(mutation, variables)
-        
+
         if (
-            result 
-            and "data" in result 
+            result
+            and "data" in result
             and "setStructuredProperty" in result["data"]
             and "success" in result["data"]["setStructuredProperty"]
         ):
             success = result["data"]["setStructuredProperty"]["success"]
             if success:
-                logger.info(f"Successfully set structured property '{property_name}' for entity {entity_urn}")
+                logger.info(
+                    f"Successfully set structured property '{property_name}' for entity {entity_urn}"
+                )
             else:
-                logger.error(f"Failed to set structured property '{property_name}' for entity {entity_urn}")
-            
+                logger.error(
+                    f"Failed to set structured property '{property_name}' for entity {entity_urn}"
+                )
+
             return success
         else:
-            logger.error(f"Unexpected response format when setting structured property for entity {entity_urn}")
+            logger.error(
+                f"Unexpected response format when setting structured property for entity {entity_urn}"
+            )
             return False
-    
+
     except Exception as e:
-        logger.error(f"Error setting structured property for entity {entity_urn}: {str(e)}")
+        logger.error(
+            f"Error setting structured property for entity {entity_urn}: {str(e)}"
+        )
         return False
 
 
@@ -372,17 +389,17 @@ def get_entities_with_structured_property(
     client: DataHubMetadataApiClient,
     property_name: str,
     property_value: Optional[Any] = None,
-    entity_types: Optional[List[str]] = None
+    entity_types: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Get all entities that have a specific structured property.
-    
+
     Args:
         client: DataHub metadata client
         property_name: Name of the structured property
         property_value: Optional value to filter by (if None, will return all entities with the property)
         entity_types: Optional list of entity types to filter by (e.g., "dataset", "dashboard")
-        
+
     Returns:
         List of entities with the specified structured property
     """
@@ -439,38 +456,48 @@ def get_entities_with_structured_property(
       }
     }
     """
-    
+
     variables = {
         "propertyName": property_name,
         "propertyValue": property_value,
-        "types": entity_types
+        "types": entity_types,
     }
-    
+
     # Execute the query
     try:
         result = client.execute_graphql(query, variables)
-        
+
         if (
-            result 
-            and "data" in result 
+            result
+            and "data" in result
             and "searchAcrossEntities" in result["data"]
             and "searchResults" in result["data"]["searchAcrossEntities"]
         ):
             entities = []
-            for search_result in result["data"]["searchAcrossEntities"]["searchResults"]:
+            for search_result in result["data"]["searchAcrossEntities"][
+                "searchResults"
+            ]:
                 entity = search_result.get("entity")
                 if entity:
                     entities.append(entity)
-            
+
             total = result["data"]["searchAcrossEntities"].get("total", 0)
-            value_info = f" with value '{property_value}'" if property_value is not None else ""
-            logger.info(f"Found {len(entities)} entities (out of {total}) with structured property '{property_name}'{value_info}")
-            
+            value_info = (
+                f" with value '{property_value}'" if property_value is not None else ""
+            )
+            logger.info(
+                f"Found {len(entities)} entities (out of {total}) with structured property '{property_name}'{value_info}"
+            )
+
             return entities
         else:
-            logger.error(f"Unexpected response format when querying entities with structured property '{property_name}'")
+            logger.error(
+                f"Unexpected response format when querying entities with structured property '{property_name}'"
+            )
             return []
-    
+
     except Exception as e:
-        logger.error(f"Error querying entities with structured property '{property_name}': {str(e)}")
-        return [] 
+        logger.error(
+            f"Error querying entities with structured property '{property_name}': {str(e)}"
+        )
+        return []

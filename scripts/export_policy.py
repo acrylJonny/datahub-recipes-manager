@@ -5,10 +5,10 @@ Script to export DataHub policies to files.
 Example usage:
     # Export all policies to a directory
     python export_policy.py --output-dir policies/
-    
+
     # Export a specific policy
     python export_policy.py --policy-id my-policy-id --output-dir policies/
-    
+
     # Export using custom DataHub connection
     python export_policy.py --server http://datahub:8080 --token your-token --output-dir policies/
 """
@@ -19,8 +19,7 @@ import argparse
 import logging
 import json
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.datahub_rest_client import DataHubRestClient

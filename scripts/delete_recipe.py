@@ -8,9 +8,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional
 
-import yaml
 from dotenv import load_dotenv
 
 # Add parent directory to path to import utils

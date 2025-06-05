@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('metadata_manager', '0004_add_missing_columns'),
+        ("metadata_manager", "0004_add_missing_columns"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='glossaryterm',
-            name='domain_urn',
+            model_name="glossaryterm",
+            name="domain_urn",
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
-    ] 
+    ]

@@ -96,7 +96,9 @@ WSGI_APPLICATION = "web_ui.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.path.join(BASE_DIR.parent, "db.sqlite3"),  # Use db in project root directory
+        "NAME": os.path.join(
+            BASE_DIR.parent, "db.sqlite3"
+        ),  # Use db in project root directory
     }
 }
 
@@ -136,14 +138,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "static/"
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static"),
 ]
 
 # Media files (uploaded files)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -151,75 +153,75 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # DataHub CI/CD Manager specific settings
-DATAHUB_CONFIG_FILE = os.path.join(BASE_DIR.parent, '.env')
-SCRIPTS_DIR = os.path.join(BASE_DIR.parent, 'scripts')
-TEMPLATES_DIR = os.path.join(BASE_DIR.parent, 'templates')
-RECIPES_DIR = os.path.join(BASE_DIR.parent, 'recipes')
-POLICIES_DIR = os.path.join(BASE_DIR.parent, 'policies')
+DATAHUB_CONFIG_FILE = os.path.join(BASE_DIR.parent, ".env")
+SCRIPTS_DIR = os.path.join(BASE_DIR.parent, "scripts")
+TEMPLATES_DIR = os.path.join(BASE_DIR.parent, "templates")
+RECIPES_DIR = os.path.join(BASE_DIR.parent, "recipes")
+POLICIES_DIR = os.path.join(BASE_DIR.parent, "policies")
 
 # Logging Configuration
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {message}",
+            "style": "{",
         },
-        'simple': {
-            'format': '{message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-        'database': {
-            'class': 'web_ui.log_handlers.DatabaseLogHandler',
-            'level': 'DEBUG',
-            'formatter': 'verbose',
+        "simple": {
+            "format": "{message}",
+            "style": "{",
         },
     },
-    'root': {
-        'handlers': ['console', 'database'],
-        'level': 'DEBUG',
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+        "database": {
+            "class": "web_ui.log_handlers.DatabaseLogHandler",
+            "level": "DEBUG",
+            "formatter": "verbose",
+        },
     },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
+    "root": {
+        "handlers": ["console", "database"],
+        "level": "DEBUG",
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
         },
-        'web_ui': {
-            'handlers': ['console', 'database'],
-            'level': 'DEBUG',
-            'propagate': False,
+        "web_ui": {
+            "handlers": ["console", "database"],
+            "level": "DEBUG",
+            "propagate": False,
         },
-        'utils': {
-            'handlers': ['console', 'database'],
-            'level': 'DEBUG',
-            'propagate': False,
+        "utils": {
+            "handlers": ["console", "database"],
+            "level": "DEBUG",
+            "propagate": False,
         },
-        'metadata_manager': {
-            'handlers': ['console', 'database'],
-            'level': 'DEBUG',
-            'propagate': False,
+        "metadata_manager": {
+            "handlers": ["console", "database"],
+            "level": "DEBUG",
+            "propagate": False,
         },
     },
 }
 
 # Ensure logs directory exists
-os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
+os.makedirs(os.path.join(BASE_DIR, "logs"), exist_ok=True)
 
 # Configure authentication - No login required for local development
-LOGIN_URL = '/accounts/login/'
-LOGOUT_URL = '/logout/'
-LOGIN_REDIRECT_URL = '/'
+LOGIN_URL = "/accounts/login/"
+LOGOUT_URL = "/logout/"
+LOGIN_REDIRECT_URL = "/"
 
 # Allow anonymous users
 AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend', 
-    'web_ui.auth_backends.AnonymousUserBackend',
+    "django.contrib.auth.backends.ModelBackend",
+    "web_ui.auth_backends.AnonymousUserBackend",
 ]

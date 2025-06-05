@@ -5,67 +5,234 @@
 {% block title %}DataHub Glossary{% endblock %}
 
 {% block extra_css %}
+<link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <style>
-    .card-header-tabs {
-        margin-right: -1.25rem;
-        margin-bottom: -0.75rem;
-        margin-left: -1.25rem;
-        border-bottom: 0;
+    .description-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+        white-space: normal;
     }
-    .glossary-card {
-        margin-bottom: 1.5rem;
-    }
-    .glossary-item {
-        transition: background-color 0.2s;
-    }
-    .glossary-item:hover {
-        background-color: rgba(0,0,0,0.02);
-    }
-    .node-level-1 {
-        padding-left: 1.5rem;
-    }
-    .node-level-2 {
-        padding-left: 3rem;
-    }
-    .node-level-3 {
-        padding-left: 4.5rem;
-    }
-    .badge-category {
-        font-size: 0.8em;
-        padding: 0.35em 0.65em;
-    }
-    .toggle-node-children {
-        cursor: pointer;
-        width: 18px;
-        display: inline-block;
-        text-align: center;
-    }
-    .toggle-node-children[aria-expanded="true"] .fa-caret-right {
-        transform: rotate(90deg);
-    }
-    .glossary-node-children {
-        border-left: 1px dashed #dee2e6;
-        margin-left: 1.5rem;
-    }
-    .node-icon {
-        width: 20px;
-        display: inline-block;
-        text-align: center;
-    }
+    
     .description-preview {
-        max-height: 60px;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
         overflow: hidden;
-        color: #6c757d;
-        font-size: 0.9em;
+        text-overflow: ellipsis;
+        line-height: 1.4;
+        max-height: 4.2em; /* 3 lines * 1.4 line-height */
     }
-    /* Responsive table */
-    @media (max-width: 768px) {
-        .responsive-table th:nth-child(3),
-        .responsive-table td:nth-child(3) {
-            display: none;
-        }
+    
+    .related-items-cell {
+        max-width: 250px;
+    }
+    
+    .relationship-badge {
+        font-size: 0.7rem;
+        margin: 0.1rem;
+        padding: 0.2rem 0.4rem;
+    }
+    
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .type-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .tab-loading {
+        text-align: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+    
+    .table-responsive {
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+    }
+    
+    .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 350px;
+    }
+    
+    /* Modal enhancements */
+    .modal-body dl {
+        margin-bottom: 0;
+    }
+    
+    .modal-body dt {
+        font-weight: 600;
+        color: #495057;
+        margin-top: 1rem;
+    }
+    
+    .modal-body dt:first-child {
+        margin-top: 0;
+    }
+    
+    .modal-body dd {
+        margin-bottom: 0.5rem;
+        color: #6c757d;
+    }
+    
+    .relationship-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.25rem;
+        padding: 0.25rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+    }
+    
+    .owner-item {
+        display: inline-block;
+        margin: 0.1rem;
+        padding: 0.2rem 0.5rem;
+        background-color: #e9ecef;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+    }
+    
+    /* Interactive hierarchy styles */
+    .hierarchy-container {
+        display: flex;
+        align-items: center;
+        position: relative;
+        min-height: 20px;
+    }
+    
+    .tree-connector {
+        position: relative;
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        margin-right: 2px;
+    }
+    
+    .tree-connector::before {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 0;
+        width: 1px;
+        height: 100%;
+        background-color: #dee2e6;
+    }
+    
+    .tree-connector::after {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: 10px;
+        height: 1px;
+        background-color: #dee2e6;
+    }
+    
+    /* Hide vertical line for last items in a group */
+    .tree-connector.last-child::before {
+        height: 10px;
+    }
+    
+    /* Hide connectors for root level */
+    tr[data-level="0"] .tree-connector {
+        display: none;
+    }
+    
+    .expand-button-container {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-right: 4px;
+    }
+    
+    /* Expand/collapse button styling */
+    .expand-icon {
+        width: 12px;
+        height: 12px;
+        font-size: 10px;
+        transition: transform 0.2s ease;
+        cursor: pointer;
+    }
+    
+    .btn-link:hover .expand-icon {
+        color: #007bff !important;
+        transform: scale(1.1);
+    }
+    
+    .expand-button {
+        border: none;
+        background: none;
+        padding: 1px;
+        line-height: 1;
+        color: #6c757d;
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 2px;
+    }
+    
+    .expand-button:hover {
+        color: #007bff;
+        background-color: #f8f9fa;
+    }
+    
+    /* Item name styling */
+    .item-name {
+        font-weight: 500;
+        margin-left: 2px;
+        flex-grow: 1;
+    }
+    
+    /* Smooth transitions for expand/collapse */
+    tbody tr {
+        transition: opacity 0.15s ease;
+    }
+    
+    /* Better visual spacing */
+    .table td {
+        vertical-align: middle;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    /* Ensure consistent alignment */
+    .name-cell {
+        position: relative;
     }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -127,647 +294,801 @@
         {% endfor %}
     {% endif %}
 
-    <!-- Simplified Glossary Tabs (2 tabs like the tests page) -->
+    <!-- Tabs -->
     <ul class="nav nav-tabs mb-4" id="glossaryTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="server-tab" data-bs-toggle="tab" data-bs-target="#server-glossary" 
-                   type="button" role="tab" aria-controls="server-glossary" aria-selected="true">
-                <i class="fas fa-server me-1"></i> Server Glossary
+            <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-content" 
+                   type="button" role="tab" aria-controls="local-content" aria-selected="true">
+                <i class="fas fa-laptop me-1"></i> 
+                Local 
+                <span class="badge bg-secondary ms-1" id="local-badge">{{ local_count }}</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-glossary" 
-                   type="button" role="tab" aria-controls="local-glossary" aria-selected="false">
-                <i class="fas fa-laptop me-1"></i> Local Glossary
-                <span class="badge bg-primary ms-1" id="local-glossary-count">{{ local_only_count|add:modified_count }}</span>
+            <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-content" 
+                   type="button" role="tab" aria-controls="remote-content" aria-selected="false">
+                <i class="fas fa-cloud me-1"></i> 
+                Remote 
+                <span class="badge bg-info ms-1" id="remote-badge">0</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-content" 
+                   type="button" role="tab" aria-controls="synced-content" aria-selected="false">
+                <i class="fas fa-sync me-1"></i> 
+                Synced 
+                <span class="badge bg-success ms-1" id="synced-badge">{{ synced_count }}</span>
             </button>
         </li>
     </ul>
 
+    <!-- Tab Content -->
     <div class="tab-content" id="glossaryTabsContent">
-        <!-- Server Glossary Tab (Previously Synced + Remote Only) -->
-        <div class="tab-pane fade show active" id="server-glossary" role="tabpanel" aria-labelledby="server-tab">
-            <div class="card mb-4">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">DataHub Server Glossary</h5>
-                    <div class="d-flex">
-                        <div class="input-group">
-                            <input type="text" id="server-glossary-search" class="form-control form-control-sm me-2" 
-                                   placeholder="Filter items..." value="">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="server-clear-filter">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        <div class="ms-2">
-                            <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
-                                <i class="fas fa-sync-alt"></i>
-                            </a>
-                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="expand-all-glossary" title="Expand All">
-                                <i class="fas fa-expand-alt"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="collapse-all-glossary" title="Collapse All">
-                                <i class="fas fa-compress-alt"></i>
-                            </button>
-                        </div>
-                    </div>
+        <!-- Local Tab -->
+        <div class="tab-pane fade show active" id="local-content" role="tabpanel" aria-labelledby="local-tab">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Local Glossary Items</h5>
                 </div>
-                <div class="card-body">
-                    <!-- Synced nodes (root level) -->
-                    {% if synced_nodes %}
-                    <div class="mb-3">
-                        <h6 class="border-bottom pb-2">Synced Glossary Items</h6>
-                        {% for node in synced_nodes %}
-                            {% render_node_hierarchy node "synced" 1 %}
-                        {% endfor %}
-                        
-                        <!-- Synced terms (root level) -->
-                        {% if synced_root_terms %}
-                            {% for term in synced_root_terms %}
-                            <div class="glossary-item py-2">
-                                        <div class="d-flex align-items-center">
-                                    <div class="form-check">
-                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.id }}" data-item-type="term" data-sync-status="synced">
-                                    </div>
-                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
-                                        <span class="me-2" style="width:18px;"></span>
-                                            <span class="node-icon me-2">
-                                            <i class="fas fa-tag text-info"></i>
-                                            </span>
-                                        <span>{{ term.name }}</span>
-                                        <span class="badge bg-success text-white ms-2 badge-category">Synced</span>
-                                    </div>
-                                    <div class="ms-2">
-                                        <span class="badge bg-info text-white">Term</span>
-                                    </div>
-                                    <div class="ms-3">
-                                        <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
-                                            <i class="fas fa-eye"></i>
-                                        </a>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endfor %}
-                                            {% endif %}
-                                        </div>
-                    {% endif %}
-                                
-                    <!-- Remote only nodes (root level) -->
-                    {% if remote_only_nodes %}
-                    <div class="mb-3">
-                        <h6 class="border-bottom pb-2">Remote Glossary Items</h6>
-                        {% for node in remote_only_nodes %}
-                            {% render_node_hierarchy node "remote-only" 1 remote_only_terms %}
-                                            {% endfor %}
-                                            
-                        <!-- Root level glossary terms (without parent nodes) -->
-                        {% if remote_only_terms.root_terms %}
-                            {% for term in remote_only_terms.root_terms %}
-                            <div class="glossary-item py-2">
-                                <div class="d-flex align-items-center">
-                                    <div class="form-check">
-                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.urn }}" data-item-type="term" data-sync-status="remote-only">
-                                    </div>
-                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
-                                        <span class="me-2" style="width:18px;"></span>
-                                        <span class="node-icon me-2">
-                                            <i class="fas fa-tag text-info"></i>
-                                        </span>
-                                        <span>{{ term.name }}</span>
-                                        <span class="badge bg-info text-white ms-2 badge-category">Remote</span>
-                                    </div>
-                                    <div class="ms-2">
-                                        <span class="badge bg-info text-white">Term</span>
-                                    </div>
-                                    <div class="ms-3">
-                                        <form action="{% url 'metadata_manager:glossary_pull' %}" method="post" class="d-inline">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="term_urn" value="{{ term.urn }}">
-                                            <input type="hidden" name="term_name" value="{{ term.name }}">
-                                            <input type="hidden" name="term_description" value="{{ term.description|default:'' }}">
-                                            <input type="hidden" name="term_source" value="{{ term.term_source|default:'' }}">
-                                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Import to Local">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                                            {% endfor %}
-                        {% endif %}
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table id="local-table" class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="4%">
+                                        <input type="checkbox" id="local-select-all">
+                                    </th>
+                                    <th width="6%">Type</th>
+                                    <th width="28%">Name</th>
+                                    <th width="30%">Description</th>
+                                    <th width="18%">Related Items</th>
+                                    <th width="8%">Status</th>
+                                    <th width="6%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="local-table-body">
+                                <!-- Local data will be populated here -->
+                                {% include 'metadata_manager/glossary/partials/local_table_rows.html' %}
+                            </tbody>
+                        </table>
                     </div>
-                    {% endif %}
-                    
-                    {% if not synced_nodes and not remote_only_nodes and not synced_root_terms and not remote_only_terms %}
-                    <div class="text-center py-3">
-                        <em>No glossary items found in DataHub.</em>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
         
-        <!-- Local Glossary Tab (Previously Local Only + Modified) -->
-        <div class="tab-pane fade" id="local-glossary" role="tabpanel" aria-labelledby="local-tab">
-            <div class="card mb-4">
+        <!-- Remote Tab -->
+        <div class="tab-pane fade" id="remote-content" role="tabpanel" aria-labelledby="remote-tab">
+            <div class="card">
                 <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">Local Glossary</h5>
-                    <div class="d-flex">
-                        <div class="input-group">
-                            <input type="text" id="local-glossary-search" class="form-control form-control-sm me-2" 
-                                   placeholder="Filter items..." value="">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="local-clear-filter">
-                                <i class="fas fa-times"></i>
+                    <h5 class="card-title mb-0">Remote Glossary Items</h5>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="refresh-remote-data" {% if not has_datahub_connection %}disabled{% endif %}>
+                        <i class="fas fa-sync"></i> Refresh
                             </button>
+                </div>
+                <div class="card-body p-0">
+                    <div id="remote-table-container">
+                        <div class="tab-loading">
+                            <div class="loading-spinner me-2"></div>
+                            Loading remote glossary data...
                         </div>
                     </div>
                 </div>
-                <div class="card-body">
-                    <!-- Local only nodes (root level) -->
-                    {% if local_only_nodes %}
-                    <div class="mb-3">
-                        <h6 class="border-bottom pb-2">Local Only Items</h6>
-                        {% for node in local_only_nodes %}
-                            {% render_node_hierarchy node "local-only" 1 %}
-                        {% endfor %}
-                        
-                        <!-- Local only root terms (without parent nodes) -->
-                        {% if local_only_root_terms %}
-                            {% for term in local_only_root_terms %}
-                            <div class="glossary-item py-2">
-                                        <div class="d-flex align-items-center">
-                                    <div class="form-check">
-                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.id }}" data-item-type="term" data-sync-status="local-only">
-                                    </div>
-                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
-                                        <span class="me-2" style="width:18px;"></span>
-                                            <span class="node-icon me-2">
-                                            <i class="fas fa-tag text-info"></i>
-                                            </span>
-                                        <span>{{ term.name }}</span>
-                                        <span class="badge bg-secondary text-white ms-2 badge-category">Local</span>
-                                    </div>
-                                    <div class="ms-2">
-                                        <span class="badge bg-info text-white">Term</span>
-                                    </div>
-                                    <div class="ms-3">
-                                        <div class="btn-group">
-                                            <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                            {% if has_datahub_connection and term.can_deploy %}
-                                            <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
-                                                {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
-                                                    <i class="fas fa-cloud-upload-alt"></i>
-                                                </button>
-                                            </form>
-                                            {% endif %}
+            </div>
+        </div>
+
+        <!-- Synced Tab -->
+        <div class="tab-pane fade" id="synced-content" role="tabpanel" aria-labelledby="synced-tab">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Synced Glossary Items</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div id="synced-table-container">
+                        <div class="tab-loading">
+                            <div class="loading-spinner me-2"></div>
+                            Loading synced glossary data...
                                         </div>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        {% endif %}
                     </div>
-                    {% endif %}
-                    
-                    <!-- Modified nodes (root level) -->
-                    {% if modified_nodes %}
-                    <div class="mb-3">
-                        <h6 class="border-bottom pb-2">Modified Items</h6>
-                        {% for node in modified_nodes %}
-                            {% render_node_hierarchy node "modified" 1 %}
-                                            {% endfor %}
-                                            
-                        <!-- Modified root terms (without parent nodes) -->
-                        {% if modified_root_terms %}
-                            {% for term in modified_root_terms %}
-                            <div class="glossary-item py-2">
-                                <div class="d-flex align-items-center">
-                                    <div class="form-check">
-                                        <input class="form-check-input select-item" type="checkbox" value="{{ term.id }}" data-item-type="term" data-sync-status="modified">
-                                    </div>
-                                    <div class="ms-2 d-flex align-items-center flex-grow-1">
-                                        <span class="me-2" style="width:18px;"></span>
-                                        <span class="node-icon me-2">
-                                            <i class="fas fa-tag text-info"></i>
-                                        </span>
-                                        <span>{{ term.name }}</span>
-                                        <span class="badge bg-warning text-dark ms-2 badge-category">Modified</span>
-                                    </div>
-                                    <div class="ms-2">
-                                        <span class="badge bg-info text-white">Term</span>
-                                    </div>
-                                    <div class="ms-3">
-                                        <div class="btn-group">
-                                            <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                            {% if has_datahub_connection and term.can_deploy %}
-                                            <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
-                                                {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
-                                                    <i class="fas fa-cloud-upload-alt"></i>
-                                                </button>
-                                            </form>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                                            {% endfor %}
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                    
-                    {% if not local_only_nodes and not modified_nodes and not local_only_root_terms and not modified_root_terms %}
-                    <div class="text-center py-3">
-                        <em>No local glossary items found.</em>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Existing modals and JavaScript -->
-<!-- ... existing code ... -->
-
-<!-- GitHub PR Modal -->
-<div class="modal fade" id="githubPrModal" tabindex="-1" aria-labelledby="githubPrModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form id="github-pr-form">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="githubPrModalLabel">Add to GitHub PR</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="github-environment" class="form-label">Target Environment</label>
-                        <select class="form-control" id="github-environment" name="environment" required>
-                            {% for env in environments %}
-                                <option value="{{ env.name }}">{{ env.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add to PR</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Delete Node Modal -->
-<div class="modal fade" id="deleteNodeModal" tabindex="-1" aria-labelledby="deleteNodeModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+<!-- Detail Modal -->
+<div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="deleteNodeModalLabel">Confirm Delete</h5>
+                <h5 class="modal-title" id="detailModalLabel">Item Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <p>Are you sure you want to delete the node <strong id="delete-node-name"></strong>?</p>
-                <p class="text-danger">This will also delete all child nodes and terms associated with this node.</p>
+            <div class="modal-body" id="detailModalBody">
+                <!-- Content will be populated dynamically -->
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form id="delete-node-form" method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="_method" value="DELETE">
-                    <button type="submit" class="btn btn-danger">Delete</button>
-                </form>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <div id="modalActions">
+                    <!-- Action buttons will be populated dynamically -->
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Delete Term Modal -->
-<div class="modal fade" id="deleteTermModal" tabindex="-1" aria-labelledby="deleteTermModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="deleteTermModalLabel">Confirm Delete</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to delete the term <strong id="delete-term-name"></strong>?</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form id="delete-term-form" method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="_method" value="DELETE">
-                    <button type="submit" class="btn btn-danger">Delete</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block extra_js %}
+<!-- JavaScript -->
 <script>
-// Debug info for terms
-console.log("Remote terms debug info available in the debug-info section");
-console.log("Nodes available:", {% if nodes %}true{% else %}false{% endif %});
-console.log("Nodes count:", {% if nodes %}{{ nodes|length }}{% else %}0{% endif %});
+let remoteDataLoaded = false;
+let syncedDataLoaded = false;
 
-$(document).ready(function() {
-        // Toggle node children with animation
-        $(document).on('click', '.toggle-node-children', function() {
-            $(this).find('i').toggleClass('fa-rotate-90');
-        });
-        
-        // Debug the create node and term buttons
-        $('[data-bs-target="#createNodeModal"]').on('click', function() {
-            console.log("Create Node button clicked");
-        });
-        
-        $('[data-bs-target="#createTermModal"]').on('click', function() {
-            console.log("Create Term button clicked");
-        });
-        
-        // Debug form submissions
-        $('#createNodeModal form').on('submit', function() {
-            console.log("Create Node form submitted");
-        });
-        
-        $('#createTermModal form').on('submit', function() {
-            console.log("Create Term form submitted");
-        });
-        
-        // Expand all nodes
-        $('#expand-all-glossary, #expand-all-local, #expand-all-remote, #expand-all-modified').click(function() {
-            const tabId = $(this).closest('.tab-pane').attr('id');
-            $(`#${tabId} .collapse`).collapse('show');
-            $(`#${tabId} .toggle-node-children i`).addClass('fa-rotate-90');
-        });
-        
-        // Collapse all nodes
-        $('#collapse-all-glossary, #collapse-all-local, #collapse-all-remote, #collapse-all-modified').click(function() {
-            const tabId = $(this).closest('.tab-pane').attr('id');
-            $(`#${tabId} .collapse`).collapse('hide');
-            $(`#${tabId} .toggle-node-children i`).removeClass('fa-rotate-90');
-    });
+function loadRemoteData() {
+    const container = document.getElementById('remote-table-container');
+    if (!container) {
+        return;
+    }
     
-    // Select all checkboxes
-        $('#select-all-synced, #select-all-local, #select-all-remote, #select-all-modified').change(function() {
-            const tabId = $(this).closest('.tab-pane').attr('id');
-            const isChecked = $(this).prop('checked');
-            $(`#${tabId} .node-checkbox, #${tabId} .term-checkbox`).prop('checked', isChecked);
+    container.innerHTML = '<div class="text-center p-4"><div class="spinner-border" role="status"></div> Loading remote data...</div>';
+    
+    fetch('/metadata/glossary/data/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                populateRemoteTable(data.data);
+                remoteDataLoaded = true;
+                
+                // Update tab badge
+                const allItems = [...(data.data.remote_only_nodes || []), ...(data.data.remote_only_terms || [])];
+                const badge = document.getElementById('remote-badge');
+                if (badge) badge.textContent = allItems.length;
+            } else {
+                container.innerHTML = '<div class="alert alert-danger">Failed to load remote data</div>';
+            }
+        })
+        .catch(error => {
+            container.innerHTML = '<div class="alert alert-danger">Error loading remote data</div>';
+        });
+}
+
+function loadSyncedData() {
+    const container = document.getElementById('synced-table-container');
+    if (!container) return;
+    
+    container.innerHTML = '<div class="text-center p-4"><div class="spinner-border" role="status"></div> Loading synced data...</div>';
+    
+    fetch('/metadata/glossary/data/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                populateSyncedTable(data.data);
+                syncedDataLoaded = true;
+                
+                // Update tab badge
+                const allItems = [...(data.data.synced_nodes || []), ...(data.data.synced_terms || [])];
+                const badge = document.getElementById('synced-badge');
+                if (badge) badge.textContent = allItems.length;
+            } else {
+                container.innerHTML = '<div class="alert alert-danger">Failed to load synced data</div>';
+            }
+        })
+        .catch(error => {
+            container.innerHTML = '<div class="alert alert-danger">Error loading synced data</div>';
+        });
+}
+
+function populateSyncedTable(data) {
+    const allItems = [...(data.synced_nodes || []), ...(data.synced_terms || [])];
+    
+    // Build hierarchical structure
+    const hierarchy = buildHierarchy(allItems);
+    
+    const tableHtml = `
+        <div class="table-responsive">
+            <table id="synced-table" class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="4%">
+                            <input type="checkbox" id="synced-select-all">
+                        </th>
+                        <th width="6%">Type</th>
+                        <th width="28%">Name</th>
+                        <th width="30%">Description</th>
+                        <th width="18%">Related Items</th>
+                        <th width="8%">Status</th>
+                        <th width="6%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${renderHierarchicalRows(hierarchy, 0, null, 'synced')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    document.getElementById('synced-table-container').innerHTML = tableHtml;
+    
+    // Initialize DataTable if jQuery is available
+    if (typeof $ !== 'undefined' && $.fn.DataTable) {
+        try {
+            $('#synced-table').DataTable({
+                pageLength: 25,
+                responsive: true,
+                order: [[2, 'asc']],
+                columnDefs: [
+                    { orderable: false, targets: [0, 6] },
+                    { width: "4%", targets: 0 },
+                    { width: "6%", targets: 1 },
+                    { width: "28%", targets: 2 },
+                    { width: "30%", targets: 3 },
+                    { width: "18%", targets: 4 },
+                    { width: "8%", targets: 5 },
+                    { width: "6%", targets: 6 }
+                ]
+            });
+        } catch (e) {
+            // DataTable initialization failed silently
+        }
+    }
+}
+
+// Wait for DOM to be ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Tab event handling
+    const remoteTab = document.getElementById('remote-tab');
+    const syncedTab = document.getElementById('synced-tab');
+    
+    if (remoteTab) {
+        // Primary approach: click event
+        remoteTab.addEventListener('click', function(e) {
+            setTimeout(function() {
+                if (!remoteDataLoaded) {
+                    loadRemoteData();
+                }
+            }, 100);
         });
         
-        // Filter items in each tab
-        $('#synced-search, #local-search, #remote-search, #modified-search').on('keyup', function() {
-            const tabId = $(this).closest('.tab-pane').attr('id');
-            const searchTerm = $(this).val().toLowerCase();
-            
-            if (searchTerm.length > 0) {
-                $(`#${tabId} .glossary-item`).each(function() {
-                    const text = $(this).text().toLowerCase();
-                    const match = text.indexOf(searchTerm) > -1;
-                    $(this).toggle(match);
-                });
-            } else {
-                $(`#${tabId} .glossary-item`).show();
+        // Secondary approach: Bootstrap tab event
+        remoteTab.addEventListener('shown.bs.tab', function(e) {
+            if (!remoteDataLoaded) {
+                loadRemoteData();
             }
         });
-        
-        // Clear filters
-        $('#synced-clear-filter, #local-clear-filter, #remote-clear-filter, #modified-clear-filter').click(function() {
-            const tabId = $(this).closest('.tab-pane').attr('id');
-            $(`#${tabId}-search`).val('');
-            $(`#${tabId} .glossary-item`).show();
-        });
-        
-        // Handle batch actions
-        $('#push-selected-items').click(function() {
-            const selectedNodes = $('.node-checkbox:checked').map(function() {
-                return $(this).data('node-id');
-            }).get();
-            
-            const selectedTerms = $('.term-checkbox:checked').map(function() {
-                return $(this).data('term-id');
-            }).get();
-        
-        if (selectedNodes.length === 0 && selectedTerms.length === 0) {
-                alert('Please select at least one item to push to DataHub.');
-            return;
-        }
-        
-            // Submit form with selected items
-            const form = $('<form action="{% url "metadata_manager:glossary_list" %}" method="post"></form>');
-            form.append('{% csrf_token %}');
-            form.append('<input type="hidden" name="action" value="push_selected">');
-            
-            selectedNodes.forEach(function(nodeId) {
-                form.append(`<input type="hidden" name="selected_nodes" value="${nodeId}">`);
-            });
-            
-            selectedTerms.forEach(function(termId) {
-                form.append(`<input type="hidden" name="selected_terms" value="${termId}">`);
-            });
-            
-            $('body').append(form);
-        form.submit();
-        });
-        
-        // Add to GitHub PR action
-        $('#add-selected-to-git').click(function() {
-            const selectedNodes = $('.node-checkbox:checked').map(function() {
-                return $(this).data('node-id');
-            }).get();
-            
-            const selectedTerms = $('.term-checkbox:checked').map(function() {
-                return $(this).data('term-id');
-            }).get();
-        
-        if (selectedNodes.length === 0 && selectedTerms.length === 0) {
-                alert('Please select at least one item to add to GitHub PR.');
-            return;
-        }
-        
-            // Open GitHub PR modal
-            $('#githubPrModal').modal('show');
-            
-            // Store selected items in the modal form
-            $('#github-pr-form').data('selected-nodes', selectedNodes);
-            $('#github-pr-form').data('selected-terms', selectedTerms);
-        });
-        
-        // GitHub PR form submission
-        $('#github-pr-form').submit(function(e) {
-            e.preventDefault();
-            
-            const selectedNodes = $(this).data('selected-nodes') || [];
-            const selectedTerms = $(this).data('selected-terms') || [];
-            const environment = $('#github-environment').val();
-            
-            // Submit form with selected items
-            const form = $('<form action="{% url "metadata_manager:glossary_list" %}" method="post"></form>');
-            form.append('{% csrf_token %}');
-            form.append('<input type="hidden" name="action" value="add_to_git">');
-            form.append(`<input type="hidden" name="environment" value="${environment}">`);
-            
-            selectedNodes.forEach(function(nodeId) {
-                form.append(`<input type="hidden" name="selected_nodes" value="${nodeId}">`);
-            });
-            
-            selectedTerms.forEach(function(termId) {
-                form.append(`<input type="hidden" name="selected_terms" value="${termId}">`);
-            });
-            
-            $('body').append(form);
-        form.submit();
-        });
-        
-        // Push all items
-        $('#push-all-items').click(function() {
-            if (!confirm('Are you sure you want to push all local and modified items to DataHub?')) {
-            return;
-        }
-        
-            // Submit form to push all items
-            const form = $('<form action="{% url "metadata_manager:glossary_list" %}" method="post"></form>');
-            form.append('{% csrf_token %}');
-            form.append('<input type="hidden" name="action" value="push_all">');
-            $('body').append(form);
-        form.submit();
-        });
-        
-        // Download selected items
-        $('#download-selected-items').click(function() {
-            const selectedNodes = $('.node-checkbox:checked').map(function() {
-                return $(this).data('node-id');
-            }).get();
-            
-            const selectedTerms = $('.term-checkbox:checked').map(function() {
-                return $(this).data('term-id');
-            }).get();
-        
-        if (selectedNodes.length === 0 && selectedTerms.length === 0) {
-                alert('Please select at least one item to download.');
-            return;
-        }
-        
-            // TODO: Implement download functionality
-            alert('Download functionality not yet implemented.');
-        });
-        
-        // Download all items
-        $('#download-all-items').click(function() {
-            // TODO: Implement download functionality
-            alert('Download functionality not yet implemented.');
-    });
+    }
     
-    // Handle delete node modal
-    $(document).on('click', '.delete-node', function() {
-        const nodeId = $(this).data('node-id');
-        const nodeName = $(this).data('node-name');
+    if (syncedTab) {
+        syncedTab.addEventListener('click', function(e) {
+            setTimeout(function() {
+                if (!syncedDataLoaded) {
+                    loadSyncedData();
+                }
+            }, 100);
+        });
         
-        // Update modal content
-        $('#delete-node-name').text(nodeName);
-        
-        // Update form action
-        $('#delete-node-form').attr('action', `{% url 'metadata_manager:glossary_node_detail' 999999 %}`.replace('999999', nodeId));
-    });
+        syncedTab.addEventListener('shown.bs.tab', function(e) {
+            if (!syncedDataLoaded) {
+                loadSyncedData();
+            }
+        });
+    }
     
-    // Handle delete term modal
-    $(document).on('click', '.delete-term', function() {
-        const termId = $(this).data('term-id');
-        const termName = $(this).data('term-name');
-        
-        // Update modal content
-        $('#delete-term-name').text(termName);
-        
-        // Update form action
-        $('#delete-term-form').attr('action', `{% url 'metadata_manager:glossary_term_detail' 999999 %}`.replace('999999', termId));
-    });
+    // Initialize local table with DataTables if available
+    if (typeof $ !== 'undefined' && $.fn.DataTable) {
+        try {
+            $('#local-table').DataTable({
+                pageLength: 25,
+                responsive: true,
+                order: [[2, 'asc']],
+                columnDefs: [
+                    { orderable: false, targets: [0, 6] },
+                    { width: "4%", targets: 0 },
+                    { width: "6%", targets: 1 },
+                    { width: "28%", targets: 2 },
+                    { width: "30%", targets: 3 },
+                    { width: "18%", targets: 4 },
+                    { width: "8%", targets: 5 },
+                    { width: "6%", targets: 6 }
+                ]
+            });
+        } catch (e) {
+            // DataTable initialization failed silently
+        }
+    }
+    
+    // Refresh button
+    const refreshButton = document.getElementById('refresh-remote-data');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', function() {
+            remoteDataLoaded = false;
+            syncedDataLoaded = false;
+            loadRemoteData();
+        });
+    }
 });
+
+// Interactive hierarchy functions
+function toggleNodeExpansion(nodeId, element) {
+    const childRows = document.querySelectorAll(`tr[data-parent-id="${nodeId}"]`);
+    const icon = element.querySelector('.expand-icon');
+    const isExpanded = icon.classList.contains('fa-minus');
+    
+    childRows.forEach(row => {
+        if (isExpanded) {
+            // Collapse
+            row.style.display = 'none';
+            // Also collapse nested children
+            const rowNodeId = row.getAttribute('data-node-id');
+            if (rowNodeId) {
+                collapseAllChildren(rowNodeId);
+            }
+        } else {
+            // Expand
+            row.style.display = '';
+        }
+    });
+    
+    // Toggle icon
+    if (isExpanded) {
+        icon.classList.remove('fa-minus');
+        icon.classList.add('fa-plus');
+    } else {
+        icon.classList.remove('fa-plus');
+        icon.classList.add('fa-minus');
+    }
+}
+
+function collapseAllChildren(parentId) {
+    const childRows = document.querySelectorAll(`tr[data-parent-id="${parentId}"]`);
+    childRows.forEach(row => {
+        row.style.display = 'none';
+        const expandIcon = row.querySelector('.expand-icon');
+        if (expandIcon) {
+            expandIcon.classList.remove('fa-minus');
+            expandIcon.classList.add('fa-plus');
+        }
+        // Recursively collapse children
+        const rowNodeId = row.getAttribute('data-node-id');
+        if (rowNodeId) {
+            collapseAllChildren(rowNodeId);
+        }
+    });
+}
 </script>
 
-<!-- Create Node Modal -->
-<div class="modal fade" id="createNodeModal" tabindex="-1" aria-labelledby="createNodeModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form action="{% url 'metadata_manager:glossary_node_create' %}" method="post">
-                {% csrf_token %}
-                <div class="modal-header">
-                    <h5 class="modal-title" id="createNodeModalLabel">Create Glossary Node</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="node-name" class="form-label">Node Name</label>
-                        <input type="text" class="form-control" id="node-name" name="name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="node-description" class="form-label">Description</label>
-                        <textarea class="form-control" id="node-description" name="description" rows="3"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label for="node-parent" class="form-label">Parent Node (Optional)</label>
-                        <select class="form-control" id="node-parent" name="parent_id">
-                            <option value="">-- No Parent --</option>
-                            {% for node in nodes %}
-                                <option value="{{ node.id }}">{{ node.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Node</button>
-                </div>
-            </form>
+<script>
+// Keep remaining functions for compatibility
+function populateRemoteTable(data) {
+    const allItems = [...(data.remote_only_nodes || []), ...(data.remote_only_terms || [])];
+    
+    // Build hierarchical structure
+    const hierarchy = buildHierarchy(allItems);
+    
+    const tableHtml = `
+        <div class="table-responsive">
+            <table id="remote-table" class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="4%">
+                            <input type="checkbox" id="remote-select-all">
+                        </th>
+                        <th width="6%">Type</th>
+                        <th width="28%">Name</th>
+                        <th width="30%">Description</th>
+                        <th width="18%">Related Items</th>
+                        <th width="8%">Status</th>
+                        <th width="6%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${renderHierarchicalRows(hierarchy, 0, null, 'remote')}
+                </tbody>
+            </table>
         </div>
-    </div>
-</div>
+    `;
+    
+    document.getElementById('remote-table-container').innerHTML = tableHtml;
+    
+    // Initialize DataTable if jQuery is available
+    if (typeof $ !== 'undefined' && $.fn.DataTable) {
+        try {
+            $('#remote-table').DataTable({
+                pageLength: 25,
+                responsive: true,
+                order: [[2, 'asc']],
+                columnDefs: [
+                    { orderable: false, targets: [0, 6] },
+                    { width: "4%", targets: 0 },
+                    { width: "6%", targets: 1 },
+                    { width: "28%", targets: 2 },
+                    { width: "30%", targets: 3 },
+                    { width: "18%", targets: 4 },
+                    { width: "8%", targets: 5 },
+                    { width: "6%", targets: 6 }
+                ]
+            });
+        } catch (e) {
+            // DataTable initialization failed silently
+        }
+    }
+}
 
-<!-- Create Term Modal -->
-<div class="modal fade" id="createTermModal" tabindex="-1" aria-labelledby="createTermModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form action="{% url 'metadata_manager:glossary_term_create' %}" method="post">
-                {% csrf_token %}
-                <div class="modal-header">
-                    <h5 class="modal-title" id="createTermModalLabel">Create Glossary Term</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+function buildHierarchy(items) {
+    // Separate nodes and terms
+    const nodes = items.filter(item => !item.parent_node_urn);
+    const terms = items.filter(item => item.parent_node_urn);
+    
+    // Create hierarchy with nodes as parents
+    const hierarchy = [];
+    
+    // Add root nodes
+    const rootNodes = nodes.filter(node => !node.parent_urn);
+    rootNodes.forEach(node => {
+        const hierarchyNode = {
+            item: node,
+            children: [],
+            level: 0
+        };
+        
+        // Add child nodes
+        const childNodes = nodes.filter(child => child.parent_urn === node.urn);
+        childNodes.forEach(childNode => {
+            hierarchyNode.children.push({
+                item: childNode,
+                children: getChildrenRecursive(childNode, nodes, terms, 1),
+                level: 1
+            });
+        });
+        
+        // Add terms directly under this node
+        const nodeTerms = terms.filter(term => term.parent_node_urn === node.urn);
+        nodeTerms.forEach(term => {
+            hierarchyNode.children.push({
+                item: term,
+                children: [],
+                level: 1
+            });
+        });
+        
+        hierarchy.push(hierarchyNode);
+    });
+    
+    // Add orphaned items (those without clear parents)
+    const orphanedTerms = terms.filter(term => 
+        !nodes.some(node => node.urn === term.parent_node_urn)
+    );
+    orphanedTerms.forEach(term => {
+        hierarchy.push({
+            item: term,
+            children: [],
+            level: 0
+        });
+    });
+    
+    return hierarchy;
+}
+
+function getChildrenRecursive(parent, allNodes, allTerms, level) {
+    const children = [];
+    
+    // Add child nodes
+    const childNodes = allNodes.filter(node => node.parent_urn === parent.urn);
+    childNodes.forEach(child => {
+        children.push({
+            item: child,
+            children: getChildrenRecursive(child, allNodes, allTerms, level + 1),
+            level: level
+        });
+    });
+    
+    // Add terms under this node
+    const nodeTerms = allTerms.filter(term => term.parent_node_urn === parent.urn);
+    nodeTerms.forEach(term => {
+        children.push({
+            item: term,
+            children: [],
+            level: level
+        });
+    });
+    
+    return children;
+}
+
+function renderHierarchicalRows(hierarchy, startLevel, parentId = null, source) {
+    let html = '';
+    
+    hierarchy.forEach(node => {
+        const itemId = node.item.urn.replace(/[^a-zA-Z0-9]/g, '_');
+        const hasChildren = node.children && node.children.length > 0;
+        
+        html += createTableRow(node.item, source, node.level, parentId, hasChildren);
+        
+        // Recursively render children
+        if (hasChildren) {
+            html += renderHierarchicalRows(node.children, node.level + 1, itemId, source);
+        }
+    });
+    
+    return html;
+}
+
+function createTableRow(item, source, level = 0, parentId = null, hasChildren = false) {
+    const itemType = item.parent_node_urn !== undefined ? 'term' : 'node';
+    const typeIcon = itemType === 'node' ? 'fas fa-folder text-warning' : 'fas fa-tag text-info';
+    const typeBadge = itemType === 'node' ? 'Node' : 'Term';
+    
+    // Create unique ID for this item
+    const itemId = item.urn.replace(/[^a-zA-Z0-9]/g, '_');
+    
+    // Create tree connectors for each level
+    let treeConnectors = '';
+    for (let i = 0; i < level; i++) {
+        treeConnectors += '<div class="tree-connector"></div>';
+    }
+    
+    // Create expand/collapse button for nodes with children
+    const expandButton = hasChildren ? 
+        `<div class="expand-button-container">
+            <button class="expand-button" onclick="toggleNodeExpansion('${itemId}', this)">
+                <i class="expand-icon fas fa-plus"></i>
+            </button>
+        </div>` : 
+        `<div class="expand-button-container"></div>`; // Empty spacer for alignment
+    
+    // Truncate description at 100 characters but allow multiple lines
+    const fullDescription = item.description || '';
+    const truncatedDescription = fullDescription.length > 100 ? 
+        fullDescription.substring(0, 100) + '...' : fullDescription;
+    
+    // Format related items
+    const relatedItems = item.related_items || [];
+    const relatedItemsHtml = relatedItems.slice(0, 3).map(rel => 
+        `<span class="relationship-badge badge bg-secondary">${rel.relationship_type}: ${rel.name}</span>`
+    ).join(' ');
+    
+    const moreRelatedText = relatedItems.length > 3 ? 
+        `<span class="text-muted">+${relatedItems.length - 3} more</span>` : '';
+    
+    // Status badge
+    const statusBadge = getStatusBadgeClass(item.sync_status || source);
+    const statusText = getStatusDisplayName(item.sync_status || source);
+    
+    return `
+        <tr data-item='${JSON.stringify(item).replace(/'/g, "&apos;")}' 
+            data-type="${itemType}" 
+            data-level="${level}"
+            data-node-id="${itemId}"
+            ${parentId ? `data-parent-id="${parentId}"` : ''}
+            ${level > 0 ? 'style="display: none;"' : ''}>
+            <td>
+                <input type="checkbox" class="item-checkbox" value="${item.urn}">
+            </td>
+            <td>
+                <i class="${typeIcon}"></i>
+                <span class="badge ${itemType === 'node' ? 'bg-warning' : 'bg-info'} ms-1">${typeBadge}</span>
+            </td>
+            <td class="name-cell">
+                <div class="hierarchy-container">
+                    ${treeConnectors}
+                    ${expandButton}
+                    <span class="item-name">${item.name || 'Unnamed'}</span>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="term-name" class="form-label">Term Name</label>
-                        <input type="text" class="form-control" id="term-name" name="name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="term-description" class="form-label">Description</label>
-                        <textarea class="form-control" id="term-description" name="description" rows="3"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label for="term-source" class="form-label">Term Source (Optional)</label>
-                        <input type="text" class="form-control" id="term-source" name="term_source">
-                    </div>
-                    <div class="mb-3">
-                        <label for="term-parent-node" class="form-label">Parent Node (Optional)</label>
-                        <select class="form-control" id="term-parent-node" name="parent_node_id">
-                            <option value="">-- No Parent --</option>
-                            {% for node in nodes %}
-                                <option value="{{ node.id }}">{{ node.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
+            </td>
+            <td class="description-cell">
+                <div class="description-preview">${truncatedDescription}</div>
+            </td>
+            <td class="related-items-cell">
+                <div>${relatedItemsHtml}</div>
+                <div>${moreRelatedText}</div>
+            </td>
+            <td>
+                <span class="badge ${statusBadge} status-badge">${statusText}</span>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-secondary me-1" onclick="showItemDetail(this)" title="View Details">
+                    <i class="fas fa-eye"></i>
+                </button>
+                ${getActionButton(item, source, itemType)}
+            </td>
+        </tr>
+    `;
+}
+
+function getActionButton(item, source, itemType) {
+    if (source === 'remote') {
+        return `
+            <button class="btn btn-sm btn-outline-primary" onclick="importItem('${item.urn}', '${itemType}')" title="Import to Local">
+                <i class="fas fa-download"></i>
+            </button>
+        `;
+    } else if (source === 'synced' || (item.sync_status && item.sync_status !== 'REMOTE_ONLY')) {
+        const itemId = item.id || 'view';
+        const detailUrl = `/metadata/glossary/${itemType}/${itemId}/`;
+        return `
+            <a href="${detailUrl}" class="btn btn-sm btn-outline-success" title="Edit">
+                <i class="fas fa-edit"></i>
+            </a>
+        `;
+    }
+    return '';
+}
+
+function getStatusBadgeClass(status) {
+    switch(status) {
+        case 'LOCAL_ONLY':
+        case 'local': return 'bg-secondary text-white';
+        case 'REMOTE_ONLY':
+        case 'remote': return 'bg-info text-white';
+        case 'SYNCED':
+        case 'synced': return 'bg-success text-white';
+        case 'MODIFIED':
+        case 'modified': return 'bg-warning text-dark';
+        default: return 'bg-light text-dark';
+    }
+}
+
+function getStatusDisplayName(status) {
+    switch(status) {
+        case 'LOCAL_ONLY':
+        case 'local': return 'Local Only';
+        case 'REMOTE_ONLY':
+        case 'remote': return 'Remote Only';
+        case 'SYNCED':
+        case 'synced': return 'Synced';
+        case 'MODIFIED':
+        case 'modified': return 'Modified';
+        default: return status;
+    }
+}
+
+// Global function to show item details in modal
+window.showItemDetail = function(button) {
+    const row = button.closest('tr');
+    const itemData = JSON.parse(row.getAttribute('data-item'));
+    const itemType = row.getAttribute('data-type');
+    
+    // Populate modal
+    document.getElementById('detailModalLabel').textContent = `${itemType === 'node' ? 'Node' : 'Term'}: ${itemData.name}`;
+    
+    let modalContent = `
+        <dl class="row">
+            <dt class="col-sm-3">Name:</dt>
+            <dd class="col-sm-9">${itemData.name || 'N/A'}</dd>
+            
+            <dt class="col-sm-3">URN:</dt>
+            <dd class="col-sm-9"><code>${itemData.urn}</code></dd>
+            
+            <dt class="col-sm-3">Type:</dt>
+            <dd class="col-sm-9">${itemType === 'node' ? 'Glossary Node' : 'Glossary Term'}</dd>
+            
+            <dt class="col-sm-3">Status:</dt>
+            <dd class="col-sm-9">
+                <span class="badge ${getStatusBadgeClass(itemData.sync_status)}">${getStatusDisplayName(itemData.sync_status)}</span>
+            </dd>
+            
+            <dt class="col-sm-3">Description:</dt>
+            <dd class="col-sm-9">${itemData.description || 'No description available'}</dd>
+    `;
+    
+    // Add parent information
+    if (itemData.parent_urn || itemData.parent_node_urn) {
+        modalContent += `
+            <dt class="col-sm-3">Parent:</dt>
+            <dd class="col-sm-9"><code>${itemData.parent_urn || itemData.parent_node_urn}</code></dd>
+        `;
+    }
+    
+    // Add owners
+    if (itemData.owners && itemData.owners.length > 0) {
+        modalContent += `
+            <dt class="col-sm-3">Owners:</dt>
+            <dd class="col-sm-9">
+                ${itemData.owners.map(owner => `<span class="owner-item">${owner.name}</span>`).join('')}
+            </dd>
+        `;
+    }
+    
+    // Add domain (for terms)
+    if (itemData.domain) {
+        modalContent += `
+            <dt class="col-sm-3">Domain:</dt>
+            <dd class="col-sm-9"><code>${itemData.domain.urn}</code></dd>
+        `;
+    }
+    
+    // Add term-specific fields
+    if (itemType === 'term') {
+        if (itemData.term_source) {
+            modalContent += `
+                <dt class="col-sm-3">Source:</dt>
+                <dd class="col-sm-9">${itemData.term_source}</dd>
+            `;
+        }
+        
+        if (itemData.source_url) {
+            modalContent += `
+                <dt class="col-sm-3">Source URL:</dt>
+                <dd class="col-sm-9"><a href="${itemData.source_url}" target="_blank">${itemData.source_url}</a></dd>
+            `;
+        }
+        
+        if (itemData.deprecated) {
+            modalContent += `
+                <dt class="col-sm-3">Status:</dt>
+                <dd class="col-sm-9"><span class="badge bg-danger">Deprecated</span></dd>
+            `;
+        }
+    }
+    
+    // Add related items
+    if (itemData.related_items && itemData.related_items.length > 0) {
+        modalContent += `
+            <dt class="col-sm-3">Related Items:</dt>
+            <dd class="col-sm-9">
+        `;
+        
+        itemData.related_items.forEach(rel => {
+            modalContent += `
+                <div class="relationship-item">
+                    <span class="badge bg-primary me-2">${rel.relationship_type}</span>
+                    <span class="badge bg-secondary me-2">${rel.type}</span>
+                    <span class="fw-medium">${rel.name}</span>
+                    <small class="text-muted ms-auto">${rel.direction}</small>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Term</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+            `;
+        });
+        
+        modalContent += `</dd>`;
+    }
+    
+    // Add custom properties
+    if (itemData.custom_properties && itemData.custom_properties.length > 0) {
+        modalContent += `
+            <dt class="col-sm-3">Custom Properties:</dt>
+            <dd class="col-sm-9">
+        `;
+        
+        itemData.custom_properties.forEach(prop => {
+            modalContent += `
+                <div><strong>${prop.key}:</strong> ${prop.value}</div>
+            `;
+        });
+        
+        modalContent += `</dd>`;
+    }
+    
+    modalContent += `</dl>`;
+    
+    document.getElementById('detailModalBody').innerHTML = modalContent;
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+    modal.show();
+};
+
+// Global function to import items
+window.importItem = function(urn, type) {
+    // Implementation for importing items
+    showSuccessNotification(`Importing ${type}...`);
+};
+
+function showSuccessNotification(message) {
+    showNotification(message, 'success');
+}
+
+function showNotification(message, type = 'success') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show notification`;
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
+}
+</script>
 {% endblock %} 

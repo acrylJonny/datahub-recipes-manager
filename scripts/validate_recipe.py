@@ -180,7 +180,7 @@ def main():
                     for error in errors:
                         print(f"  - {error}")
                 else:
-                    print(f"  - Valid")
+                    print("  - Valid")
 
     # Validate instance files
     if args.instances:
@@ -193,7 +193,7 @@ def main():
                     for error in errors:
                         print(f"  - {error}")
                 else:
-                    print(f"  - Valid")
+                    print("  - Valid")
 
     if all_errors:
         print(f"\nFound {len(all_errors)} errors or warnings")

@@ -10,4 +10,4 @@ __version__ = "1.0.0"
 __author__ = "DataHub CI/CD Manager Team"
 
 # Metadata Manager app
-default_app_config = 'metadata_manager.apps.MetadataManagerConfig' 
+default_app_config = "metadata_manager.apps.MetadataManagerConfig"

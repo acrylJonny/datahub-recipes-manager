@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 sys.path.append(str(Path(__file__).parent.parent))
 from utils.template_renderer import render_template
 from utils.datahub_rest_client import DataHubRestClient
-from utils.recipe_util import load_recipe_instance, apply_docker_networking
+from utils.recipe_util import apply_docker_networking
 
 
 def load_yaml_file(file_path: str) -> Dict[str, Any]:
@@ -137,9 +137,7 @@ def create_datahub_recipe(
                         print(f"⚠️ Failed to create secret {secret_name} in DataHub")
                         failed_secrets.append(secret_name)
                 else:
-                    print(
-                        f"⚠️ Skipping secret {secret_name} - not found in environment"
-                    )
+                    print(f"⚠️ Skipping secret {secret_name} - not found in environment")
 
             if not secret_created:
                 print(
@@ -188,7 +186,7 @@ def create_datahub_recipe(
         if not source_urn:
             source_urn = f"urn:li:dataHubIngestionSource:{source_id}"
 
-        print(f"Recipe created/updated successfully.")
+        print("Recipe created/updated successfully.")
         print(f"Source URN: {source_urn}")
         print(
             f"Scheduled to run with cron expression: {schedule_interval} in timezone: {timezone}"

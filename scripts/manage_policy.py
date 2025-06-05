@@ -5,23 +5,23 @@ Script to manage DataHub policies (create, get, update, delete, list).
 Example usage:
     # List all policies
     python manage_policy.py list
-    
-    # Get a specific policy 
+
+    # Get a specific policy
     python manage_policy.py get my-policy-id
-    
+
     # Create a new policy
     python manage_policy.py create --name "Test Policy" --description "Test policy description" --type METADATA
 
     # Update a policy
     python manage_policy.py update my-policy-id --name "Updated Policy" --description "Updated description"
-    
+
     # Delete a policy
     python manage_policy.py delete my-policy-id
 
 For importing and exporting policies, use the dedicated scripts:
     # Export policies to files
     python export_policy.py --output-dir policies/
-    
+
     # Import policies from files
     python import_policy.py --input-dir policies/
 """
@@ -31,7 +31,6 @@ import sys
 import argparse
 import logging
 import json
-from typing import Dict, Any, Optional, List
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.datahub_rest_client import DataHubRestClient

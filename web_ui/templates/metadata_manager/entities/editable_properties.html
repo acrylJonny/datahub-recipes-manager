@@ -201,12 +201,13 @@
                     </thead>
                     <tbody id="entitiesTableBody">
                         <tr>
-                            <td colspan="7" class="text-center py-4">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
+                            <td colspan="7" class="text-center py-5">
+                                <div class="mb-3">
+                                    <i class="fas fa-search fa-4x text-muted"></i>
                                 </div>
-                                <p class="mt-2 mb-0">Loading entities...</p>
-                                <p class="text-muted small">This may take longer for comprehensive searches in large environments</p>
+                                <h4>Ready to Search</h4>
+                                <p class="text-muted">Use the filters above to find entities with editable properties.<br>
+                                Try searching for specific entities, platforms, or use "*" to see all results.</p>
                             </td>
                         </tr>
                     </tbody>
@@ -734,7 +735,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (searchQuery || entityType || platform || browsePath || platformInstance) {
                             entityCount.innerHTML += `<br><small class="text-muted">Results for ${formatSearchSummary(searchQuery, entityType, platform, browsePath, platformInstance)}</small>`;
                         }
-                    } else {
+                } else {
                         entityCount.textContent = 'No entities found';
                     }
                 } else {
@@ -1649,7 +1650,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Initialize
-    loadEntities();
+    // Don't load entities automatically on page load - wait for user to search
+    // loadEntities();
+    
+    // Show initial empty state encouraging user to search
+    const tbody = document.querySelector('#entitiesTable tbody');
+    const entityCountBadge = document.getElementById('entityCount');
+    
+    if (tbody && entityCountBadge) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-5">
+                    <div class="mb-3">
+                        <i class="fas fa-search fa-4x text-muted"></i>
+                    </div>
+                    <h4>Ready to Search</h4>
+                    <p class="text-muted">Use the filters above to find entities with editable properties.<br>
+                    Try searching for specific entities, platforms, or use "*" to see all results.</p>
+                </td>
+            </tr>
+        `;
+        entityCountBadge.textContent = 'Ready to search';
+    }
+    
+    updateCacheStatus('Ready to search entities...');
     
     // Handle filter form submission
     document.getElementById('filterForm').addEventListener('submit', function(e) {
@@ -1719,33 +1743,33 @@ document.addEventListener('DOMContentLoaded', function() {
         if (confirm('This will add all editable properties to a new pull request. This process may take some time. Continue?')) {
             // Call the API endpoint to create a PR with all editable properties
             fetch('/metadata/entities/editable/create-pr/', {
-                method: 'POST',
-                headers: {
+            method: 'POST',
+            headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
                     // Show success message with PR link if available
                     let message = 'Successfully created pull request with all editable properties.';
                     if (data.pr_url) {
                         message += ` <a href="${data.pr_url}" target="_blank">View PR <i class="fas fa-external-link-alt"></i></a>`;
                     }
                     showSuccess(message);
-                } else {
+            } else {
                     // Show error message
                     showError(data.error || 'Failed to create pull request');
-                }
-            })
-            .catch(error => {
+            }
+        })
+        .catch(error => {
                 console.error('Error creating pull request:', error);
                 showError('Failed to create pull request: ' + error.message);
-            })
-            .finally(() => {
+        })
+        .finally(() => {
                 // Reset button state
-                this.disabled = false;
+            this.disabled = false;
                 this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
             });
         } else {

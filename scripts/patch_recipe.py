@@ -4,9 +4,6 @@ import os
 import sys
 import logging
 import argparse
-import yaml
-from datetime import datetime
-import json
 
 # Add the parent directory to the path so we can import the utils package
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

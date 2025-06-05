@@ -381,6 +381,9 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Load remote domain data asynchronously
+        loadRemoteDomainsData();
+        
         // Setup tooltips
         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -537,6 +540,423 @@
             }
         });
     });
+    
+    function loadRemoteDomainsData() {
+        console.log('Loading remote domain data...');
+        
+        // Show loading indicators
+        showLoadingIndicators();
+        
+        fetch('{% url "metadata_manager:get_remote_domains_data" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Remote domain data loaded successfully');
+                    showDataLoadedMessage(data.data);
+                } else {
+                    console.error('Error loading remote domain data:', data.error);
+                    showErrorMessage(data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching remote domain data:', error);
+                showErrorMessage('Failed to load remote domain data: ' + error.message);
+            });
+    }
+    
+    function showLoadingIndicators() {
+        // Add loading spinners to each tab content
+        ['synced-domains', 'local-domains', 'remote-domains'].forEach(tabId => {
+            const tabContent = document.getElementById(tabId);
+            if (tabContent) {
+                const cardBody = tabContent.querySelector('.card-body');
+                if (cardBody) {
+                    const existingContent = cardBody.innerHTML;
+                    if (!existingContent.includes('Loading remote domain data')) {
+                        cardBody.innerHTML = `
+                            <div class="alert alert-info">
+                                <div class="d-flex align-items-center">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span>Loading remote domain data...</span>
+                                </div>
+                            </div>
+                            ${existingContent}
+                        `;
+                    }
+                }
+            }
+        });
+    }
+    
+    function showDataLoadedMessage(data) {
+        // Count the domains
+        const syncedCount = data.synced_domains ? data.synced_domains.length : 0;
+        const localCount = data.local_domains ? data.local_domains.length : 0;
+        const remoteCount = data.remote_only_domains ? data.remote_only_domains.length : 0;
+        
+        // Update badge counts in tab headers
+        updateTabBadges(syncedCount, localCount, remoteCount);
+        
+        // Populate the synced domains tab
+        populateSyncedDomains(data.synced_domains || []);
+        
+        // Populate the local domains tab  
+        populateLocalDomains(data.local_domains || []);
+        
+        // Populate the remote domains tab
+        populateRemoteDomains(data.remote_only_domains || [], data.datahub_url);
+        
+        // Show success notification
+        showSuccessNotification(syncedCount, localCount, remoteCount);
+        
+        // Remove loading indicators
+        document.querySelectorAll('.spinner-border').forEach(spinner => {
+            const alert = spinner.closest('.alert');
+            if (alert && alert.textContent.includes('Loading remote domain data')) {
+                alert.remove();
+            }
+        });
+    }
+    
+    function updateTabBadges(syncedCount, localCount, remoteCount) {
+        // Update synced tab badge
+        const syncedTab = document.getElementById('synced-tab');
+        const syncedBadge = syncedTab.querySelector('.badge');
+        if (syncedBadge) {
+            syncedBadge.textContent = syncedCount;
+            syncedBadge.className = syncedCount > 0 ? 'badge bg-success ms-1' : 'badge bg-secondary ms-1';
+        } else if (syncedCount > 0) {
+            syncedTab.innerHTML += ` <span class="badge bg-success ms-1">${syncedCount}</span>`;
+        }
+        
+        // Update local tab badge
+        const localTab = document.getElementById('local-tab');
+        const localBadge = localTab.querySelector('.badge');
+        if (localBadge) {
+            localBadge.textContent = localCount;
+            localBadge.className = localCount > 0 ? 'badge bg-secondary ms-1' : 'badge bg-secondary ms-1';
+        } else if (localCount > 0) {
+            localTab.innerHTML += ` <span class="badge bg-secondary ms-1">${localCount}</span>`;
+        }
+        
+        // Update remote tab badge
+        const remoteTab = document.getElementById('remote-tab');
+        const remoteBadge = remoteTab.querySelector('.badge');
+        if (remoteBadge) {
+            remoteBadge.textContent = remoteCount;
+            remoteBadge.className = remoteCount > 0 ? 'badge bg-info ms-1' : 'badge bg-secondary ms-1';
+        } else if (remoteCount > 0) {
+            remoteTab.innerHTML += ` <span class="badge bg-info ms-1">${remoteCount}</span>`;
+        }
+    }
+    
+    function populateSyncedDomains(syncedDomains) {
+        const container = document.querySelector('#synced-domains .card-body');
+        if (!container) return;
+        
+        if (syncedDomains.length === 0) {
+            container.innerHTML = `
+                <div class="py-5 text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-sync-alt fa-4x text-muted"></i>
+                    </div>
+                    <h4>No synced domains</h4>
+                    <p class="text-muted">Domains that exist both locally and in DataHub will appear here.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let tableHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th width="20%">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        syncedDomains.forEach(domainPair => {
+            const localDomain = domainPair.local;
+            const description = localDomain.description && localDomain.description.length > 50 
+                ? localDomain.description.substring(0, 50) + '...' 
+                : (localDomain.description || '');
+            
+            tableHTML += `
+                <tr>
+                    <td>
+                        <a href="/metadata/domains/${localDomain.id}/" class="text-decoration-none">
+                            ${localDomain.name}
+                        </a>
+                    </td>
+                    <td>${description}</td>
+                    <td>
+                        <span class="badge ${getStatusBadgeClass(localDomain.sync_status)}">
+                            ${getStatusDisplayName(localDomain.sync_status)}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="btn-group" role="group">
+                            <a href="/metadata/domains/${localDomain.id}/" class="btn btn-sm btn-outline-primary" title="View Details">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            ${localDomain.sync_status === 'MODIFIED' ? `
+                                <form action="/metadata/domains/${localDomain.id}/deploy/" method="post" class="d-inline">
+                                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Update in DataHub">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </form>
+                            ` : ''}
+                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                    data-domain-id="${localDomain.id}" title="Add to GitHub PR">
+                                <i class="fab fa-github"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-domain" 
+                                    data-bs-toggle="modal" data-bs-target="#deleteDomainModal"
+                                    data-domain-id="${localDomain.id}" data-domain-name="${localDomain.name}" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        container.innerHTML = tableHTML;
+    }
+    
+    function populateLocalDomains(localDomains) {
+        const container = document.querySelector('#local-domains .card-body');
+        if (!container) return;
+        
+        if (localDomains.length === 0) {
+            container.innerHTML = `
+                <div class="py-5 text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-laptop fa-4x text-muted"></i>
+                    </div>
+                    <h4>No local-only domains</h4>
+                    <p class="text-muted">Domains that exist only in this application will appear here.</p>
+                    <a href="#" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#createDomainModal">
+                        <i class="fas fa-plus me-1"></i> Create New Domain
+                    </a>
+                </div>
+            `;
+            return;
+        }
+        
+        let tableHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th width="20%">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        localDomains.forEach(domain => {
+            const description = domain.description && domain.description.length > 50 
+                ? domain.description.substring(0, 50) + '...' 
+                : (domain.description || '');
+            
+            tableHTML += `
+                <tr>
+                    <td>
+                        <a href="/metadata/domains/${domain.id}/" class="text-decoration-none">
+                            ${domain.name}
+                        </a>
+                    </td>
+                    <td>${description}</td>
+                    <td>
+                        <span class="badge bg-secondary">
+                            ${getStatusDisplayName(domain.sync_status)}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="btn-group" role="group">
+                            <a href="/metadata/domains/${domain.id}/" class="btn btn-sm btn-outline-primary" title="View Details">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            <form action="/metadata/domains/${domain.id}/deploy/" method="post" class="d-inline">
+                                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                </button>
+                            </form>
+                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                    data-domain-id="${domain.id}" title="Add to GitHub PR">
+                                <i class="fab fa-github"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-domain" 
+                                    data-bs-toggle="modal" data-bs-target="#deleteDomainModal"
+                                    data-domain-id="${domain.id}" data-domain-name="${domain.name}" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        container.innerHTML = tableHTML;
+    }
+    
+    function populateRemoteDomains(remoteDomains, datahubUrl) {
+        const container = document.querySelector('#remote-domains .card-body');
+        if (!container) return;
+        
+        if (remoteDomains.length === 0) {
+            container.innerHTML = `
+                <div class="py-5 text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-server fa-4x text-muted"></i>
+                    </div>
+                    <h4>No remote-only domains</h4>
+                    <p class="text-muted">Domains that exist only in DataHub will appear here.</p>
+                    <form method="post" action="/metadata/domains/pull/" class="d-inline">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-primary mt-2">
+                            <i class="fas fa-cloud-download-alt me-1"></i> Pull from DataHub
+                        </button>
+                    </form>
+                </div>
+            `;
+            return;
+        }
+        
+        let tableHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>URN</th>
+                            <th width="15%">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        remoteDomains.forEach(domain => {
+            const description = domain.description && domain.description.length > 50 
+                ? domain.description.substring(0, 50) + '...' 
+                : (domain.description || '');
+            
+            tableHTML += `
+                <tr>
+                    <td>${domain.name}</td>
+                    <td>${description}</td>
+                    <td><code>${domain.urn}</code></td>
+                    <td>
+                        <div class="btn-group" role="group">
+                            ${datahubUrl ? `
+                                <a href="${datahubUrl}/domain/${encodeURIComponent(domain.urn)}" target="_blank" class="btn btn-sm btn-outline-primary" title="View in DataHub">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </a>
+                            ` : ''}
+                            <form action="/metadata/domains/pull/" method="post" class="d-inline">
+                                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+                                <input type="hidden" name="domain_urn" value="${domain.urn}">
+                                <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        container.innerHTML = tableHTML;
+    }
+    
+    function getStatusBadgeClass(status) {
+        switch(status) {
+            case 'SYNCED': return 'bg-success';
+            case 'MODIFIED': return 'bg-warning';
+            case 'LOCAL_ONLY': return 'bg-secondary';
+            default: return 'bg-primary';
+        }
+    }
+    
+    function getStatusDisplayName(status) {
+        switch(status) {
+            case 'SYNCED': return 'Synced';
+            case 'MODIFIED': return 'Modified';
+            case 'LOCAL_ONLY': return 'Local Only';
+            default: return status;
+        }
+    }
+    
+    function showSuccessNotification(syncedCount, localCount, remoteCount) {
+        // Show a smaller, less intrusive notification
+        const message = `
+            <div class="alert alert-success alert-dismissible fade show" style="position: fixed; top: 20px; right: 20px; z-index: 1050; max-width: 400px;">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <div>
+                        <strong>Remote data loaded!</strong><br>
+                        <small>${syncedCount} synced, ${localCount} local, ${remoteCount} remote domains</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', message);
+        
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            const notification = document.querySelector('.alert[style*="position: fixed"]');
+            if (notification) notification.remove();
+        }, 5000);
+    }
+    
+    function showErrorMessage(message) {
+        // Remove loading indicators
+        document.querySelectorAll('.spinner-border').forEach(spinner => {
+            const alert = spinner.closest('.alert');
+            if (alert && alert.textContent.includes('Loading remote domain data')) {
+                alert.innerHTML = `
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Error loading domain data: ${message}
+                `;
+                alert.className = 'alert alert-danger';
+            }
+        });
+    }
 </script>
 {% endblock %}
 

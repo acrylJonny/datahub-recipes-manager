@@ -130,6 +130,6 @@ class Migration(migrations.Migration):
             
             PRAGMA foreign_keys=on;
             """,
-            reverse_sql=""
+            reverse_sql="",
         ),
     ]

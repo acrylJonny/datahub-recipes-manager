@@ -15,6 +15,7 @@ from typing import Dict, Any, List, Optional, Union
 # Add DataHubGraph client imports if available, with fallback
 try:
     from datahub.ingestion.graph.client import DatahubClientConfig, DataHubGraph
+
     DATAHUB_SDK_AVAILABLE = True
 except ImportError:
     DATAHUB_SDK_AVAILABLE = False
@@ -36,12 +37,12 @@ class DataHubRestClient:
             token: DataHub authentication token (optional)
             verify_ssl: Whether to verify SSL certificates (default: True)
         """
-        self.server_url = server_url.rstrip('/')
+        self.server_url = server_url.rstrip("/")
         self.token = token
         self.verify_ssl = verify_ssl
         self.headers = {
             "accept": "application/json",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         
         # Create a session for reusing connections
@@ -61,7 +62,9 @@ class DataHubRestClient:
             self._session.headers["Authorization"] = f"Bearer {token}"
             
         # Log connection details for debugging
-        self.logger.debug(f"Initialized DataHub client with URL: {server_url}, token provided: {token is not None}, verify_ssl: {verify_ssl}")
+        self.logger.debug(
+            f"Initialized DataHub client with URL: {server_url}, token provided: {token is not None}, verify_ssl: {verify_ssl}"
+        )
             
         # Initialize Graph client if SDK is available
         self.graph = None
@@ -72,12 +75,12 @@ class DataHubRestClient:
                     token=token,
                 )
                 # Add verify_ssl parameter if available in the SDK version
-                if hasattr(config, 'verify_ssl'):
+                if hasattr(config, "verify_ssl"):
                     config.verify_ssl = verify_ssl
                 
                 self.graph = DataHubGraph(config=config)
                 # Also set verify_ssl on the graph client if available
-                if hasattr(self.graph, 'verify_ssl'):
+                if hasattr(self.graph, "verify_ssl"):
                     self.graph.verify_ssl = verify_ssl
                 
                 logger.info("DataHubGraph client initialized successfully")
@@ -105,44 +108,47 @@ class DataHubRestClient:
         """
         try:
             # Only log a portion of the query to avoid overwhelming the logs
-            query_preview = query.replace('\n', ' ').replace('  ', ' ')[:200] + "..."
+            query_preview = query.replace("\n", " ").replace("  ", " ")[:200] + "..."
             self.logger.info(f"Query: {query_preview}")
             self.logger.info(f"Variables: {variables}")
-            
+
             # Try with DataHubGraph client if available
-            if hasattr(self, 'dhg_client') and self.dhg_client:
-                self.logger.debug(f"Executing GraphQL query with DataHubGraph client: {query[:100]}...")
+            if hasattr(self, "dhg_client") and self.dhg_client:
+                self.logger.debug(
+                    f"Executing GraphQL query with DataHubGraph client: {query[:100]}..."
+                )
                 self.logger.debug(f"Variables: {variables}")
                 return self.dhg_client.execute_graphql(query, variables)
-                
+
             # Fallback to direct HTTP request
-            self.logger.debug(f"Executing GraphQL query with direct HTTP request: {query[:100]}...")
+            self.logger.debug(
+                f"Executing GraphQL query with direct HTTP request: {query[:100]}..."
+            )
             self.logger.debug(f"Variables: {variables}")
-            
-            payload = {
-                "query": query,
-                "variables": variables or {}
-            }
-            
+
+            payload = {"query": query, "variables": variables or {}}
+
             graphql_url = f"{self.server_url}/api/graphql"
             self.logger.info(f"Sending request to: {graphql_url}")
-            
+
             response = self._session.post(
-                graphql_url,
-                json=payload,
-                headers=self._get_auth_headers()
+                graphql_url, json=payload, headers=self._get_auth_headers()
             )
-            
+
             self.logger.info(f"GraphQL response status: {response.status_code}")
-            
+
             if response.status_code == 200:
                 result = response.json()
                 # Check for GraphQL errors
                 if "errors" in result:
-                    self.logger.warning(f"GraphQL query returned errors: {result['errors']}")
-                return result
+                    self.logger.warning(
+                        f"GraphQL query returned errors: {result['errors']}"
+                    )
+                    return result
             else:
-                self.logger.warning(f"GraphQL query failed with status {response.status_code}: {response.text}")
+                self.logger.warning(
+                    f"GraphQL query failed with status {response.status_code}: {response.text}"
+                )
                 return None
         except Exception as e:
             self.logger.error(f"Error executing GraphQL query: {str(e)}")
@@ -180,20 +186,21 @@ class DataHubRestClient:
             True if connection successful, False otherwise
         """
         try:
-            response = self._session.get(
-                f"{self.server_url}/config",
-                timeout=10
-            )
+            response = self._session.get(f"{self.server_url}/config", timeout=10)
             self.logger.debug(f"Config endpoint response: {response.status_code}")
             if response.status_code != 200:
-                logger.error(f"Failed to access config endpoint: {response.status_code}")
+                logger.error(
+                    f"Failed to access config endpoint: {response.status_code}"
+                )
                 return False
 
             # Try to list recipes to check permissions
             try:
                 sources = self.list_ingestion_sources()
                 if not isinstance(sources, list):
-                    logger.error("Failed to list ingestion sources: Invalid response format")
+                    logger.error(
+                        "Failed to list ingestion sources: Invalid response format"
+                    )
                     return False
             except Exception as e:
                 logger.error(f"Failed to list ingestion sources: {str(e)}")
@@ -225,9 +232,13 @@ class DataHubRestClient:
         source_id: Optional[str] = None,
         debug_mode: bool = False,
         extra_args: Optional[Dict[str, Any]] = None,
-        type: Optional[str] = None,  # Added to handle type parameter instead of source_type
-        schedule: Optional[Union[Dict[str, str], str]] = None,  # Added to handle schedule as dict
-        **kwargs  # Add **kwargs to handle any additional parameters
+        type: Optional[
+            str
+        ] = None,  # Added to handle type parameter instead of source_type
+        schedule: Optional[
+            Union[Dict[str, str], str]
+        ] = None,  # Added to handle schedule as dict
+        **kwargs,  # Add **kwargs to handle any additional parameters
     ) -> Optional[Dict[str, Any]]:
         """
         Create a DataHub ingestion source.
@@ -258,11 +269,20 @@ class DataHubRestClient:
             # Now extract individual parameters from the config dict
             source_id = config_dict.get("source_id", config_dict.get("id", source_id))
             name = config_dict.get("name", name)
-            source_type = config_dict.get("source_type", config_dict.get("type", source_type))
+            source_type = config_dict.get(
+                "source_type", config_dict.get("type", source_type)
+            )
             schedule_dict = config_dict.get("schedule", schedule)
-            executor_id = config_dict.get("executor_id", config_dict.get("config", {}).get("executorId", executor_id))
-            debug_mode = config_dict.get("debug_mode", config_dict.get("config", {}).get("debugMode", debug_mode))
-            extra_args = config_dict.get("extra_args", config_dict.get("config", {}).get("extraArgs", extra_args))
+            executor_id = config_dict.get(
+                "executor_id",
+                config_dict.get("config", {}).get("executorId", executor_id),
+            )
+            debug_mode = config_dict.get(
+                "debug_mode", config_dict.get("config", {}).get("debugMode", debug_mode)
+            )
+            extra_args = config_dict.get(
+                "extra_args", config_dict.get("config", {}).get("extraArgs", extra_args)
+            )
             
             if "recipe" in config_dict:
                 recipe = config_dict["recipe"]
@@ -279,7 +299,9 @@ class DataHubRestClient:
             source_type = type
         
         if not source_type:
-            raise ValueError("Either 'source_type' or 'type' parameter must be provided")
+            raise ValueError(
+                "Either 'source_type' or 'type' parameter must be provided"
+            )
         
         # Handle schedule parameter compatibility
         if schedule:
@@ -299,7 +321,7 @@ class DataHubRestClient:
         # Process recipe based on type
         recipe_str = None
         if isinstance(recipe, dict):
-            self.logger.debug(f"Converting recipe dict to JSON string")
+            self.logger.debug("Converting recipe dict to JSON string")
             recipe_str = json.dumps(recipe)
         elif isinstance(recipe, str) and recipe.strip().startswith("@"):
             # Handle template reference as-is - don't try to parse it as JSON
@@ -311,12 +333,16 @@ class DataHubRestClient:
             
         # Try GraphQL approach first
         try:
-            self.logger.info(f"Creating ingestion source via GraphQL")
+            self.logger.info("Creating ingestion source via GraphQL")
             
             # Check if the GraphQL schema has been validated before
-            if hasattr(self, '_schema_validated') and not self._schema_validated:
-                self.logger.info(f"Skipping GraphQL approach due to previous schema validation failures")
-                raise Exception("Schema validation previously failed, falling back to REST API")
+            if hasattr(self, "_schema_validated") and not self._schema_validated:
+                self.logger.info(
+                    "Skipping GraphQL approach due to previous schema validation failures"
+                )
+                raise Exception(
+                    "Schema validation previously failed, falling back to REST API"
+                )
             
             # Fixed mutation without subselections, just returns a string
             mutation = """
@@ -329,14 +355,8 @@ class DataHubRestClient:
             graphql_input = {
                 "type": source_type,
                 "name": name,
-                "schedule": {
-                    "interval": schedule_interval,
-                    "timezone": timezone
-                },
-                "config": {
-                    "executorId": executor_id,
-                    "debugMode": debug_mode
-                }
+                "schedule": {"interval": schedule_interval, "timezone": timezone},
+                "config": {"executorId": executor_id, "debugMode": debug_mode},
             }
             
             # Handle recipe differently based on its type
@@ -352,37 +372,50 @@ class DataHubRestClient:
             if extra_args:
                 graphql_input["config"]["extraArgs"] = extra_args
                 
-            variables = {
-                "input": graphql_input
-            }
+            variables = {"input": graphql_input}
                 
             self.logger.debug(f"GraphQL variables: {json.dumps(variables)}")
             result = self.execute_graphql(mutation, variables)
             
             if "errors" in result:
                 # Check for schema validation errors which indicate incompatible API versions
-                schema_errors = [e for e in result.get("errors", []) 
+                schema_errors = [
+                    e
+                    for e in result.get("errors", [])
                                if e.get("message", "").find("Validation error (UnknownType)") >= 0 
-                               or e.get("message", "").find("Unknown type") >= 0]
+                    or e.get("message", "").find("Unknown type") >= 0
+                ]
                 
                 if schema_errors:
                     # This is a GraphQL schema mismatch, likely due to API version differences
-                    self.logger.info("Detected GraphQL schema mismatch. Your client is likely connecting to a different DataHub API version than expected.")
-                    self.logger.info("This is normal when using this client with different DataHub versions. Falling back to REST API.")
+                    self.logger.info(
+                        "Detected GraphQL schema mismatch. Your client is likely connecting to a different DataHub API version than expected."
+                    )
+                    self.logger.info(
+                        "This is normal when using this client with different DataHub versions. Falling back to REST API."
+                    )
                     # Mark schema as invalid to avoid trying GraphQL in future calls
                     self._schema_validated = False
                     # Skip the direct GraphQL endpoint which would also fail
-                    raise Exception("Schema validation failed, falling back to REST API")
+                    raise Exception(
+                        "Schema validation failed, falling back to REST API"
+                    )
                 else:
                     # Other types of GraphQL errors
-                    error_msgs = [e.get("message", "") for e in result.get("errors", [])]
-                    self.logger.warning(f"GraphQL errors when creating ingestion source: {', '.join(error_msgs)}")
+                    error_msgs = [
+                        e.get("message", "") for e in result.get("errors", [])
+                    ]
+                    self.logger.warning(
+                        f"GraphQL errors when creating ingestion source: {', '.join(error_msgs)}"
+                    )
                     # Continue to REST API fallback
             else:
                 # Success - createIngestionSource returns the URN
                 created_urn = result.get("data", {}).get("createIngestionSource")
                 if created_urn:
-                    self.logger.info(f"Successfully created ingestion source via GraphQL: {source_id}")
+                    self.logger.info(
+                        f"Successfully created ingestion source via GraphQL: {source_id}"
+                    )
                     # Mark schema as valid since we succeeded
                     self._schema_validated = True
                     return {
@@ -395,8 +428,8 @@ class DataHubRestClient:
                             "recipe": recipe_str,
                             "executorId": executor_id,
                             "debugMode": debug_mode,
-                            "extraArgs": extra_args
-                        }
+                            "extraArgs": extra_args,
+                        },
                     }
                 else:
                     self.logger.warning("GraphQL mutation returned success but no URN")
@@ -413,27 +446,40 @@ class DataHubRestClient:
                             "recipe": recipe_str,
                             "executorId": executor_id,
                             "debugMode": debug_mode,
-                            "extraArgs": extra_args
-                        }
+                            "extraArgs": extra_args,
+                        },
                     }
         except Exception as e:
-            is_schema_error = str(e).find("Schema validation") >= 0 or str(e).find("Unknown type") >= 0
+            is_schema_error = (
+                str(e).find("Schema validation") >= 0
+                or str(e).find("Unknown type") >= 0
+            )
             
             if is_schema_error:
                 # Skip direct GraphQL endpoint if schema errors detected
-                self.logger.info("Detected schema validation error: Schema validation failed or Unknown type found")
-                self.logger.info("This is normal when using this client with different DataHub versions. Falling back to REST API")
+                self.logger.info(
+                    "Detected schema validation error: Schema validation failed or Unknown type found"
+                )
+                self.logger.info(
+                    "This is normal when using this client with different DataHub versions. Falling back to REST API"
+                )
             else:
-                self.logger.warning(f"Error creating ingestion source via GraphQL: {str(e)}")
+                self.logger.warning(
+                    f"Error creating ingestion source via GraphQL: {str(e)}"
+                )
                 
                 # Continue to direct GraphQL endpoint only if not a schema error
                 try:
-                    self.logger.info(f"Trying direct GraphQL endpoint for creation")
+                    self.logger.info("Trying direct GraphQL endpoint for creation")
                     
                     # Set up headers
-                    headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-                    if hasattr(self, 'token') and self.token:
-                        headers['Authorization'] = f'Bearer {self.token}'
+                    headers = (
+                        self.headers.copy()
+                        if hasattr(self, "headers")
+                        else {"Content-Type": "application/json"}
+                    )
+                    if hasattr(self, "token") and self.token:
+                        headers["Authorization"] = f"Bearer {self.token}"
                     
                     # Simple GraphQL mutation with variables
                     direct_mutation = {
@@ -442,20 +488,24 @@ class DataHubRestClient:
                                 createIngestionSource(input: $input)
                             }
                         """,
-                        "variables": variables
+                        "variables": variables,
                     }
                     
                     direct_response = requests.post(
                         f"{self.server_url}/api/graphql",
                         headers=headers,
-                        json=direct_mutation
+                        json=direct_mutation,
                     )
                     
                     if direct_response.status_code == 200:
                         direct_result = direct_response.json()
                         if "errors" not in direct_result:
-                            created_urn = direct_result.get("data", {}).get("createIngestionSource")
-                            self.logger.info(f"Successfully created ingestion source via direct GraphQL: {source_id}")
+                            created_urn = direct_result.get("data", {}).get(
+                                "createIngestionSource"
+                            )
+                            self.logger.info(
+                                f"Successfully created ingestion source via direct GraphQL: {source_id}"
+                            )
                             return {
                                 "urn": created_urn or source_urn,
                                 "id": source_id,
@@ -466,52 +516,64 @@ class DataHubRestClient:
                                     "recipe": recipe_str,
                                     "executorId": executor_id,
                                     "debugMode": debug_mode,
-                                    "extraArgs": extra_args
-                                }
+                                    "extraArgs": extra_args,
+                                },
                             }
                         else:
                             # Check for schema validation errors in the direct endpoint too
-                            direct_schema_errors = [e for e in direct_result.get("errors", []) 
-                                                 if isinstance(e, dict) and 
-                                                 e.get("message", "").find("Validation error (UnknownType)") >= 0]
+                            direct_schema_errors = [
+                                e
+                                for e in direct_result.get("errors", [])
+                                if isinstance(e, dict)
+                                and e.get("message", "").find(
+                                    "Validation error (UnknownType)"
+                                )
+                                >= 0
+                            ]
                             
                             if direct_schema_errors:
-                                self.logger.info("GraphQL schema mismatch with direct endpoint. Falling back to REST API.")
+                                self.logger.info(
+                                    "GraphQL schema mismatch with direct endpoint. Falling back to REST API."
+                                )
                                 self._schema_validated = False
                             else:
-                                self.logger.warning(f"GraphQL errors with direct endpoint: {direct_result.get('errors')}")
+                                self.logger.warning(
+                                    f"GraphQL errors with direct endpoint: {direct_result.get('errors')}"
+                                )
                     else:
-                        self.logger.warning(f"Failed with direct GraphQL endpoint: {direct_response.status_code}")
+                        self.logger.warning(
+                            f"Failed with direct GraphQL endpoint: {direct_response.status_code}"
+                        )
                 except Exception as direct_e:
-                    self.logger.warning(f"Error with direct GraphQL endpoint: {str(direct_e)}")
+                    self.logger.warning(
+                        f"Error with direct GraphQL endpoint: {str(direct_e)}"
+                    )
             
         # Fall back to REST API
         try:
             self.logger.info(f"Creating ingestion source via REST API: {name}")
             
             # Prepare payload for OpenAPI v3
-            payload = [{
+            payload = [
+                {
                 "urn": source_urn,
-                "dataHubIngestionSourceKey": {
-                    "value": {
-                        "id": source_id
-                    }
-                },
+                    "dataHubIngestionSourceKey": {"value": {"id": source_id}},
                 "dataHubIngestionSourceInfo": {
                     "value": {
                         "name": name,
                         "type": source_type,
                         "schedule": {
                             "interval": schedule_interval,
-                            "timezone": timezone
+                                "timezone": timezone,
                         },
                         "config": {
                             "executorId": executor_id,
-                            "debugMode": debug_mode
+                                "debugMode": debug_mode,
+                            },
                         }
+                    },
                     }
-                }
-            }]
+            ]
             
             # Handle recipe differently based on type
             if isinstance(recipe, dict) and "source" in recipe:
@@ -520,22 +582,28 @@ class DataHubRestClient:
             
             # Add recipe to config if provided
             if recipe_str is not None:
-                payload[0]["dataHubIngestionSourceInfo"]["value"]["config"]["recipe"] = recipe_str
+                payload[0]["dataHubIngestionSourceInfo"]["value"]["config"][
+                    "recipe"
+                ] = recipe_str
             
             # Add extra args only if provided
             if extra_args:
-                payload[0]["dataHubIngestionSourceInfo"]["value"]["config"]["extraArgs"] = extra_args
+                payload[0]["dataHubIngestionSourceInfo"]["value"]["config"][
+                    "extraArgs"
+                ] = extra_args
             
             self.logger.debug(f"REST API payload: {json.dumps(payload)}")
             
             response = requests.post(
                 f"{self.server_url}/openapi/v3/entity/datahubingestionsource",
                 headers=self.headers,
-                json=payload
+                json=payload,
             )
             
             if response.status_code in (200, 201, 202):
-                self.logger.info(f"Successfully created ingestion source via REST API: {source_id}")
+                self.logger.info(
+                    f"Successfully created ingestion source via REST API: {source_id}"
+                )
                 try:
                     response_data = response.json()
                     created_urn = response_data[0].get("urn", source_urn)
@@ -549,8 +617,8 @@ class DataHubRestClient:
                             "recipe": recipe_str,
                             "executorId": executor_id,
                             "debugMode": debug_mode,
-                            "extraArgs": extra_args
-                        }
+                            "extraArgs": extra_args,
+                        },
                     }
                 except Exception as e:
                     self.logger.warning(f"Error parsing REST API response: {str(e)}")
@@ -565,11 +633,13 @@ class DataHubRestClient:
                             "recipe": recipe_str,
                             "executorId": executor_id,
                             "debugMode": debug_mode,
-                            "extraArgs": extra_args
-                        }
+                            "extraArgs": extra_args,
+                        },
                     }
             else:
-                self.logger.error(f"Failed to create ingestion source via REST API: {response.status_code} - {response.text}")
+                self.logger.error(
+                    f"Failed to create ingestion source via REST API: {response.status_code} - {response.text}"
+                )
                 return None
         except Exception as e:
             self.logger.error(f"Error creating ingestion source via REST API: {str(e)}")
@@ -592,7 +662,9 @@ class DataHubRestClient:
             True if any of the methods succeeded, False otherwise
         """
         source_urn = f"urn:li:dataHubIngestionSource:{ingestion_source_id}"
-        logger.info(f"Attempting to trigger ingestion for source: {ingestion_source_id} (URN: {source_urn})")
+        logger.info(
+            f"Attempting to trigger ingestion for source: {ingestion_source_id} (URN: {source_urn})"
+        )
 
         # Method 1: Use /runs endpoint (DataHub v0.12.0+)
         try:
@@ -600,9 +672,11 @@ class DataHubRestClient:
             url = f"{self.server_url}/runs?urn={source_urn}"
             response = requests.post(url, headers=self.headers)
             if response.status_code == 200:
-                logger.info(f"Successfully triggered ingestion using /runs endpoint")
+                logger.info("Successfully triggered ingestion using /runs endpoint")
                 return True
-            logger.debug(f"Failed to trigger using /runs endpoint: {response.status_code} - {response.text}")
+            logger.debug(
+                f"Failed to trigger using /runs endpoint: {response.status_code} - {response.text}"
+            )
         except Exception as e:
             logger.debug(f"Error triggering using /runs endpoint: {e}")
 
@@ -612,9 +686,13 @@ class DataHubRestClient:
             url = f"{self.server_url}/ingest/{ingestion_source_id}"
             response = requests.post(url, headers=self.headers)
             if response.status_code == 200:
-                logger.info(f"Successfully triggered ingestion using /ingest/{id} endpoint")
+                logger.info(
+                    f"Successfully triggered ingestion using /ingest/{id} endpoint"
+                )
                 return True
-            logger.debug(f"Failed to trigger using /ingest/{id} endpoint: {response.status_code} - {response.text}")
+            logger.debug(
+                f"Failed to trigger using /ingest/{id} endpoint: {response.status_code} - {response.text}"
+            )
         except Exception as e:
             logger.debug(f"Error triggering using /ingest/{id} endpoint: {e}")
 
@@ -624,9 +702,11 @@ class DataHubRestClient:
             url = f"{self.server_url}/ingestion-sources/{ingestion_source_id}?action=ingest"
             response = requests.post(url, headers=self.headers)
             if response.status_code == 200:
-                logger.info(f"Successfully triggered ingestion using legacy endpoint")
+                logger.info("Successfully triggered ingestion using legacy endpoint")
                 return True
-            logger.debug(f"Failed to trigger using legacy endpoint: {response.status_code} - {response.text}")
+            logger.debug(
+                f"Failed to trigger using legacy endpoint: {response.status_code} - {response.text}"
+            )
         except Exception as e:
             logger.debug(f"Error triggering using legacy endpoint: {e}")
 
@@ -638,24 +718,28 @@ class DataHubRestClient:
               createIngestionExecutionRequest(input: $input)
             }
             """
-            variables = {
-                "input": {
-                    "ingestionSourceUrn": source_urn
-                }
-            }
+            variables = {"input": {"ingestionSourceUrn": source_urn}}
             
             result = self.execute_graphql(graphql_query, variables)
             
             if result and "errors" not in result:
-                logger.info(f"Successfully triggered ingestion using createIngestionExecutionRequest mutation")
+                logger.info(
+                    "Successfully triggered ingestion using createIngestionExecutionRequest mutation"
+                )
                 return True
-            logger.debug(f"GraphQL mutation returned errors: {result.get('errors') if result else 'No result'}")
+            logger.debug(
+                f"GraphQL mutation returned errors: {result.get('errors') if result else 'No result'}"
+            )
         except Exception as e:
-            logger.debug(f"Error triggering using createIngestionExecutionRequest mutation: {e}")
+            logger.debug(
+                f"Error triggering using createIngestionExecutionRequest mutation: {e}"
+            )
 
         # Method 5: Use executeIngestionSource GraphQL mutation (legacy fallback)
         try:
-            logger.debug("Trying executeIngestionSource GraphQL mutation (legacy fallback)...")
+            logger.debug(
+                "Trying executeIngestionSource GraphQL mutation (legacy fallback)..."
+            )
             graphql_query = """
             mutation executeIngestionSource($input: ExecuteIngestionSourceInput!) {
                 executeIngestionSource(input: $input) {
@@ -663,22 +747,24 @@ class DataHubRestClient:
                 }
             }
             """
-            variables = {
-                "input": {
-                    "urn": source_urn
-                }
-            }
+            variables = {"input": {"urn": source_urn}}
             
             result = self.execute_graphql(graphql_query, variables)
             
             if result and "errors" not in result:
-                logger.info(f"Successfully triggered ingestion using executeIngestionSource mutation")
+                logger.info(
+                    "Successfully triggered ingestion using executeIngestionSource mutation"
+                )
                 return True
-            logger.debug(f"GraphQL mutation returned errors: {result.get('errors') if result else 'No result'}")
+            logger.debug(
+                f"GraphQL mutation returned errors: {result.get('errors') if result else 'No result'}"
+            )
         except Exception as e:
             logger.debug(f"Error triggering using executeIngestionSource mutation: {e}")
 
-        logger.error(f"All methods to trigger ingestion for source {ingestion_source_id} failed")
+        logger.error(
+            f"All methods to trigger ingestion for source {ingestion_source_id} failed"
+        )
         return False
     
     def list_ingestion_sources(self):
@@ -763,12 +849,8 @@ class DataHubRestClient:
                 "start": 0,
                 "count": 100,
                 "filters": [
-                    {
-                        "field": "sourceType",
-                        "values": ["SYSTEM"],
-                        "negated": True
-                    }
-                ]
+                    {"field": "sourceType", "values": ["SYSTEM"], "negated": True}
+                ],
             }
         }
         
@@ -776,18 +858,30 @@ class DataHubRestClient:
             self.logger.debug("Listing ingestion sources using GraphQL")
             result = self.execute_graphql(query, variables)
             
-            if result and isinstance(result, dict) and "data" in result and result["data"] and "listIngestionSources" in result["data"]:
+            if (
+                result
+                and isinstance(result, dict)
+                and "data" in result
+                and result["data"]
+                and "listIngestionSources" in result["data"]
+            ):
                 response_data = result["data"]["listIngestionSources"]
                 if response_data is None:
-                    self.logger.warning("listIngestionSources returned None in GraphQL response")
+                    self.logger.warning(
+                        "listIngestionSources returned None in GraphQL response"
+                    )
                     raw_sources = []
                 else:
                     raw_sources = response_data.get("ingestionSources", [])
                     if raw_sources is None:
-                        self.logger.warning("ingestionSources is None in GraphQL response")
+                        self.logger.warning(
+                            "ingestionSources is None in GraphQL response"
+                        )
                         raw_sources = []
                 
-                self.logger.info(f"Successfully retrieved {len(raw_sources)} ingestion sources using GraphQL")
+                self.logger.info(
+                    f"Successfully retrieved {len(raw_sources)} ingestion sources using GraphQL"
+                )
                 
                 # Process each source
                 for source in raw_sources:
@@ -798,12 +892,16 @@ class DataHubRestClient:
                     try:
                         urn = source.get("urn")
                         if not urn:
-                            self.logger.warning(f"Source missing URN, skipping: {source}")
+                            self.logger.warning(
+                                f"Source missing URN, skipping: {source}"
+                            )
                             continue
                             
                         source_id = urn.split(":")[-1] if urn else None
                         if not source_id:
-                            self.logger.warning(f"Could not extract source ID from URN: {urn}")
+                            self.logger.warning(
+                                f"Could not extract source ID from URN: {urn}"
+                            )
                             continue
                         
                         # Get config
@@ -827,7 +925,9 @@ class DataHubRestClient:
                             else:
                                 recipe = json.loads(recipe_str)
                         except (json.JSONDecodeError, TypeError):
-                            self.logger.warning(f"Could not parse recipe JSON for {source_id}")
+                            self.logger.warning(
+                                f"Could not parse recipe JSON for {source_id}"
+                            )
                         
                         # Get latest execution information
                         executions = source.get("executions", {}) or {}
@@ -851,41 +951,59 @@ class DataHubRestClient:
                             "config": {
                                 "executorId": config.get("executorId", "default"),
                                 "debugMode": config.get("debugMode", False),
-                                "version": config.get("version", "0.8.42")
-                            }
+                                "version": config.get("version", "0.8.42"),
+                            },
                         }
                         
                         # Add execution status if available
                         if latest_execution and latest_execution.get("result"):
                             simplified_source["last_execution"] = {
                                 "id": latest_execution.get("id"),
-                                "status": latest_execution.get("result", {}).get("status"),
-                                "startTimeMs": latest_execution.get("result", {}).get("startTimeMs"),
-                                "durationMs": latest_execution.get("result", {}).get("durationMs")
+                                "status": latest_execution.get("result", {}).get(
+                                    "status"
+                                ),
+                                "startTimeMs": latest_execution.get("result", {}).get(
+                                    "startTimeMs"
+                                ),
+                                "durationMs": latest_execution.get("result", {}).get(
+                                    "durationMs"
+                                ),
                             }
                         
                         sources.append(simplified_source)
                     except Exception as e:
-                        self.logger.warning(f"Error processing source {source.get('name', 'unknown')}: {str(e)}")
+                        self.logger.warning(
+                            f"Error processing source {source.get('name', 'unknown')}: {str(e)}"
+                        )
                 
                 if sources:
-                    self.logger.info(f"Successfully processed {len(sources)} ingestion sources")
+                    self.logger.info(
+                        f"Successfully processed {len(sources)} ingestion sources"
+                    )
                     return sources
             
             # Check for specific errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 self.logger.warning(f"GraphQL errors: {', '.join(error_messages)}")
             else:
-                self.logger.warning("Failed to retrieve ingestion sources using GraphQL or no sources found")
+                self.logger.warning(
+                    "Failed to retrieve ingestion sources using GraphQL or no sources found"
+                )
             
         except Exception as e:
-            self.logger.warning(f"Error listing ingestion sources via GraphQL: {str(e)}")
+            self.logger.warning(
+                f"Error listing ingestion sources via GraphQL: {str(e)}"
+            )
         
         # Try OpenAPI v3 endpoint
         try:
             openapi_url = f"{self.server_url}/openapi/v3/entity/datahubingestionsource"
-            self.logger.debug(f"Listing ingestion sources via OpenAPI v3: GET {openapi_url}")
+            self.logger.debug(
+                f"Listing ingestion sources via OpenAPI v3: GET {openapi_url}"
+            )
             
             response = requests.get(openapi_url, headers=self.headers)
             
@@ -897,7 +1015,9 @@ class DataHubRestClient:
                     entities = data.get("entities", []) or []
                     if entities is None:
                         entities = []
-                    self.logger.debug(f"Found {len(entities)} entities in OpenAPI v3 response")
+                    self.logger.debug(
+                        f"Found {len(entities)} entities in OpenAPI v3 response"
+                    )
                     
                     for entity in entities:
                         if entity is None:
@@ -912,7 +1032,9 @@ class DataHubRestClient:
                             source_id = urn.split(":")[-1]
                             
                             # Source information is nested under dataHubIngestionSourceInfo.value
-                            source_info = entity.get("dataHubIngestionSourceInfo", {}) or {}
+                            source_info = (
+                                entity.get("dataHubIngestionSourceInfo", {}) or {}
+                            )
                             if source_info is None:
                                 source_info = {}
                                 
@@ -939,7 +1061,9 @@ class DataHubRestClient:
                                     elif isinstance(recipe_str, dict):
                                         recipe = recipe_str
                                 except json.JSONDecodeError:
-                                    self.logger.warning(f"Failed to parse recipe for source {urn}")
+                                    self.logger.warning(
+                                        f"Failed to parse recipe for source {urn}"
+                                    )
                                     
                             # Create simplified source object
                             simplified_source = {
@@ -954,21 +1078,29 @@ class DataHubRestClient:
                                     "executorId": config.get("executorId", "default"),
                                     "debugMode": config.get("debugMode", False),
                                     "version": config.get("version", "0.8.42"),
-                                    "extraArgs": config.get("extraArgs", {}) or {}
-                                }
+                                    "extraArgs": config.get("extraArgs", {}) or {},
+                                },
                             }
                             
                             sources.append(simplified_source)
                         except Exception as e:
-                            self.logger.warning(f"Error processing entity {entity.get('urn')}: {str(e)}")
+                            self.logger.warning(
+                                f"Error processing entity {entity.get('urn')}: {str(e)}"
+                            )
                     
                     if sources:
-                        self.logger.info(f"Successfully retrieved {len(sources)} ingestion sources via OpenAPI v3")                    
+                        self.logger.info(
+                            f"Successfully retrieved {len(sources)} ingestion sources via OpenAPI v3"
+                        )
                         return sources
                 except json.JSONDecodeError:
-                    self.logger.warning("Failed to parse JSON response from OpenAPI v3 endpoint")
+                    self.logger.warning(
+                        "Failed to parse JSON response from OpenAPI v3 endpoint"
+                    )
             else:
-                self.logger.warning(f"Failed to list ingestion sources via OpenAPI v3: {response.status_code} - {response.text}")
+                self.logger.warning(
+                    f"Failed to list ingestion sources via OpenAPI v3: {response.status_code} - {response.text}"
+                )
                 
                 # Try one more alternative endpoint format
                 try:
@@ -996,7 +1128,8 @@ class DataHubRestClient:
                                             "name": source.get("name", source_id),
                                             "type": source.get("type", ""),
                                             "recipe": {},
-                                            "schedule": source.get("schedule", {}) or {}
+                                            "schedule": source.get("schedule", {})
+                                            or {},
                                         }
                                         
                                         # Parse recipe if present
@@ -1006,25 +1139,37 @@ class DataHubRestClient:
                                                 if recipe_str is None:
                                                     simplified_source["recipe"] = {}
                                                 elif isinstance(recipe_str, str):
-                                                    simplified_source["recipe"] = json.loads(recipe_str)
+                                                    simplified_source["recipe"] = (
+                                                        json.loads(recipe_str)
+                                                    )
                                                 elif isinstance(recipe_str, dict):
-                                                    simplified_source["recipe"] = recipe_str
+                                                    simplified_source["recipe"] = (
+                                                        recipe_str
+                                                    )
                                             except json.JSONDecodeError:
                                                 pass
                                                 
                                         sources.append(simplified_source)
                                     except Exception as e:
-                                        self.logger.warning(f"Error processing source {source.get('id')}: {str(e)}")
+                                        self.logger.warning(
+                                            f"Error processing source {source.get('id')}: {str(e)}"
+                                        )
                                         
                                 if sources:
-                                    self.logger.info(f"Retrieved {len(sources)} ingestion sources via alternative API")
+                                    self.logger.info(
+                                        f"Retrieved {len(sources)} ingestion sources via alternative API"
+                                    )
                                     return sources
                         except json.JSONDecodeError:
-                            self.logger.warning("Failed to parse JSON from alternative API endpoint")
+                            self.logger.warning(
+                                "Failed to parse JSON from alternative API endpoint"
+                            )
                 except Exception as e:
                     self.logger.debug(f"Error with alternative API endpoint: {str(e)}")
         except Exception as e:
-            self.logger.error(f"Error listing ingestion sources via OpenAPI v3: {str(e)}")
+            self.logger.error(
+                f"Error listing ingestion sources via OpenAPI v3: {str(e)}"
+            )
         
         return sources or []
     
@@ -1073,16 +1218,16 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "urn": source_urn
-        }
+        variables = {"urn": source_urn}
         
         try:
             self.logger.debug(f"Using GraphQL to fetch ingestion source: {source_id}")
             result = self.execute_graphql(query, variables)
             
             if result and "data" in result and result["data"].get("ingestionSource"):
-                self.logger.debug(f"Successfully retrieved ingestion source via GraphQL: {source_id}")
+                self.logger.debug(
+                    f"Successfully retrieved ingestion source via GraphQL: {source_id}"
+                )
                 
                 ingestion_source = result["data"]["ingestionSource"]
                 source_info = {
@@ -1091,7 +1236,7 @@ class DataHubRestClient:
                     "name": ingestion_source["name"],
                     "type": ingestion_source["type"],
                     "schedule": ingestion_source["schedule"],
-                    "config": {}  # Initialize config to ensure it's never None
+                    "config": {},  # Initialize config to ensure it's never None
                 }
                 
                 # Parse the recipe JSON
@@ -1113,20 +1258,28 @@ class DataHubRestClient:
                             recipe = {}
                         # Check if it's a template reference (starting with @)
                         elif recipe_str.strip().startswith("@"):
-                            self.logger.debug(f"Found template reference in recipe: {recipe_str}")
+                            self.logger.debug(
+                                f"Found template reference in recipe: {recipe_str}"
+                            )
                             recipe = recipe_str.strip()
                         else:
                             # Try to parse as JSON, with fallback to raw string
                             try:
                                 recipe = json.loads(recipe_str)
-                                self.logger.debug(f"Successfully parsed recipe JSON: {json.dumps(recipe)}")
+                                self.logger.debug(
+                                    f"Successfully parsed recipe JSON: {json.dumps(recipe)}"
+                                )
                             except json.JSONDecodeError:
-                                self.logger.warning(f"Could not parse recipe JSON for {source_id}, treating as raw string")
+                                self.logger.warning(
+                                    f"Could not parse recipe JSON for {source_id}, treating as raw string"
+                                )
                                 # If it's not valid JSON, treat it as a raw string
                                 # This could be a template or other format
                                 recipe = recipe_str
                     else:
-                        self.logger.warning(f"Unexpected recipe type: {type(recipe_str)}, using empty dict")
+                        self.logger.warning(
+                            f"Unexpected recipe type: {type(recipe_str)}, using empty dict"
+                        )
                         recipe = {}
                     
                     # Build config object with all relevant fields    
@@ -1134,20 +1287,28 @@ class DataHubRestClient:
                         "recipe": recipe_str,  # Store original recipe string to avoid double-parsing
                         "executorId": config.get("executorId", "default"),
                         "debugMode": config.get("debugMode", False),
-                        "version": config.get("version")
+                        "version": config.get("version"),
                     }
                 except Exception as e:
-                    self.logger.warning(f"Error processing recipe for {source_id}: {str(e)}")
-                    source_info["config"]["recipe"] = recipe_str or {}  # Use empty object as fallback
+                    self.logger.warning(
+                        f"Error processing recipe for {source_id}: {str(e)}"
+                    )
+                    source_info["config"]["recipe"] = (
+                        recipe_str or {}
+                    )  # Use empty object as fallback
                 
                 return source_info
             
             # Check for errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 self.logger.warning(f"GraphQL errors: {', '.join(error_messages)}")
             else:
-                self.logger.warning(f"GraphQL query for ingestion source returned no results: {source_id}")
+                self.logger.warning(
+                    f"GraphQL query for ingestion source returned no results: {source_id}"
+                )
             
             # Fall through to OpenAPI v3
         except Exception as e:
@@ -1157,12 +1318,16 @@ class DataHubRestClient:
         # Try OpenAPI v3 endpoint with the exact schema format
         try:
             openapi_url = f"{self.server_url}/openapi/v3/entity/datahubingestionsource/{source_urn}"
-            self.logger.debug(f"Fetching ingestion source via OpenAPI v3: GET {openapi_url}")
+            self.logger.debug(
+                f"Fetching ingestion source via OpenAPI v3: GET {openapi_url}"
+            )
             
             response = requests.get(openapi_url, headers=self.headers)
             
             if response.status_code == 200:
-                self.logger.debug(f"Successfully retrieved ingestion source via OpenAPI v3: {source_id}")
+                self.logger.debug(
+                    f"Successfully retrieved ingestion source via OpenAPI v3: {source_id}"
+                )
                 try:
                     data = response.json()
                     self.logger.debug(f"OpenAPI v3 response: {json.dumps(data)}")
@@ -1171,9 +1336,15 @@ class DataHubRestClient:
                     # The structure has nested dataHubIngestionSourceInfo.value
                     source_info_wrapper = data.get("dataHubIngestionSourceInfo", {})
                     if not source_info_wrapper:
-                        self.logger.warning(f"No dataHubIngestionSourceInfo in response for {source_id}")
-                        
-                    source_info = source_info_wrapper.get("value", {}) if source_info_wrapper else {}
+                        self.logger.warning(
+                            f"No dataHubIngestionSourceInfo in response for {source_id}"
+                        )
+
+                    source_info = (
+                        source_info_wrapper.get("value", {})
+                        if source_info_wrapper
+                        else {}
+                    )
                     
                     if source_info:
                         # Create the result object
@@ -1184,7 +1355,7 @@ class DataHubRestClient:
                             "type": source_info.get("type", ""),
                             "platform": source_info.get("platform", ""),
                             "schedule": source_info.get("schedule", {}),
-                            "config": {}  # Initialize config to ensure it's never None
+                            "config": {},  # Initialize config to ensure it's never None
                         }
                         
                         # Parse the recipe JSON if it exists
@@ -1193,58 +1364,83 @@ class DataHubRestClient:
                             config = {}
                             
                         recipe_str = config.get("recipe")
-                        self.logger.debug(f"Raw recipe string from OpenAPI: {recipe_str}")
+                        self.logger.debug(
+                            f"Raw recipe string from OpenAPI: {recipe_str}"
+                        )
                         
                         # Build config object with all relevant fields
                         result["config"] = {
                             "recipe": recipe_str,  # Store original recipe string to avoid double-parsing
                             "executorId": config.get("executorId", "default"),
                             "debugMode": config.get("debugMode", False),
-                            "version": config.get("version")
+                            "version": config.get("version"),
                         }
                         
                         return result
                     else:
-                        self.logger.warning(f"No source info found in OpenAPI v3 response for {source_id}")
+                        self.logger.warning(
+                            f"No source info found in OpenAPI v3 response for {source_id}"
+                        )
                 except json.JSONDecodeError:
-                    self.logger.warning(f"Could not parse JSON response from OpenAPI v3 for {source_id}")
+                    self.logger.warning(
+                        f"Could not parse JSON response from OpenAPI v3 for {source_id}"
+                    )
                 except Exception as e:
-                    self.logger.warning(f"Error processing OpenAPI v3 response for {source_id}: {str(e)}")
+                    self.logger.warning(
+                        f"Error processing OpenAPI v3 response for {source_id}: {str(e)}"
+                    )
             else:
-                self.logger.warning(f"OpenAPI v3 GET failed: {response.status_code} - {response.text}")
+                self.logger.warning(
+                    f"OpenAPI v3 GET failed: {response.status_code} - {response.text}"
+                )
                 
             # Try all available sources endpoint as last resort
             try:
                 sources = self.list_ingestion_sources()
                 for source in sources:
                     if source.get("id") == source_id or source.get("urn") == source_urn:
-                        self.logger.info(f"Found ingestion source {source_id} in list of all sources")
+                        self.logger.info(
+                            f"Found ingestion source {source_id} in list of all sources"
+                        )
                         return source
-                self.logger.warning(f"Ingestion source {source_id} not found in list of all sources")
+                self.logger.warning(
+                    f"Ingestion source {source_id} not found in list of all sources"
+                )
             except Exception as e:
-                self.logger.warning(f"Error trying to find source {source_id} in list of all sources: {str(e)}")
+                self.logger.warning(
+                    f"Error trying to find source {source_id} in list of all sources: {str(e)}"
+                )
         except Exception as e:
-            self.logger.warning(f"Error getting ingestion source via OpenAPI v3: {str(e)}")
+            self.logger.warning(
+                f"Error getting ingestion source via OpenAPI v3: {str(e)}"
+            )
             
         # All attempts to retrieve the source have failed
-        self.logger.warning(f"All attempts to retrieve ingestion source {source_id} failed")
+        self.logger.warning(
+            f"All attempts to retrieve ingestion source {source_id} failed"
+        )
         
         # Return a minimal default source object if we have at least the ID
         # This allows the call site to have some information to work with
         if source_id:
-            self.logger.warning(f"Returning default source info for {source_id} as all attempts failed")
+            self.logger.warning(
+                f"Returning default source info for {source_id} as all attempts failed"
+            )
             return {
                 "urn": source_urn,
                 "id": source_id,
                 "name": source_id,  # Use ID as name
                 "type": "",  # Unknown type
-                "schedule": {"interval": "0 0 * * *", "timezone": "UTC"},  # Default schedule
+                "schedule": {
+                    "interval": "0 0 * * *",
+                    "timezone": "UTC",
+                },  # Default schedule
                 "config": {
                     "recipe": {},  # Empty recipe
                     "executorId": "default",
                     "debugMode": False,
-                    "version": None
-                }
+                    "version": None,
+                },
             }
         
         return None
@@ -1270,45 +1466,56 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "urn": source_urn
-        }
+        variables = {"urn": source_urn}
         
         try:
             self.logger.debug("Deleting ingestion source using GraphQL mutation")
             result = self.execute_graphql(mutation, variables)
             
             if "errors" not in result:
-                self.logger.info(f"Successfully deleted ingestion source: {source_id} using GraphQL")
+                self.logger.info(
+                    f"Successfully deleted ingestion source: {source_id} using GraphQL"
+                )
                 return True
                 
-            self.logger.warning(f"GraphQL errors when deleting ingestion source: {result.get('errors')}")
+            self.logger.warning(
+                f"GraphQL errors when deleting ingestion source: {result.get('errors')}"
+            )
             # Fall back to OpenAPI v3
         except Exception as e:
-            self.logger.warning(f"Error deleting ingestion source using GraphQL: {str(e)}")
+            self.logger.warning(
+                f"Error deleting ingestion source using GraphQL: {str(e)}"
+            )
             # Fall back to OpenAPI v3
         
         # Try OpenAPI v3 endpoint
         try:
             openapi_url = f"{self.server_url}/openapi/v3/entity/datahubingestionsource/{source_urn}"
-            self.logger.debug(f"Deleting ingestion source via OpenAPI v3: DELETE {openapi_url}")
-            
-            response = requests.delete(
-                openapi_url,
-                headers=self.headers
+            self.logger.debug(
+                f"Deleting ingestion source via OpenAPI v3: DELETE {openapi_url}"
             )
+
+            response = requests.delete(openapi_url, headers=self.headers)
             
             if response.status_code in (200, 201, 202, 204):
-                self.logger.info(f"Successfully deleted ingestion source: {source_id} using OpenAPI v3")
+                self.logger.info(
+                    f"Successfully deleted ingestion source: {source_id} using OpenAPI v3"
+                )
                 return True
                 
-            self.logger.error(f"Failed to delete ingestion source via OpenAPI v3: {response.status_code} - {response.text}")
+            self.logger.error(
+                f"Failed to delete ingestion source via OpenAPI v3: {response.status_code} - {response.text}"
+            )
         except Exception as e:
-            self.logger.error(f"Error deleting ingestion source via OpenAPI v3: {str(e)}")
+            self.logger.error(
+                f"Error deleting ingestion source via OpenAPI v3: {str(e)}"
+            )
         
         return False
     
-    def create_secret(self, name: str, value: str, description: Optional[str] = None) -> bool:
+    def create_secret(
+        self, name: str, value: str, description: Optional[str] = None
+    ) -> bool:
         """
         Create a secret in DataHub.
         
@@ -1335,7 +1542,8 @@ class DataHubRestClient:
             "input": {
                 "name": name,
                 "value": value,
-                "description": description or f"Secret managed by datahub-recipes-manager"
+                "description": description
+                or "Secret managed by datahub-recipes-manager",
             }
         }
         
@@ -1353,10 +1561,14 @@ class DataHubRestClient:
                         error_message = str(errors[0].get("message", ""))
                 
                 if "already exists" in error_message:
-                    self.logger.info(f"Secret {name} already exists, attempting to update it instead")
+                    self.logger.info(
+                        f"Secret {name} already exists, attempting to update it instead"
+                    )
                     return self.update_secret(name, value, description)
                 
-                self.logger.warning(f"GraphQL errors when creating secret: {result.get('errors')}")
+                self.logger.warning(
+                    f"GraphQL errors when creating secret: {result.get('errors')}"
+                )
                 self.logger.warning("Falling back to REST API")
         except Exception as e:
             self.logger.warning(f"Error creating secret via GraphQL: {str(e)}")
@@ -1365,22 +1577,27 @@ class DataHubRestClient:
         # Fall back to REST API using multiple possible endpoints
         try:
             # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
+            headers = (
+                self.headers.copy()
+                if hasattr(self, "headers")
+                else {"Content-Type": "application/json"}
+            )
+            if hasattr(self, "token") and self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
             
             # Try multiple possible endpoints
             endpoints = [
                 f"{self.server_url}/secrets",
                 f"{self.server_url}/openapi/secrets",
-                f"{self.server_url}/api/v2/secrets"
+                f"{self.server_url}/api/v2/secrets",
             ]
             
             # Prepare payload
             payload = {
                 "name": name,
                 "value": value,
-                "description": description or f"Secret managed by datahub-recipes-manager"
+                "description": description
+                or "Secret managed by datahub-recipes-manager",
             }
             
             # Try each endpoint
@@ -1390,18 +1607,26 @@ class DataHubRestClient:
                 response = requests.post(url, headers=headers, json=payload)
                 
                 if response.status_code in (200, 201, 204):
-                    self.logger.info(f"Successfully created secret via endpoint {url}: {name}")
+                    self.logger.info(
+                        f"Successfully created secret via endpoint {url}: {name}"
+                    )
                     return True
                 elif response.status_code == 409 or response.status_code == 400:
                     # 409 Conflict or 400 Bad Request with "already exists" in the response
                     if "already exists" in response.text:
-                        self.logger.info(f"Secret {name} already exists in REST API, attempting to update it")
+                        self.logger.info(
+                            f"Secret {name} already exists in REST API, attempting to update it"
+                        )
                         return self.update_secret(name, value, description)
                 else:
-                    self.logger.warning(f"Failed to create secret at {url}: {response.status_code} - {response.text}")
+                    self.logger.warning(
+                        f"Failed to create secret at {url}: {response.status_code} - {response.text}"
+                    )
             
             # If all endpoints failed, try update as a last resort
-            self.logger.warning(f"All direct creation methods failed for secret {name}, trying update as last resort")
+            self.logger.warning(
+                f"All direct creation methods failed for secret {name}, trying update as last resort"
+            )
             return self.update_secret(name, value, description)
         except Exception as e:
             self.logger.error(f"Error creating secret: {str(e)}")
@@ -1433,25 +1658,29 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "urn": urn
-        }
+        variables = {"urn": urn}
         
         try:
             self.logger.debug("Deleting secret using GraphQL mutation")
             result = self.execute_graphql(mutation, variables)
             
             if "errors" not in result:
-                self.logger.info(f"Successfully deleted secret: {name_or_urn} using GraphQL")
+                self.logger.info(
+                    f"Successfully deleted secret: {name_or_urn} using GraphQL"
+                )
                 return True
                 
-            self.logger.error(f"GraphQL errors when deleting secret: {result.get('errors')}")
+            self.logger.error(
+                f"GraphQL errors when deleting secret: {result.get('errors')}"
+            )
             return False
         except Exception as e:
             self.logger.error(f"Error deleting secret using GraphQL: {str(e)}")
             return False
 
-    def update_secret(self, name: str, value: str, description: Optional[str] = None) -> bool:
+    def update_secret(
+        self, name: str, value: str, description: Optional[str] = None
+    ) -> bool:
         """
         Update an existing secret in DataHub.
         
@@ -1469,14 +1698,20 @@ class DataHubRestClient:
         
         # First, delete the existing secret
         if not self.delete_secret(name):
-            self.logger.warning(f"Failed to delete existing secret {name} before update. Will try to create anyway.")
+            self.logger.warning(
+                f"Failed to delete existing secret {name} before update. Will try to create anyway."
+            )
         else:
-            self.logger.debug(f"Successfully deleted existing secret {name} before update")
+            self.logger.debug(
+                f"Successfully deleted existing secret {name} before update"
+            )
         
         # Then create the secret with the new value
         return self.create_secret(name, value, description)
 
-    def update_ingestion_source(self, source_id: str, recipe_json: dict, schedule: Optional[str] = None) -> Optional[dict]:
+    def update_ingestion_source(
+        self, source_id: str, recipe_json: dict, schedule: Optional[str] = None
+    ) -> Optional[dict]:
         """
         Update a DataHub ingestion source by ID.
         
@@ -1504,8 +1739,10 @@ class DataHubRestClient:
                 "recipe": json.dumps(recipe_json),
                 "type": "SCHEDULED",
                 "name": source_id,
-                "scheduleCron": schedule if schedule else existing.get("scheduleCron", "0 0 * * *"),
-                "executions": existing.get("executions", [])
+                "scheduleCron": schedule
+                if schedule
+                else existing.get("scheduleCron", "0 0 * * *"),
+                "executions": existing.get("executions", []),
             }
             
             query = """
@@ -1532,16 +1769,13 @@ class DataHubRestClient:
                 "input": {
                     "type": config["type"],
                     "name": config["name"],
-                    "schedule": {
-                        "interval": config["scheduleCron"],
-                        "timezone": "UTC"
-                    },
+                    "schedule": {"interval": config["scheduleCron"], "timezone": "UTC"},
                     "config": {
                         "recipe": config["recipe"],
                         "executorId": "default",
-                        "version": "0.0.1"
-                    }
-                }
+                        "version": "0.0.1",
+                    },
+                },
             }
             
             # Use the execute_graphql method which will use datahubgraph if available
@@ -1568,7 +1802,7 @@ class DataHubRestClient:
         executor_id: Optional[str] = None,
         debug_mode: Optional[bool] = None,
         extra_args: Optional[Dict[str, Any]] = None,
-        schedule: Optional[Dict[str, str]] = None
+        schedule: Optional[Dict[str, str]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Update an existing ingestion source.
@@ -1599,7 +1833,7 @@ class DataHubRestClient:
         recipe_str = None
         if recipe is not None:
             if isinstance(recipe, dict):
-                self.logger.debug(f"Converting recipe dict to JSON string")
+                self.logger.debug("Converting recipe dict to JSON string")
                 recipe_str = json.dumps(recipe)
             elif isinstance(recipe, str) and recipe.strip().startswith("@"):
                 # Handle template reference as-is - don't try to parse it as JSON
@@ -1617,7 +1851,7 @@ class DataHubRestClient:
         
         # Try GraphQL approach first
         try:
-            self.logger.info(f"Patching ingestion source via GraphQL")
+            self.logger.info("Patching ingestion source via GraphQL")
             
             # First get the current source to ensure we have all the data
             current_source = self.get_ingestion_source(urn)
@@ -1638,7 +1872,9 @@ class DataHubRestClient:
             # Always include the type from the current source - this is required for the mutation
             input_obj["type"] = source_type or current_source.get("type")
             if not input_obj["type"]:
-                self.logger.error("Source type is required but not available from current source or parameters")
+                self.logger.error(
+                    "Source type is required but not available from current source or parameters"
+                )
                 return None
                 
             # Only add name if provided
@@ -1708,26 +1944,29 @@ class DataHubRestClient:
                 input_obj["schedule"] = current_source.get("schedule")
             
             # Only proceed if we have something to update
-            if not input_obj or (len(input_obj) == 2 and "type" in input_obj and "name" in input_obj):
+            if not input_obj or (
+                len(input_obj) == 2 and "type" in input_obj and "name" in input_obj
+            ):
                 self.logger.warning("No updates to apply to ingestion source")
                 return current_source
             
-            variables = {
-                "urn": urn,
-                "input": input_obj
-            }
+            variables = {"urn": urn, "input": input_obj}
             
             self.logger.debug(f"GraphQL variables: {json.dumps(variables)}")
             result = self.execute_graphql(mutation, variables)
             
             # Check for errors in the GraphQL response
             if result and "errors" in result and result["errors"]:
-                error_messages = [error.get("message", "Unknown error") for error in result["errors"]]
-                self.logger.warning(f"GraphQL errors when patching ingestion source: {', '.join(error_messages)}")
+                error_messages = [
+                    error.get("message", "Unknown error") for error in result["errors"]
+                ]
+                self.logger.warning(
+                    f"GraphQL errors when patching ingestion source: {', '.join(error_messages)}"
+                )
                 # Continue to REST API fallback
             # GraphQL operation succeeded
             elif result:
-                self.logger.info(f"Successfully patched ingestion source via GraphQL")
+                self.logger.info("Successfully patched ingestion source via GraphQL")
                 # Get the updated source to return
                 return self.get_ingestion_source(urn)
                 
@@ -1743,7 +1982,9 @@ class DataHubRestClient:
             if not current_source:
                 current_source = self.get_ingestion_source(urn)
                 if not current_source:
-                    self.logger.error(f"Could not fetch source info for REST API patching: {urn}")
+                    self.logger.error(
+                        f"Could not fetch source info for REST API patching: {urn}"
+                    )
                     return None
             
             # Get current configuration to avoid nulls
@@ -1798,25 +2039,24 @@ class DataHubRestClient:
             response = requests.patch(
                 f"{self.server_url}/openapi/v3/entity/datahubingestionsource/{urn}",
                 headers=self.headers,
-                json=payload
+                json=payload,
             )
             
             if response.status_code == 200:
-                self.logger.info(f"Successfully patched ingestion source via REST API: {urn}")
+                self.logger.info(
+                    f"Successfully patched ingestion source via REST API: {urn}"
+                )
                 return self.get_ingestion_source(urn)
             else:
-                self.logger.warning(f"PATCH endpoint failed: {response.status_code} - {response.text}")
+                self.logger.warning(
+                    f"PATCH endpoint failed: {response.status_code} - {response.text}"
+                )
                 # Try the PUT endpoint with OpenAPI v3 if PATCH fails
                 try:
-                    self.logger.info(f"Trying OpenAPI v3 PUT endpoint for patching")
+                    self.logger.info("Trying OpenAPI v3 PUT endpoint for patching")
                     
                     # For PUT, we need to construct a full entity with all data
-                    entity = {
-                        "urn": urn,
-                        "dataHubIngestionSourceInfo": {
-                            "value": {}
-                        }
-                    }
+                    entity = {"urn": urn, "dataHubIngestionSourceInfo": {"value": {}}}
                     
                     info = entity["dataHubIngestionSourceInfo"]["value"]
                     
@@ -1864,14 +2104,18 @@ class DataHubRestClient:
                     response = requests.put(
                         f"{self.server_url}/openapi/v3/entity/datahubingestionsource",
                         headers=self.headers,
-                        json=[entity]
+                        json=[entity],
                     )
                     
                     if response.status_code in (200, 201):
-                        self.logger.info(f"Successfully patched ingestion source via OpenAPI PUT: {urn}")
+                        self.logger.info(
+                            f"Successfully patched ingestion source via OpenAPI PUT: {urn}"
+                        )
                         return self.get_ingestion_source(urn)
                     else:
-                        self.logger.error(f"OpenAPI PUT failed: {response.status_code} - {response.text}")
+                        self.logger.error(
+                            f"OpenAPI PUT failed: {response.status_code} - {response.text}"
+                        )
                         return None
                 except Exception as e:
                     self.logger.error(f"Exception with OpenAPI PUT endpoint: {str(e)}")
@@ -1930,50 +2174,58 @@ class DataHubRestClient:
         try:
             graphql_query = {
                 "operationName": "createIngestionExecutionRequest",
-                "variables": {
-                    "input": {
-                        "ingestionSourceUrn": source_urn
-                    }
-                },
+                "variables": {"input": {"ingestionSourceUrn": source_urn}},
                 "query": """
                     mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
                         createIngestionExecutionRequest(input: $input)
                     }
-                """
+                """,
             }
             
             # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
-                
-            self.logger.debug(f"Attempting to trigger ingestion via direct GraphQL: {source_id}")
+            headers = (
+                self.headers.copy()
+                if hasattr(self, "headers")
+                else {"Content-Type": "application/json"}
+            )
+            if hasattr(self, "token") and self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
+
+            self.logger.debug(
+                f"Attempting to trigger ingestion via direct GraphQL: {source_id}"
+            )
             
             response = requests.post(
-                f"{self.server_url}/api/v2/graphql",
-                headers=headers,
-                json=graphql_query
+                f"{self.server_url}/api/v2/graphql", headers=headers, json=graphql_query
             )
             
             if response.status_code == 200:
                 result = response.json()
                 if "errors" not in result:
-                    self.logger.info(f"Successfully triggered ingestion source via direct GraphQL: {source_id}")
+                    self.logger.info(
+                        f"Successfully triggered ingestion source via direct GraphQL: {source_id}"
+                    )
                     return True
                 else:
                     error_msg = f"GraphQL errors when triggering ingestion: {result.get('errors')}"
                     self.logger.warning(error_msg)
             else:
-                self.logger.warning(f"Failed to trigger ingestion via direct GraphQL: {response.status_code} - {response.text}")
+                self.logger.warning(
+                    f"Failed to trigger ingestion via direct GraphQL: {response.status_code} - {response.text}"
+                )
                 
             # Fall through to other methods
         except Exception as e:
-            self.logger.warning(f"Error triggering ingestion via direct GraphQL: {str(e)}")
+            self.logger.warning(
+                f"Error triggering ingestion via direct GraphQL: {str(e)}"
+            )
             # Fall through to other methods
             
         # Fallback: Try with DataHubGraph client if available
         try:
-            self.logger.debug(f"Attempting to trigger ingestion via DataHubGraph client: {source_id}")
+            self.logger.debug(
+                f"Attempting to trigger ingestion via DataHubGraph client: {source_id}"
+            )
             
             mutation = """
             mutation createIngestionExecutionRequest($input: CreateIngestionExecutionRequestInput!) {
@@ -1981,26 +2233,32 @@ class DataHubRestClient:
             }
             """
             
-            variables = {
-                "input": {
-                    "ingestionSourceUrn": source_urn
-                }
-            }
+            variables = {"input": {"ingestionSourceUrn": source_urn}}
         
             result = self.execute_graphql(mutation, variables)
             
-            if result and "data" in result and "createIngestionExecutionRequest" in result["data"]:
-                self.logger.info(f"Successfully triggered ingestion source via DataHubGraph client: {source_id}")
+            if (
+                result
+                and "data" in result
+                and "createIngestionExecutionRequest" in result["data"]
+            ):
+                self.logger.info(
+                    f"Successfully triggered ingestion source via DataHubGraph client: {source_id}"
+                )
                 return True
             
             # Check for specific errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 self.logger.warning(f"GraphQL errors: {', '.join(error_messages)}")
                 
             # Fall through to REST API approaches
         except Exception as e:
-            self.logger.warning(f"Error using DataHubGraph client to trigger ingestion: {e}")
+            self.logger.warning(
+                f"Error using DataHubGraph client to trigger ingestion: {e}"
+            )
             # Fall through to REST API approaches
             
         # Fallback approaches: Try various REST API endpoints
@@ -2009,59 +2267,77 @@ class DataHubRestClient:
         endpoints = []
         
         # 1. OpenAPI v3 /runs endpoint (DataHub v0.12.0+)
-        endpoints.append({
+        endpoints.append(
+            {
             "url": f"{self.server_url}/runs?urn={source_urn}",
             "method": "post",
-            "description": "OpenAPI v3 /runs endpoint"
-        })
+                "description": "OpenAPI v3 /runs endpoint",
+            }
+        )
         
         # 2. Various direct execution endpoints
-        endpoints.append({
+        endpoints.append(
+            {
             "url": f"{self.server_url}/api/v2/ingest/{source_id}",
             "method": "post",
-            "description": "Direct ingest API"
-        })
+                "description": "Direct ingest API",
+            }
+        )
         
         # 3. Legacy endpoint with action parameter
-        endpoints.append({
+        endpoints.append(
+            {
             "url": f"{self.server_url}/ingestion-sources/{source_id}?action=ingest",
             "method": "post",
-            "description": "Legacy ingestion API with action=ingest"
-        })
+                "description": "Legacy ingestion API with action=ingest",
+            }
+        )
         
         # 4. Try various OpenAPI specific endpoints
-        endpoints.append({
+        endpoints.append(
+            {
             "url": f"{self.server_url}/openapi/v3/ingest?urn={source_urn}",
             "method": "post",
-            "description": "OpenAPI v3 ingest endpoint"
-        })
+                "description": "OpenAPI v3 ingest endpoint",
+            }
+        )
         
-        endpoints.append({
+        endpoints.append(
+            {
             "url": f"{self.server_url}/openapi/v3/ingestion/sources/{source_id}/run",
             "method": "post",
-            "description": "OpenAPI v3 ingestion source run endpoint"
-        })
+                "description": "OpenAPI v3 ingestion source run endpoint",
+            }
+        )
         
         # Try each endpoint in order until one succeeds
         for endpoint in endpoints:
             try:
-                self.logger.debug(f"Trying {endpoint['description']}: {endpoint['url']}")
+                self.logger.debug(
+                    f"Trying {endpoint['description']}: {endpoint['url']}"
+                )
                 
-                if endpoint['method'].lower() == 'post':
-                    response = requests.post(endpoint['url'], headers=self.headers)
+                if endpoint["method"].lower() == "post":
+                    response = requests.post(endpoint["url"], headers=self.headers)
                 else:
-                    response = requests.get(endpoint['url'], headers=self.headers)
+                    response = requests.get(endpoint["url"], headers=self.headers)
                 
                 if response.status_code in (200, 201, 202, 204):
-                    self.logger.info(f"Successfully triggered ingestion using {endpoint['description']}")
+                    self.logger.info(
+                        f"Successfully triggered ingestion using {endpoint['description']}"
+                    )
                     return True
                     
-                self.logger.debug(f"Endpoint {endpoint['url']} returned {response.status_code}: {response.text}")
+                self.logger.debug(
+                    f"Endpoint {endpoint['url']} returned {response.status_code}: {response.text}"
+                )
             except Exception as e:
                 self.logger.debug(f"Error with {endpoint['description']}: {str(e)}")
                 
         # If we've tried all approaches and none worked, return failure
-        self.logger.error(f"All methods to trigger ingestion for source {source_id} failed")
+        self.logger.error(
+            f"All methods to trigger ingestion for source {source_id} failed"
+        )
         return False
 
     def list_secrets(self, start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
@@ -2092,23 +2368,22 @@ class DataHubRestClient:
             }
         """
         
-        variables = {
-            "input": {
-                "start": start,
-                "count": count
-            }
-        }
+        variables = {"input": {"start": start, "count": count}}
         
         try:
             logger.info("Listing secrets using GraphQL")
             result = self.execute_graphql(query, variables)
             
             if "errors" in result:
-                logger.warning(f"GraphQL errors while listing secrets: {result['errors']}")
+                logger.warning(
+                    f"GraphQL errors while listing secrets: {result['errors']}"
+                )
                 return []
             
             # Extract secrets from response
-            secrets_data = result.get("data", {}).get("listSecrets", {}).get("secrets", [])
+            secrets_data = (
+                result.get("data", {}).get("listSecrets", {}).get("secrets", [])
+            )
             logger.info(f"Retrieved {len(secrets_data)} secrets")
             return secrets_data
         except Exception as e:
@@ -2187,21 +2462,28 @@ class DataHubRestClient:
                             {
                                 "field": "state",
                                 "values": ["ACTIVE"],
-                                "condition": "EQUAL"
+                                "condition": "EQUAL",
                             }
                         ]
                     }
-                ]
+                ],
             }
         }
         
         try:
             result = self.execute_graphql(query, variables)
             
-            if result and "data" in result and result["data"] and "listPolicies" in result["data"]:
+            if (
+                result
+                and "data" in result
+                and result["data"]
+                and "listPolicies" in result["data"]
+            ):
                 policies_data = result["data"]["listPolicies"]
                 if policies_data is None:
-                    self.logger.warning("listPolicies returned None in GraphQL response")
+                    self.logger.warning(
+                        "listPolicies returned None in GraphQL response"
+                    )
                     return []
                 
                 policies = policies_data.get("policies", [])
@@ -2213,20 +2495,30 @@ class DataHubRestClient:
             
             # Check for errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 
                 # Check for schema validation errors specifically
                 schema_validation_errors = [
-                    e for e in error_messages 
-                    if "Unknown type 'ListPoliciesInput'" in e or "Validation error" in e
+                    e
+                    for e in error_messages
+                    if "Unknown type 'ListPoliciesInput'" in e
+                    or "Validation error" in e
                 ]
                 
                 if schema_validation_errors:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
-                    self.logger.info(f"GraphQL schema validation errors: {schema_validation_errors}")
-                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                    self.logger.info(
+                        f"GraphQL schema validation errors: {schema_validation_errors}"
+                    )
+                    self.logger.info(
+                        "These errors are normal when using different DataHub versions. Falling back to REST API."
+                    )
                 else:
-                    self.logger.warning(f"GraphQL errors when listing policies: {', '.join(error_messages)}")
+                    self.logger.warning(
+                        f"GraphQL errors when listing policies: {', '.join(error_messages)}"
+                    )
             else:
                 self.logger.warning("Failed to retrieve policies using GraphQL")
         except Exception as e:
@@ -2238,11 +2530,17 @@ class DataHubRestClient:
             self.logger.debug(f"Listing policies via OpenAPI v3: GET {url}")
             
             # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
-            
-            response = requests.get(url, headers=headers, params={"start": start, "count": limit})
+            headers = (
+                self.headers.copy()
+                if hasattr(self, "headers")
+                else {"Content-Type": "application/json"}
+            )
+            if hasattr(self, "token") and self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
+
+            response = requests.get(
+                url, headers=headers, params={"start": start, "count": limit}
+            )
             if response.status_code == 200:
                 data = response.json()
                 entities = data.get("entities", [])
@@ -2275,17 +2573,21 @@ class DataHubRestClient:
                             "state": policy_value.get("state", ""),
                             "privileges": policy_value.get("privileges", []),
                             "resources": policy_value.get("resources", {}),
-                            "actors": policy_value.get("actors", {})
+                            "actors": policy_value.get("actors", {}),
                         }
                         
                         policies.append(policy)
                     except Exception as e:
                         self.logger.warning(f"Error processing policy: {str(e)}")
                 
-                self.logger.info(f"Successfully retrieved {len(policies)} policies via OpenAPI v3")
+                self.logger.info(
+                    f"Successfully retrieved {len(policies)} policies via OpenAPI v3"
+                )
                 return policies
             else:
-                self.logger.warning(f"Failed to list policies via OpenAPI v3: {response.status_code} - {response.text}")
+                self.logger.warning(
+                    f"Failed to list policies via OpenAPI v3: {response.status_code} - {response.text}"
+                )
         except Exception as e:
             self.logger.warning(f"Error listing policies via OpenAPI v3: {str(e)}")
         
@@ -2356,31 +2658,49 @@ class DataHubRestClient:
         
         try:
             result = self.execute_graphql(graphql_query, variables)
-            if result and "data" in result and result["data"] and "policy" in result["data"]:
+            if (
+                result
+                and "data" in result
+                and result["data"]
+                and "policy" in result["data"]
+            ):
                 policy_data = result["data"]["policy"]
                 if policy_data:
-                    self.logger.info(f"Successfully retrieved policy {policy_id} via GraphQL")
+                    self.logger.info(
+                        f"Successfully retrieved policy {policy_id} via GraphQL"
+                    )
                     return policy_data
             
             # Check for errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 
                 # Check for schema validation errors specifically
                 schema_validation_errors = [
-                    e for e in error_messages 
+                    e
+                    for e in error_messages
                     if "Unknown type" in e or "Validation error" in e
                 ]
                 
                 if schema_validation_errors:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
-                    self.logger.info(f"GraphQL schema validation errors when getting policy: {schema_validation_errors}")
-                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                    self.logger.info(
+                        f"GraphQL schema validation errors when getting policy: {schema_validation_errors}"
+                    )
+                    self.logger.info(
+                        "These errors are normal when using different DataHub versions. Falling back to REST API."
+                    )
                 else:
                     # Log other errors as warnings
-                    self.logger.warning(f"GraphQL policy retrieval failed: {', '.join(error_messages)}, falling back to REST API")
+                    self.logger.warning(
+                        f"GraphQL policy retrieval failed: {', '.join(error_messages)}, falling back to REST API"
+                    )
             else:
-                self.logger.warning("GraphQL policy retrieval failed with unknown error, falling back to REST API")
+                self.logger.warning(
+                    "GraphQL policy retrieval failed with unknown error, falling back to REST API"
+                )
         except Exception as e:
             self.logger.warning(f"Error retrieving policy via GraphQL: {str(e)}")
         
@@ -2390,9 +2710,13 @@ class DataHubRestClient:
             self.logger.info(f"Attempting to get policy via OpenAPI v3: GET {url}")
             
             # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
+            headers = (
+                self.headers.copy()
+                if hasattr(self, "headers")
+                else {"Content-Type": "application/json"}
+            )
+            if hasattr(self, "token") and self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
             
             response = requests.get(url, headers=headers)
             
@@ -2400,7 +2724,10 @@ class DataHubRestClient:
                 entity_data = response.json()
                 
                 # Extract the policy information
-                if "dataHubPolicyInfo" in entity_data and entity_data["dataHubPolicyInfo"]:
+                if (
+                    "dataHubPolicyInfo" in entity_data
+                    and entity_data["dataHubPolicyInfo"]
+                ):
                     policy_info = entity_data["dataHubPolicyInfo"]
                     policy_value = policy_info.get("value", {})
                     
@@ -2414,15 +2741,21 @@ class DataHubRestClient:
                         "state": policy_value.get("state", ""),
                         "privileges": policy_value.get("privileges", []),
                         "resources": policy_value.get("resources", {}),
-                        "actors": policy_value.get("actors", {})
+                        "actors": policy_value.get("actors", {}),
                     }
                     
-                    self.logger.info(f"Successfully retrieved policy {policy_id} via OpenAPI v3")
+                    self.logger.info(
+                        f"Successfully retrieved policy {policy_id} via OpenAPI v3"
+                    )
                     return policy_data
                 else:
-                    self.logger.warning(f"Policy response missing dataHubPolicyInfo: {entity_data}")
+                    self.logger.warning(
+                        f"Policy response missing dataHubPolicyInfo: {entity_data}"
+                    )
             else:
-                self.logger.warning(f"Failed to get policy via OpenAPI v3: {response.status_code} - {response.text}")
+                self.logger.warning(
+                    f"Failed to get policy via OpenAPI v3: {response.status_code} - {response.text}"
+                )
         except Exception as e:
             self.logger.error(f"Error retrieving policy via OpenAPI v3: {str(e)}")
         
@@ -2448,9 +2781,11 @@ class DataHubRestClient:
         Returns:
             dict: Created policy details or None if creation failed
         """
-        self.logger.info(f"Creating new policy with name: {policy_data.get('name', 'Unnamed')}")
+        self.logger.info(
+            f"Creating new policy with name: {policy_data.get('name', 'Unnamed')}"
+        )
         
-        if not policy_data.get('name'):
+        if not policy_data.get("name"):
             self.logger.error("Policy name is required")
             return None
         
@@ -2459,28 +2794,35 @@ class DataHubRestClient:
         
         # Important: Remove 'id' field from GraphQL input since it's not part of PolicyUpdateInput
         # This is a key difference between GraphQL and REST API schemas
-        if 'id' in graphql_input:
-            policy_id = graphql_input.pop('id')
-            self.logger.info(f"Removed 'id' field from GraphQL input (value: {policy_id})")
+        if "id" in graphql_input:
+            policy_id = graphql_input.pop("id")
+            self.logger.info(
+                f"Removed 'id' field from GraphQL input (value: {policy_id})"
+            )
         
         # Ensure resources is properly formatted as a dict with filter if it's a list
-        if "resources" in graphql_input and isinstance(graphql_input["resources"], list):
+        if "resources" in graphql_input and isinstance(
+            graphql_input["resources"], list
+        ):
             # Convert list format to the expected structure with filter.criteria
-            resources_data = {
-                "filter": {
-                    "criteria": []
-                }
-            }
+            resources_data = {"filter": {"criteria": []}}
             
             # Add resource type information if available 
             if graphql_input["resources"] and "type" in graphql_input["resources"][0]:
                 resources_data["type"] = graphql_input["resources"][0].get("type")
             
             # Add allResources if applicable
-            if not graphql_input["resources"] or graphql_input["resources"][0].get("resource") == "*":
+            if (
+                not graphql_input["resources"]
+                or graphql_input["resources"][0].get("resource") == "*"
+            ):
                 resources_data["allResources"] = True
             elif "resource" in graphql_input["resources"][0]:
-                resources_data["resources"] = [r.get("resource") for r in graphql_input["resources"] if "resource" in r]
+                resources_data["resources"] = [
+                    r.get("resource")
+                    for r in graphql_input["resources"]
+                    if "resource" in r
+                ]
             
             graphql_input["resources"] = resources_data
         
@@ -2492,7 +2834,7 @@ class DataHubRestClient:
                 "allUsers": False,
                 "allGroups": False,
                 "resourceOwners": False,
-                "resourceOwnersTypes": None
+                "resourceOwnersTypes": None,
             }
             
             if isinstance(graphql_input["actors"], dict):
@@ -2507,7 +2849,7 @@ class DataHubRestClient:
                 "allUsers": True,
                 "allGroups": False,
                 "resourceOwners": False,
-                "resourceOwnersTypes": None
+                "resourceOwnersTypes": None,
             }
         
         # Try GraphQL first
@@ -2521,10 +2863,17 @@ class DataHubRestClient:
         
         try:
             result = self.execute_graphql(graphql_mutation, variables)
-            if result and "data" in result and result["data"] and "createPolicy" in result["data"]:
+            if (
+                result
+                and "data" in result
+                and result["data"]
+                and "createPolicy" in result["data"]
+            ):
                 created_policy_urn = result["data"]["createPolicy"]
                 if created_policy_urn:
-                    self.logger.info(f"Successfully created policy {policy_data.get('name')} via GraphQL")
+                    self.logger.info(
+                        f"Successfully created policy {policy_data.get('name')} via GraphQL"
+                    )
                     
                     # Return policy data with URN
                     policy_with_urn = {**policy_data, "urn": created_policy_urn}
@@ -2532,24 +2881,36 @@ class DataHubRestClient:
             
             # Check for errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 
                 # Check for schema validation errors specifically
                 schema_validation_errors = [
-                    e for e in error_messages 
-                    if "Unknown type 'PolicyUpdateInput'" in e or "Validation error" in e 
+                    e
+                    for e in error_messages
+                    if "Unknown type 'PolicyUpdateInput'" in e
+                    or "Validation error" in e
                     or "contains a field name" in e  # Additional error pattern to catch
                 ]
                 
                 if schema_validation_errors:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
-                    self.logger.info(f"GraphQL schema validation errors when creating policy: {schema_validation_errors}")
-                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                    self.logger.info(
+                        f"GraphQL schema validation errors when creating policy: {schema_validation_errors}"
+                    )
+                    self.logger.info(
+                        "These errors are normal when using different DataHub versions. Falling back to REST API."
+                    )
                 else:
                     # Log other errors as warnings
-                    self.logger.warning(f"GraphQL policy creation failed: {', '.join(error_messages)}, falling back to REST API")
+                    self.logger.warning(
+                        f"GraphQL policy creation failed: {', '.join(error_messages)}, falling back to REST API"
+                    )
             else:
-                self.logger.warning("GraphQL policy creation failed with unknown error, falling back to REST API")
+                self.logger.warning(
+                    "GraphQL policy creation failed with unknown error, falling back to REST API"
+                )
         except Exception as e:
             self.logger.warning(f"Error creating policy via GraphQL: {str(e)}")
         
@@ -2559,27 +2920,32 @@ class DataHubRestClient:
             self.logger.info(f"Attempting to create policy via OpenAPI v3: {url}")
             
             # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
+            headers = (
+                self.headers.copy()
+                if hasattr(self, "headers")
+                else {"Content-Type": "application/json"}
+            )
+            if hasattr(self, "token") and self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
             
             # Format the request according to the OpenAPI v3 specification
             # Use explicit ID from original policy_data if available, otherwise fallback to name
-            policy_id = policy_data.get("id") or policy_data.get("name", "").lower().replace(" ", "-")
+            policy_id = policy_data.get("id") or policy_data.get(
+                "name", ""
+            ).lower().replace(" ", "-")
             if not policy_id:
                 policy_id = str(uuid.uuid4())
             
             # Create the nested structure required by OpenAPI v3
-            request_body = [{
+            request_body = [
+                {
                 "urn": f"urn:li:dataHubPolicy:{policy_id}",
                 "dataHubPolicyKey": {
-                    "value": {
-                        "id": policy_id
-                    },
+                        "value": {"id": policy_id},
                     "systemMetadata": {
                         "runId": "manual-creation",
-                        "lastObserved": int(time.time() * 1000)
-                    }
+                            "lastObserved": int(time.time() * 1000),
+                        },
                 },
                 "dataHubPolicyInfo": {
                     "value": {
@@ -2588,14 +2954,15 @@ class DataHubRestClient:
                         "type": policy_data.get("type", "METADATA"),
                         "state": policy_data.get("state", "ACTIVE"),
                         "privileges": policy_data.get("privileges", []),
-                        "editable": True
+                            "editable": True,
                     },
                     "systemMetadata": {
                         "runId": "manual-creation",
-                        "lastObserved": int(time.time() * 1000)
+                            "lastObserved": int(time.time() * 1000),
+                        },
+                    },
                     }
-                }
-            }]
+            ]
             
             # Add resources if available
             if "resources" in policy_data:
@@ -2606,30 +2973,46 @@ class DataHubRestClient:
                     resources_data = policy_data["resources"]
                 elif isinstance(policy_data["resources"], list):
                     # Convert list to the expected format
-                    if policy_data["resources"] and "type" in policy_data["resources"][0]:
+                    if (
+                        policy_data["resources"]
+                        and "type" in policy_data["resources"][0]
+                    ):
                         resources_data["type"] = policy_data["resources"][0].get("type")
                     
-                    if not policy_data["resources"] or policy_data["resources"][0].get("resource") == "*":
+                    if (
+                        not policy_data["resources"]
+                        or policy_data["resources"][0].get("resource") == "*"
+                    ):
                         resources_data["allResources"] = True
                     elif "resource" in policy_data["resources"][0]:
-                        resources_data["resources"] = [r.get("resource") for r in policy_data["resources"] if "resource" in r]
-                
-                request_body[0]["dataHubPolicyInfo"]["value"]["resources"] = resources_data
+                        resources_data["resources"] = [
+                            r.get("resource")
+                            for r in policy_data["resources"]
+                            if "resource" in r
+                        ]
+
+                request_body[0]["dataHubPolicyInfo"]["value"]["resources"] = (
+                    resources_data
+                )
             
             # Add actors if available
             if "actors" in policy_data:
-                request_body[0]["dataHubPolicyInfo"]["value"]["actors"] = policy_data["actors"]
+                request_body[0]["dataHubPolicyInfo"]["value"]["actors"] = policy_data[
+                    "actors"
+                ]
             
             response = requests.post(url, headers=headers, json=request_body)
             # A 202 status is common for successfully accepted requests
             if response.status_code in (200, 201, 202):
-                self.logger.info(f"Successfully created policy {policy_data.get('name')} via OpenAPI v3")
+                self.logger.info(
+                    f"Successfully created policy {policy_data.get('name')} via OpenAPI v3"
+                )
                 
                 # Return a simplified policy object that matches the GraphQL response format
                 created_policy = {
                     **policy_data,
                     "urn": f"urn:li:dataHubPolicy:{policy_id}",
-                    "id": policy_id
+                    "id": policy_id,
                 }
                 return created_policy
             else:
@@ -2637,18 +3020,26 @@ class DataHubRestClient:
                 try:
                     resp_json = response.json()
                     # Some DataHub versions return a list of objects on success
-                    if isinstance(resp_json, list) and len(resp_json) > 0 and "urn" in resp_json[0]:
-                        self.logger.info(f"Policy created successfully despite status code {response.status_code}")
+                    if (
+                        isinstance(resp_json, list)
+                        and len(resp_json) > 0
+                        and "urn" in resp_json[0]
+                    ):
+                        self.logger.info(
+                            f"Policy created successfully despite status code {response.status_code}"
+                        )
                         created_policy = {
                             **policy_data,
                             "urn": resp_json[0]["urn"],
-                            "id": policy_id
+                            "id": policy_id,
                         }
                         return created_policy
                 except:
                     pass
                 
-                self.logger.error(f"Failed to create policy via OpenAPI v3: {response.status_code} - {response.text}")
+                self.logger.error(
+                    f"Failed to create policy via OpenAPI v3: {response.status_code} - {response.text}"
+                )
         except Exception as e:
             self.logger.error(f"Error creating policy via REST API: {str(e)}")
         
@@ -2682,23 +3073,28 @@ class DataHubRestClient:
         graphql_input = policy_data.copy()
         
         # Ensure resources is properly formatted as a dict with filter if it's a list
-        if "resources" in graphql_input and isinstance(graphql_input["resources"], list):
+        if "resources" in graphql_input and isinstance(
+            graphql_input["resources"], list
+        ):
             # Convert list format to the expected structure with filter.criteria
-            resources_data = {
-                "filter": {
-                    "criteria": []
-                }
-            }
+            resources_data = {"filter": {"criteria": []}}
             
             # Add resource type information if available 
             if graphql_input["resources"] and "type" in graphql_input["resources"][0]:
                 resources_data["type"] = graphql_input["resources"][0].get("type")
             
             # Add allResources if applicable
-            if not graphql_input["resources"] or graphql_input["resources"][0].get("resource") == "*":
+            if (
+                not graphql_input["resources"]
+                or graphql_input["resources"][0].get("resource") == "*"
+            ):
                 resources_data["allResources"] = True
             elif "resource" in graphql_input["resources"][0]:
-                resources_data["resources"] = [r.get("resource") for r in graphql_input["resources"] if "resource" in r]
+                resources_data["resources"] = [
+                    r.get("resource")
+                    for r in graphql_input["resources"]
+                    if "resource" in r
+                ]
             
             graphql_input["resources"] = resources_data
         
@@ -2710,7 +3106,7 @@ class DataHubRestClient:
                 "allUsers": False,
                 "allGroups": False,
                 "resourceOwners": False,
-                "resourceOwnersTypes": None
+                "resourceOwnersTypes": None,
             }
             
             if isinstance(graphql_input["actors"], dict):
@@ -2725,7 +3121,7 @@ class DataHubRestClient:
                 "allUsers": True,
                 "allGroups": False,
                 "resourceOwners": False,
-                "resourceOwnersTypes": None
+                "resourceOwnersTypes": None,
             }
         
         # Try GraphQL first
@@ -2735,17 +3131,21 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "urn": policy_urn,
-            "input": graphql_input
-        }
+        variables = {"urn": policy_urn, "input": graphql_input}
         
         try:
             result = self.execute_graphql(graphql_mutation, variables)
-            if result and "data" in result and result["data"] and "updatePolicy" in result["data"]:
+            if (
+                result
+                and "data" in result
+                and result["data"]
+                and "updatePolicy" in result["data"]
+            ):
                 updated_policy_urn = result["data"]["updatePolicy"]
                 if updated_policy_urn:
-                    self.logger.info(f"Successfully updated policy {policy_id} via GraphQL")
+                    self.logger.info(
+                        f"Successfully updated policy {policy_id} via GraphQL"
+                    )
                     
                     # Return policy data with URN
                     policy_with_urn = {**policy_data, "urn": updated_policy_urn}
@@ -2753,23 +3153,35 @@ class DataHubRestClient:
             
             # Check for errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 
                 # Check for schema validation errors specifically
                 schema_validation_errors = [
-                    e for e in error_messages 
-                    if "Unknown type 'PolicyUpdateInput'" in e or "Validation error" in e
+                    e
+                    for e in error_messages
+                    if "Unknown type 'PolicyUpdateInput'" in e
+                    or "Validation error" in e
                 ]
                 
                 if schema_validation_errors:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
-                    self.logger.info(f"GraphQL schema validation errors when updating policy: {schema_validation_errors}")
-                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                    self.logger.info(
+                        f"GraphQL schema validation errors when updating policy: {schema_validation_errors}"
+                    )
+                    self.logger.info(
+                        "These errors are normal when using different DataHub versions. Falling back to REST API."
+                    )
                 else:
                     # Log other errors as warnings
-                    self.logger.warning(f"GraphQL policy update failed: {', '.join(error_messages)}, falling back to REST API")
+                    self.logger.warning(
+                        f"GraphQL policy update failed: {', '.join(error_messages)}, falling back to REST API"
+                    )
             else:
-                self.logger.warning("GraphQL policy update failed with unknown error, falling back to REST API")
+                self.logger.warning(
+                    "GraphQL policy update failed with unknown error, falling back to REST API"
+                )
         except Exception as e:
             self.logger.warning(f"Error updating policy via GraphQL: {str(e)}")
         
@@ -2779,9 +3191,13 @@ class DataHubRestClient:
             self.logger.debug(f"Updating policy via OpenAPI v3: PATCH {url}")
             
             # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
+            headers = (
+                self.headers.copy()
+                if hasattr(self, "headers")
+                else {"Content-Type": "application/json"}
+            )
+            if hasattr(self, "token") and self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
                 
             # Extract policy ID from URN if needed
             policy_id = policy_urn.split(":")[-1] if policy_urn else policy_id
@@ -2792,53 +3208,46 @@ class DataHubRestClient:
             # Add operations for each field in policy_data
             for field, value in policy_data.items():
                 if field == "name":
-                    patch_operations.append({
-                        "op": "replace",
-                        "path": "/displayName",
-                        "value": value
-                    })
+                    patch_operations.append(
+                        {"op": "replace", "path": "/displayName", "value": value}
+                    )
                 elif field == "description":
-                    patch_operations.append({
-                        "op": "replace",
-                        "path": "/description",
-                        "value": value
-                    })
+                    patch_operations.append(
+                        {"op": "replace", "path": "/description", "value": value}
+                    )
                 elif field in ["type", "state", "privileges", "actors", "resources"]:
-                    patch_operations.append({
-                        "op": "replace",
-                        "path": f"/{field}",
-                        "value": value
-                    })
+                    patch_operations.append(
+                        {"op": "replace", "path": f"/{field}", "value": value}
+                    )
             
             # Create the nested structure required by OpenAPI v3 for patching
-            request_body = [{
+            request_body = [
+                {
                 "urn": policy_urn,
                 "dataHubPolicyInfo": {
-                    "value": {
-                        "patch": patch_operations,
-                        "forceGenericPatch": True
-                    },
+                        "value": {"patch": patch_operations, "forceGenericPatch": True},
                     "systemMetadata": {
                         "runId": "manual-update",
-                        "lastObserved": int(time.time() * 1000)
+                            "lastObserved": int(time.time() * 1000),
+                        },
+                    },
                     }
-                }
-            }]
+            ]
             
             response = requests.patch(url, headers=headers, json=request_body)
             
             if response.status_code in (200, 201, 204):
-                self.logger.info(f"Successfully updated policy {policy_id} via OpenAPI v3")
+                self.logger.info(
+                    f"Successfully updated policy {policy_id} via OpenAPI v3"
+                )
                 
                 # Return the updated policy data
-                updated_policy = {
-                    **policy_data,
-                    "urn": policy_urn,
-                    "id": policy_id
-                }
+                updated_policy = {**policy_data, "urn": policy_urn, "id": policy_id}
                 return updated_policy
             
-            self.logger.error(f"Failed to update policy via OpenAPI v3: {response.status_code} - {response.text}")
+            self.logger.error(
+                f"Failed to update policy via OpenAPI v3: {response.status_code} - {response.text}"
+            )
         except Exception as e:
             self.logger.error(f"Error updating policy via OpenAPI v3: {str(e)}")
         
@@ -2878,50 +3287,78 @@ class DataHubRestClient:
         
         try:
             result = self.execute_graphql(graphql_mutation, variables)
-            if result and "data" in result and result["data"] and "deletePolicy" in result["data"]:
+            if (
+                result
+                and "data" in result
+                and result["data"]
+                and "deletePolicy" in result["data"]
+            ):
                 if result["data"]["deletePolicy"] == True:
-                    self.logger.info(f"Successfully deleted policy {policy_id} via GraphQL")
+                    self.logger.info(
+                        f"Successfully deleted policy {policy_id} via GraphQL"
+                    )
                     return True
             
             # Check for errors
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
                 
                 # Check for schema validation errors specifically
                 schema_validation_errors = [
-                    e for e in error_messages 
+                    e
+                    for e in error_messages
                     if "Unknown type" in e or "Validation error" in e
                 ]
                 
                 if schema_validation_errors:
                     # Log schema validation errors at info level since they're normal with different DataHub versions
-                    self.logger.info(f"GraphQL schema validation errors when deleting policy: {schema_validation_errors}")
-                    self.logger.info("These errors are normal when using different DataHub versions. Falling back to REST API.")
+                    self.logger.info(
+                        f"GraphQL schema validation errors when deleting policy: {schema_validation_errors}"
+                    )
+                    self.logger.info(
+                        "These errors are normal when using different DataHub versions. Falling back to REST API."
+                    )
                 else:
                     # Log other errors as warnings
-                    self.logger.warning(f"GraphQL policy deletion failed: {', '.join(error_messages)}, falling back to REST API")
+                    self.logger.warning(
+                        f"GraphQL policy deletion failed: {', '.join(error_messages)}, falling back to REST API"
+                    )
             else:
-                self.logger.warning("GraphQL policy deletion failed with unknown error, falling back to REST API")
+                self.logger.warning(
+                    "GraphQL policy deletion failed with unknown error, falling back to REST API"
+                )
         except Exception as e:
             self.logger.warning(f"Error deleting policy via GraphQL: {str(e)}")
         
         # Fall back to OpenAPI v3 endpoint
         try:
             url = f"{self.server_url}/openapi/v3/entity/datahubpolicy/{policy_urn}"
-            self.logger.info(f"Attempting to delete policy via OpenAPI v3: DELETE {url}")
+            self.logger.info(
+                f"Attempting to delete policy via OpenAPI v3: DELETE {url}"
+            )
             
             # Set up headers
-            headers = self.headers.copy() if hasattr(self, 'headers') else {'Content-Type': 'application/json'}
-            if hasattr(self, 'token') and self.token:
-                headers['Authorization'] = f'Bearer {self.token}'
+            headers = (
+                self.headers.copy()
+                if hasattr(self, "headers")
+                else {"Content-Type": "application/json"}
+            )
+            if hasattr(self, "token") and self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
                 
             response = requests.delete(url, headers=headers)
             
             if response.status_code in (200, 204):
-                self.logger.info(f"Successfully deleted policy {policy_id} via OpenAPI v3")
+                self.logger.info(
+                    f"Successfully deleted policy {policy_id} via OpenAPI v3"
+                )
                 return True
             else:
-                self.logger.error(f"Failed to delete policy via OpenAPI v3: {response.status_code} - {response.text}")
+                self.logger.error(
+                    f"Failed to delete policy via OpenAPI v3: {response.status_code} - {response.text}"
+                )
         except Exception as e:
             self.logger.error(f"Error deleting policy via OpenAPI v3: {str(e)}")
         
@@ -2941,8 +3378,12 @@ class DataHubRestClient:
         Returns:
             List of tag objects
         """
-        self.logger.info(f"Listing tags with query: {query}, start: {start}, count: {count}")
-        self.logger.debug(f"Server URL: {self.server_url}, Token provided: {self.token is not None and len(self.token) > 0}, Verify SSL: {self.verify_ssl}")
+        self.logger.info(
+            f"Listing tags with query: {query}, start: {start}, count: {count}"
+        )
+        self.logger.debug(
+            f"Server URL: {self.server_url}, Token provided: {self.token is not None and len(self.token) > 0}, Verify SSL: {self.verify_ssl}"
+        )
         
         graphql_query = """
         query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
@@ -2979,7 +3420,7 @@ class DataHubRestClient:
                 "query": query,
                 "start": start,
                 "count": count,
-                "filters": []
+                "filters": [],
             }
         }
         
@@ -3003,7 +3444,7 @@ class DataHubRestClient:
                         if "properties" in entity and entity["properties"] is not None:
                             tag["properties"] = {
                                 "name": entity["properties"].get("name"),
-                                "colorHex": entity["properties"].get("colorHex")
+                                "colorHex": entity["properties"].get("colorHex"),
                             }
                         
                         tags.append(tag)
@@ -3011,8 +3452,12 @@ class DataHubRestClient:
                 return tags
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.warning(f"GraphQL errors when listing tags: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.warning(
+                    f"GraphQL errors when listing tags: {', '.join(error_messages)}"
+                )
             
             return []
         except Exception as e:
@@ -3079,9 +3524,7 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "urn": tag_urn
-        }
+        variables = {"urn": tag_urn}
         
         try:
             result = self.execute_graphql(graphql_query, variables)
@@ -3090,15 +3533,21 @@ class DataHubRestClient:
                 return result["data"]["tag"]
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.warning(f"GraphQL errors when getting tag: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.warning(
+                    f"GraphQL errors when getting tag: {', '.join(error_messages)}"
+                )
             
             return None
         except Exception as e:
             self.logger.error(f"Error getting tag: {str(e)}")
             return None
 
-    def create_tag(self, tag_id: str, name: str, description: str = "") -> Optional[str]:
+    def create_tag(
+        self, tag_id: str, name: str, description: str = ""
+    ) -> Optional[str]:
         """
         Create a new tag.
         
@@ -3118,13 +3567,7 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "input": {
-                "id": tag_id,
-                "name": name,
-                "description": description
-            }
-        }
+        variables = {"input": {"id": tag_id, "name": name, "description": description}}
         
         try:
             result = self.execute_graphql(mutation, variables)
@@ -3135,8 +3578,12 @@ class DataHubRestClient:
                 return created_urn
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when creating tag: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when creating tag: {', '.join(error_messages)}"
+                )
             
             return None
         except Exception as e:
@@ -3162,10 +3609,7 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "urn": tag_urn,
-            "colorHex": color_hex
-        }
+        variables = {"urn": tag_urn, "colorHex": color_hex}
         
         try:
             result = self.execute_graphql(mutation, variables)
@@ -3177,8 +3621,12 @@ class DataHubRestClient:
                     return True
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when setting tag color: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when setting tag color: {', '.join(error_messages)}"
+                )
             
             return False
         except Exception as e:
@@ -3204,12 +3652,7 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "input": {
-                "resourceUrn": tag_urn,
-                "description": description
-            }
-        }
+        variables = {"input": {"resourceUrn": tag_urn, "description": description}}
         
         try:
             result = self.execute_graphql(mutation, variables)
@@ -3217,19 +3660,30 @@ class DataHubRestClient:
             if result and "data" in result and "updateDescription" in result["data"]:
                 success = result["data"]["updateDescription"]
                 if success:
-                    self.logger.info(f"Successfully updated description for tag {tag_urn}")
+                    self.logger.info(
+                        f"Successfully updated description for tag {tag_urn}"
+                    )
                     return True
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when updating tag description: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when updating tag description: {', '.join(error_messages)}"
+                )
             
             return False
         except Exception as e:
             self.logger.error(f"Error updating tag description: {str(e)}")
             return False
 
-    def add_tag_owner(self, tag_urn: str, owner_urn: str, ownership_type: str = "urn:li:ownershipType:__system__business_owner") -> bool:
+    def add_tag_owner(
+        self,
+        tag_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
         """
         Add an owner to a tag.
         
@@ -3258,14 +3712,10 @@ class DataHubRestClient:
                     {
                         "ownerUrn": owner_urn,
                         "ownerEntityType": owner_entity_type,
-                        "ownershipTypeUrn": ownership_type
+                        "ownershipTypeUrn": ownership_type,
                     }
                 ],
-                "resources": [
-                    {
-                        "resourceUrn": tag_urn
-                    }
-                ]
+                "resources": [{"resourceUrn": tag_urn}],
             }
         }
         
@@ -3275,19 +3725,30 @@ class DataHubRestClient:
             if result and "data" in result and "batchAddOwners" in result["data"]:
                 success = result["data"]["batchAddOwners"]
                 if success:
-                    self.logger.info(f"Successfully added owner {owner_urn} to tag {tag_urn}")
+                    self.logger.info(
+                        f"Successfully added owner {owner_urn} to tag {tag_urn}"
+                    )
                     return True
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when adding tag owner: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when adding tag owner: {', '.join(error_messages)}"
+                )
             
             return False
         except Exception as e:
             self.logger.error(f"Error adding tag owner: {str(e)}")
             return False
 
-    def remove_tag_owner(self, tag_urn: str, owner_urn: str, ownership_type: str = "urn:li:ownershipType:__system__business_owner") -> bool:
+    def remove_tag_owner(
+        self,
+        tag_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
         """
         Remove an owner from a tag.
         
@@ -3311,7 +3772,7 @@ class DataHubRestClient:
             "input": {
                 "ownerUrn": owner_urn,
                 "ownershipTypeUrn": ownership_type,
-                "resourceUrn": tag_urn
+                "resourceUrn": tag_urn,
             }
         }
         
@@ -3321,12 +3782,18 @@ class DataHubRestClient:
             if result and "data" in result and "removeOwner" in result["data"]:
                 success = result["data"]["removeOwner"]
                 if success:
-                    self.logger.info(f"Successfully removed owner {owner_urn} from tag {tag_urn}")
+                    self.logger.info(
+                        f"Successfully removed owner {owner_urn} from tag {tag_urn}"
+                    )
                     return True
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when removing tag owner: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when removing tag owner: {', '.join(error_messages)}"
+                )
             
             return False
         except Exception as e:
@@ -3351,9 +3818,7 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "urn": tag_urn
-        }
+        variables = {"urn": tag_urn}
         
         try:
             result = self.execute_graphql(mutation, variables)
@@ -3365,15 +3830,21 @@ class DataHubRestClient:
                     return True
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when deleting tag: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when deleting tag: {', '.join(error_messages)}"
+                )
             
             return False
         except Exception as e:
             self.logger.error(f"Error deleting tag: {str(e)}")
             return False
 
-    def add_tag_to_entity(self, entity_urn: str, tag_urn: str, color_hex: str = None) -> bool:
+    def add_tag_to_entity(
+        self, entity_urn: str, tag_urn: str, color_hex: str = None
+    ) -> bool:
         """
         Add a tag to an entity.
         
@@ -3393,11 +3864,7 @@ class DataHubRestClient:
         """
         
         variables = {
-            "input": {
-                "resourceUrn": entity_urn,
-                "tag": tag_urn,
-                "colorHex": color_hex
-            }
+            "input": {"resourceUrn": entity_urn, "tag": tag_urn, "colorHex": color_hex}
         }
         
         try:
@@ -3406,12 +3873,18 @@ class DataHubRestClient:
             if result and "data" in result and "addTag" in result["data"]:
                 success = result["data"]["addTag"]
                 if success:
-                    self.logger.info(f"Successfully added tag {tag_urn} to entity {entity_urn}")
+                    self.logger.info(
+                        f"Successfully added tag {tag_urn} to entity {entity_urn}"
+                    )
                     return True
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when adding tag to entity: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when adding tag to entity: {', '.join(error_messages)}"
+                )
             
             return False
         except Exception as e:
@@ -3437,12 +3910,7 @@ class DataHubRestClient:
         }
         """
         
-        variables = {
-            "input": {
-                "resourceUrn": entity_urn,
-                "tagUrn": tag_urn
-            }
-        }
+        variables = {"input": {"resourceUrn": entity_urn, "tagUrn": tag_urn}}
         
         try:
             result = self.execute_graphql(mutation, variables)
@@ -3450,23 +3918,27 @@ class DataHubRestClient:
             if result and "data" in result and "removeTag" in result["data"]:
                 success = result["data"]["removeTag"]
                 if success:
-                    self.logger.info(f"Successfully removed tag {tag_urn} from entity {entity_urn}")
+                    self.logger.info(
+                        f"Successfully removed tag {tag_urn} from entity {entity_urn}"
+                    )
                     return True
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when removing tag from entity: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when removing tag from entity: {', '.join(error_messages)}"
+                )
             
             return False
         except Exception as e:
             self.logger.error(f"Error removing tag from entity: {str(e)}")
             return False
             
-    def find_entities_with_metadata(self, 
-                                    field_type: str,
-                                    metadata_urn: str, 
-                                    start: int = 0, 
-                                    count: int = 10) -> Dict[str, Any]:
+    def find_entities_with_metadata(
+        self, field_type: str, metadata_urn: str, start: int = 0, count: int = 10
+    ) -> Dict[str, Any]:
         """
         Find entities that have a specific tag, glossary term, or domain assigned.
         
@@ -3482,7 +3954,9 @@ class DataHubRestClient:
         self.logger.info(f"Finding entities with {field_type} = {metadata_urn}")
         
         if field_type not in ["tags", "glossaryTerms", "domains"]:
-            self.logger.error(f"Invalid field_type: {field_type}. Must be one of 'tags', 'glossaryTerms', or 'domains'")
+            self.logger.error(
+                f"Invalid field_type: {field_type}. Must be one of 'tags', 'glossaryTerms', or 'domains'"
+            )
             return {"searchResults": []}
         
         # This is a complex query that returns entities with extensive metadata
@@ -3602,18 +4076,16 @@ class DataHubRestClient:
                             {
                                 "field": field_type,
                                 "condition": "EQUAL",
-                                "values": [
-                                    metadata_urn
-                                ],
-                                "negated": False
+                                "values": [metadata_urn],
+                                "negated": False,
                             }
                         ]
                     }
                 ],
                 "searchFlags": {
                     "getSuggestions": True,
-                    "includeStructuredPropertyFacets": True
-                }
+                    "includeStructuredPropertyFacets": True,
+                },
             }
         }
         
@@ -3629,7 +4101,7 @@ class DataHubRestClient:
                     "count": search_results.get("count", 0),
                     "total": search_results.get("total", 0),
                     "entities": [],
-                    "facets": search_results.get("facets", [])
+                    "facets": search_results.get("facets", []),
                 }
                 
                 # Extract and simplify entity information
@@ -3645,80 +4117,165 @@ class DataHubRestClient:
                         
                         # Add entity type-specific fields
                         if entity.get("type") == "DATASET":
-                            simplified_entity.update({
+                            simplified_entity.update(
+                                {
                                 "name": entity.get("name"),
-                                "platform": entity.get("platform", {}).get("name") if entity.get("platform") else None,
+                                    "platform": entity.get("platform", {}).get("name")
+                                    if entity.get("platform")
+                                    else None,
                                 "platformDisplay": (
                                     entity.get("platform", {})
                                     .get("properties", {})
                                     .get("displayName")
-                                ) if entity.get("platform") and entity.get("platform", {}).get("properties") else None,
-                                "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
-                            })
+                                    )
+                                    if entity.get("platform")
+                                    and entity.get("platform", {}).get("properties")
+                                    else None,
+                                    "description": entity.get("properties", {}).get(
+                                        "description"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
+                                }
+                            )
                         elif entity.get("type") == "DASHBOARD":
-                            simplified_entity.update({
-                                "name": entity.get("properties", {}).get("name") if entity.get("properties") else None,
-                                "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
+                            simplified_entity.update(
+                                {
+                                    "name": entity.get("properties", {}).get("name")
+                                    if entity.get("properties")
+                                    else None,
+                                    "description": entity.get("properties", {}).get(
+                                        "description"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
                                 "dashboardId": entity.get("dashboardId"),
-                                "platform": entity.get("platform", {}).get("name") if entity.get("platform") else None,
-                            })
+                                    "platform": entity.get("platform", {}).get("name")
+                                    if entity.get("platform")
+                                    else None,
+                                }
+                            )
                         elif entity.get("type") == "CHART":
-                            simplified_entity.update({
-                                "name": entity.get("properties", {}).get("name") if entity.get("properties") else None,
-                                "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
+                            simplified_entity.update(
+                                {
+                                    "name": entity.get("properties", {}).get("name")
+                                    if entity.get("properties")
+                                    else None,
+                                    "description": entity.get("properties", {}).get(
+                                        "description"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
                                 "chartId": entity.get("chartId"),
-                            })
+                                }
+                            )
                         elif entity.get("type") == "DATA_FLOW":
-                            simplified_entity.update({
-                                "name": entity.get("properties", {}).get("name") if entity.get("properties") else None,
-                                "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
+                            simplified_entity.update(
+                                {
+                                    "name": entity.get("properties", {}).get("name")
+                                    if entity.get("properties")
+                                    else None,
+                                    "description": entity.get("properties", {}).get(
+                                        "description"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
                                 "flowId": entity.get("flowId"),
-                            })
+                                }
+                            )
                         elif entity.get("type") == "DATA_JOB":
-                            simplified_entity.update({
-                                "name": entity.get("properties", {}).get("name") if entity.get("properties") else None,
-                                "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
+                            simplified_entity.update(
+                                {
+                                    "name": entity.get("properties", {}).get("name")
+                                    if entity.get("properties")
+                                    else None,
+                                    "description": entity.get("properties", {}).get(
+                                        "description"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
                                 "jobId": entity.get("jobId"),
-                            })
+                                }
+                            )
                         elif entity.get("type") == "GLOSSARY_TERM":
-                            simplified_entity.update({
+                            simplified_entity.update(
+                                {
                                 "name": entity.get("name"),
-                                "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
-                            })
+                                    "description": entity.get("properties", {}).get(
+                                        "description"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
+                                }
+                            )
                         elif entity.get("type") == "TAG":
-                            simplified_entity.update({
+                            simplified_entity.update(
+                                {
                                 "name": entity.get("name"),
                                 "description": entity.get("description"),
-                                "colorHex": entity.get("properties", {}).get("colorHex") if entity.get("properties") else None,
-                            })
+                                    "colorHex": entity.get("properties", {}).get(
+                                        "colorHex"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
+                                }
+                            )
                         elif entity.get("type") == "CORP_USER":
-                            simplified_entity.update({
+                            simplified_entity.update(
+                                {
                                 "username": entity.get("username"),
-                                "displayName": entity.get("properties", {}).get("displayName") if entity.get("properties") else None,
-                                "email": entity.get("properties", {}).get("email") if entity.get("properties") else None,
-                            })
+                                    "displayName": entity.get("properties", {}).get(
+                                        "displayName"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
+                                    "email": entity.get("properties", {}).get("email")
+                                    if entity.get("properties")
+                                    else None,
+                                }
+                            )
                         elif entity.get("type") == "CORP_GROUP":
-                            simplified_entity.update({
+                            simplified_entity.update(
+                                {
                                 "name": entity.get("name"),
-                                "displayName": entity.get("info", {}).get("displayName") if entity.get("info") else None,
-                            })
+                                    "displayName": entity.get("info", {}).get(
+                                        "displayName"
+                                    )
+                                    if entity.get("info")
+                                    else None,
+                                }
+                            )
                         elif entity.get("type") == "DATA_PRODUCT":
-                            simplified_entity.update({
-                                "name": entity.get("properties", {}).get("name") if entity.get("properties") else None,
-                                "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
-                            })
+                            simplified_entity.update(
+                                {
+                                    "name": entity.get("properties", {}).get("name")
+                                    if entity.get("properties")
+                                    else None,
+                                    "description": entity.get("properties", {}).get(
+                                        "description"
+                                    )
+                                    if entity.get("properties")
+                                    else None,
+                                }
+                            )
                         
                         simplified_results["entities"].append(simplified_entity)
                 
                 return simplified_results
             
             if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.warning(f"GraphQL errors when finding entities: {', '.join(error_messages)}")
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.warning(
+                    f"GraphQL errors when finding entities: {', '.join(error_messages)}"
+                )
             
             return {"entities": [], "total": 0}
         except Exception as e:
-            self.logger.error(f"Error finding entities with {field_type} {metadata_urn}: {str(e)}")
+            self.logger.error(
+                f"Error finding entities with {field_type} {metadata_urn}: {str(e)}"
+            )
             return {"entities": [], "total": 0}
 
     def set_tag_color(self, tag_urn, color_hex):
@@ -3742,27 +4299,20 @@ class DataHubRestClient:
             }
             """
             
-            variables = {
-                "input": {
-                    "urn": tag_urn,
-                    "colorHex": color_hex
-                }
-            }
+            variables = {"input": {"urn": tag_urn, "colorHex": color_hex}}
             
             result = self._execute_graphql(mutation, variables)
-            if result and result.get('updateTagProperties') is not None:
+            if result and result.get("updateTagProperties") is not None:
                 return True
                 
             # Fallback to REST API if needed
             if tag_urn:
-                tag_id = tag_urn.split(':')[-1]
+                tag_id = tag_urn.split(":")[-1]
                 endpoint = f"{self.server_url}/tags/{tag_id}"
                 data = {"properties": {"colorHex": color_hex}}
                 
                 response = self._session.put(
-                    endpoint,
-                    json=data,
-                    headers=self._get_auth_headers()
+                    endpoint, json=data, headers=self._get_auth_headers()
                 )
                 
                 if response.status_code == 200:
@@ -3789,21 +4339,17 @@ class DataHubRestClient:
         Returns:
             list: List of glossary node objects
         """
-        self.logger.info(f"Listing glossary nodes with query={query}, count={count}, start={start}")
-        
-        # Try using GraphQL search with GLOSSARY_NODE entity type
+        self.logger.info(
+            f"Listing glossary nodes with query={query}, count={count}, start={start}"
+        )
+
         try:
-            self.logger.info("Trying GraphQL search with GLOSSARY_NODE entity type")
-            
-            # Search query that will return all glossary nodes
+            self.logger.info("Using comprehensive GraphQL search for glossary nodes")
+
+            # Use the comprehensive query that properly captures parent relationships
             search_query = """
-            query($query: String!, $count: Int, $start: Int) {
-              search(input: {
-                type: GLOSSARY_NODE, 
-                query: $query, 
-                count: $count, 
-                start: $start
-              }) {
+            query GetAllGlossaryNodes($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
                 start
                 count
                 total
@@ -3812,534 +4358,56 @@ class DataHubRestClient:
                     urn
                     type
                     ... on GlossaryNode {
+                      urn
+                      ownership {
+                        owners {
+                          owner {
+                            ...on CorpUser {
+                              urn
+                              username
+                            }
+                            ...on CorpGroup {
+                              urn
+                              name
+                            }
+                          }
+                        }
+                        lastModified {
+                          time
+                          actor
+                        }
+                      }
                       properties {
                         name
                         description
-                      }
-                      parentNodes {
-                        count
-                        nodes {
-                        urn
-                          properties {
-                            name
-                          }
+                        customProperties {
+                          key
+                          value
                         }
                       }
-                    }
-                  }
-                }
-              }
-            }
-            """
-            
-            variables = {
-                "query": query or "*",
-                "count": count,
-                "start": start
-            }
-            
-            self.logger.debug(f"Executing GraphQL search query with variables: {variables}")
-            result = self.execute_graphql(search_query, variables)
-            self.logger.debug(f"Search result: {result}")
-            
-            if result and 'data' in result and 'search' in result['data']:
-                search_data = result['data']['search']
-                total = search_data.get('total', 0)
-                
-                if total > 0:
-                    search_results = search_data.get('searchResults', [])
-                    
-                    # Process results into standardized format
-                    processed_nodes = []
-                    for result in search_results:
-                        entity = result.get('entity', {})
-                        
-                        # Extract basic properties
-                        urn = entity.get('urn')
-                        entity_type = entity.get('type')
-                        
-                        # Get properties if available
-                        properties = entity.get('properties', {})
-                        name = properties.get('name', 'Unknown')
-                        description = properties.get('description', '')
-                        
-                        # Create processed node
-                        processed_node = {
-                            'urn': urn,
-                            'type': entity_type,
-                            'name': name,
-                            'description': description,
-                            'properties': properties
-                        }
-                        
-                        # Add parent node info if available
-                        parent_nodes = entity.get('parentNodes', {}).get('nodes', [])
-                        if parent_nodes and len(parent_nodes) > 0:
-                            parent = parent_nodes[0]  # Usually a node has one parent
-                            processed_node['parentNode'] = {
-                                'urn': parent.get('urn'),
-                                'name': parent.get('properties', {}).get('name', 'Unknown Parent')
-                            }
-                            
-                        processed_nodes.append(processed_node)
-                    
-                    self.logger.info(f"Successfully retrieved {len(processed_nodes)} glossary nodes via GraphQL search")
-                    return processed_nodes
-                else:
-                    self.logger.info("No glossary nodes found in search results")
-            else:
-                errors = self._get_graphql_errors(result)
-                if errors:
-                    self.logger.warning(f"GraphQL search returned errors: {errors}")
-        except Exception as e:
-            self.logger.warning(f"Error using GraphQL search for glossary nodes: {str(e)}")
-            
-        # Try using getRootGlossaryNodes which requires an input parameter
-        try:
-            self.logger.info("Trying getRootGlossaryNodes GraphQL query with input parameter")
-            
-            # This query uses the correct format with input parameter including required fields
-            gql_query = """
-            query {
-              getRootGlossaryNodes(input: {start: 0, count: 100}) {
-                count
-                start
-                total
-                nodes {
-                  urn
-                  type
+                      relationships(input: {types: ["isA", "hasA", "relatedTo"], direction: OUTGOING, start: 0, count: 50}) {
+                        relationships {
+                          type
+                          direction
+                          entity {
+                            urn
+                            type
+                            ... on GlossaryTerm {
                   properties {
                     name
-                    description
-                  }
-                }
-              }
-            }
-            """
-            
-            self.logger.debug(f"Executing GraphQL query: {gql_query}")
-            result = self.execute_graphql(gql_query)
-            self.logger.debug(f"getRootGlossaryNodes result: {result}")
-            
-            # Check if result contains data in the expected format
-            if result and 'data' in result and 'getRootGlossaryNodes' in result['data']:
-                nodes_data = result['data']['getRootGlossaryNodes']
-                nodes = nodes_data.get('nodes', [])
-                
-                # Process nodes into a standardized format
-                processed_nodes = []
-                
-                for node in nodes:
-                    properties = node.get('properties', {})
-                    
-                    processed_node = {
-                        'urn': node.get('urn'),
-                        'name': properties.get('name', 'Unknown'),
-                        'description': properties.get('description', ''),
-                        'properties': properties
-                    }
-                    
-                    processed_nodes.append(processed_node)
-                
-                self.logger.info(f"Successfully retrieved {len(processed_nodes)} glossary nodes via getRootGlossaryNodes")
-                return processed_nodes
-            else:
-                errors = self._get_graphql_errors(result)
-                if errors:
-                    self.logger.warning(f"getRootGlossaryNodes query returned errors: {errors}")
-        except Exception as e:
-            self.logger.warning(f"Error using getRootGlossaryNodes GraphQL query: {str(e)}")
-        
-        # If all GraphQL approaches failed, try REST API approaches (unchanged)
-        # ...
-        
-        # All approaches failed, return empty list
-        self.logger.warning("All glossary node API approaches failed")
-        return []
-    
-    def get_glossary_node(self, node_urn):
-        """
-        Get a specific glossary node and its children by URN.
-        
-        Args:
-            node_urn (str): The URN of the glossary node to retrieve
-            
-        Returns:
-            dict: Dictionary with node details and its children (both nodes and terms)
-        """
-        self.logger.info(f"Getting glossary node with URN: {node_urn}")
-        
-        try:
-            # First, get the node details with a simpler query
-            node_query = """
-            query($urn: String!) {
-              glossaryNode(urn: $urn) {
-                urn
-                type
-                properties {
-                  name
-                  description
-                }
-              }
-            }
-            """
-            
-            variables = {"urn": node_urn}
-            
-            self.logger.debug(f"Executing GraphQL query for node details: {node_urn}")
-            result = self.execute_graphql(node_query, variables)
-            
-            if not result or 'data' not in result or 'glossaryNode' not in result['data']:
-                errors = self._get_graphql_errors(result)
-                if errors:
-                    self.logger.warning(f"GraphQL query for node {node_urn} returned errors: {errors}")
-                return None
-                
-            node_data = result['data']['glossaryNode']
-            
-            # Process the node data
-            properties = node_data.get('properties', {})
-            processed_node = {
-                'urn': node_data.get('urn'),
-                'type': node_data.get('type'),
-                'name': properties.get('name', 'Unknown'),
-                'description': properties.get('description', ''),
-                'properties': properties,
-                'child_nodes': [],
-                'child_terms': []
-            }
-            
-            # Now get child nodes using searchAcrossEntities
-            search_query = """
-            query($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                searchResults {
-                  entity {
-                    urn
-                    type
-                    ... on GlossaryNode {
-                properties {
-                  name
-                  description
-                }
-                parentNodes {
-                  nodes {
-                    urn
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            """
-            
-            search_variables = {
-                "input": {
-                    "query": f"parentNodes.urn:\"{node_urn}\"",
-                    "types": ["GLOSSARY_NODE"],
-                    "count": 100,
-                }
-            }
-            
-            self.logger.debug(f"Searching for child nodes of {node_urn}")
-            search_result = self.execute_graphql(search_query, search_variables)
-            
-            if search_result and 'data' in search_result and 'searchAcrossEntities' in search_result['data']:
-                search_data = search_result['data']['searchAcrossEntities']
-                if 'searchResults' in search_data:
-                    for result in search_data['searchResults']:
-                        entity = result.get('entity', {})
-                        child_properties = entity.get('properties', {})
-                        child_node = {
-                            'urn': entity.get('urn'),
-                            'type': entity.get('type'),
-                            'name': child_properties.get('name', 'Unknown'),
-                            'description': child_properties.get('description', ''),
-                            'properties': child_properties,
-                            'parent_node_urn': node_urn
-                        }
-                        processed_node['child_nodes'].append(child_node)
-            
-            # Get child terms using searchAcrossEntities for GLOSSARY_TERM type
-            term_search_variables = {
-                "input": {
-                    "query": f"parentNodes.urn:\"{node_urn}\"",
-                    "types": ["GLOSSARY_TERM"],
-                    "count": 100,
-                }
-            }
-            
-            self.logger.debug(f"Searching for child terms of {node_urn}")
-            term_search_result = self.execute_graphql(search_query, term_search_variables)
-            
-            if term_search_result and 'data' in term_search_result and 'searchAcrossEntities' in term_search_result['data']:
-                search_data = term_search_result['data']['searchAcrossEntities']
-                if 'searchResults' in search_data:
-                    term_results = search_data['searchResults']
-                    
-                    if term_results and len(term_results) > 0:
-                        self.logger.info(f"Found {len(term_results)} child terms for node {node_urn}")
-                        for result in term_results:
-                            entity = result.get('entity', {})
-                            term_properties = entity.get('properties', {})
-                            term_data = {
-                                'urn': entity.get('urn'),
-                                'type': entity.get('type'),
-                                'name': term_properties.get('name', 'Unknown'),
-                                'description': term_properties.get('description', ''),
-                                'term_source': term_properties.get('termSource', 'INTERNAL'),
-                                'properties': term_properties,
-                                'parent_node_urn': node_urn
+                              }
                             }
-                            processed_node['child_terms'].append(term_data)
-                    else:
-                        self.logger.info(f"No child terms found in direct search for node {node_urn}")
-            else:
-                errors = self._get_graphql_errors(term_search_result)
-                if errors:
-                    self.logger.warning(f"GraphQL term search for node {node_urn} returned errors: {errors}")
-                
-            # If no terms found via direct search, try list_glossary_terms as fallback
-            if not processed_node['child_terms']:
-                self.logger.info(f"Trying list_glossary_terms as fallback for node {node_urn}")
-                all_terms = self.list_glossary_terms()
-                
-                # All terms should be a dictionary with parent URNs as keys
-                if isinstance(all_terms, dict) and node_urn in all_terms:
-                    self.logger.info(f"Found {len(all_terms[node_urn])} terms for node {node_urn} via list_glossary_terms")
-                    processed_node['child_terms'] = all_terms[node_urn]
-                else:
-                    self.logger.info(f"No child terms found for node {node_urn} in list_glossary_terms results")
-                    # Try a direct search with node_urn parameter
-                    node_terms = self.list_glossary_terms(node_urn=node_urn)
-                    if node_terms and node_urn in node_terms:
-                        self.logger.info(f"Found {len(node_terms[node_urn])} terms via direct list_glossary_terms search")
-                        processed_node['child_terms'] = node_terms[node_urn]
-            
-            return processed_node
-        except Exception as e:
-            self.logger.error(f"Error getting glossary node {node_urn}: {str(e)}")
-        
-            return None
-    
-    def create_glossary_node(self, node_id, name, description="", parent_urn=None):
-        """
-        Create a new glossary node in DataHub.
-        
-        Args:
-            node_id (str): ID for the node (will be used in the URN)
-            name (str): Display name for the node
-            description (str, optional): Description for the node
-            parent_urn (str, optional): URN of the parent node
-            
-        Returns:
-            str: URN of the created node or None if failed
-        """
-        self.logger.info(f"Creating glossary node: {name}")
-        
-        try:
-            # Use the newer GraphQL mutation
-            mutation = """
-            mutation createGlossaryNode($input: CreateGlossaryEntityInput!) {
-              createGlossaryNode(input: $input)
-            }
-            """
-            
-            variables = {
-                "input": {
-                    "id": node_id,
-                    "name": name,
-                    "description": description
-                }
-            }
-            
-            if parent_urn:
-                variables["input"]["parentNode"] = parent_urn
-            
-            result = self._execute_graphql(mutation, variables)
-            if result and "createGlossaryNode" in result:
-                return result["createGlossaryNode"]
-                
-            # Fallback to REST API if needed
-            endpoint = f"{self.server_url}/glossary/nodes"
-            
-            data = {
-                "id": node_id,
-                "name": name,
-                "description": description
-            }
-            
-            if parent_urn:
-                data["parentNode"] = parent_urn
-                
-            response = self._session.post(
-                endpoint,
-                json=data,
-                headers=self._get_auth_headers()
-            )
-            
-            if response.status_code == 201:
-                return response.json().get("urn")
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error creating glossary node: {str(e)}")
-            return None
-    
-    def update_glossary_node(self, node_urn, name=None, description=None, parent_urn=None):
-        """
-        Update an existing glossary node.
-        
-        Args:
-            node_urn (str): URN of the node to update
-            name (str, optional): New name for the node
-            description (str, optional): New description for the node
-            parent_urn (str, optional): New parent node URN
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Updating glossary node: {node_urn}")
-        
-        try:
-            # Try GraphQL first
-            mutation = """
-            mutation updateGlossaryNode($input: UpdateGlossaryNodeInput!) {
-              updateGlossaryNode(input: $input)
-            }
-            """
-            
-            variables = {
-                "input": {
-                    "urn": node_urn
-                }
-            }
-            
-            if name is not None:
-                variables["input"]["name"] = name
-                
-            if description is not None:
-                variables["input"]["description"] = description
-                
-            if parent_urn is not None:
-                variables["input"]["parentNode"] = parent_urn
-                
-            result = self._execute_graphql(mutation, variables)
-            if result and result.get("updateGlossaryNode") is not None:
-                return True
-                
-            # Fallback to REST API if needed
-            if node_urn:
-                node_id = node_urn.split(':')[-1]
-                endpoint = f"{self.server_url}/glossary/nodes/{node_id}"
-                
-                data = {}
-                if name is not None:
-                    data["name"] = name
-                if description is not None:
-                    data["description"] = description
-                if parent_urn is not None:
-                    data["parentNode"] = parent_urn
-                    
-                response = self._session.put(
-                    endpoint,
-                    json=data,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code == 200:
-                    return True
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error updating glossary node: {str(e)}")
-            return False
-    
-    def delete_glossary_node(self, node_urn):
-        """
-        Delete a glossary node from DataHub.
-        
-        Args:
-            node_urn (str): URN of the node to delete
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Deleting glossary node: {node_urn}")
-        
-        try:
-            # Try GraphQL first
-            mutation = """
-            mutation deleteGlossaryNode($input: DeleteGlossaryNodeInput!) {
-              deleteGlossaryNode(input: $input)
-            }
-            """
-            
-            variables = {
-                "input": {
-                    "urn": node_urn
-                }
-            }
-            
-            result = self._execute_graphql(mutation, variables)
-            if result and result.get("deleteGlossaryNode") is not None:
-                return True
-                
-            # Fallback to REST API if needed
-            if node_urn:
-                node_id = node_urn.split(':')[-1]
-                endpoint = f"{self.server_url}/glossary/nodes/{node_id}"
-                
-                response = self._session.delete(
-                    endpoint,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code == 204:
-                    return True
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error deleting glossary node: {str(e)}")
-            return False
-            
-    #
-    # Glossary Term Methods
-    #
-    
-    def list_glossary_terms(self, node_urn=None, query=None, count=100, start=0):
-        """
-        List glossary terms, optionally filtered by parent node or search query.
-        
-        Args:
-            node_urn (str, optional): Filter terms by parent node URN
-            query (str, optional): Search query string to filter terms
-            count (int, optional): Maximum number of terms to return
-            start (int, optional): Offset for pagination
-            
-        Returns:
-            dict: Dictionary mapping parent node URNs to their child terms
-        """
-        self.logger.info(f"Listing glossary terms with node_urn={node_urn}, query={query}, count={count}, start={start}")
-        
-        try:
-            # Build a query for GLOSSARY_TERM entity search
-            self.logger.info(f"Trying GraphQL search with GLOSSARY_TERM entity type")
-            
-            search_query = """
-            query($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                searchResults {
-                  entity {
-                    urn
-                    type
-                    ... on GlossaryTerm {
-                properties {
-                  name
-                  description
-                  termSource
+                            ... on GlossaryNode {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                          created {
+                            time
+                            actor
+                          }
+                        }
                 }
                 parentNodes {
                   nodes {
@@ -4356,2720 +4424,553 @@ class DataHubRestClient:
             }
             """
             
-            search_variables = {
+            variables = {
                 "input": {
-                    "query": "*",
-                    "types": ["GLOSSARY_TERM"],
+                    "query": query or "*",
+                    "types": ["GLOSSARY_NODE"],
                     "count": count,
-                    "start": start
+                    "start": start,
                 }
             }
-            
-            # If we have a parent node filter, add it to the query
-            if node_urn:
-                search_variables["input"]["query"] = f"parentNodes.urn:\"{node_urn}\""
-            elif query:
-                search_variables["input"]["query"] = query
-            
-            self.logger.debug(f"Executing searchAcrossEntities with variables: {search_variables}")
-            result = self.execute_graphql(search_query, search_variables)
-            
-            if result and 'data' in result and 'searchAcrossEntities' in result['data']:
-                search_results = result['data']['searchAcrossEntities'].get('searchResults', [])
-                
-                if not search_results:
-                    self.logger.info(f"No glossary terms found in search results")
-                    return {} if node_urn else []
-                
-                # Group terms by parent node
-                terms_by_parent = {}
-                
-                for result in search_results:
-                    entity = result.get('entity', {})
-                    if entity and 'properties' in entity:
-                        term_urn = entity.get('urn')
-                        term_properties = entity.get('properties', {})
-                        
-                        # Find parent node information
-                        parent_nodes = entity.get('parentNodes', {}).get('nodes', [])
-                        parent_urn = None
-                        parent_name = None
-                        
-                        if parent_nodes and len(parent_nodes) > 0:
-                            parent_urn = parent_nodes[0].get('urn')
-                            parent_name = parent_nodes[0].get('properties', {}).get('name', 'Unknown')
-                        
-                        # Format the term data
-                        term_data = {
-                            'urn': term_urn,
-                            'type': entity.get('type'),
-                            'name': term_properties.get('name', 'Unknown'),
-                            'description': term_properties.get('description', ''),
-                            'term_source': term_properties.get('termSource', 'INTERNAL'),
-                            'parent_node_urn': parent_urn,
-                            'parent_node_name': parent_name,
-                            'properties': term_properties
+
+            self.logger.debug(
+                f"Executing comprehensive GraphQL search query with variables: {variables}"
+            )
+            result = self.execute_graphql(search_query, variables)
+            self.logger.debug(f"Search result: {result}")
+
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_data = result["data"]["searchAcrossEntities"]
+                total = search_data.get("total", 0)
+
+                if total > 0:
+                    search_results = search_data.get("searchResults", [])
+
+                    # Process results into standardized format
+                    processed_nodes = []
+                    for result in search_results:
+                        entity = result.get("entity", {})
+
+                        # Extract basic properties
+                        urn = entity.get("urn")
+                        entity_type = entity.get("type")
+
+                        # Get properties if available
+                        properties = entity.get("properties", {})
+                        name = properties.get("name", "Unknown")
+                        description = properties.get("description", "")
+
+                        # Create processed node
+                        processed_node = {
+                            "urn": urn,
+                            "type": entity_type,
+                            "name": name,
+                            "description": description,
+                            "properties": properties,
                         }
-                        
-                        # If no parent_urn is found but node_urn was specified, use it
-                        if not parent_urn and node_urn:
-                            parent_urn = node_urn
-                            term_data['parent_node_urn'] = node_urn
-                        
-                        # Add term to the parent's list of terms
-                        if parent_urn:
-                            if parent_urn not in terms_by_parent:
-                                terms_by_parent[parent_urn] = []
-                            terms_by_parent[parent_urn].append(term_data)
+
+                        # Add parent node info if available
+                        parent_nodes = entity.get("parentNodes", {}).get("nodes", [])
+                        if parent_nodes and len(parent_nodes) > 0:
+                            parent = parent_nodes[0]  # Usually a node has one parent
+                            processed_node["parent_urn"] = parent.get("urn")
+                            processed_node["parentNode"] = {
+                                "urn": parent.get("urn"),
+                                "name": parent.get("properties", {}).get(
+                                    "name", "Unknown Parent"
+                                ),
+                            }
+
+                        processed_nodes.append(processed_node)
+
+                    self.logger.info(
+                        f"Successfully retrieved {len(processed_nodes)} glossary nodes via comprehensive GraphQL search"
+                    )
+                    return processed_nodes
                 else:
-                            # No parent node, add to a special "root" category
-                            root_key = "root_terms"
-                            if root_key not in terms_by_parent:
-                                terms_by_parent[root_key] = []
-                            terms_by_parent[root_key].append(term_data)
-                
-                if terms_by_parent:
-                    self.logger.info(f"Successfully retrieved glossary terms for {len(terms_by_parent)} parent nodes")
-                    return terms_by_parent
-                elif not node_urn:
-                    # If we weren't searching for a specific node, return an empty list
+                    self.logger.info("No glossary nodes found in search results")
                     return []
-            
-            # If we get here, either there were no terms or there was an error
-            errors = self._get_graphql_errors(result)
-            if errors:
-                self.logger.warning(f"GraphQL query for terms returned errors: {errors}")
-                
-            self.logger.info(f"No glossary terms found for node_urn={node_urn}")
-            return {} if node_urn else []
-                
+            else:
+                errors = self._get_graphql_errors(result)
+                if errors:
+                    self.logger.warning(f"GraphQL search returned errors: {errors}")
+
         except Exception as e:
-            self.logger.error(f"Error listing glossary terms: {str(e)}")
-            return {} if node_urn else []
-        
-    def add_owners_to_glossary_term(self, term_urn, owner_urns, ownership_type="urn:li:ownershipType:__system__technical_owner"):
+            self.logger.warning(
+                f"Error using comprehensive GraphQL search for glossary nodes: {str(e)}"
+            )
+
+        # All approaches failed, return empty list
+        self.logger.warning("Comprehensive glossary node GraphQL query failed")
+        return []
+
+    def get_glossary_node(self, node_urn):
         """
-        Add owners to a glossary term.
+        Get a specific glossary node and its children by URN.
         
         Args:
-            term_urn: The URN of the glossary term
-            owner_urns: List of owner URNs to add
-            ownership_type: The ownership type URN
+            node_urn (str): The URN of the glossary node to retrieve
             
         Returns:
-            True if successful, False otherwise
+            dict: Dictionary with node details and its children (both nodes and terms)
         """
-        if not isinstance(owner_urns, list):
-            owner_urns = [owner_urns]
-            
-        mutation = """
-        mutation batchAddOwners($input: BatchAddOwnersInput!) {
-          batchAddOwners(input: $input)
-        }
-        """
-        
-        # Prepare the owners list
-        owners = []
-        for owner_urn in owner_urns:
-            # Determine owner entity type from URN
-            owner_entity_type = "CORP_USER"
-            if ":corpGroup:" in owner_urn:
-                owner_entity_type = "CORP_GROUP"
-                
-            owners.append({
-                "ownerUrn": owner_urn,
-                "ownerEntityType": owner_entity_type,
-                "ownershipTypeUrn": ownership_type
-            })
-            
-        variables = {
-            "input": {
-                "owners": owners,
-                "resources": [
-                    {
-                        "resourceUrn": term_urn
-                    }
-                ]
-            }
-        }
-        
-        result = self._execute_graphql(mutation, variables)
-        return result is not None and "batchAddOwners" in result
-        
-    def remove_owner_from_glossary_term(self, term_urn, owner_urn, ownership_type="urn:li:ownershipType:__system__technical_owner"):
-        """
-        Remove an owner from a glossary term.
-        
-        Args:
-            term_urn: The URN of the glossary term
-            owner_urn: The URN of the owner to remove
-            ownership_type: The ownership type URN
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        mutation = """
-        mutation removeOwner($input: RemoveOwnerInput!) {
-          removeOwner(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "ownerUrn": owner_urn,
-                "ownershipTypeUrn": ownership_type,
-                "resourceUrn": term_urn
-            }
-        }
-        
-        result = self._execute_graphql(mutation, variables)
-        return result is not None and "removeOwner" in result
-        
-    def set_domain_for_glossary_term(self, term_urn, domain_urn):
-        """
-        Set a domain for a glossary term.
-        
-        Args:
-            term_urn: The URN of the glossary term
-            domain_urn: The URN of the domain to set
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        mutation = """
-        mutation batchSetDomain($input: BatchSetDomainInput!) {
-          batchSetDomain(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "resources": [
-                    {
-                        "resourceUrn": term_urn
-                    }
-                ],
-                "domainUrn": domain_urn
-            }
-        }
-        
-        result = self._execute_graphql(mutation, variables)
-        return result is not None and "batchSetDomain" in result
-        
-    def unset_domain_for_glossary_term(self, term_urn):
-        """
-        Unset the domain for a glossary term.
-        
-        Args:
-            term_urn: The URN of the glossary term
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        mutation = """
-        mutation unsetDomain($entityUrn: String!) {
-          unsetDomain(entityUrn: $entityUrn)
-        }
-        """
-        
-        variables = {
-            "entityUrn": term_urn
-        }
-        
-        result = self._execute_graphql(mutation, variables)
-        return result is not None and "unsetDomain" in result
-        
-    def add_related_terms(self, term_urn, related_term_urns, relationship_type="hasA"):
-        """
-        Add related terms to a glossary term.
-        
-        Args:
-            term_urn: The URN of the glossary term
-            related_term_urns: List of related term URNs to add
-            relationship_type: The relationship type ("hasA" for Contains or "isA" for Inherits)
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        if not isinstance(related_term_urns, list):
-            related_term_urns = [related_term_urns]
-            
-        if relationship_type not in ["hasA", "isA"]:
-            self.logger.warning(f"Invalid relationship type: {relationship_type}. Using 'hasA' as default.")
-            relationship_type = "hasA"
-            
-        mutation = """
-        mutation addRelatedTerms($input: RelatedTermsInput!) {
-          addRelatedTerms(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "urn": term_urn,
-                "termUrns": related_term_urns,
-                "relationshipType": relationship_type
-            }
-        }
-        
-        result = self._execute_graphql(mutation, variables)
-        return result is not None and "addRelatedTerms" in result
-        
-    def remove_related_terms(self, term_urn, related_term_urns, relationship_type="hasA"):
-        """
-        Remove related terms from a glossary term.
-        
-        Args:
-            term_urn: The URN of the glossary term
-            related_term_urns: List of related term URNs to remove
-            relationship_type: The relationship type ("hasA" for Contains or "isA" for Inherits)
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        if not isinstance(related_term_urns, list):
-            related_term_urns = [related_term_urns]
-            
-        if relationship_type not in ["hasA", "isA"]:
-            self.logger.warning(f"Invalid relationship type: {relationship_type}. Using 'hasA' as default.")
-            relationship_type = "hasA"
-            
-        mutation = """
-        mutation removeRelatedTerms($input: RelatedTermsInput!) {
-          removeRelatedTerms(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "urn": term_urn,
-                "termUrns": related_term_urns,
-                "relationshipType": relationship_type
-            }
-        }
-        
-        result = self._execute_graphql(mutation, variables)
-        return result is not None and "removeRelatedTerms" in result
-    
-    #
-    # Domain Methods
-    #
-    
-    def list_domains(self, query=None, count=10, start=0):
-        """
-        List domains from DataHub.
-        
-        Args:
-            query (str, optional): Search query to filter domains
-            count (int, optional): Number of results to return
-            start (int, optional): Offset for pagination
-            
-        Returns:
-            list: List of domains
-        """
-        self.logger.info(f"Listing domains with query: {query}")
-        
+        self.logger.info(f"Getting glossary node with URN: {node_urn}")
+
         try:
-            # Try to use GraphQL to get the domains
-            gql_query = """
-            query listDomains($input: ListDomainsInput!) {
-              listDomains(input: $input) {
-                domains {
-                  urn
+            # First, get the node details with a simpler query
+            node_query = """
+            query($urn: String!) {
+              glossaryNode(urn: $urn) {
+                    urn
+                    type
+                      properties {
+                        name
+                        description
+                }
+              }
+            }
+            """
+            
+            variables = {"urn": node_urn}
+
+            self.logger.debug(f"Executing GraphQL query for node details: {node_urn}")
+            result = self.execute_graphql(node_query, variables)
+
+            if (
+                not result
+                or "data" not in result
+                or "glossaryNode" not in result["data"]
+            ):
+                errors = self._get_graphql_errors(result)
+                if errors:
+                    self.logger.warning(
+                        f"GraphQL query for node {node_urn} returned errors: {errors}"
+                    )
+                return None
+
+            node_data = result["data"]["glossaryNode"]
+
+            # Process the node data
+            properties = node_data.get("properties", {})
+            processed_node = {
+                "urn": node_data.get("urn"),
+                "type": node_data.get("type"),
+                "name": properties.get("name", "Unknown"),
+                "description": properties.get("description", ""),
+                "properties": properties,
+                "child_nodes": [],
+                "child_terms": [],
+            }
+
+            # Now get child nodes using searchAcrossEntities
+            search_query = """
+            query($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on GlossaryNode {
                   properties {
                     name
                     description
+                }
+                parentNodes {
+                  nodes {
+                    urn
+                    }
                   }
                 }
               }
             }
-            """
-            
-            variables = {
-                "input": {
-                    "start": start,
-                    "count": count
-                }
-            }
-            
-            if query:
-                variables["input"]["query"] = query
-
-            # Add detailed logging for the GraphQL query and variables
-            self.logger.debug(f"GraphQL Query for list_domains: {gql_query.strip()}")
-            self.logger.debug(f"GraphQL Variables for list_domains: {variables}")
-                
-            result = self._execute_graphql(gql_query, variables)
-            if result and "listDomains" in result:
-                domains = result["listDomains"]["domains"]
-                
-                # Process the domains
-                processed_domains = []
-                for domain in domains:
-                    domain_data = {
-                        "urn": domain["urn"],
-                        "name": domain.get("properties", {}).get("name", ""),
-                        "description": domain.get("properties", {}).get("description", "")
-                    }
-                        
-                    processed_domains.append(domain_data)
-                    
-                return processed_domains
-                
-            # Fallback to REST API
-            endpoint = f"{self.server_url}/domains"
-            params = {"count": count, "start": start}
-            
-            if query:
-                params["query"] = query
-                
-            response = self._session.get(
-                endpoint,
-                params=params,
-                headers=self._get_auth_headers()
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-                
-            self.logger.warning(f"Failed to list domains: {response.status_code}")
-            return []
-            
-        except Exception as e:
-            self.logger.error(f"Error listing domains: {str(e)}")
-            return []
-    
-    def get_domain(self, domain_urn):
-        """
-        Get details of a domain by URN.
-        
-        Args:
-            domain_urn (str): URN of the domain
-            
-        Returns:
-            dict: Domain details or None if not found
-        """
-        self.logger.info(f"Getting domain with URN: {domain_urn}")
-        
-        try:
-            # Try GraphQL first
-            gql_query = """
-            query getDomain($urn: String!) {
-              domain(urn: $urn) {
-                urn
-                properties {
-                  name
-                  description
-                }
               }
             }
             """
-            
-            variables = {"urn": domain_urn}
-            
-            result = self._execute_graphql(gql_query, variables)
-            if result and "domain" in result:
-                domain = result["domain"]
-                domain_data = {
-                    "urn": domain["urn"],
-                    "name": domain.get("properties", {}).get("name", ""),
-                    "description": domain.get("properties", {}).get("description", "")
-                }
-                    
-                return domain_data
-                
-            # Fallback to REST API if needed
-            if domain_urn:
-                domain_id = domain_urn.split(':')[-1]
-                endpoint = f"{self.server_url}/domains/{domain_id}"
-                
-                response = self._session.get(
-                    endpoint,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code == 200:
-                    return response.json()
-            
-            return None
-        except Exception as e:
-            self.logger.error(f"Error getting domain: {str(e)}")
-            return None
-    
-    def create_domain(self, domain_id, name, description=""):
-        """
-        Create a new domain in DataHub.
-        
-        Args:
-            domain_id (str): ID for the domain (will be used in the URN)
-            name (str): Display name for the domain
-            description (str, optional): Description for the domain
-            
-        Returns:
-            str: URN of the created domain or None if failed
-        """
-        self.logger.info(f"Creating domain: {name}")
-        
-        try:
-            # Try GraphQL first
-            mutation = """
-            mutation createDomain($input: CreateDomainInput!) {
-              createDomain(input: $input)
-            }
-            """
-            
-            variables = {
+
+            search_variables = {
                 "input": {
-                    "name": name,
-                    "description": description
+                    "query": f'parentNodes.urn:"{node_urn}"',
+                    "types": ["GLOSSARY_NODE"],
+                    "count": 100,
                 }
             }
-            
-            result = self._execute_graphql(mutation, variables)
-            if result and "data" in result and "createDomain" in result["data"]:
-                return result["data"]["createDomain"]
-                
-            # Fallback to REST API if needed
-            endpoint = f"{self.server_url}/domains"
-            
-            data = {
-                "id": domain_id,
-                "name": name,
-                "description": description
+
+            self.logger.debug(f"Searching for child nodes of {node_urn}")
+            search_result = self.execute_graphql(search_query, search_variables)
+
+            if (
+                search_result
+                and "data" in search_result
+                and "searchAcrossEntities" in search_result["data"]
+            ):
+                search_data = search_result["data"]["searchAcrossEntities"]
+                if "searchResults" in search_data:
+                    for result in search_data["searchResults"]:
+                        entity = result.get("entity", {})
+                        child_properties = entity.get("properties", {})
+                        child_node = {
+                            "urn": entity.get("urn"),
+                            "type": entity.get("type"),
+                            "name": child_properties.get("name", "Unknown"),
+                            "description": child_properties.get("description", ""),
+                            "properties": child_properties,
+                            "parent_node_urn": node_urn,
+                        }
+                        processed_node["child_nodes"].append(child_node)
+
+            # Get child terms using searchAcrossEntities for GLOSSARY_TERM type
+            term_search_variables = {
+                "input": {
+                    "query": f'parentNodes.urn:"{node_urn}"',
+                    "types": ["GLOSSARY_TERM"],
+                    "count": 100,
+                }
             }
-                
-            response = self._session.post(
-                endpoint,
-                json=data,
-                headers=self._get_auth_headers()
+
+            self.logger.debug(f"Searching for child terms of {node_urn}")
+            term_search_result = self.execute_graphql(
+                search_query, term_search_variables
             )
-            
-            if response.status_code == 201:
-                return response.json().get("urn")
-            
-            self.logger.warning(f"Failed to create domain: {response.status_code}")
+
+            if (
+                term_search_result
+                and "data" in term_search_result
+                and "searchAcrossEntities" in term_search_result["data"]
+            ):
+                search_data = term_search_result["data"]["searchAcrossEntities"]
+                if "searchResults" in search_data:
+                    term_results = search_data["searchResults"]
+
+                    if term_results and len(term_results) > 0:
+                        self.logger.info(
+                            f"Found {len(term_results)} child terms for node {node_urn}"
+                        )
+                        for result in term_results:
+                            entity = result.get("entity", {})
+                            term_properties = entity.get("properties", {})
+                            term_data = {
+                                "urn": entity.get("urn"),
+                                "type": entity.get("type"),
+                                "name": term_properties.get("name", "Unknown"),
+                                "description": term_properties.get("description", ""),
+                                "term_source": term_properties.get(
+                                    "termSource", "INTERNAL"
+                                ),
+                                "properties": term_properties,
+                                "parent_node_urn": node_urn,
+                            }
+                            processed_node["child_terms"].append(term_data)
+                    else:
+                        self.logger.info(
+                            f"No child terms found in direct search for node {node_urn}"
+                        )
+                else:
+                    errors = self._get_graphql_errors(term_search_result)
+                if errors:
+                    self.logger.warning(
+                        f"GraphQL term search for node {node_urn} returned errors: {errors}"
+                    )
+
+            # If no terms found via direct search, try list_glossary_terms as fallback
+            if not processed_node["child_terms"]:
+                self.logger.info(
+                    f"Trying list_glossary_terms as fallback for node {node_urn}"
+                )
+                all_terms = self.list_glossary_terms()
+
+                # All terms should be a dictionary with parent URNs as keys
+                if isinstance(all_terms, dict) and node_urn in all_terms:
+                    self.logger.info(
+                        f"Found {len(all_terms[node_urn])} terms for node {node_urn} via list_glossary_terms"
+                    )
+                    processed_node["child_terms"] = all_terms[node_urn]
+                else:
+                    self.logger.info(
+                        f"No child terms found for node {node_urn} in list_glossary_terms results"
+                    )
+                    # Try a direct search with node_urn parameter
+                    node_terms = self.list_glossary_terms(node_urn=node_urn)
+                    if node_terms and node_urn in node_terms:
+                        self.logger.info(
+                            f"Found {len(node_terms[node_urn])} terms via direct list_glossary_terms search"
+                        )
+                        processed_node["child_terms"] = node_terms[node_urn]
+
+            return processed_node
+        except Exception as e:
+            self.logger.error(f"Error getting glossary node {node_urn}: {str(e)}")
+
             return None
             
-        except Exception as e:
-            self.logger.error(f"Error creating domain: {str(e)}")
-            return None
-    
-    def update_domain(self, domain_urn, name=None, description=None):
+    def create_glossary_node(self, node_id, name, description="", parent_urn=None):
         """
-        Update an existing domain.
-        
-        Args:
-            domain_urn (str): URN of the domain to update
-            name (str, optional): New name for the domain
-            description (str, optional): New description for the domain
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Updating domain: {domain_urn}")
-        
-        try:
-            # Try GraphQL first
-            mutation = """
-            mutation updateDomain($input: UpdateDomainInput!) {
-              updateDomain(input: $input)
-            }
-            """
-            
-            variables = {
-                "input": {
-                    "urn": domain_urn
-                }
-            }
-            
-            if name is not None:
-                variables["input"]["name"] = name
-                
-            if description is not None:
-                variables["input"]["description"] = description
-                
-            result = self._execute_graphql(mutation, variables)
-            if result and result.get("updateDomain") is not None:
-                return True
-                
-            # Fallback to REST API if needed
-            if domain_urn:
-                domain_id = domain_urn.split(':')[-1]
-                endpoint = f"{self.server_url}/domains/{domain_id}"
-                
-                data = {}
-                if name is not None:
-                    data["name"] = name
-                if description is not None:
-                    data["description"] = description
-                    
-                response = self._session.put(
-                    endpoint,
-                    json=data,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code == 200:
-                    return True
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error updating domain: {str(e)}")
-            return False
-    
-    def delete_domain(self, domain_urn):
-        """
-        Delete a domain from DataHub.
-        
-        Args:
-            domain_urn (str): URN of the domain to delete
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Deleting domain: {domain_urn}")
-        
-        try:
-            # Try GraphQL first
-            mutation = """
-            mutation deleteDomain($input: DeleteDomainInput!) {
-              deleteDomain(input: $input)
-            }
-            """
-            
-            variables = {
-                "input": {
-                    "urn": domain_urn
-                }
-            }
-            
-            result = self._execute_graphql(mutation, variables)
-            if result and result.get("deleteDomain") is not None:
-                return True
-                
-            # Fallback to REST API if needed
-            if domain_urn:
-                domain_id = domain_urn.split(':')[-1]
-                endpoint = f"{self.server_url}/domains/{domain_id}"
-                
-                response = self._session.delete(
-                    endpoint,
-                    headers=self._get_auth_headers()
-                )
-                
-                if response.status_code == 204:
-                    return True
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error deleting domain: {str(e)}")
-            return False
-    
-    def find_entities_with_domain(self, domain_urn, count=50, start=0):
-        """
-        Find entities associated with a specific domain.
-        
-        Args:
-            domain_urn (str): Domain URN
-            count (int, optional): Number of results to return
-            start (int, optional): Offset for pagination
-            
-        Returns:
-            dict: Dictionary with entities and total count
-        """
-        return self.find_entities_with_metadata(field_type="domains", metadata_urn=domain_urn, count=count, start=start)
-    
-    # 
-    # Enhanced Glossary Methods
-    #
-    
-    def update_glossary_entity_parent(self, resource_urn, parent_node_urn):
-        """
-        Move a glossary term or node to a new parent node.
-        
-        Args:
-            resource_urn (str): URN of the glossary term or node to move
-            parent_node_urn (str): URN of the new parent node
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Moving glossary entity {resource_urn} to parent {parent_node_urn}")
-        
-        mutation = """
-        mutation updateParentNode($input: UpdateParentNodeInput!) {
-          updateParentNode(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "resourceUrn": resource_urn,
-                "parentNode": parent_node_urn
-            }
-        }
-        
-        try:
-            result = self.execute_graphql(mutation, variables)
-            if result and "data" in result and "updateParentNode" in result["data"]:
-                success = result["data"]["updateParentNode"]
-                if success:
-                    self.logger.info(f"Successfully moved glossary entity {resource_urn} to parent {parent_node_urn}")
-                    return True
-            
-            if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when moving glossary entity: {', '.join(error_messages)}")
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error moving glossary entity: {str(e)}")
-            return False
-    
-    def create_glossary_node_v2(self, node_id, name, description="", parent_node_urn=None):
-        """
-        Create a new glossary node using the latest DataHub GraphQL schema.
+        Create a new glossary node in DataHub.
         
         Args:
             node_id (str): ID for the node (will be used in the URN)
             name (str): Display name for the node
             description (str, optional): Description for the node
-            parent_node_urn (str, optional): URN of the parent node
+            parent_urn (str, optional): URN of the parent node
             
         Returns:
             str: URN of the created node or None if failed
         """
         self.logger.info(f"Creating glossary node: {name}")
         
-        mutation = """
-        mutation createGlossaryNode($input: CreateGlossaryEntityInput!) {
-          createGlossaryNode(input: $input)
-        }
+    def list_glossary_terms(self, node_urn=None, query=None, count=100, start=0):
         """
-        
-        variables = {
-            "input": {
-                "id": node_id,
-                "name": name,
-                "description": description
-            }
-        }
-        
-        if parent_node_urn:
-            variables["input"]["parentNode"] = parent_node_urn
-        
-        try:
-            result = self.execute_graphql(mutation, variables)
-            if result and "data" in result and "createGlossaryNode" in result["data"]:
-                created_urn = result["data"]["createGlossaryNode"]
-                self.logger.info(f"Successfully created glossary node: {created_urn}")
-                return created_urn
-            
-            if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when creating glossary node: {', '.join(error_messages)}")
-            
-            return None
-        except Exception as e:
-            self.logger.error(f"Error creating glossary node: {str(e)}")
-            return None
-    
-    def delete_glossary_entity(self, entity_urn):
-        """
-        Delete a glossary entity (node or term) from DataHub.
+        List glossary terms, optionally filtered by parent node or search query.
         
         Args:
-            entity_urn (str): URN of the glossary entity to delete
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Deleting glossary entity: {entity_urn}")
-        
-        mutation = """
-        mutation deleteGlossaryEntity($urn: String!) {
-          deleteGlossaryEntity(urn: $urn)
-        }
-        """
-        
-        variables = {
-            "urn": entity_urn
-        }
-        
-        try:
-            result = self.execute_graphql(mutation, variables)
-            if result and "data" in result and "deleteGlossaryEntity" in result["data"]:
-                success = result["data"]["deleteGlossaryEntity"]
-                if success:
-                    self.logger.info(f"Successfully deleted glossary entity {entity_urn}")
-                    return True
-            
-            if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when deleting glossary entity: {', '.join(error_messages)}")
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error deleting glossary entity: {str(e)}")
-            return False
-    
-    def update_glossary_entity_description(self, resource_urn, description):
-        """
-        Update the description of a glossary entity.
-        
-        Args:
-            resource_urn (str): URN of the glossary entity (node or term)
-            description (str): New description
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Updating description for glossary entity {resource_urn}")
-        
-        mutation = """
-        mutation updateDescription($input: DescriptionUpdateInput!) {
-          updateDescription(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "description": description,
-                "resourceUrn": resource_urn
-            }
-        }
-        
-        try:
-            result = self.execute_graphql(mutation, variables)
-            if result and "data" in result and "updateDescription" in result["data"]:
-                success = result["data"]["updateDescription"]
-                if success:
-                    self.logger.info(f"Successfully updated description for glossary entity {resource_urn}")
-                    return True
-            
-            if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when updating glossary entity description: {', '.join(error_messages)}")
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error updating glossary entity description: {str(e)}")
-            return False
-    
-    def add_owners_to_glossary_entity(self, resource_urn, owner_urns, owner_type="CORP_USER", ownership_type="urn:li:ownershipType:__system__technical_owner"):
-        """
-        Add owners to a glossary entity (node or term).
-        
-        Args:
-            resource_urn (str): URN of the glossary entity
-            owner_urns (list or str): Owner URN(s) to add
-            owner_type (str): Owner type (CORP_USER or CORP_GROUP)
-            ownership_type (str): Ownership type URN
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not isinstance(owner_urns, list):
-            owner_urns = [owner_urns]
-            
-        self.logger.info(f"Adding owners to glossary entity {resource_urn}")
-        
-        mutation = """
-        mutation batchAddOwners($input: BatchAddOwnersInput!) {
-          batchAddOwners(input: $input)
-        }
-        """
-        
-        # Prepare the owners list
-        owners = []
-        for owner_urn in owner_urns:
-            # Determine owner entity type from URN if not specified
-            entity_type = owner_type
-            if owner_type is None or owner_type == "auto":
-                if ":corpuser:" in owner_urn:
-                    entity_type = "CORP_USER"
-                elif ":corpGroup:" in owner_urn:
-                    entity_type = "CORP_GROUP"
-                else:
-                    entity_type = "CORP_USER"  # Default
-                
-            owners.append({
-                "ownerUrn": owner_urn,
-                "ownerEntityType": entity_type,
-                "ownershipTypeUrn": ownership_type
-            })
-            
-        variables = {
-            "input": {
-                "owners": owners,
-                "resources": [
-                    {
-                        "resourceUrn": resource_urn
-                    }
-                ]
-            }
-        }
-        
-        try:
-            result = self.execute_graphql(mutation, variables)
-            if result and "data" in result and "batchAddOwners" in result["data"]:
-                success = result["data"]["batchAddOwners"]
-                if success:
-                    self.logger.info(f"Successfully added owners to glossary entity {resource_urn}")
-                    return True
-            
-            if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when adding owners to glossary entity: {', '.join(error_messages)}")
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error adding owners to glossary entity: {str(e)}")
-            return False
-    
-    def remove_owner_from_glossary_entity(self, resource_urn, owner_urn, ownership_type="urn:li:ownershipType:__system__technical_owner"):
-        """
-        Remove an owner from a glossary entity (node or term).
-        
-        Args:
-            resource_urn (str): URN of the glossary entity
-            owner_urn (str): Owner URN to remove
-            ownership_type (str): Ownership type URN
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        self.logger.info(f"Removing owner {owner_urn} from glossary entity {resource_urn}")
-        
-        mutation = """
-        mutation removeOwner($input: RemoveOwnerInput!) {
-          removeOwner(input: $input)
-        }
-        """
-        
-        variables = {
-            "input": {
-                "ownerUrn": owner_urn,
-                "ownershipTypeUrn": ownership_type,
-                "resourceUrn": resource_urn
-            }
-        }
-        
-        try:
-            result = self.execute_graphql(mutation, variables)
-            return result.get("removeOwner", False)
-        except Exception as e:
-            self.logger.error(f"Error removing owner from glossary entity: {str(e)}")
-            return False
-
-    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None, platform=None, use_platform_pagination=False, sort_by="name", editable_only=True):
-        """
-        Get entities with editable properties or schema metadata.
-        
-        Args:
-            start: Start index for pagination
-            count: Number of entities to return
-            query: Search query
-            entity_type: Type of entity to filter by
-            platform: Platform to filter by
-            use_platform_pagination: Whether to use platform-based pagination for complete results
-            sort_by: Field to sort by (name, type, updated)
-            editable_only: If True, only return entities with editableProperties or editableSchemaMetadata
-            
-        Returns:
-            Dictionary with search results
-        """
-        variables = {
-            "input": {
-                "query": query,
-                "start": start,
-                "count": count,
-                "orFilters": []
-            }
-        }
-        
-        if entity_type:
-            variables["input"]["types"] = [entity_type]
-            
-        if platform:
-            variables["input"]["filters"] = [{
-                "field": "platform",
-                "value": platform
-            }]
-            
-        # Set sorting based on sort_by parameter
-        # Note: sortCriteria is not supported in SearchAcrossEntitiesInput  
-        # DataHub uses its default relevance-based sorting
-        if sort_by == "updated":
-            # sortCriteria not supported in SearchAcrossEntitiesInput
-            pass
-        elif sort_by == "type":
-            # sortCriteria not supported in SearchAcrossEntitiesInput
-            pass
-        else:  # Default: sort by name
-            # sortCriteria not supported in SearchAcrossEntitiesInput
-            pass
-            
-        # Use platform pagination if specified (for comprehensive search)
-        if use_platform_pagination and platform:
-            variables["input"]["orFilters"] = [{
-                "and": [{
-                    "field": "platform",
-                    "value": platform
-                }]
-            }]
-
-        # Comprehensive query that gets all necessary metadata including editableProperties and browsePathV2
-        graphql_query = """
-            query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                start
-                count
-                total
-                searchResults {
-                  entity {
-                    urn
-                    type
-                    ... on Dataset {
-                      name
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        name
-                        description
-                      }
-                      editableSchemaMetadata {
-                        editableSchemaFieldInfo {
-                          fieldPath
-                          description
-                          tags {
-                            tags {
-                              associatedUrn
-                              tag { urn }
-                            }
-                          }
-                        }
-                      }
-                    }
-                    ... on Container {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on Chart {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on Dashboard {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on DataFlow {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on DataJob {
-                      properties { name }
-                      dataFlow { 
-                        flowId
-                        properties { name }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                  }
-                }
-              }
-            }
-        """
-        
-        result = self.execute_graphql(graphql_query, variables)
-        
-        if "errors" in result:
-            self._log_graphql_errors(result)
-            return {"success": False, "error": f"GraphQL error: {result['errors'][0]['message']}"}
-            
-        search_results = result.get("data", {}).get("searchAcrossEntities", {})
-        
-        # If editable_only is True, filter results to only include entities with 
-        # editableProperties or editableSchemaMetadata
-        if editable_only and "searchResults" in search_results:
-            filtered_results = []
-            total_count = 0
-            
-            for result in search_results.get("searchResults", []):
-                entity = result.get("entity", {})
-                
-                # Check if entity has editable properties or schema metadata
-                has_editable_properties = entity.get("editableProperties") is not None
-                has_editable_schema = entity.get("editableSchemaMetadata") is not None
-                
-                if has_editable_properties or has_editable_schema:
-                    filtered_results.append(result)
-                    total_count += 1
-            
-            # Replace the search results with the filtered results
-            filtered_search_results = {
-                "start": search_results.get("start", 0),
-                "count": len(filtered_results),
-                "total": search_results.get("total", 0),
-                "filtered_total": total_count,
-                "searchResults": filtered_results
-            }
-            
-            return {"success": True, "data": filtered_search_results}
-        
-        return {"success": True, "data": search_results}
-
-    def update_entity_properties(self, entity_urn: str, entity_type: str, properties: dict) -> bool:
-        """Update editable properties of an entity.
-        
-        Args:
-            entity_urn (str): URN of the entity to update
-            entity_type (str): Type of the entity (e.g., 'DATASET', 'CONTAINER', etc.)
-            properties (dict): Dictionary containing the properties to update
-            
-        Returns:
-            bool: True if update was successful, False otherwise
-        """
-        self.logger.info(f"Updating properties for {entity_type} {entity_urn}")
-        
-        # Prepare update input
-        update_input = {
-            'urn': entity_urn,
-            'editableProperties': properties.get('editableProperties', {}),
-        }
-        
-        # Add schema metadata for datasets if provided
-        if entity_type == 'DATASET' and 'editableSchemaMetadata' in properties:
-            update_input['editableSchemaMetadata'] = properties['editableSchemaMetadata']
-            
-        # Define GraphQL mutation
-        mutation = """
-        mutation updateEntity($input: UpdateEntityInput!) {
-            updateEntity(input: $input)
-        }
-        """
-        
-        variables = {'input': update_input}
-        
-        try:
-            result = self._execute_graphql(mutation, variables)
-            if result and 'updateEntity' in result:
-                return True
-            return False
-        except Exception as e:
-            self.logger.error(f"Error updating entity properties: {str(e)}")
-            return False
-
-            
-        except Exception as e:
-            self.logger.error(f"Error listing glossary terms with searchAcrossEntities: {str(e)}")
-            return self.list_glossary_terms(node_urn, query, count, start)
-
-    def list_tests(self, start=0, count=100):
-        """
-        List metadata tests from DataHub using GraphQL API.
-        
-        Args:
+            node_urn (str, optional): Filter terms by parent node URN
+            query (str, optional): Search query string to filter terms
+            count (int, optional): Maximum number of terms to return
             start (int, optional): Offset for pagination
-            count (int, optional): Number of results to return
             
         Returns:
-            list: List of metadata tests
+            list: List of glossary term objects
         """
-        self.logger.info(f"Listing metadata tests with start={start}, count={count}")
-        
-        try:
-            # Define GraphQL query for listing tests
-            gql_query = """
-            query listTests($input: ListTestsInput!) {
-              listTests(input: $input) {
-                start
-                count
-                total
-                tests {
-                  urn
-                  name
-                  category
-                  description
-                  definition {
-                    json
-                    __typename
-                  }
-                  __typename
-                }
-                __typename
-              }
-            }
-            """
-            
-            variables = {
-                "input": {
-                    "start": start,
-                    "count": count
-                }
-            }
-            
-            # Execute the GraphQL query
-            result = self._execute_graphql(gql_query, variables)
-            
-            if result and 'listTests' in result and 'tests' in result['listTests']:
-                return result['listTests']['tests']
-            
-            self.logger.warning("Failed to list metadata tests")
-            return []
-            
-        except Exception as e:
-            self.logger.error(f"Error listing metadata tests: {str(e)}")
-            return []
-    
-    def get_test(self, test_urn):
-        """
-        Get details of a metadata test by URN.
-        
-        Args:
-            test_urn (str): URN of the metadata test
-            
-        Returns:
-            dict: Test details or None if not found
-        """
-        self.logger.info(f"Getting metadata test with URN: {test_urn}")
-        
-        try:
-            # Define GraphQL query for getting a test by URN
-            gql_query = """
-            query test($urn: String!) {
-              test(urn: $urn) {
-                urn
-                name
-                category
-                description
-                definition {
-                  json
-                  __typename
-                }
-                __typename
-              }
-            }
-            """
-            
-            variables = {"urn": test_urn}
-            
-            # Execute the GraphQL query
-            result = self._execute_graphql(gql_query, variables)
-            
-            if result and 'test' in result:
-                return result['test']
-            
-            self.logger.warning(f"Failed to get metadata test with URN {test_urn}")
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error getting metadata test: {str(e)}")
-            return None
-    
-    def create_test(self, name, description, category, definition_json):
-        """
-        Create a metadata test in DataHub.
-        
-        Args:
-            name (str): Name of the test
-            description (str): Description of the test
-            category (str): Category of the test (e.g., "Data Governance")
-            definition_json (str): JSON string of the test definition
-            
-        Returns:
-            str: URN of the created test or None if failed
-        """
-        self.logger.info(f"Creating metadata test: {name}")
-        
-        try:
-            # Define GraphQL mutation for creating a test
-            gql_mutation = """
-            mutation createTest($input: CreateTestInput!) {
-              createTest(input: $input)
-            }
-            """
-            
-            input_data = {
-                "name": name,
-                "description": description,
-                "category": category,
-                "definition": {
-                    "json": definition_json
-                }
-            }
-            
-            variables = {"input": input_data}
-            
-            # Execute the GraphQL mutation
-            result = self._execute_graphql(gql_mutation, variables)
-            
-            if result and 'createTest' in result:
-                return result['createTest']
-            
-            self.logger.warning(f"Failed to create metadata test: {name}")
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error creating metadata test: {str(e)}")
-            return None
-    
-    def update_test(self, test_urn, name=None, description=None, category=None, definition_json=None):
-        """
-        Update a metadata test in DataHub.
-        
-        Args:
-            test_urn (str): URN of the test to update
-            name (str, optional): New name for the test
-            description (str, optional): New description for the test
-            category (str, optional): New category for the test
-            definition_json (str, optional): New JSON string of the test definition
-            
-        Returns:
-            bool: True if update was successful, False otherwise
-        """
-        self.logger.info(f"Updating metadata test with URN: {test_urn}")
-        
-        try:
-            # Prepare update input
-            update_input = {}
-            
-            if name is not None:
-                update_input["name"] = name
-                
-            if description is not None:
-                update_input["description"] = description
-                
-            if category is not None:
-                update_input["category"] = category
-                
-            if definition_json is not None:
-                update_input["definition"] = {"json": definition_json}
-                
-            if not update_input:
-                self.logger.warning("No fields to update for metadata test")
-                return False
-                
-            # Define GraphQL mutation for updating a test
-            gql_mutation = """
-            mutation updateTest($urn: String!, $input: UpdateTestInput!) {
-              updateTest(urn: $urn, input: $input)
-            }
-            """
-            
-            variables = {
-                "urn": test_urn,
-                "input": update_input
-            }
-            
-            # Execute the GraphQL mutation
-            result = self._execute_graphql(gql_mutation, variables)
-            
-            if result and 'updateTest' in result:
-                return True
-            
-            self.logger.warning(f"Failed to update metadata test with URN {test_urn}")
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error updating metadata test: {str(e)}")
-            return False
-    
-    def delete_test(self, test_urn):
-        """
-        Delete a metadata test from DataHub.
-        
-        Args:
-            test_urn (str): URN of the test to delete
-            
-        Returns:
-            bool: True if deletion was successful, False otherwise
-        """
-        self.logger.info(f"Deleting metadata test with URN: {test_urn}")
-        
-        try:
-            # Define GraphQL mutation for deleting a test
-            gql_mutation = """
-            mutation deleteTest($urn: String!) {
-              deleteTest(urn: $urn)
-            }
-            """
-            
-            variables = {"urn": test_urn}
-            
-            # Execute the GraphQL mutation
-            result = self._execute_graphql(gql_mutation, variables)
-            
-            if result and 'deleteTest' in result:
-                return True
-            
-            self.logger.warning(f"Failed to delete metadata test with URN {test_urn}")
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error deleting metadata test: {str(e)}")
-            return False
+        self.logger.info(
+            f"Listing glossary terms with node_urn={node_urn}, query={query}, count={count}, start={start}"
+        )
 
-    def test_glossary_connection(self):
-        """
-        Test connection to glossary endpoints to validate API connectivity.
-        
-        Returns:
-            dict: Dictionary with test results for different glossary endpoints
-        """
-        self.logger.info("Testing glossary connection to different endpoints")
-        
-        results = {
-            "business_glossary_api": False,
-            "entity_search_api": False,
-            "v2_glossary_api": False,
-            "legacy_glossary_api": False,
-            "detailed_results": {}
-        }
-        
-        # Test business glossary API
         try:
-            endpoint = f"{self.server_url}/api/metadata/business-glossary/nodes"
-            self.logger.info(f"Testing business glossary API: {endpoint}")
-            
-            response = self._session.get(
-                endpoint,
-                params={"count": 1},
-                headers=self._get_auth_headers()
-            )
-            
-            results["detailed_results"]["business_glossary_api"] = {
-                "status_code": response.status_code,
-                "response_preview": str(response.text)[:100] if response.text else None
-            }
-            
-            if response.status_code == 200:
-                results["business_glossary_api"] = True
-                self.logger.info("Business glossary API test: SUCCESS")
-            else:
-                self.logger.warning(f"Business glossary API test: FAILED with status {response.status_code}")
-        except Exception as e:
-            self.logger.error(f"Business glossary API test: ERROR - {str(e)}")
-            results["detailed_results"]["business_glossary_api"] = {"error": str(e)}
-        
-        # Test entity search API
-        try:
-            endpoint = f"{self.server_url}/api/v2/search"
-            self.logger.info(f"Testing entity search API: {endpoint}")
-            
-            response = self._session.get(
-                endpoint,
-                params={"entity": "glossaryNode", "count": 1},
-                headers=self._get_auth_headers()
-            )
-            
-            results["detailed_results"]["entity_search_api"] = {
-                "status_code": response.status_code,
-                "response_preview": str(response.text)[:100] if response.text else None
-            }
-            
-            if response.status_code == 200:
-                results["entity_search_api"] = True
-                self.logger.info("Entity search API test: SUCCESS")
-            else:
-                self.logger.warning(f"Entity search API test: FAILED with status {response.status_code}")
-        except Exception as e:
-            self.logger.error(f"Entity search API test: ERROR - {str(e)}")
-            results["detailed_results"]["entity_search_api"] = {"error": str(e)}
-        
-        # Test V2 glossary API
-        try:
-            endpoint = f"{self.server_url}/api/v2/glossary/nodes"
-            self.logger.info(f"Testing V2 glossary API: {endpoint}")
-            
-            response = self._session.get(
-                endpoint,
-                params={"count": 1},
-                headers=self._get_auth_headers()
-            )
-            
-            results["detailed_results"]["v2_glossary_api"] = {
-                "status_code": response.status_code,
-                "response_preview": str(response.text)[:100] if response.text else None
-            }
-            
-            if response.status_code == 200:
-                results["v2_glossary_api"] = True
-                self.logger.info("V2 glossary API test: SUCCESS")
-            else:
-                self.logger.warning(f"V2 glossary API test: FAILED with status {response.status_code}")
-        except Exception as e:
-            self.logger.error(f"V2 glossary API test: ERROR - {str(e)}")
-            results["detailed_results"]["v2_glossary_api"] = {"error": str(e)}
-        
-        # Test legacy glossary API
-        try:
-            endpoint = f"{self.server_url}/glossary/nodes"
-            self.logger.info(f"Testing legacy glossary API: {endpoint}")
-            
-            response = self._session.get(
-                endpoint,
-                params={"count": 1},
-                headers=self._get_auth_headers()
-            )
-            
-            results["detailed_results"]["legacy_glossary_api"] = {
-                "status_code": response.status_code,
-                "response_preview": str(response.text)[:100] if response.text else None
-            }
-            
-            if response.status_code == 200:
-                results["legacy_glossary_api"] = True
-                self.logger.info("Legacy glossary API test: SUCCESS")
-            else:
-                self.logger.warning(f"Legacy glossary API test: FAILED with status {response.status_code}")
-        except Exception as e:
-            self.logger.error(f"Legacy glossary API test: ERROR - {str(e)}")
-            results["detailed_results"]["legacy_glossary_api"] = {"error": str(e)}
-        
-        # Test GraphQL query for glossary
-        try:
-            self.logger.info("Testing GraphQL query for glossary nodes")
-            
-            # Basic GraphQL query to get glossary nodes
-            query = """
-            query {
-              __schema {
-                queryType {
-                  fields {
-                    name
-                    description
-                  }
-                }
-              }
-            }
-            """
-            
-            result = self.execute_graphql(query)
-            
-            results["detailed_results"]["graphql_schema"] = {
-                "has_result": bool(result),
-                "result_preview": str(result)[:200] if result else None
-            }
-            
-            self.logger.info(f"GraphQL schema query result: {result is not None}")
-            
-            # Look for glossary-related fields in the schema
-            if result and 'data' in result and '__schema' in result['data']:
-                query_fields = result['data']['__schema']['queryType']['fields']
-                glossary_fields = [field for field in query_fields if 'glossary' in field['name'].lower()]
-                
-                results["detailed_results"]["graphql_glossary_fields"] = glossary_fields
-                self.logger.info(f"Found {len(glossary_fields)} glossary-related GraphQL fields: {glossary_fields}")
-        except Exception as e:
-            self.logger.error(f"GraphQL schema test: ERROR - {str(e)}")
-            results["detailed_results"]["graphql_schema"] = {"error": str(e)}
-        
-        return results
+            # Build a comprehensive query for GLOSSARY_TERM entity search
+            self.logger.info("Using comprehensive GraphQL search for glossary terms")
 
-    def _get_graphql_errors(self, result):
-        """
-        Extract and format GraphQL errors from a result object
-        
-        Args:
-            result (dict): The GraphQL result
-            
-        Returns:
-            str: Formatted error message or None if no errors
-        """
-        errors = []
-        
-        if not result:
-            return None
-            
-        # Add debug logging
-        self.logger.debug(f"GraphQL result structure: {result.keys() if isinstance(result, dict) else type(result)}")
-            
-        # Check for errors directly in the result
-        if isinstance(result, dict) and "errors" in result:
-            errors.extend(result["errors"])
-        
-        # Check for nested errors in the data field
-        if isinstance(result, dict) and "data" in result and isinstance(result["data"], dict):
-            for key, value in result["data"].items():
-                if isinstance(value, dict) and "errors" in value:
-                    for error in value["errors"]:
-                        errors.append({"message": f"Error in {key}: {error['message']}"})
-        
-        if errors:
-            error_messages = []
-            for error in errors:
-                if isinstance(error, dict) and "message" in error:
-                    error_messages.append(error)
-                elif isinstance(error, str):
-                    error_messages.append({"message": error})
-                else:
-                    error_messages.append({"message": str(error)})
-            
-            formatted_errors = f"Error executing graphql query: {error_messages}"
-            return formatted_errors
-        
-        return None
-
-    def list_structured_properties(self, start=0, count=100) -> List[Dict[str, Any]]:
-        """
-        List all structured properties in DataHub.
-        
-        Args:
-            start: The offset to start from
-            count: The number of properties to return
-            
-        Returns:
-            List of structured property objects
-        """
-        query = """
-        query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
-          searchAcrossEntities(input: $input) {
-            start
-            count
-            total
-            searchResults {
-              entity {
-                urn
-                type
-                ... on StructuredPropertyEntity {
-                  definition {
-                    displayName
-                    qualifiedName
-                    description
-                    cardinality
-                    immutable
-                    valueType {
-                      urn
-                      type
-                      info {
-                        type
-                        displayName
-                        __typename
-                      }
-                      __typename
-                    }
-                    entityTypes {
-                      urn
-                      type
-                      info {
-                        type
-                        __typename
-                      }
-                      __typename
-                    }
-                    filterStatus
-                    typeQualifier {
-                      allowedTypes {
-                        urn
-                        type
-                        info {
-                          type
-                          displayName
-                          __typename
-                        }
-                        __typename
-                      }
-                      __typename
-                    }
-                    allowedValues {
-                      value {
-                        ... on StringValue {
-                          stringValue
-                          __typename
-                        }
-                        ... on NumberValue {
-                          numberValue
-                          __typename
-                        }
-                        __typename
-                      }
-                      description
-                      __typename
-                    }
-                    __typename
-                  }
-                  settings {
-                    isHidden
-                    showInSearchFilters
-                    showAsAssetBadge
-                    showInAssetSummary
-                    showInColumnsTable
-                    __typename
-                  }
-                  __typename
-                }
-                __typename
-              }
-              __typename
-            }
-            __typename
-          }
-        }
-        """
-        
-        variables = {
-            "input": {
-                "types": ["STRUCTURED_PROPERTY"],
-                "query": "*",
-                "start": start,
-                "count": count
-            }
-        }
-        
-        result = self.execute_graphql(query, variables)
-        
-        if not result or "errors" in result or "data" not in result:
-            self._handle_error(result, "Error listing structured properties")
-            return []
-        
-        search_results = result.get("data", {}).get("searchAcrossEntities", {}).get("searchResults", [])
-        props = [result.get("entity") for result in search_results if result.get("entity", {}).get("type") == "STRUCTURED_PROPERTY"]
-        
-        return props
-    
-    def get_structured_property(self, property_urn: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a structured property by URN.
-        
-        Args:
-            property_urn: The URN of the structured property
-            
-        Returns:
-            The structured property object if found, None otherwise
-        """
-        query = """
-        query getStructuredProperty($urn: String!) {
-          structuredPropertyEntity(urn: $urn) {
-            urn
-            type
-            definition {
-              displayName
-              qualifiedName
-              description
-              cardinality
-              immutable
-              valueType {
-                urn
-                type
-                info {
-                  type
-                  displayName
-                  __typename
-                }
-                __typename
-              }
-              entityTypes {
-                urn
-                type
-                info {
-                  type
-                  __typename
-                }
-                __typename
-              }
-              filterStatus
-              typeQualifier {
-                allowedTypes {
-                  urn
-                  type
-                  info {
-                    type
-                    displayName
-                    __typename
-                  }
-                  __typename
-                }
-                __typename
-              }
-              allowedValues {
-                value {
-                  ... on StringValue {
-                    stringValue
-                    __typename
-                  }
-                  ... on NumberValue {
-                    numberValue
-                    __typename
-                  }
-                  __typename
-                }
-                description
-                __typename
-              }
-              __typename
-            }
-            settings {
-              isHidden
-              showInSearchFilters
-              showAsAssetBadge
-              showInAssetSummary
-              showInColumnsTable
-              __typename
-            }
-            __typename
-          }
-        }
-        """
-        
-        variables = {
-            "urn": property_urn
-        }
-        
-        result = self.execute_graphql(query, variables)
-        
-        if not result or "errors" in result or "data" not in result:
-            self._handle_error(result, f"Error fetching structured property {property_urn}")
-            return None
-        
-        return result.get("data", {}).get("structuredPropertyEntity")
-    
-    def create_structured_property(self, 
-                                 display_name: str,
-                                 description: str = "",
-                                 value_type: str = "STRING",
-                                 entity_types: List[str] = None,
-                                 cardinality: str = "SINGLE",
-                                 allowed_values: List[Dict[str, Any]] = None,
-                                 immutable: bool = False,
-                                 show_in_search: bool = True,
-                                 show_as_badge: bool = True,
-                                 show_in_summary: bool = True,
-                                 qualified_name: Optional[str] = None) -> Optional[str]:
-        """
-        Create a new structured property in DataHub.
-        
-        Args:
-            display_name: The display name of the property
-            description: The description of the property
-            value_type: The type of value (STRING, NUMBER, BOOLEAN, etc.)
-            entity_types: List of entity types this property applies to (DATASET, DASHBOARD, etc.)
-            cardinality: SINGLE or MULTIPLE
-            allowed_values: List of allowed values with their descriptions
-            immutable: Whether the property is immutable once set
-            show_in_search: Whether to show in search filters
-            show_as_badge: Whether to show as asset badge
-            show_in_summary: Whether to show in asset summary
-            qualified_name: The qualified name (will be generated from display_name if not provided)
-            
-        Returns:
-            The URN of the created property if successful, None otherwise
-        """
-        if not qualified_name:
-            # Generate qualified name from display name
-            qualified_name = display_name.lower().replace(" ", "_")
-        
-        if not entity_types:
-            entity_types = ["DATASET", "DASHBOARD", "CHART", "DATA_FLOW", "DATA_JOB"]
-        
-        mutation = """
-        mutation createStructuredProperty($input: CreateStructuredPropertyEntityInput!) {
-          createStructuredPropertyEntity(input: $input) {
-            urn
-          }
-        }
-        """
-        
-        # Prepare entity types input
-        entity_type_inputs = []
-        for entity_type in entity_types:
-            entity_type_inputs.append({
-                "type": entity_type
-            })
-        
-        # Prepare allowed values input if provided
-        allowed_value_inputs = []
-        if allowed_values:
-            for value_item in allowed_values:
-                value = value_item.get("value")
-                desc = value_item.get("description", "")
-                
-                value_input = None
-                if value_type == "STRING":
-                    value_input = {"string": value}
-                elif value_type == "NUMBER":
-                    value_input = {"number": float(value)}
-                elif value_type == "BOOLEAN":
-                    value_input = {"boolean": value.lower() == "true"}
-                
-                if value_input:
-                    allowed_value_inputs.append({
-                        "value": value_input,
-                        "description": desc
-                    })
-        
-        variables = {
-            "input": {
-                "definition": {
-                    "displayName": display_name,
-                    "qualifiedName": qualified_name,
-                    "description": description,
-                    "cardinality": cardinality,
-                    "immutable": immutable,
-                    "valueType": {
-                        "type": value_type
-                    },
-                    "entityTypes": entity_type_inputs
-                },
-                "settings": {
-                    "showInSearchFilters": show_in_search,
-                    "showAsAssetBadge": show_as_badge,
-                    "showInAssetSummary": show_in_summary
-                }
-            }
-        }
-        
-        # Add allowed values if provided
-        if allowed_value_inputs:
-            variables["input"]["definition"]["allowedValues"] = allowed_value_inputs
-        
-        result = self.execute_graphql(mutation, variables)
-        
-        if not result or "errors" in result or "data" not in result:
-            self._handle_error(result, f"Error creating structured property {display_name}")
-            return None
-        
-        return result.get("data", {}).get("createStructuredPropertyEntity", {}).get("urn")
-    
-    def update_structured_property(self, 
-                                 property_urn: str,
-                                 display_name: Optional[str] = None,
-                                 description: Optional[str] = None,
-                                 show_in_search: Optional[bool] = None,
-                                 show_as_badge: Optional[bool] = None,
-                                 show_in_summary: Optional[bool] = None) -> bool:
-        """
-        Update a structured property in DataHub.
-        
-        Args:
-            property_urn: The URN of the property to update
-            display_name: New display name (optional)
-            description: New description (optional)
-            show_in_search: Whether to show in search filters (optional)
-            show_as_badge: Whether to show as asset badge (optional)
-            show_in_summary: Whether to show in asset summary (optional)
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        mutation = """
-        mutation updateStructuredProperty($urn: String!, $input: UpdateStructuredPropertyEntityInput!) {
-          updateStructuredPropertyEntity(urn: $urn, input: $input) {
-            urn
-          }
-        }
-        """
-        
-        update_input = {}
-        
-        # Add definition updates if provided
-        definition_updates = {}
-        if display_name is not None:
-            definition_updates["displayName"] = display_name
-        if description is not None:
-            definition_updates["description"] = description
-        
-        if definition_updates:
-            update_input["definition"] = definition_updates
-        
-        # Add settings updates if provided
-        settings_updates = {}
-        if show_in_search is not None:
-            settings_updates["showInSearchFilters"] = show_in_search
-        if show_as_badge is not None:
-            settings_updates["showAsAssetBadge"] = show_as_badge
-        if show_in_summary is not None:
-            settings_updates["showInAssetSummary"] = show_in_summary
-        
-        if settings_updates:
-            update_input["settings"] = settings_updates
-        
-        # If nothing to update, return success
-        if not update_input:
-            return True
-        
-        variables = {
-            "urn": property_urn,
-            "input": update_input
-        }
-        
-        result = self.execute_graphql(mutation, variables)
-        
-        if not result or "errors" in result or "data" not in result:
-            self._handle_error(result, f"Error updating structured property {property_urn}")
-            return False
-        
-        return True
-    
-    def delete_structured_property(self, property_urn: str) -> bool:
-        """
-        Delete a structured property from DataHub.
-        
-        Args:
-            property_urn: The URN of the property to delete
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        mutation = """
-        mutation deleteStructuredProperty($urn: String!) {
-          deleteStructuredPropertyEntity(urn: $urn)
-        }
-        """
-        
-        variables = {
-            "urn": property_urn
-        }
-        
-        result = self.execute_graphql(mutation, variables)
-        
-        if not result or "errors" in result or "data" not in result:
-            self._handle_error(result, f"Error deleting structured property {property_urn}")
-            return False
-        
-        return result.get("data", {}).get("deleteStructuredPropertyEntity", False)
-    
-    def get_property_values(self, property_urn: str, search_term: str = "", limit: int = 20) -> List[Dict[str, Any]]:
-        """Get entities that have values for a specific property
-        
-        Args:
-            property_urn: URN of the structured property
-            search_term: Optional search term to filter entities
-            limit: Maximum number of results to return
-            
-        Returns:
-            List of entities with their property values
-        """
-        from utils.graphql_queries import PROPERTY_VALUES_QUERY
-        
-        try:
-            result = self._execute_graphql(
-                PROPERTY_VALUES_QUERY,
-                {"propertyUrn": property_urn, "search": search_term or "*", "limit": limit}
-            )
-            
-            if result and "data" in result and "searchAcrossEntities" in result["data"]:
-                return result["data"]["searchAcrossEntities"]["searchResults"]
-            return []
-        except Exception as e:
-            logger.error(f"Error getting property values for {property_urn}: {e}")
-            return []
-
-    def _get_graphql_errors(self, result):
-        """
-        Extract error messages from a GraphQL result.
-        
-        Args:
-            result (dict): The GraphQL response
-            
-        Returns:
-            list: List of error messages
-        """
-        errors = []
-        if isinstance(result, dict) and 'errors' in result:
-            for error in result['errors']:
-                if isinstance(error, dict) and 'message' in error:
-                    errors.append(error['message'])
-                else:
-                    errors.append(str(error))
-        return errors
-
-    def _log_graphql_errors(self, result):
-        """
-        Log GraphQL errors from a result.
-        
-        Args:
-            result (dict): The GraphQL response with errors
-        """
-        errors = self._get_graphql_errors(result)
-        for error in errors:
-            logger.error(f"GraphQL error: {error}")
-        
-        # Also log any extensions if available
-        if isinstance(result, dict) and 'errors' in result:
-            for error in result['errors']:
-                if isinstance(error, dict) and 'extensions' in error:
-                    logger.debug(f"GraphQL error extensions: {error['extensions']}")
-
-    def get_assertions(self, start=0, count=20, query="*", status=None, entity_urn=None, start_time_millis=None, end_time_millis=None, run_events_limit=10):
-        """
-        Get assertions from DataHub using GraphQL.
-        
-        Args:
-            start (int): Starting offset for pagination
-            count (int): Number of results to return
-            query (str): Search query
-            status (str): Filter by assertion run status
-            entity_urn (str): Filter by entity URN
-            start_time_millis (int): Start time for run events filter
-            end_time_millis (int): End time for run events filter
-            run_events_limit (int): Limit for run events
-            
-        Returns:
-            dict: Response containing assertions data
-        """
-        variables = {
-            "input": {
-                "types": ["ASSERTION"],
-                "query": query,
-                "start": start,
-                "count": count
-            }
-        }
-
-        # Corrected GraphQL query for assertions
-        graphql_query = """
-            query GetAssertions($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                start
-                count
-                total
-                searchResults {
-                  entity {
-                    urn
-                    type
-                    ... on Assertion {
-                      urn
-                      type
-                      platform {
-                        name
-                        urn
-                      }
-                      info {
-                        type
-                        description
-                        externalUrl
-                        datasetAssertion {
-                          datasetUrn
-                          scope
-                          fields {
+            search_query = """
+            query GetAllGlossaryTerms($input: SearchAcrossEntitiesInput!) {
+                searchAcrossEntities(input: $input) {
+                    start
+                    count
+                    total
+                    searchResults {
+                        entity {
                             urn
-                            path
-                          }
-                          aggregation
-                          operator
-                          parameters {
-                            value {
-                              value
-                              type
-                            }
-                            minValue {
-                              value
-                              type
-                            }
-                            maxValue {
-                              value
-                              type
-                            }
-                          }
-                          nativeType
-                          nativeParameters {
-                            key
-                            value
-                          }
-                          logic
-                        }
-                        freshnessAssertion {
-                          entityUrn
-                          type
-                          schedule {
                             type
-                            cron {
-                              cron
-                              timezone
-                              windowStartOffsetMs
+                    ... on GlossaryTerm {
+                      urn
+                      ownership {
+                        owners {
+                          owner {
+                            ...on CorpUser {
+                              urn
                             }
-                            fixedInterval {
-                              unit
-                              multiple
-                            }
-                            exclusions {
-                              type
-                              displayName
-                              fixedRange {
-                                startTimeMillis
-                                endTimeMillis
-                              }
-                              weekly {
-                                daysOfWeek
-                                startTime
-                                endTime
-                                timezone
-                              }
-                              holiday {
-                                name
-                                region
-                                timezone
-                              }
-                            }
-                          }
-                          filter {
-                            type
-                            sql
-                          }
-                        }
-                        volumeAssertion {
-                          entityUrn
-                          type
-                          rowCountTotal {
-                            operator
-                            parameters {
-                              value {
-                                value
-                                type
-                              }
-                              minValue {
-                                value
-                                type
-                              }
-                              maxValue {
-                                value
-                                type
-                              }
-                            }
-                          }
-                          rowCountChange {
-                            type
-                            operator
-                            parameters {
-                              value {
-                                value
-                                type
-                              }
-                              minValue {
-                                value
-                                type
-                              }
-                              maxValue {
-                                value
-                                type
-                              }
-                            }
-                          }
-                          incrementingSegmentRowCountTotal {
-                            segment {
-                              field {
-                                path
-                                type
-                                nativeType
-                              }
-                              transformer {
-                                type
-                                nativeType
-                              }
-                            }
-                            operator
-                            parameters {
-                              value {
-                                value
-                                type
-                              }
-                              minValue {
-                                value
-                                type
-                              }
-                              maxValue {
-                                value
-                                type
-                              }
-                            }
-                          }
-                          filter {
-                            type
-                            sql
-                          }
-                        }
-                        sqlAssertion {
-                          type
-                          entityUrn
-                          statement
-                          changeType
-                          operator
-                          parameters {
-                            value {
-                              value
-                              type
-                            }
-                            minValue {
-                              value
-                              type
-                            }
-                            maxValue {
-                              value
-                              type
-                            }
-                          }
-                        }
-                        fieldAssertion {
-                          type
-                          entityUrn
-                          fieldValuesAssertion {
-                            field {
-                              path
-                              type
-                              nativeType
-                            }
-                            transform {
-                              type
-                            }
-                            operator
-                            parameters {
-                              value {
-                                value
-                                type
-                              }
-                              minValue {
-                                value
-                                type
-                              }
-                              maxValue {
-                                value
-                                type
-                              }
-                            }
-                            failThreshold {
-                              type
-                              value
-                            }
-                            excludeNulls
-                          }
-                          fieldMetricAssertion {
-                            field {
-                              path
-                              type
-                              nativeType
-                            }
-                            metric
-                            operator
-                            parameters {
-                              value {
-                                value
-                                type
-                              }
-                              minValue {
-                                value
-                                type
-                              }
-                              maxValue {
-                                value
-                                type
-                              }
-                            }
-                          }
-                          filter {
-                            type
-                            sql
-                          }
-                        }
-                        schemaAssertion {
-                          entityUrn
-                          fields {
-                            path
-                            type
-                            nativeType
-                          }
-                          schema {
-                            aspectVersion
-                            datasetUrn
-                            name
-                            platformUrn
-                            version
-                            cluster
-                            hash
-                            platformSchema {
-                              ... on TableSchema {
-                                schema
-                              }
-                              ... on KeyValueSchema {
-                                keySchema
-                                valueSchema
-                              }
-                            }
-                            fields {
-                              fieldPath
-                              jsonPath
-                              label
-                              nullable
-                              description
-                              type
-                              nativeDataType
-                              recursive
-                              tags {
-                                tags {
-                                  tag {
-                                    urn
-                                    type
-                                    properties {
-                                      name
-                                      description
-                                      colorHex
-                                    }
-                                    ownership {
-                                      owners {
-                                        owner {
-                                          ... on CorpUser {
-                                            urn
-                                          }
-                                          ... on CorpGroup {
-                                            urn
-                                          }
+                            ...on CorpGroup {
+                                                    urn
+                                                }
+                                            }
                                         }
-                                      }
                                     }
-                                  }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      institutionalMemory {
+                        elements {
+                          url
+                          label
+                          actor {
+                            ... on CorpUser {
+                              urn
+                              username
+                            }
+                            ... on CorpGroup {
+                              urn
+                              name
+                            }
+                          }
+                          created {
+                            time
+                            actor
+                          }
+                          updated {
+                            time
+                            actor
+                          }
+                          settings {
+                            showInAssetPreview
+                          }
+                        }
+                      }
+                      properties {
+                        name
+                                    description
+                        customProperties {
+                          key
+                          value
                                 }
-                              }
-                              glossaryTerms {
-                                terms {
-                                  term {
-                                    urn
-                                  }
-                                  actor {
-                                    urn
-                                  }
-                                }
-                              }
-                              isPartOfKey
-                              isPartitioningKey
-                              jsonProps
-                              schemaFieldEntity {
-                                urn
+                            }
+                      glossaryTermInfo {
+                        name
+                                    description
+                        termSource
+                        sourceRef
+                        sourceUrl
+                        customProperties {
+                          key
+                          value
+                          associatedUrn
+                        }
+                        rawSchema
+                      }
+                      deprecation {
+                        deprecated
+                      }
+                      relationships(input: {types: ["isA", "hasA", "relatedTo"], direction: OUTGOING, start: 0, count: 50}) {
+                        relationships {
+                          type
+                          direction
+                          entity {
+                            urn
+                            type
+                            ... on GlossaryTerm {
+                              properties {
+                                name
                               }
                             }
-                            createdAt
+                            ... on GlossaryNode {
+                              properties {
+                                name
+                              }
+                            }
                           }
-                          compatibility
-                        }
-                        customAssertion {
-                          type
-                          entityUrn
-                          field {
-                            urn
-                            path
-                          }
-                          logic
-                        }
-                        source {
-                          type
                           created {
+                            time
                             actor
                           }
                         }
-                        lastUpdated {
-                          actor
-                        }
                       }
-                      runEvents(limit: %s) {
-                        ... on AssertionRunEventsResult {
-                          total
-                          failed
-                          succeeded
-                          errored
-                          runEvents {
-                            timestampMillis
-                            runId
-                            status
-                            asserteeUrn
-                            batchSpec {
-                              nativeBatchId
-                              query
-                              limit
-                            }
-                            result {
-                              type
-                              rowCount
-                              missingCount
-                              unexpectedCount
-                              actualAggValue
-                              externalUrl
-                              nativeResults {
-                                key
-                                value
-                              }
-                            }
-                            runtimeContext {
-                              key
-                              value
-                            }
-                          }
-                        }
-                      } 
-                      status {
-                        removed
-                      }
-                      tags {
-                        tags {
-                          tag {
-                            urn
-                            type
-                            properties {
-                              name
-                              description
-                              colorHex
-                            }
-                            ownership {
-                              owners {
-                                owner {
-                                  ... on CorpUser {
-                                    urn
-                                  }
-                                  ... on CorpGroup {
-                                    urn
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      actions {
-                        onSuccess {
-                          type
-                        }
-                        onFailure {
-                          type
-                        }
-                      }
-                      monitor {
-                        urn
-                        type
-                        entity {
+                      parentNodes {
+                        nodes {
                           urn
-                        }
-                        info {
-                          type
-                          assertionMonitor {
-                            assertions {
-                              assertion {
-                                urn
-                              }
-                              schedule {
-                                cron
-                              }
-                              parameters {
-                                type
-                                datasetFieldParameters {
-                                  sourceType
-                                  changedRowsField {
-                                    path
-                                    type
-                                    nativeType
-                                    kind
-                                  }
-                                }
-                                datasetVolumeParameters {
-                                  sourceType
-                                }
-                                datasetSchemaParameters {
-                                  sourceType
-                                }
-                                datasetFreshnessParameters {
-                                  sourceType
-                                }
-                              }
-                              context {
-                                embeddedAssertions {
-                                  rawAssertion
-                                }
-                                stdDev
-                                inferenceDetails {
-                                  modelId
-                                  modelVersion
-                                  confidence
-                                  parameters {
-                                    value
-                                  }
-                                  adjustmentSettings {
-                                    algorithm
-                                    algorithmName
-                                    context {
-                                      value
-                                    }
-                                    exclusionWindows {
-                                      type
-                                      displayName
-                                      fixedRange {
-                                        startTimeMillis
-                                        endTimeMillis
-                                      }
-                                      weekly {
-                                        daysOfWeek
-                                        startTime
-                                        endTime
-                                        timezone
-                                      }
-                                      holiday {
-                                        name
-                                        region
-                                        timezone
-                                      }
-                                    }
-                                    trainingDataLookbackWindowDays
-                                    sensitivity {
-                                      level
-                                    }
-                                  }
-                                  generatedAt
-                                }
-                              }  
-                              rawParameters
+                          properties {
+                            name
                             }
-                            bootstrapStatus {
-                              metricsCubeBootstrapStatus {
-                                state
-                                message
-                              }
-                            }
-                          }
                         }
-                      }
                     }
-                  }
+                }
+            }
                 }
               }
             }
-        """ % run_events_limit
-
-        result = self.execute_graphql(graphql_query, variables)
-        
-        if "errors" in result:
-            self._log_graphql_errors(result)
-            return {"success": False, "error": f"GraphQL error: {result['errors'][0]['message']}"}
+            """
             
-        search_results = result.get("data", {}).get("searchAcrossEntities", {})
-        return {"success": True, "data": search_results}
+            # Build search query string
+            search_string = "*"
+            if node_urn:
+                # Filter by parent node URN
+                search_string = f'parentNodes.urn:"{node_urn}"'
+            elif query:
+                search_string = query
+
+            search_variables = {
+                "input": {
+                    "query": search_string,
+                    "types": ["GLOSSARY_TERM"],
+                    "count": count,
+                    "start": start,
+                }
+            }
+            
+            result = self.execute_graphql(search_query, search_variables)
+            
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_across_entities = result["data"]["searchAcrossEntities"]
+            
+                if search_across_entities is None:
+                    return []
+            
+                search_results = search_across_entities.get("searchResults", [])
+
+                if not search_results:
+                    self.logger.info("No glossary terms found in search results")
+                    return []
+    
+                # Process terms into a standardized format
+                processed_terms = []
+
+                for i, result_item in enumerate(search_results):
+                    try:
+                        if result_item is None:
+                            continue
+                            
+                        entity = result_item.get("entity") if result_item else None
+                        
+                        if entity is None:
+                            continue
+                            
+                        if entity.get("type") != "GLOSSARY_TERM":
+                            continue
+                            
+                        term_urn = entity.get("urn")
+
+                        # Get properties from multiple possible locations
+                        properties = entity.get("properties", {}) or {}
+                        glossary_term_info = entity.get("glossaryTermInfo", {}) or {}
+
+                        # Extract term data, preferring glossaryTermInfo over properties
+                        name = glossary_term_info.get("name") or properties.get("name", "Unknown")
+                        description = glossary_term_info.get("description") or properties.get("description", "")
+                        term_source = glossary_term_info.get("termSource", "INTERNAL")
+
+                        # Find parent node information
+                        parent_nodes_data = entity.get("parentNodes", {}) or {}
+                        parent_nodes = parent_nodes_data.get("nodes", []) if parent_nodes_data else []
+                        parent_node_urn = None
+                        parent_node_name = None
+
+                        if parent_nodes and len(parent_nodes) > 0:
+                            first_parent = parent_nodes[0]
+                            if first_parent:
+                                parent_node_urn = first_parent.get("urn")
+                                parent_properties = first_parent.get("properties", {}) or {}
+                                parent_node_name = parent_properties.get("name", "Unknown")
+
+                        # Format the term data
+                        term_data = {
+                            "urn": term_urn,
+                            "type": entity.get("type"),
+                            "name": name,
+                            "description": description,
+                            "term_source": term_source,
+                            "parent_node_urn": parent_node_urn,
+                            "parent_node_name": parent_node_name,
+                            "properties": properties,
+                            "glossaryTermInfo": glossary_term_info,
+                        }
+
+                        # Extract the term ID from the URN for local lookup
+                        try:
+                            term_id = term_urn.split("/")[-1] if term_urn else "unknown"
+                            term_data["id"] = term_id
+                        except:
+                            term_data["id"] = "unknown"
+
+                        processed_terms.append(term_data)
+            
+                    except Exception as e:
+                        self.logger.error(f"Error processing search result {i}: {str(e)}")
+                        continue
+
+                self.logger.info(
+                    f"Successfully retrieved {len(processed_terms)} glossary terms via comprehensive GraphQL search"
+                )
+                return processed_terms
+            else:
+                self.logger.warning(f"Unexpected GraphQL result structure: {result}")
+
+            # If we get here, either there were no terms or there was an error
+            errors = self._get_graphql_errors(result)
+            if errors:
+                self.logger.warning(
+                    f"GraphQL query for terms returned errors: {errors}"
+                )
+
+            self.logger.info("No glossary terms found")
+            return []
+            
+        except Exception as e:
+            self.logger.error(f"Error listing glossary terms: {str(e)}")
+            return []

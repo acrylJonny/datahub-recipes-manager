@@ -505,6 +505,9 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Load remote assertion data asynchronously
+        loadRemoteAssertionData();
+        
         // Show/hide config sections based on assertion type selection
         const typeSelect = document.getElementById('type');
         const configSections = document.querySelectorAll('.config-section');
@@ -749,5 +752,105 @@
             }
         });
     });
+    
+    function loadRemoteAssertionData() {
+        console.log('Loading remote assertion data...');
+        
+        // Show loading indicators
+        showLoadingIndicators();
+        
+        fetch('{% url "metadata_manager:get_remote_assertions_data" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Remote assertion data loaded successfully');
+                    showDataLoadedMessage(data.data);
+                } else {
+                    console.error('Error loading remote assertion data:', data.error);
+                    showErrorMessage(data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching remote assertion data:', error);
+                showErrorMessage('Failed to load remote assertion data: ' + error.message);
+            });
+    }
+    
+    function showLoadingIndicators() {
+        // Add loading indicators to remote tab
+        const remoteTab = document.getElementById('remote');
+        if (remoteTab) {
+            const cardBody = remoteTab.querySelector('.card-body');
+            if (cardBody) {
+                const existingContent = cardBody.innerHTML;
+                if (!existingContent.includes('Loading remote assertion data')) {
+                    cardBody.innerHTML = `
+                        <div class="alert alert-info">
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span>Loading remote assertion data...</span>
+                            </div>
+                        </div>
+                        ${existingContent}
+                    `;
+                }
+            }
+        }
+    }
+    
+    function showDataLoadedMessage(data) {
+        // Count the assertions
+        const localCount = data.local_assertions ? data.local_assertions.length : 0;
+        const remoteCount = data.remote_assertions ? data.remote_assertions.length : 0;
+        const syncedCount = data.synced_assertions ? data.synced_assertions.length : 0;
+        
+        // Show success message with counts
+        const message = `
+            <div class="alert alert-success alert-dismissible fade show">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <div>
+                        <strong>Remote assertion data loaded!</strong><br>
+                        Found ${localCount} local, ${remoteCount} remote, and ${syncedCount} synced assertions.
+                        <button type="button" class="btn btn-sm btn-success ms-2" onclick="window.location.reload()">
+                            <i class="fas fa-sync-alt me-1"></i>Refresh Page
+                        </button>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        
+        // Add the message at the top of the page
+        const container = document.querySelector('.container-fluid');
+        const header = container.querySelector('.d-flex.justify-content-between');
+        if (header) {
+            header.insertAdjacentHTML('afterend', message);
+        }
+        
+        // Remove loading indicators
+        document.querySelectorAll('.spinner-border').forEach(spinner => {
+            const alert = spinner.closest('.alert');
+            if (alert && alert.textContent.includes('Loading remote assertion data')) {
+                alert.remove();
+            }
+        });
+    }
+    
+    function showErrorMessage(message) {
+        // Remove loading indicators and show error
+        document.querySelectorAll('.spinner-border').forEach(spinner => {
+            const alert = spinner.closest('.alert');
+            if (alert && alert.textContent.includes('Loading remote assertion data')) {
+                alert.innerHTML = `
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Error loading assertion data: ${message}
+                `;
+                alert.className = 'alert alert-danger';
+            }
+        });
+    }
 </script>
 {% endblock %} 

@@ -11,7 +11,9 @@ import os
 import sys
 
 # Add the parent directory to the sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from utils.datahub_metadata_api import DataHubMetadataApiClient
 from utils.token_utils import get_token_from_env
@@ -38,86 +40,93 @@ def parse_args():
     Parse command line arguments
     """
     parser = argparse.ArgumentParser(description="Create a schema assertion in DataHub")
-    
+
     parser.add_argument(
         "--server-url",
         "-s",
         required=True,
         help="DataHub server URL (e.g., http://localhost:8080)",
     )
-    
+
     parser.add_argument(
         "--dataset-urn",
         "-d",
         required=True,
         help="DataHub dataset URN",
     )
-    
+
     parser.add_argument(
         "--compatibility",
-        choices=["EXACT_MATCH", "FORWARD_COMPATIBLE", "BACKWARD_COMPATIBLE", "FULL_COMPATIBLE"],
+        choices=[
+            "EXACT_MATCH",
+            "FORWARD_COMPATIBLE",
+            "BACKWARD_COMPATIBLE",
+            "FULL_COMPATIBLE",
+        ],
         default="EXACT_MATCH",
         help="Schema compatibility level (default: EXACT_MATCH)",
     )
-    
+
     parser.add_argument(
         "--schema-file",
         required=True,
         help="JSON file containing the schema field definitions",
     )
-    
+
     parser.add_argument(
         "--description",
         "-desc",
         default="",
         help="Description for the assertion",
     )
-    
+
     parser.add_argument(
         "--token-file",
         help="File containing DataHub access token",
     )
-    
+
     parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Logging level (default: INFO)",
     )
-    
+
     parser.add_argument(
         "--tags",
         nargs="*",
         help="List of tag URNs to apply to the assertion (e.g., urn:li:tag:critical)",
     )
-    
+
     parser.add_argument(
         "--run",
         action="store_true",
         help="Run the assertion immediately after creation",
     )
-    
+
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     setup_logging(args.log_level)
-    
+
     # Load schema fields from file
     try:
         with open(args.schema_file, "r") as f:
             schema_data = json.load(f)
-        
+
         # Check if the file has the expected format
         if isinstance(schema_data, dict) and "fields" in schema_data:
             fields = schema_data["fields"]
         elif isinstance(schema_data, list):
             fields = schema_data
         else:
-            logger.error("Schema file must contain a list of fields or a dictionary with a 'fields' key")
+            logger.error(
+                "Schema file must contain a list of fields or a dictionary with a 'fields' key"
+            )
             sys.exit(1)
-            
+
         # Validate that each field has required properties
         for field in fields:
             if "path" not in field or "type" not in field:
@@ -126,7 +135,7 @@ def main():
     except Exception as e:
         logger.error(f"Error loading schema file: {str(e)}")
         sys.exit(1)
-    
+
     # Get token from file or environment
     token = None
     if args.token_file:
@@ -138,31 +147,31 @@ def main():
             sys.exit(1)
     else:
         token = get_token_from_env()
-    
+
     # Initialize the client
     try:
         client = DataHubMetadataApiClient(args.server_url, token)
     except Exception as e:
         logger.error(f"Error initializing client: {str(e)}")
         sys.exit(1)
-    
+
     try:
         # Create schema assertion
         logger.info(f"Creating schema assertion for dataset {args.dataset_urn}...")
-        
+
         assertion_urn = client.create_schema_assertion(
             dataset_urn=args.dataset_urn,
             fields=fields,
             compatibility=args.compatibility,
-            description=args.description
+            description=args.description,
         )
-        
+
         if not assertion_urn:
             logger.error("Failed to create schema assertion")
             sys.exit(1)
-        
+
         logger.info(f"Successfully created schema assertion: {assertion_urn}")
-        
+
         # Apply tags if specified
         if args.tags:
             for tag_urn in args.tags:
@@ -172,7 +181,7 @@ def main():
                     logger.info(f"Successfully added tag {tag_urn}")
                 else:
                     logger.warning(f"Failed to add tag {tag_urn}")
-        
+
         # Run the assertion if requested
         if args.run:
             logger.info("Running assertion...")
@@ -181,14 +190,14 @@ def main():
                 logger.info(f"Assertion run result: {json.dumps(result, indent=2)}")
             else:
                 logger.warning("Failed to run assertion")
-        
+
         # Print the created assertion URN
         print(assertion_urn)
-    
+
     except Exception as e:
         logger.error(f"Error creating schema assertion: {str(e)}")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main() 
+    main()

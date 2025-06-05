@@ -8,16 +8,10 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">Dashboard</h1>
         <div class="d-flex align-items-center gap-3">
-            <div class="connection-status">
-                {% if connected %}
-                    <span class="badge bg-success">
-                        <i class="fas fa-check-circle me-1"></i> Connected
-                    </span>
-                {% else %}
-                    <span class="badge bg-danger">
-                        <i class="fas fa-exclamation-circle me-1"></i> Disconnected
-                    </span>
-                {% endif %}
+            <div class="connection-status" id="connection-status">
+                <span class="badge bg-secondary">
+                    <i class="fas fa-spinner fa-spin me-1"></i> Connecting...
+                </span>
             </div>
             <a href="{% url 'settings' %}" class="btn btn-outline-secondary">
                 <i class="fas fa-cog me-1"></i> Settings
@@ -43,7 +37,9 @@
                         <h5 class="card-title mb-0">Recipes</h5>
                         <i class="fas fa-file-code dashboard-icon"></i>
                     </div>
-                    <div class="display-4 mb-2">{{ recipes_count|default:"0" }}</div>
+                    <div class="display-4 mb-2" id="recipes-count">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </div>
                     <p class="card-text text-muted">Total ingestion recipes</p>
                     <div class="mt-auto">
                         <a href="{% url 'recipes' %}" class="btn btn-primary w-100">
@@ -60,7 +56,9 @@
                         <h5 class="card-title mb-0">Active Schedules</h5>
                         <i class="fas fa-clock dashboard-icon"></i>
                     </div>
-                    <div class="display-4 mb-2">{{ active_schedules_count|default:"0" }}</div>
+                    <div class="display-4 mb-2" id="schedules-count">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </div>
                     <p class="card-text text-muted">Currently scheduled ingestions</p>
                     <div class="mt-auto">
                         <a href="{% url 'recipes' %}" class="btn btn-outline-primary w-100">
@@ -77,7 +75,9 @@
                         <h5 class="card-title mb-0">Policies</h5>
                         <i class="fas fa-shield-alt dashboard-icon"></i>
                     </div>
-                    <div class="display-4 mb-2">{{ policies_count|default:"0" }}</div>
+                    <div class="display-4 mb-2" id="policies-count">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </div>
                     <p class="card-text text-muted">Access control policies</p>
                     <div class="mt-auto">
                         <a href="{% url 'policies' %}" class="btn btn-outline-primary w-100">
@@ -99,37 +99,12 @@
                     <a href="{% url 'recipes' %}" class="btn btn-sm btn-outline-primary">View All</a>
                 </div>
                 <div class="card-body p-0">
-                    {% if recent_recipes %}
-                        <div class="list-group list-group-flush">
-                            {% for recipe in recent_recipes %}
-                                <div class="list-group-item">
-                                    <div class="d-flex w-100 justify-content-between">
-                                        <h6 class="mb-1">{{ recipe.name }}</h6>
-                                    </div>
-                                    <p class="mb-1 text-truncate">{{ recipe.description|default:"No description" }}</p>
-                                    <div class="d-flex mt-2">
-                                        <a href="{% url 'recipe_edit' recipe.id %}" class="btn btn-sm btn-outline-secondary me-2">
-                                            <i class="fas fa-eye me-1"></i> View
-                                        </a>
-                                        <span class="badge {% if recipe.is_active %}bg-success{% else %}bg-secondary{% endif %} my-auto">
-                                            {% if recipe.is_active %}Active{% else %}Inactive{% endif %}
-                                        </span>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% else %}
+                    <div id="recent-recipes-container">
                         <div class="text-center py-4">
-                            <div class="mb-3">
-                                <i class="fas fa-file-code fa-3x text-muted"></i>
-                            </div>
-                            <h5>No recipes found</h5>
-                            <p class="text-muted">Create your first recipe to get started</p>
-                            <a href="{% url 'recipe_create' %}" class="btn btn-primary mt-2">
-                                <i class="fas fa-plus me-1"></i> Create Recipe
-                            </a>
+                            <i class="fas fa-spinner fa-spin fa-2x text-muted mb-3"></i>
+                            <p class="text-muted">Loading recent recipes...</p>
                         </div>
-                    {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -142,40 +117,12 @@
                     <a href="{% url 'policies' %}" class="btn btn-sm btn-outline-primary">View All</a>
                 </div>
                 <div class="card-body p-0">
-                    {% if recent_policies %}
-                        <div class="list-group list-group-flush">
-                            {% for policy in recent_policies %}
-                                <div class="list-group-item">
-                                    <div class="d-flex w-100 justify-content-between">
-                                        <h6 class="mb-1">{{ policy.name }}</h6>
-                                    </div>
-                                    <p class="mb-1 text-truncate">{{ policy.description|default:"No description" }}</p>
-                                    <div class="d-flex mt-2">
-                                        <a href="{% url 'policy_view' policy.id %}" class="btn btn-sm btn-outline-secondary me-2">
-                                            <i class="fas fa-eye me-1"></i> View
-                                        </a>
-                                        <span class="badge bg-{% if policy.type == 'METADATA' %}primary{% else %}secondary{% endif %} me-2">
-                                            {{ policy.type }}
-                                        </span>
-                                        <span class="badge bg-{% if policy.state == 'ACTIVE' %}success{% else %}warning{% endif %} me-2">
-                                            {% if policy.state == 'ACTIVE' %}Active{% else %}Inactive{% endif %}
-                                        </span>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% else %}
+                    <div id="recent-policies-container">
                         <div class="text-center py-4">
-                            <div class="mb-3">
-                                <i class="fas fa-shield-alt fa-3x text-muted"></i>
-                            </div>
-                            <h5>No policies found</h5>
-                            <p class="text-muted">Create your first policy to manage access control</p>
-                            <a href="{% url 'policy_create' %}" class="btn btn-primary mt-2">
-                                <i class="fas fa-plus me-1"></i> Create Policy
-                            </a>
+                            <i class="fas fa-spinner fa-spin fa-2x text-muted mb-3"></i>
+                            <p class="text-muted">Loading recent policies...</p>
                         </div>
-                    {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -209,4 +156,143 @@
         padding: 0.5em 1em;
     }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load dashboard data asynchronously
+    fetch('{% url "dashboard_data" %}')
+        .then(response => response.json())
+        .then(data => {
+            // Update connection status
+            const connectionStatus = document.getElementById('connection-status');
+            if (data.connected) {
+                connectionStatus.innerHTML = `
+                    <span class="badge bg-success">
+                        <i class="fas fa-check-circle me-1"></i> Connected
+                    </span>
+                `;
+            } else {
+                connectionStatus.innerHTML = `
+                    <span class="badge bg-danger">
+                        <i class="fas fa-exclamation-circle me-1"></i> Disconnected
+                    </span>
+                `;
+            }
+            
+            // Update counts
+            document.getElementById('recipes-count').textContent = data.recipes_count || 0;
+            document.getElementById('schedules-count').textContent = data.active_schedules_count || 0;
+            document.getElementById('policies-count').textContent = data.policies_count || 0;
+            
+            // Update recent recipes
+            const recipesContainer = document.getElementById('recent-recipes-container');
+            if (data.recent_recipes && data.recent_recipes.length > 0) {
+                let recipesHtml = '<div class="list-group list-group-flush">';
+                data.recent_recipes.forEach(recipe => {
+                    recipesHtml += `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${recipe.name || 'Unknown Recipe'}</h6>
+                            </div>
+                            <p class="mb-1 text-truncate">${recipe.description || 'No description'}</p>
+                            <div class="d-flex mt-2">
+                                <a href="/recipes/edit/${recipe.id}/" class="btn btn-sm btn-outline-secondary me-2">
+                                    <i class="fas fa-eye me-1"></i> View
+                                </a>
+                                <span class="badge ${recipe.is_active ? 'bg-success' : 'bg-secondary'} my-auto">
+                                    ${recipe.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                });
+                recipesHtml += '</div>';
+                recipesContainer.innerHTML = recipesHtml;
+            } else {
+                recipesContainer.innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="mb-3">
+                            <i class="fas fa-file-code fa-3x text-muted"></i>
+                        </div>
+                        <h5>No recipes found</h5>
+                        <p class="text-muted">Create your first recipe to get started</p>
+                        <a href="{% url 'recipe_create' %}" class="btn btn-primary mt-2">
+                            <i class="fas fa-plus me-1"></i> Create Recipe
+                        </a>
+                    </div>
+                `;
+            }
+            
+            // Update recent policies
+            const policiesContainer = document.getElementById('recent-policies-container');
+            if (data.recent_policies && data.recent_policies.length > 0) {
+                let policiesHtml = '<div class="list-group list-group-flush">';
+                data.recent_policies.forEach(policy => {
+                    const typeClass = policy.type === 'METADATA' ? 'primary' : 'secondary';
+                    const stateClass = policy.state === 'ACTIVE' ? 'success' : 'warning';
+                    policiesHtml += `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${policy.name || 'Unknown Policy'}</h6>
+                            </div>
+                            <p class="mb-1 text-truncate">${policy.description || 'No description'}</p>
+                            <div class="d-flex mt-2">
+                                <a href="/policies/detail/${policy.id}/" class="btn btn-sm btn-outline-secondary me-2">
+                                    <i class="fas fa-eye me-1"></i> View
+                                </a>
+                                <span class="badge bg-${typeClass} me-2">
+                                    ${policy.type || 'Unknown'}
+                                </span>
+                                <span class="badge bg-${stateClass} me-2">
+                                    ${policy.state === 'ACTIVE' ? 'Active' : 'Inactive'}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                });
+                policiesHtml += '</div>';
+                policiesContainer.innerHTML = policiesHtml;
+            } else {
+                policiesContainer.innerHTML = `
+                    <div class="text-center py-4">
+                        <div class="mb-3">
+                            <i class="fas fa-shield-alt fa-3x text-muted"></i>
+                        </div>
+                        <h5>No policies found</h5>
+                        <p class="text-muted">Create your first policy to manage access control</p>
+                        <a href="{% url 'policy_create' %}" class="btn btn-primary mt-2">
+                            <i class="fas fa-plus me-1"></i> Create Policy
+                        </a>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading dashboard data:', error);
+            
+            // Show error state
+            const connectionStatus = document.getElementById('connection-status');
+            connectionStatus.innerHTML = `
+                <span class="badge bg-danger">
+                    <i class="fas fa-exclamation-circle me-1"></i> Error
+                </span>
+            `;
+            
+            // Reset counts to show error
+            document.getElementById('recipes-count').innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i>';
+            document.getElementById('schedules-count').innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i>';
+            document.getElementById('policies-count').innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i>';
+            
+            // Show error in containers
+            const errorHtml = `
+                <div class="text-center py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x text-danger mb-3"></i>
+                    <p class="text-danger">Error loading data</p>
+                </div>
+            `;
+            document.getElementById('recent-recipes-container').innerHTML = errorHtml;
+            document.getElementById('recent-policies-container').innerHTML = errorHtml;
+        });
+});
+</script>
 {% endblock %} 

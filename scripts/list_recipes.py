@@ -5,7 +5,6 @@ Script to list all DataHub ingestion sources (recipes) with their configuration.
 
 import os
 import sys
-import json
 import logging
 from pathlib import Path
 from dotenv import load_dotenv

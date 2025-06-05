@@ -11,5 +11,5 @@ from scripts.domains.domain_utils import (
     get_parent_domains,
     get_domain_children,
     check_domain_dependencies,
-    create_owner_object
-) 
+    create_owner_object,
+)

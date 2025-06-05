@@ -6,9 +6,7 @@ from DataHub using the native ingestion framework and MCPs.
 """
 
 import logging
-from typing import Dict, Any, List, Optional, Iterable, Set, Tuple
-from dataclasses import dataclass
-import json
+from typing import Dict, Any, List, Optional, Tuple
 
 from datahub.emitter.mce_builder import make_domain_urn, make_tag_urn, make_term_urn
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
@@ -17,7 +15,6 @@ from datahub.ingestion.api.workunit import MetadataWorkUnit
 from datahub.metadata.schema_classes import (
     ChangeTypeClass,
     DomainPropertiesClass,
-    DomainsClass,
     DomainsClass,
     DomainKeyClass,
     DisplayPropertiesClass,
@@ -28,7 +25,6 @@ from datahub.metadata.schema_classes import (
     TagKeyClass,
     GlobalTagsClass,
     TagAssociationClass,
-    GlossaryTermInfoClass,
     GlossaryTermKeyClass,
     GlossaryNodeInfoClass,
     GlossaryNodeKeyClass,
@@ -46,7 +42,9 @@ class DataHubMetadataApiClient:
     using the native ingestion framework
     """
 
-    def __init__(self, server_url: str, token: Optional[str] = None, verify_ssl: bool = True):
+    def __init__(
+        self, server_url: str, token: Optional[str] = None, verify_ssl: bool = True
+    ):
         """
         Initialize the DataHub metadata API client
 
@@ -55,7 +53,7 @@ class DataHubMetadataApiClient:
             token: DataHub authentication token (optional)
             verify_ssl: Whether to verify SSL certificates (default: True)
         """
-        self.server_url = server_url.rstrip('/')
+        self.server_url = server_url.rstrip("/")
         self.token = token
         self.verify_ssl = verify_ssl
         self.context = self._create_pipeline_context()
@@ -77,14 +75,14 @@ class DataHubMetadataApiClient:
             )
 
             # Add verify_ssl parameter if available in the SDK version
-            if hasattr(config, 'verify_ssl'):
+            if hasattr(config, "verify_ssl"):
                 config.verify_ssl = self.verify_ssl
 
             # Initialize the graph client
             graph = DataHubGraph(config=config)
 
             # Also set verify_ssl on the graph client if available
-            if hasattr(graph, 'verify_ssl'):
+            if hasattr(graph, "verify_ssl"):
                 graph.verify_ssl = self.verify_ssl
 
             logger.info("DataHubGraph client initialized successfully")
@@ -113,8 +111,7 @@ class DataHubMetadataApiClient:
         try:
             # Use the graph client to search for all domains
             domains = self.context.graph.search_entities(
-                entity_types=["domain"],
-                query="*"
+                entity_types=["domain"], query="*"
             )
 
             result = []
@@ -133,7 +130,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error listing domains: {str(e)}")
             return []
 
-    def export_domain(self, domain_urn: str, include_entities: bool = False) -> Optional[Dict[str, Any]]:
+    def export_domain(
+        self, domain_urn: str, include_entities: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Export a domain with its properties
 
@@ -185,11 +184,13 @@ class DataHubMetadataApiClient:
                     entities = self.context.graph.search_across_entities(
                         query=f"domains:{domain_id}",
                         start=0,
-                        count=1000  # Reasonable limit
+                        count=1000,  # Reasonable limit
                     )
 
-                    result["entities"] = [{"urn": entity["urn"], "type": entity["entityType"]}
-                                         for entity in entities.get("searchResults", [])]
+                    result["entities"] = [
+                        {"urn": entity["urn"], "type": entity["entityType"]}
+                        for entity in entities.get("searchResults", [])
+                    ]
                 except Exception as e:
                     logger.error(f"Error getting domain entities: {str(e)}")
 
@@ -199,7 +200,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error exporting domain: {str(e)}")
             return None
 
-    def create_domain_workunit(self, domain_data: Dict[str, Any]) -> Optional[MetadataWorkUnit]:
+    def create_domain_workunit(
+        self, domain_data: Dict[str, Any]
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for domain creation/update
 
@@ -229,8 +232,7 @@ class DataHubMetadataApiClient:
 
             # Create domain properties aspect
             domain_properties = DomainPropertiesClass(
-                name=name,
-                description=description
+                name=name, description=description
             )
 
             # Create MCP for domain properties
@@ -253,8 +255,7 @@ class DataHubMetadataApiClient:
                 icon = display_props.get("icon", {})
 
                 display_properties = DisplayPropertiesClass(
-                    colorHex=color_hex,
-                    icon=icon
+                    colorHex=color_hex, icon=icon
                 )
 
                 mcp_display = MetadataChangeProposalWrapper(
@@ -267,7 +268,10 @@ class DataHubMetadataApiClient:
                 workunit.metadata.mcp2.append(mcp_display)
 
             # Add parent domains if present
-            if "parentDomains" in domain_data and "domains" in domain_data["parentDomains"]:
+            if (
+                "parentDomains" in domain_data
+                and "domains" in domain_data["parentDomains"]
+            ):
                 parent_domains = []
                 for parent in domain_data["parentDomains"]["domains"]:
                     if "urn" in parent:
@@ -299,14 +303,17 @@ class DataHubMetadataApiClient:
                     owner_type = owner_data.get("type", "UNKNOWN")
 
                     ownership_type_urn = "urn:li:ownershipType:Technical"
-                    if "ownershipType" in owner_data and "urn" in owner_data["ownershipType"]:
+                    if (
+                        "ownershipType" in owner_data
+                        and "urn" in owner_data["ownershipType"]
+                    ):
                         ownership_type_urn = owner_data["ownershipType"]["urn"]
 
                     owners.append(
                         OwnerClass(
                             owner=owner_urn,
                             type=owner_type,
-                            ownershipType=OwnershipTypeClass(ownership_type_urn)
+                            ownershipType=OwnershipTypeClass(ownership_type_urn),
                         )
                     )
 
@@ -328,7 +335,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating domain workunit: {str(e)}")
             return None
 
-    def create_domain_association_workunit(self, entity_urn: str, domain_urn: str) -> Optional[MetadataWorkUnit]:
+    def create_domain_association_workunit(
+        self, entity_urn: str, domain_urn: str
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for associating an entity with a domain
 
@@ -341,9 +350,7 @@ class DataHubMetadataApiClient:
         """
         try:
             # Create domain association aspect
-            domain_association = DomainsClass(
-                domains=[domain_urn]
-            )
+            domain_association = DomainsClass(domains=[domain_urn])
 
             # Create MCP for domain association
             mcp = MetadataChangeProposalWrapper(
@@ -480,11 +487,15 @@ class DataHubMetadataApiClient:
                 has_children, has_entities = self.check_domain_dependencies(domain_urn)
 
                 if has_children:
-                    logger.error(f"Domain {domain_urn} has child domains. Use force=True to delete anyway.")
+                    logger.error(
+                        f"Domain {domain_urn} has child domains. Use force=True to delete anyway."
+                    )
                     return False
 
                 if has_entities:
-                    logger.error(f"Domain {domain_urn} has associated entities. Use force=True to delete anyway.")
+                    logger.error(
+                        f"Domain {domain_urn} has associated entities. Use force=True to delete anyway."
+                    )
                     return False
 
             # Create workunit for domain deletion
@@ -527,14 +538,21 @@ class DataHubMetadataApiClient:
             has_children = False
             for domain in all_domains:
                 if "parentDomains" in domain and "domains" in domain["parentDomains"]:
-                    parent_urns = [parent.get("urn") for parent in domain["parentDomains"]["domains"]]
+                    parent_urns = [
+                        parent.get("urn")
+                        for parent in domain["parentDomains"]["domains"]
+                    ]
                     if domain_urn in parent_urns:
                         has_children = True
                         break
 
             # Check for associated entities
             domain_with_entities = self.export_domain(domain_urn, include_entities=True)
-            has_entities = domain_with_entities is not None and "entities" in domain_with_entities and len(domain_with_entities["entities"]) > 0
+            has_entities = (
+                domain_with_entities is not None
+                and "entities" in domain_with_entities
+                and len(domain_with_entities["entities"]) > 0
+            )
 
             return has_children, has_entities
 
@@ -555,10 +573,7 @@ class DataHubMetadataApiClient:
 
         try:
             # Use the graph client to search for all tags
-            tags = self.context.graph.search_entities(
-                entity_types=["tag"],
-                query="*"
-            )
+            tags = self.context.graph.search_entities(entity_types=["tag"], query="*")
 
             result = []
             for tag in tags:
@@ -576,7 +591,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error listing tags: {str(e)}")
             return []
 
-    def export_tag(self, tag_urn: str, include_entities: bool = False) -> Optional[Dict[str, Any]]:
+    def export_tag(
+        self, tag_urn: str, include_entities: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Export a tag with its properties
 
@@ -630,11 +647,13 @@ class DataHubMetadataApiClient:
                     entities = self.context.graph.search_across_entities(
                         query=f"tags:{tag_name}",
                         start=0,
-                        count=1000  # Reasonable limit
+                        count=1000,  # Reasonable limit
                     )
 
-                    result["entities"] = [{"urn": entity["urn"], "type": entity["entityType"]}
-                                         for entity in entities.get("searchResults", [])]
+                    result["entities"] = [
+                        {"urn": entity["urn"], "type": entity["entityType"]}
+                        for entity in entities.get("searchResults", [])
+                    ]
                 except Exception as e:
                     logger.error(f"Error getting tagged entities: {str(e)}")
 
@@ -644,7 +663,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error exporting tag: {str(e)}")
             return None
 
-    def create_tag_workunit(self, tag_data: Dict[str, Any]) -> Optional[MetadataWorkUnit]:
+    def create_tag_workunit(
+        self, tag_data: Dict[str, Any]
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for tag creation/update
 
@@ -681,9 +702,7 @@ class DataHubMetadataApiClient:
 
             # Create tag properties aspect
             tag_properties = TagPropertiesClass(
-                name=name,
-                description=description,
-                colorHex=color_hex
+                name=name, description=description, colorHex=color_hex
             )
 
             # Create MCP for tag properties
@@ -705,7 +724,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating tag workunit: {str(e)}")
             return None
 
-    def create_tag_association_workunit(self, entity_urn: str, tag_urn: str) -> Optional[MetadataWorkUnit]:
+    def create_tag_association_workunit(
+        self, entity_urn: str, tag_urn: str
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for associating an entity with a tag
 
@@ -718,9 +739,7 @@ class DataHubMetadataApiClient:
         """
         try:
             # Create tag association
-            tag_association = TagAssociationClass(
-                tag=tag_urn
-            )
+            tag_association = TagAssociationClass(tag=tag_urn)
 
             # Get existing tags if any
             entity = None
@@ -728,7 +747,11 @@ class DataHubMetadataApiClient:
             try:
                 if self.context.graph:
                     entity = self.context.graph.get_entity(entity_urn)
-                    if entity and "globalTags" in entity and "tags" in entity["globalTags"]:
+                    if (
+                        entity
+                        and "globalTags" in entity
+                        and "tags" in entity["globalTags"]
+                    ):
                         existing_tags = entity["globalTags"]["tags"]
             except Exception:
                 pass  # If we can't get existing tags, we'll just add the new one
@@ -740,9 +763,7 @@ class DataHubMetadataApiClient:
                     return None
 
             # Add the new tag to existing ones
-            tags_aspect = GlobalTagsClass(
-                tags=existing_tags + [tag_association]
-            )
+            tags_aspect = GlobalTagsClass(tags=existing_tags + [tag_association])
 
             # Create MCP for tag association
             mcp = MetadataChangeProposalWrapper(
@@ -877,10 +898,16 @@ class DataHubMetadataApiClient:
             # Check for entities using this tag if not forcing
             if not force:
                 tag_with_entities = self.export_tag(tag_urn, include_entities=True)
-                has_entities = tag_with_entities is not None and "entities" in tag_with_entities and len(tag_with_entities["entities"]) > 0
+                has_entities = (
+                    tag_with_entities is not None
+                    and "entities" in tag_with_entities
+                    and len(tag_with_entities["entities"]) > 0
+                )
 
                 if has_entities:
-                    logger.error(f"Tag {tag_urn} is associated with entities. Use force=True to delete anyway.")
+                    logger.error(
+                        f"Tag {tag_urn} is associated with entities. Use force=True to delete anyway."
+                    )
                     return False
 
             # Create workunit for tag deletion
@@ -919,8 +946,7 @@ class DataHubMetadataApiClient:
         try:
             # Use the graph client to search for all glossary nodes
             nodes = self.context.graph.search_entities(
-                entity_types=["glossaryNode"],
-                query="*"
+                entity_types=["glossaryNode"], query="*"
             )
 
             result = []
@@ -966,7 +992,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error listing root glossary nodes: {str(e)}")
             return []
 
-    def export_glossary_node(self, node_urn: str, include_children: bool = False) -> Optional[Dict[str, Any]]:
+    def export_glossary_node(
+        self, node_urn: str, include_children: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Export a glossary node with its properties
 
@@ -1043,7 +1071,7 @@ class DataHubMetadataApiClient:
                     "id": node_data.get("id"),
                     "name": node_data.get("name"),
                     "description": node_data.get("description", ""),
-                    "parentNode": node_data.get("parent_urn")
+                    "parentNode": node_data.get("parent_urn"),
                 }
             }
 
@@ -1059,7 +1087,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating glossary node: {str(e)}")
             return None
 
-    def delete_glossary_node_workunit(self, node_urn: str) -> Optional[MetadataWorkUnit]:
+    def delete_glossary_node_workunit(
+        self, node_urn: str
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for glossary node deletion
 
@@ -1172,11 +1202,19 @@ class DataHubMetadataApiClient:
         try:
             # Check for child nodes and terms if not forcing
             if not force:
-                node_with_children = self.export_glossary_node(node_urn, include_children=True)
-                has_children = node_with_children is not None and "children" in node_with_children and len(node_with_children["children"].get("relationships", [])) > 0
+                node_with_children = self.export_glossary_node(
+                    node_urn, include_children=True
+                )
+                has_children = (
+                    node_with_children is not None
+                    and "children" in node_with_children
+                    and len(node_with_children["children"].get("relationships", [])) > 0
+                )
 
                 if has_children:
-                    logger.error(f"Glossary node {node_urn} has child nodes or terms. Use force=True to delete anyway.")
+                    logger.error(
+                        f"Glossary node {node_urn} has child nodes or terms. Use force=True to delete anyway."
+                    )
                     return False
 
             # Create workunit for glossary node deletion
@@ -1211,8 +1249,7 @@ class DataHubMetadataApiClient:
         try:
             # Use the graph client to search for all glossary terms
             terms = self.context.graph.search_entities(
-                entity_types=["glossaryTerm"],
-                query="*"
+                entity_types=["glossaryTerm"], query="*"
             )
 
             result = []
@@ -1258,7 +1295,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error listing root glossary terms: {str(e)}")
             return []
 
-    def export_glossary_term(self, term_urn: str, include_related: bool = False) -> Optional[Dict[str, Any]]:
+    def export_glossary_term(
+        self, term_urn: str, include_related: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Export a glossary term with its properties
 
@@ -1319,11 +1358,13 @@ class DataHubMetadataApiClient:
                     entities = self.context.graph.search_across_entities(
                         query=f"glossaryTerms:{term_name}",
                         start=0,
-                        count=1000  # Reasonable limit
+                        count=1000,  # Reasonable limit
                     )
 
-                    result["relatedEntities"] = [{"urn": entity["urn"], "type": entity["entityType"]}
-                                               for entity in entities.get("searchResults", [])]
+                    result["relatedEntities"] = [
+                        {"urn": entity["urn"], "type": entity["entityType"]}
+                        for entity in entities.get("searchResults", [])
+                    ]
                 except Exception as e:
                     logger.error(f"Error getting related entities: {str(e)}")
 
@@ -1333,7 +1374,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error exporting glossary term: {str(e)}")
             return None
 
-    def create_glossary_term_workunit(self, term_data: Dict[str, Any]) -> Optional[MetadataWorkUnit]:
+    def create_glossary_term_workunit(
+        self, term_data: Dict[str, Any]
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for glossary term creation/update
 
@@ -1383,7 +1426,7 @@ class DataHubMetadataApiClient:
                 termSource=term_source,
                 sourceRef=source_ref,
                 sourceUrl=source_url,
-                customProperties=custom_properties
+                customProperties=custom_properties,
             )
 
             # Create MCP for term properties
@@ -1409,7 +1452,9 @@ class DataHubMetadataApiClient:
                 if parent_nodes:
                     # Create parent nodes aspect
                     parent_nodes_aspect = ParentNodesClass(
-                        nodes=[GlossaryNodeInfoClass(urn=parent) for parent in parent_nodes]
+                        nodes=[
+                            GlossaryNodeInfoClass(urn=parent) for parent in parent_nodes
+                        ]
                     )
 
                     mcp_parents = MetadataChangeProposalWrapper(
@@ -1432,14 +1477,17 @@ class DataHubMetadataApiClient:
                     owner_type = owner_data.get("type", "UNKNOWN")
 
                     ownership_type_urn = "urn:li:ownershipType:Technical"
-                    if "ownershipType" in owner_data and "urn" in owner_data["ownershipType"]:
+                    if (
+                        "ownershipType" in owner_data
+                        and "urn" in owner_data["ownershipType"]
+                    ):
                         ownership_type_urn = owner_data["ownershipType"]["urn"]
 
                     owners.append(
                         OwnerClass(
                             owner=owner_urn,
                             type=owner_type,
-                            ownershipType=OwnershipTypeClass(ownership_type_urn)
+                            ownershipType=OwnershipTypeClass(ownership_type_urn),
                         )
                     )
 
@@ -1461,7 +1509,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating glossary term workunit: {str(e)}")
             return None
 
-    def create_glossary_term_association_workunit(self, entity_urn: str, term_urn: str) -> Optional[MetadataWorkUnit]:
+    def create_glossary_term_association_workunit(
+        self, entity_urn: str, term_urn: str
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for associating an entity with a glossary term
 
@@ -1474,9 +1524,7 @@ class DataHubMetadataApiClient:
         """
         try:
             # Create term association
-            term_association = GlossaryTermAssociationClass(
-                urn=term_urn
-            )
+            term_association = GlossaryTermAssociationClass(urn=term_urn)
 
             # Get existing terms if any
             entity = None
@@ -1484,7 +1532,11 @@ class DataHubMetadataApiClient:
             try:
                 if self.context.graph:
                     entity = self.context.graph.get_entity(entity_urn)
-                    if entity and "glossaryTerms" in entity and "terms" in entity["glossaryTerms"]:
+                    if (
+                        entity
+                        and "glossaryTerms" in entity
+                        and "terms" in entity["glossaryTerms"]
+                    ):
                         existing_terms = entity["glossaryTerms"]["terms"]
             except Exception:
                 pass  # If we can't get existing terms, we'll just add the new one
@@ -1496,9 +1548,7 @@ class DataHubMetadataApiClient:
                     return None
 
             # Add the new term to existing ones
-            terms_aspect = GlossaryTermsClass(
-                terms=existing_terms + [term_association]
-            )
+            terms_aspect = GlossaryTermsClass(terms=existing_terms + [term_association])
 
             # Create MCP for term association
             mcp = MetadataChangeProposalWrapper(
@@ -1519,7 +1569,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating glossary term association workunit: {str(e)}")
             return None
 
-    def delete_glossary_term_workunit(self, term_urn: str) -> Optional[MetadataWorkUnit]:
+    def delete_glossary_term_workunit(
+        self, term_urn: str
+    ) -> Optional[MetadataWorkUnit]:
         """
         Create a MetadataWorkUnit for glossary term deletion
 
@@ -1632,11 +1684,19 @@ class DataHubMetadataApiClient:
         try:
             # Check for entities using this term if not forcing
             if not force:
-                term_with_entities = self.export_glossary_term(term_urn, include_related=True)
-                has_entities = term_with_entities is not None and "relatedEntities" in term_with_entities and len(term_with_entities["relatedEntities"]) > 0
+                term_with_entities = self.export_glossary_term(
+                    term_urn, include_related=True
+                )
+                has_entities = (
+                    term_with_entities is not None
+                    and "relatedEntities" in term_with_entities
+                    and len(term_with_entities["relatedEntities"]) > 0
+                )
 
                 if has_entities:
-                    logger.error(f"Glossary term {term_urn} is associated with entities. Use force=True to delete anyway.")
+                    logger.error(
+                        f"Glossary term {term_urn} is associated with entities. Use force=True to delete anyway."
+                    )
                     return False
 
             # Create workunit for glossary term deletion
@@ -1661,7 +1721,9 @@ class DataHubMetadataApiClient:
     # Assertion methods
     # ============================
 
-    def list_assertions(self, dataset_urn: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_assertions(
+        self, dataset_urn: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         List data quality assertions in DataHub
 
@@ -1684,11 +1746,22 @@ class DataHubMetadataApiClient:
                 query getDatasetAssertions($urn: String!) {
                   dataset(urn: $urn) {
                     assertions(start: 0, count: 1000) {
+                      start
+                      count
+                      total
                       assertions {
                         urn
+                        type
+                        platform {
+                          name
+                          urn
+                        }
                         info {
-                          type
                           description
+                          externalUrl
+                        }
+                        status {
+                          removed
                         }
                       }
                     }
@@ -1696,14 +1769,19 @@ class DataHubMetadataApiClient:
                 }
                 """
 
-                variables = {
-                    "urn": dataset_urn
-                }
+                variables = {"urn": dataset_urn}
 
                 result = self.context.graph.execute_graphql(query, variables)
 
-                if result and "data" in result and "dataset" in result["data"] and result["data"]["dataset"]:
-                    assertions_data = result["data"]["dataset"]["assertions"]["assertions"]
+                if (
+                    result
+                    and "data" in result
+                    and "dataset" in result["data"]
+                    and result["data"]["dataset"]
+                ):
+                    assertions_data = result["data"]["dataset"]["assertions"][
+                        "assertions"
+                    ]
 
                     # Get detailed assertion info
                     for assertion_data in assertions_data:
@@ -1713,21 +1791,65 @@ class DataHubMetadataApiClient:
                             if assertion_info:
                                 assertions.append(assertion_info)
             else:
-                # Get all assertions using search (there's no direct API to get all assertions)
-                assertions_search = self.context.graph.search_across_entities(
-                    query="*",
-                    entity_types=["assertion"],
-                    start=0,
-                    count=1000
-                )
+                # Use simplified GraphQL query for all assertions to avoid enum errors
+                # This replaces the problematic search_across_entities call
+                query = """
+                query GetAllAssertions($input: SearchAcrossEntitiesInput!) {
+                  searchAcrossEntities(input: $input) {
+                    start
+                    count
+                    total
+                    searchResults {
+                      entity {
+                        urn
+                        type
+                        ... on Assertion {
+                          urn
+                          type
+                          platform {
+                            name
+                            urn
+                          }
+                          info {
+                            description
+                            externalUrl
+                          }
+                          status {
+                            removed
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """
 
-                if assertions_search and "searchResults" in assertions_search:
-                    for result in assertions_search["searchResults"]:
-                        if "entity" in result and "urn" in result["entity"]:
-                            assertion_urn = result["entity"]["urn"]
-                            assertion_info = self.get_assertion(assertion_urn)
-                            if assertion_info:
-                                assertions.append(assertion_info)
+                variables = {
+                    "input": {
+                        "types": ["ASSERTION"],
+                        "query": "*",
+                        "start": 0,
+                        "count": 1000,
+                    }
+                }
+
+                result = self.context.graph.execute_graphql(query, variables)
+
+                if (
+                    result
+                    and "data" in result
+                    and "searchAcrossEntities" in result["data"]
+                ):
+                    search_results = result["data"]["searchAcrossEntities"][
+                        "searchResults"
+                    ]
+
+                    for search_result in search_results:
+                        if "entity" in search_result:
+                            # Use the simplified entity data directly to avoid complex assertion queries
+                            entity = search_result["entity"]
+                            if entity.get("type") == "ASSERTION":
+                                assertions.append(entity)
 
             return assertions
         except Exception as e:
@@ -1770,7 +1892,6 @@ class DataHubMetadataApiClient:
                   }
                 }
                 info {
-                  type
                   description
                   lastUpdated {
                     time
@@ -1889,9 +2010,7 @@ class DataHubMetadataApiClient:
             }
             """
 
-            variables = {
-                "urn": assertion_urn
-            }
+            variables = {"urn": assertion_urn}
 
             result = self.context.graph.execute_graphql(query, variables)
 
@@ -1903,10 +2022,16 @@ class DataHubMetadataApiClient:
             logger.error(f"Error getting assertion: {str(e)}")
             return None
 
-    def create_freshness_assertion(self, dataset_urn: str, schedule_interval: int,
-                                schedule_unit: str, timezone: str, cron: str,
-                                source_type: str = "INFORMATION_SCHEMA",
-                                description: str = "") -> Optional[str]:
+    def create_freshness_assertion(
+        self,
+        dataset_urn: str,
+        schedule_interval: int,
+        schedule_unit: str,
+        timezone: str,
+        cron: str,
+        source_type: str = "INFORMATION_SCHEMA",
+        description: str = "",
+    ) -> Optional[str]:
         """
         Create a freshness assertion for a dataset
 
@@ -1967,14 +2092,17 @@ class DataHubMetadataApiClient:
                 "timezone": timezone,
                 "cron": cron,
                 "sourceType": source_type,
-                "description": description
+                "description": description,
             }
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (result and "data" in result and
-                "upsertDatasetFreshnessAssertionMonitor" in result["data"] and
-                "urn" in result["data"]["upsertDatasetFreshnessAssertionMonitor"]):
+            if (
+                result
+                and "data" in result
+                and "upsertDatasetFreshnessAssertionMonitor" in result["data"]
+                and "urn" in result["data"]["upsertDatasetFreshnessAssertionMonitor"]
+            ):
                 return result["data"]["upsertDatasetFreshnessAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create freshness assertion: {result}")
@@ -1983,11 +2111,18 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating freshness assertion: {str(e)}")
             return None
 
-    def create_volume_assertion(self, dataset_urn: str, operator: str,
-                               min_value: Optional[str] = None, max_value: Optional[str] = None,
-                               value: Optional[str] = None, timezone: str = "America/Los_Angeles",
-                               cron: str = "0 */8 * * *", source_type: str = "INFORMATION_SCHEMA",
-                               description: str = "") -> Optional[str]:
+    def create_volume_assertion(
+        self,
+        dataset_urn: str,
+        operator: str,
+        min_value: Optional[str] = None,
+        max_value: Optional[str] = None,
+        value: Optional[str] = None,
+        timezone: str = "America/Los_Angeles",
+        cron: str = "0 */8 * * *",
+        source_type: str = "INFORMATION_SCHEMA",
+        description: str = "",
+    ) -> Optional[str]:
         """
         Create a volume assertion for a dataset
 
@@ -2058,12 +2193,14 @@ class DataHubMetadataApiClient:
                 "description": description,
                 "minValue": None,
                 "maxValue": None,
-                "value": None
+                "value": None,
             }
 
             if operator == "BETWEEN":
                 if min_value is None or max_value is None:
-                    logger.error("Both min_value and max_value are required for BETWEEN operator")
+                    logger.error(
+                        "Both min_value and max_value are required for BETWEEN operator"
+                    )
                     return None
 
                 parameters["minValue"] = {"value": min_value, "type": "NUMBER"}
@@ -2077,9 +2214,12 @@ class DataHubMetadataApiClient:
 
             result = self.context.graph.execute_graphql(query, parameters)
 
-            if (result and "data" in result and
-                "upsertDatasetVolumeAssertionMonitor" in result["data"] and
-                "urn" in result["data"]["upsertDatasetVolumeAssertionMonitor"]):
+            if (
+                result
+                and "data" in result
+                and "upsertDatasetVolumeAssertionMonitor" in result["data"]
+                and "urn" in result["data"]["upsertDatasetVolumeAssertionMonitor"]
+            ):
                 return result["data"]["upsertDatasetVolumeAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create volume assertion: {result}")
@@ -2088,11 +2228,22 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating volume assertion: {str(e)}")
             return None
 
-    def create_field_assertion(self, dataset_urn: str, field_path: str, field_type: str,
-                              native_type: str, operator: str, value: str, value_type: str = "NUMBER",
-                              fail_threshold: int = 0, exclude_nulls: bool = True,
-                              timezone: str = "America/Los_Angeles", cron: str = "0 */8 * * *",
-                              source_type: str = "ALL_ROWS_QUERY", description: str = "") -> Optional[str]:
+    def create_field_assertion(
+        self,
+        dataset_urn: str,
+        field_path: str,
+        field_type: str,
+        native_type: str,
+        operator: str,
+        value: str,
+        value_type: str = "NUMBER",
+        fail_threshold: int = 0,
+        exclude_nulls: bool = True,
+        timezone: str = "America/Los_Angeles",
+        cron: str = "0 */8 * * *",
+        source_type: str = "ALL_ROWS_QUERY",
+        description: str = "",
+    ) -> Optional[str]:
         """
         Create a field assertion for a dataset column
 
@@ -2177,14 +2328,17 @@ class DataHubMetadataApiClient:
                 "timezone": timezone,
                 "cron": cron,
                 "sourceType": source_type,
-                "description": description
+                "description": description,
             }
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (result and "data" in result and
-                "upsertDatasetFieldAssertionMonitor" in result["data"] and
-                "urn" in result["data"]["upsertDatasetFieldAssertionMonitor"]):
+            if (
+                result
+                and "data" in result
+                and "upsertDatasetFieldAssertionMonitor" in result["data"]
+                and "urn" in result["data"]["upsertDatasetFieldAssertionMonitor"]
+            ):
                 return result["data"]["upsertDatasetFieldAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create field assertion: {result}")
@@ -2193,9 +2347,17 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating field assertion: {str(e)}")
             return None
 
-    def create_sql_assertion(self, dataset_urn: str, sql_statement: str, operator: str,
-                            value: str, value_type: str = "NUMBER", timezone: str = "America/Los_Angeles",
-                            cron: str = "0 */6 * * *", description: str = "") -> Optional[str]:
+    def create_sql_assertion(
+        self,
+        dataset_urn: str,
+        sql_statement: str,
+        operator: str,
+        value: str,
+        value_type: str = "NUMBER",
+        timezone: str = "America/Los_Angeles",
+        cron: str = "0 */6 * * *",
+        description: str = "",
+    ) -> Optional[str]:
         """
         Create a custom SQL assertion for a dataset
 
@@ -2254,14 +2416,17 @@ class DataHubMetadataApiClient:
                 "value": {"value": value, "type": value_type},
                 "timezone": timezone,
                 "cron": cron,
-                "description": description
+                "description": description,
             }
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (result and "data" in result and
-                "upsertDatasetSqlAssertionMonitor" in result["data"] and
-                "urn" in result["data"]["upsertDatasetSqlAssertionMonitor"]):
+            if (
+                result
+                and "data" in result
+                and "upsertDatasetSqlAssertionMonitor" in result["data"]
+                and "urn" in result["data"]["upsertDatasetSqlAssertionMonitor"]
+            ):
                 return result["data"]["upsertDatasetSqlAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create SQL assertion: {result}")
@@ -2270,8 +2435,13 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating SQL assertion: {str(e)}")
             return None
 
-    def create_schema_assertion(self, dataset_urn: str, fields: List[Dict[str, str]],
-                               compatibility: str = "EXACT_MATCH", description: str = "") -> Optional[str]:
+    def create_schema_assertion(
+        self,
+        dataset_urn: str,
+        fields: List[Dict[str, str]],
+        compatibility: str = "EXACT_MATCH",
+        description: str = "",
+    ) -> Optional[str]:
         """
         Create a schema assertion for a dataset
 
@@ -2315,23 +2485,23 @@ class DataHubMetadataApiClient:
             # Convert fields to the expected format
             schema_fields = []
             for field in fields:
-                schema_fields.append({
-                    "path": field["path"],
-                    "type": field["type"]
-                })
+                schema_fields.append({"path": field["path"], "type": field["type"]})
 
             variables = {
                 "entityUrn": dataset_urn,
                 "compatibility": compatibility,
                 "fields": schema_fields,
-                "description": description
+                "description": description,
             }
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (result and "data" in result and
-                "upsertDatasetSchemaAssertionMonitor" in result["data"] and
-                "urn" in result["data"]["upsertDatasetSchemaAssertionMonitor"]):
+            if (
+                result
+                and "data" in result
+                and "upsertDatasetSchemaAssertionMonitor" in result["data"]
+                and "urn" in result["data"]["upsertDatasetSchemaAssertionMonitor"]
+            ):
                 return result["data"]["upsertDatasetSchemaAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create schema assertion: {result}")
@@ -2340,7 +2510,9 @@ class DataHubMetadataApiClient:
             logger.error(f"Error creating schema assertion: {str(e)}")
             return None
 
-    def run_assertion(self, assertion_urn: str, save_result: bool = True) -> Optional[Dict[str, Any]]:
+    def run_assertion(
+        self, assertion_urn: str, save_result: bool = True
+    ) -> Optional[Dict[str, Any]]:
         """
         Run a specific assertion
 
@@ -2368,10 +2540,7 @@ class DataHubMetadataApiClient:
             }
             """
 
-            variables = {
-                "urn": assertion_urn,
-                "saveResult": save_result
-            }
+            variables = {"urn": assertion_urn, "saveResult": save_result}
 
             result = self.context.graph.execute_graphql(query, variables)
 
@@ -2384,9 +2553,12 @@ class DataHubMetadataApiClient:
             logger.error(f"Error running assertion: {str(e)}")
             return None
 
-    def run_assertions_for_asset(self, dataset_urn: str,
-                                tag_urns: Optional[List[str]] = None,
-                                save_result: bool = True) -> Optional[Dict[str, Any]]:
+    def run_assertions_for_asset(
+        self,
+        dataset_urn: str,
+        tag_urns: Optional[List[str]] = None,
+        save_result: bool = True,
+    ) -> Optional[Dict[str, Any]]:
         """
         Run all assertions for a dataset
 
@@ -2423,21 +2595,23 @@ class DataHubMetadataApiClient:
             variables = {
                 "urn": dataset_urn,
                 "tagUrns": tag_urns,
-                "saveResult": save_result
+                "saveResult": save_result,
             }
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if result and "data" in result and "runAssertionsForAsset" in result["data"]:
+            if (
+                result
+                and "data" in result
+                and "runAssertionsForAsset" in result["data"]
+            ):
                 # Convert results to a more usable format
                 assertion_results = {}
                 if "results" in result["data"]["runAssertionsForAsset"]:
                     for entry in result["data"]["runAssertionsForAsset"]["results"]:
                         assertion_results[entry["key"]] = entry["value"]
 
-                return {
-                    "results": assertion_results
-                }
+                return {"results": assertion_results}
 
             logger.error(f"Failed to run assertions for asset: {result}")
             return None
@@ -2466,9 +2640,7 @@ class DataHubMetadataApiClient:
             }
             """
 
-            variables = {
-                "urn": assertion_urn
-            }
+            variables = {"urn": assertion_urn}
 
             result = self.context.graph.execute_graphql(query, variables)
 
@@ -2508,10 +2680,7 @@ class DataHubMetadataApiClient:
             }
             """
 
-            variables = {
-                "resourceUrn": assertion_urn,
-                "tagUrn": tag_urn
-            }
+            variables = {"resourceUrn": assertion_urn, "tagUrn": tag_urn}
 
             result = self.context.graph.execute_graphql(query, variables)
 

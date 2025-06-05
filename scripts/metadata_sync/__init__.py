@@ -19,4 +19,4 @@ package_dir = Path(__file__).parent
 for py_file in package_dir.glob("*.py"):
     if py_file.name != "__init__.py":
         module_name = py_file.stem
-        __all__.append(module_name) 
+        __all__.append(module_name)
