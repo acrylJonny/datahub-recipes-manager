@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Data Products</h1>
+                <div>
+                    <button type="button" class="btn btn-primary me-2" title="Create Data Product">
+                        <i class="fas fa-plus"></i> Create Data Product
+                    </button>
+                </div>
+            </div>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+            
+            <!-- Data Products Table -->
+            <div class="card">
+                <div class="card-body">
+                    <div id="data-products-content">
+                        <!-- Content will be loaded via AJAX -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Product Details Modal -->
+<div class="modal fade" id="dataProductDetailsModal" tabindex="-1" aria-labelledby="dataProductDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="dataProductDetailsModalLabel">Data Product Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="dataProductDetailsBody">
+                <!-- Details will be populated by JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load remote data product data asynchronously
+        loadRemoteDataProductData();
+    });
+    
+    function loadRemoteDataProductData() {
+        console.log('Loading remote data product data...');
+        
+        // Show loading indicators
+        showLoadingIndicators();
+        
+        fetch('{% url "metadata_manager:get_remote_data_products_data" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Remote data product data loaded successfully');
+                    showDataLoadedMessage(data.data);
+                } else {
+                    console.error('Error loading remote data product data:', data.error);
+                    showErrorMessage(data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching remote data product data:', error);
+                showErrorMessage('Failed to load remote data product data: ' + error.message);
+            });
+    }
+    
+    function showLoadingIndicators() {
+        const content = document.getElementById('data-products-content');
+        if (content) {
+            content.innerHTML = `
+                <div class="alert alert-info">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span>Loading data product data...</span>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    function showDataLoadedMessage(data) {
+        const productCount = data.remote_data_products ? data.remote_data_products.length : 0;
+        
+        // Populate data products table
+        populateDataProductsTable(data.remote_data_products, data.datahub_url);
+        
+        // Show success message
+        const message = `
+            <div class="alert alert-success alert-dismissible fade show mb-3">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <div>
+                        <strong>Data product data loaded!</strong><br>
+                        Found ${productCount} data products.
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        
+        // Add the message at the top of the content
+        const content = document.getElementById('data-products-content');
+        if (content) {
+            content.insertAdjacentHTML('afterbegin', message);
+        }
+    }
+    
+    function populateDataProductsTable(dataProducts, datahubUrl) {
+        const content = document.getElementById('data-products-content');
+        if (!content) return;
+        
+        if (dataProducts && dataProducts.length > 0) {
+            // Create table HTML
+            let tableHTML = `
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Domain</th>
+                                <th>Entities</th>
+                                <th>Owners</th>
+                                <th>Properties</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            dataProducts.forEach(product => {
+                const urn = product.urn || '';
+                const properties = product.properties || {};
+                const name = properties.name || 'Unnamed';
+                const description = properties.description || '-';
+                const domain = product.domain?.domain?.properties?.name || '-';
+                const entityCount = product.entities?.total || 0;
+                const ownerCount = product.ownership?.owners?.length || 0;
+                const structuredPropsCount = product.structuredProperties?.properties?.length || 0;
+                
+                tableHTML += `
+                    <tr data-product='${escapeHtml(JSON.stringify(product))}'>
+                        <td>
+                            <strong>${escapeHtml(name)}</strong><br>
+                            <small class="text-muted"><code>${escapeHtml(urn.length > 50 ? urn.substring(0, 50) + '...' : urn)}</code></small>
+                        </td>
+                        <td title="${escapeHtml(description)}">
+                            ${escapeHtml(description.length > 100 ? description.substring(0, 100) + '...' : description)}
+                        </td>
+                        <td>
+                            ${domain !== '-' ? `<span class="badge bg-info">${escapeHtml(domain)}</span>` : '-'}
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">${entityCount}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-success">${ownerCount}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">${structuredPropsCount}</span>
+                        </td>
+                        <td>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-outline-secondary view-product-details" 
+                                       data-urn="${escapeHtml(urn)}" title="View Product Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                `;
+                
+                if (datahubUrl && urn) {
+                    tableHTML += `
+                        <a href="${datahubUrl}/dataProduct/${encodeURIComponent(urn)}" 
+                           target="_blank" class="btn btn-sm btn-outline-primary" title="View in DataHub">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    `;
+                }
+                
+                tableHTML += `
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            content.insertAdjacentHTML('beforeend', tableHTML);
+            
+            // Add event listeners for view buttons
+            content.querySelectorAll('.view-product-details').forEach(button => {
+                button.addEventListener('click', function() {
+                    const urn = this.getAttribute('data-urn');
+                    const row = this.closest('tr');
+                    const productData = JSON.parse(row.getAttribute('data-product'));
+                    showDataProductDetailsModal(productData);
+                });
+            });
+        } else {
+            content.insertAdjacentHTML('beforeend', `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> No data products found.
+                </div>
+            `);
+        }
+    }
+    
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text ? text.replace(/[&<>"']/g, m => map[m]) : '';
+    }
+    
+    function showDataProductDetailsModal(product) {
+        const modal = document.getElementById('dataProductDetailsModal');
+        const modalBody = document.getElementById('dataProductDetailsBody');
+        const modalTitle = document.getElementById('dataProductDetailsModalLabel');
+        
+        // Set title
+        modalTitle.textContent = `Data Product Details: ${product.properties?.name || 'Unknown'}`;
+        
+        // Generate detailed content
+        let content = `
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Basic Information</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>URN:</strong><br>
+                                    <code class="text-break">${escapeHtml(product.urn || 'N/A')}</code>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Type:</strong><br>
+                                    <span class="badge bg-info">${escapeHtml(product.type || 'DATA_PRODUCT')}</span>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <strong>Name:</strong><br>
+                                    ${escapeHtml(product.properties?.name || 'N/A')}
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>External URL:</strong><br>
+                                    ${product.properties?.externalUrl ? `<a href="${escapeHtml(product.properties.externalUrl)}" target="_blank">${escapeHtml(product.properties.externalUrl)}</a>` : 'N/A'}
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-12">
+                                    <strong>Description:</strong><br>
+                                    ${escapeHtml(product.properties?.description || 'N/A')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+        `;
+        
+        // Domain
+        if (product.domain && product.domain.domain) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Domain</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>Name:</strong><br>
+                                    ${escapeHtml(product.domain.domain.properties?.name || 'N/A')}
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Domain URN:</strong><br>
+                                    <code>${escapeHtml(product.domain.domain.urn || 'N/A')}</code>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-12">
+                                    <strong>Description:</strong><br>
+                                    ${escapeHtml(product.domain.domain.properties?.description || 'N/A')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Ownership
+        if (product.ownership && product.ownership.owners && product.ownership.owners.length > 0) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Ownership</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Owner</th>
+                                            <th>Type</th>
+                                            <th>Ownership Type</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${product.ownership.owners.map(owner => {
+                                            const ownerEntity = owner.owner;
+                                            let ownerName = 'Unknown';
+                                            let ownerType = 'Unknown';
+                                            
+                                            if (ownerEntity) {
+                                                if (ownerEntity.username) {
+                                                    ownerName = ownerEntity.properties?.displayName || ownerEntity.username;
+                                                    ownerType = 'User';
+                                                } else if (ownerEntity.name) {
+                                                    ownerName = ownerEntity.properties?.displayName || ownerEntity.name;
+                                                    ownerType = 'Group';
+                                                }
+                                            }
+                                            
+                                            return `
+                                                <tr>
+                                                    <td>${escapeHtml(ownerName)}</td>
+                                                    <td><span class="badge bg-info">${escapeHtml(ownerType)}</span></td>
+                                                    <td>${escapeHtml(owner.ownershipType?.info?.name || 'Unknown')}</td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Tags
+        if (product.tags && product.tags.tags && product.tags.tags.length > 0) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Tags</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex flex-wrap gap-2">
+                                ${product.tags.tags.map(tagAssoc => {
+                                    const tag = tagAssoc.tag;
+                                    const colorHex = tag.properties?.colorHex || '#6c757d';
+                                    return `<span class="badge" style="background-color: ${colorHex};">${escapeHtml(tag.properties?.name || tag.name || 'Unknown')}</span>`;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Glossary Terms
+        if (product.glossaryTerms && product.glossaryTerms.terms && product.glossaryTerms.terms.length > 0) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Glossary Terms</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Term</th>
+                                            <th>Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${product.glossaryTerms.terms.map(termAssoc => {
+                                            const term = termAssoc.term;
+                                            return `
+                                                <tr>
+                                                    <td><strong>${escapeHtml(term.properties?.name || term.name || 'Unknown')}</strong></td>
+                                                    <td>${escapeHtml(term.properties?.description || 'No description')}</td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Structured Properties
+        if (product.structuredProperties && product.structuredProperties.properties && product.structuredProperties.properties.length > 0) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Structured Properties</h6>
+                        </div>
+                        <div class="card-body">
+                            ${product.structuredProperties.properties.map(prop => {
+                                const structuredProp = prop.structuredProperty;
+                                return `
+                                    <div class="border rounded p-2 mb-2">
+                                        <strong>Property:</strong> ${escapeHtml(structuredProp?.definition?.displayName || 'Unknown')}<br>
+                                        <strong>Values:</strong> ${prop.values ? prop.values.map(v => v.stringValue || v.numberValue || 'N/A').join(', ') : 'N/A'}<br>
+                                        <strong>Type:</strong> ${escapeHtml(structuredProp?.definition?.valueType?.info?.displayName || 'Unknown')}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Entities
+        if (product.entities) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Entities</h6>
+                        </div>
+                        <div class="card-body">
+                            <strong>Total Entities:</strong> <span class="badge bg-primary">${product.entities.total || 0}</span>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Institutional Memory
+        if (product.institutionalMemory && product.institutionalMemory.elements && product.institutionalMemory.elements.length > 0) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Institutional Memory</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Label</th>
+                                            <th>URL</th>
+                                            <th>Description</th>
+                                            <th>Created</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${product.institutionalMemory.elements.map(element => `
+                                            <tr>
+                                                <td>${escapeHtml(element.label || 'N/A')}</td>
+                                                <td>
+                                                    ${element.url ? `<a href="${escapeHtml(element.url)}" target="_blank">${escapeHtml(element.url.length > 50 ? element.url.substring(0, 50) + '...' : element.url)}</a>` : 'N/A'}
+                                                </td>
+                                                <td>${escapeHtml(element.description || 'N/A')}</td>
+                                                <td>${element.created?.time ? new Date(element.created.time).toLocaleString() : 'N/A'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        content += `
+                </div>
+            </div>
+            
+            <!-- Raw JSON Data -->
+            <div class="mt-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">Raw JSON Data</h6>
+                    </div>
+                    <div class="card-body">
+                        <pre><code>${escapeHtml(JSON.stringify(product, null, 2))}</code></pre>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        modalBody.innerHTML = content;
+        
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+    }
+    
+    function showErrorMessage(message) {
+        const content = document.getElementById('data-products-content');
+        if (content) {
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Error loading data product data: ${message}
+                </div>
+            `;
+        }
+    }
+</script>
+{% endblock %} 

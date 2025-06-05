@@ -4971,3 +4971,2156 @@ class DataHubRestClient:
                 error_messages.append(str(error))
 
         return error_messages
+
+    def list_structured_properties(self, query="*", start=0, count=100):
+        """
+        List structured properties in DataHub.
+        
+        Args:
+            query (str): Search query to filter properties
+            start (int): Starting offset for pagination
+            count (int): Maximum number of properties to return
+            
+        Returns:
+            list: List of structured property objects
+        """
+        self.logger.info(
+            f"Listing structured properties with query: {query}, start: {start}, count: {count}"
+        )
+        
+        # First, try to check if StructuredProperty type is supported
+        try:
+            # Simple test query to check if StructuredProperty type exists
+            test_query = """
+            query testStructuredPropertySupport($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                total
+              }
+            }
+            """
+            
+            test_variables = {
+                "input": {
+                    "types": ["STRUCTURED_PROPERTY"],
+                    "query": "*",
+                    "start": 0,
+                    "count": 1
+                }
+            }
+            
+            test_result = self.execute_graphql(test_query, test_variables)
+            
+            # Check if the test query failed due to unknown type
+            if test_result and "errors" in test_result:
+                for error in test_result["errors"]:
+                    if "Unknown type 'StructuredProperty'" in error.get("message", ""):
+                        self.logger.warning("StructuredProperty type not supported in this DataHub version")
+                        return []
+                    elif "UnknownType" in error.get("message", ""):
+                        self.logger.warning("StructuredProperty type not supported in this DataHub version")
+                        return []
+            
+            # If test passed, proceed with full query
+            graphql_query = """
+            query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on StructuredPropertyEntity {
+                      definition {
+                        displayName
+                        qualifiedName
+                        description
+                        cardinality
+                        immutable
+                        valueType {
+                          urn
+                          type
+                          info {
+                            type
+                            displayName
+                          }
+                        }
+                        entityTypes {
+                          urn
+                          type
+                          info {
+                            type
+                          }
+                        }
+                        filterStatus
+                        typeQualifier {
+                          allowedTypes {
+                            urn
+                            type
+                            info {
+                              type
+                              displayName
+                            }
+                          }
+                        }
+                        allowedValues {
+                          value {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          description
+                        }
+                      }
+                      settings {
+                        isHidden
+                        showInSearchFilters
+                        showAsAssetBadge
+                        showInAssetSummary
+                        showInColumnsTable
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            variables = {
+                "input": {
+                    "types": ["STRUCTURED_PROPERTY"],
+                    "query": query,
+                    "start": start,
+                    "count": count
+                }
+            }
+            
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result and "errors" in result:
+                # Check for specific GraphQL validation errors
+                errors = self._get_graphql_errors(result)
+                for error in errors:
+                    self.logger.error(f"GraphQL error listing structured properties: {error}")
+                return []
+            
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_results = result["data"]["searchAcrossEntities"].get("searchResults", [])
+                
+                # Process the results
+                processed_properties = []
+                for search_result in search_results:
+                    entity = search_result.get("entity", {})
+                    if entity.get("type") == "STRUCTURED_PROPERTY":
+                        processed_properties.append(entity)
+                
+                return processed_properties
+            
+            return []
+            
+        except Exception as e:
+            # Check if it's a type validation error
+            error_str = str(e)
+            if "argument of type 'NoneType' is not iterable" in error_str:
+                self.logger.warning("StructuredProperty type not supported in this DataHub version")
+                return []
+            elif "Unknown type" in error_str:
+                self.logger.warning("StructuredProperty type not supported in this DataHub version")
+                return []
+            else:
+                self.logger.error(f"Error listing structured properties: {error_str}")
+                return []
+
+    def get_assertions(self, entity_urn=None, query="*", start=0, count=100):
+        """
+        Get assertions from DataHub using comprehensive GraphQL query.
+        
+        Args:
+            entity_urn (str, optional): Filter by specific entity URN
+            query (str): Search query (default: "*")
+            start (int): Start index for pagination (default: 0)
+            count (int): Number of results to return (default: 100)
+        
+        Returns:
+            dict: Response with success status and assertion data
+        """
+        try:
+            logger.info(f"Getting assertions with query='{query}', start={start}, count={count}")
+            
+            # Comprehensive GraphQL query for assertions
+            graphql_query = """
+            query GetAssertions($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on Assertion {
+                      urn
+                      type
+                      platform {
+                        name
+                        urn
+                      }
+                      info {
+                        type
+                        description
+                        externalUrl
+                        datasetAssertion {
+                          datasetUrn
+                          scope
+                          fields {
+                            urn
+                            path
+                          }
+                          aggregation
+                          operator
+                          parameters {
+                            value {
+                              value
+                              type
+                            }
+                            minValue {
+                              value
+                              type
+                            }
+                            maxValue {
+                              value
+                              type
+                            }
+                          }
+                          nativeType
+                          nativeParameters {
+                            key
+                            value
+                          }
+                          logic
+                        }
+                        freshnessAssertion {
+                          entityUrn
+                          type
+                          schedule {
+                            type
+                            cron {
+                              cron
+                              timezone
+                              windowStartOffsetMs
+                            }
+                            fixedInterval {
+                              unit
+                              multiple
+                            }
+                            exclusions {
+                              type
+                              displayName
+                              fixedRange {
+                                startTimeMillis
+                                endTimeMillis
+                              }
+                              weekly {
+                                daysOfWeek
+                                startTime
+                                endTime
+                                timezone
+                              }
+                              holiday {
+                                name
+                                region
+                                timezone
+                              }
+                            }
+                          }
+                          filter {
+                            type
+                            sql
+                          }
+                        }
+                        volumeAssertion {
+                          entityUrn
+                          type
+                          rowCountTotal {
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          rowCountChange {
+                            type
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          incrementingSegmentRowCountTotal {
+                            segment {
+                              field {
+                                path
+                                type
+                                nativeType
+                              }
+                              transformer {
+                                type
+                                nativeType
+                              }
+                            }
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          filter {
+                            type
+                            sql
+                          }
+                        }
+                        sqlAssertion {
+                          type
+                          entityUrn
+                          statement
+                          changeType
+                          operator
+                          parameters {
+                            value {
+                              value
+                              type
+                            }
+                            minValue {
+                              value
+                              type
+                            }
+                            maxValue {
+                              value
+                              type
+                            }
+                          }
+                        }
+                        fieldAssertion {
+                          type
+                          entityUrn
+                          fieldValuesAssertion {
+                            field {
+                              path
+                              type
+                              nativeType
+                            }
+                            transform {
+                              type
+                            }
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                            failThreshold {
+                              type
+                              value
+                            }
+                            excludeNulls
+                          }
+                          fieldMetricAssertion {
+                            field {
+                              path
+                              type
+                              nativeType
+                            }
+                            metric
+                            operator
+                            parameters {
+                              value {
+                                value
+                                type
+                              }
+                              minValue {
+                                value
+                                type
+                              }
+                              maxValue {
+                                value
+                                type
+                              }
+                            }
+                          }
+                          filter {
+                            type
+                            sql
+                          }
+                        }
+                        schemaAssertion {
+                          entityUrn
+                          fields {
+                            path
+                            type
+                            nativeType
+                          }
+                          schema {
+                            aspectVersion
+                            datasetUrn
+                            name
+                            platformUrn
+                            version
+                            cluster
+                            hash
+                            platformSchema {
+                              ...on TableSchema {
+                                schema
+                              }
+                              ...on KeyValueSchema {
+                                keySchema
+                                valueSchema
+                              }
+                            }
+                            fields {
+                              fieldPath
+                              jsonPath
+                              label
+                              nullable
+                              description
+                              type
+                              nativeDataType
+                              recursive
+                              tags {
+                                tags {
+                                  tag {
+                                    urn
+                                    type
+                                    properties {
+                                      name
+                                      description
+                                      colorHex
+                                    }
+                                    ownership {
+                                      owners {
+                                        owner {
+                                          ...on CorpUser {
+                                            urn
+                                          }
+                                          ...on CorpGroup {
+                                            urn
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                              glossaryTerms {
+                                terms {
+                                  term {
+                                    urn
+                                  }
+                                  actor {
+                                    urn
+                                  }
+                                }
+                              }
+                              isPartOfKey
+                              isPartitioningKey
+                              jsonProps
+                              schemaFieldEntity {
+                                urn
+                              }
+                            }
+                            createdAt
+                          }
+                          compatibility
+                        }
+                        customAssertion {
+                          type
+                          entityUrn
+                          field {
+                            urn
+                            path
+                          }
+                          logic
+                        }
+                        source {
+                          type
+                          created {
+                            actor
+                          }
+                        }
+                        lastUpdated {
+                          actor
+                        }
+                      }
+                      runEvents(limit: 10) {
+                        ...on AssertionRunEventsResult {
+                          total
+                          failed
+                          succeeded
+                          errored
+                          runEvents {
+                            timestampMillis
+                            runId
+                            status
+                            asserteeUrn
+                            batchSpec {
+                              nativeBatchId
+                              query
+                              limit
+                            }
+                            result {
+                              type
+                              rowCount
+                              missingCount
+                              unexpectedCount
+                              actualAggValue
+                              externalUrl
+                              nativeResults {
+                                key
+                                value
+                              }
+                            }
+                            runtimeContext {
+                              key
+                              value
+                            }
+                          }
+                        }
+                      }
+                      status {
+                        removed
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                            type
+                            properties {
+                              name
+                              description
+                              colorHex
+                            }
+                            ownership {
+                              owners {
+                                owner {
+                                  ...on CorpUser {
+                                    urn
+                                  }
+                                  ...on CorpGroup {
+                                    urn
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      actions {
+                        onSuccess {
+                          type
+                        }
+                        onFailure {
+                          type
+                        }
+                      }
+                      monitor {
+                        urn
+                        type
+                        entity {
+                          urn
+                        }
+                        info {
+                          type
+                          assertionMonitor {
+                            assertions {
+                              assertion {
+                                urn
+                              }
+                              schedule {
+                                cron
+                              }
+                              parameters {
+                                type
+                                datasetFieldParameters {
+                                  sourceType
+                                  changedRowsField {
+                                    path
+                                    type
+                                    nativeType
+                                    kind
+                                  }
+                                }
+                                datasetVolumeParameters {
+                                  sourceType
+                                }
+                                datasetSchemaParameters {
+                                  sourceType
+                                }
+                                datasetFreshnessParameters {
+                                  sourceType
+                                }
+                              }
+                              context {
+                                embeddedAssertions {
+                                  rawAssertion
+                                }
+                                stdDev
+                                inferenceDetails {
+                                  modelId
+                                  modelVersion
+                                  confidence
+                                  parameters {
+                                    value
+                                  }
+                                  adjustmentSettings {
+                                    algorithm
+                                    algorithmName
+                                    context {
+                                      value
+                                    }
+                                    exclusionWindows {
+                                      type
+                                      displayName
+                                      fixedRange {
+                                        startTimeMillis
+                                        endTimeMillis
+                                      }
+                                      weekly {
+                                        daysOfWeek
+                                        startTime
+                                        endTime
+                                        timezone
+                                      }
+                                      holiday {
+                                        name
+                                        region
+                                        timezone
+                                      }
+                                    }
+                                    trainingDataLookbackWindowDays
+                                    sensitivity {
+                                      level
+                                    }
+                                  }
+                                  generatedAt
+                                }
+                              }
+                              rawParameters
+                            }
+                            bootstrapStatus {
+                              metricsCubeBootstrapStatus {
+                                state
+                                message
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            # Build search input
+            search_input = {
+                "types": ["ASSERTION"],
+                "query": query,
+                "start": start,
+                "count": count
+            }
+            
+            # Add entity filter if specified
+            if entity_urn:
+                search_input["filters"] = [
+                    {
+                        "field": "entity",
+                        "values": [entity_urn]
+                    }
+                ]
+            
+            variables = {
+                "input": search_input
+            }
+            
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result is None:
+                logger.error("GraphQL execution returned None")
+                return {"success": False, "error": "GraphQL execution failed"}
+            
+            # Check for GraphQL errors
+            if "errors" in result:
+                error_messages = []
+                for error in result["errors"]:
+                    error_msg = error.get("message", "Unknown GraphQL error")
+                    error_messages.append(error_msg)
+                    logger.error(f"GraphQL error: {error_msg}")
+                
+                # Check if this is an enum error that we can handle
+                enum_error_keywords = ["AssertionType.$UNKNOWN", "No enum constant"]
+                if any(keyword in " ".join(error_messages) for keyword in enum_error_keywords):
+                    logger.warning("Detected assertion enum compatibility issue - trying simple fallback")
+                    return self._get_assertions_simple(query, start, count)
+                
+                return {"success": False, "error": f"GraphQL errors: {'; '.join(error_messages)}"}
+            
+            # Extract data from response
+            if "data" not in result or not result["data"]:
+                logger.error("No data in GraphQL response")
+                return {"success": False, "error": "No data in response"}
+            
+            search_data = result["data"].get("searchAcrossEntities", {})
+            
+            # Clean enum data if needed
+            if "searchResults" in search_data:
+                search_data = self._clean_assertion_enum_data(search_data)
+            
+            logger.info(f"Successfully retrieved {len(search_data.get('searchResults', []))} assertions")
+            
+            return {
+                "success": True,
+                "data": search_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting assertions: {str(e)}")
+            # Try fallback on any error
+            logger.info("Trying fallback assertion query due to error")
+            return self._get_assertions_simple(query, start, count)
+
+    def _clean_assertion_enum_data(self, search_results):
+        """
+        Clean assertion data to handle enum compatibility issues at the application layer.
+        
+        Args:
+            search_results: Raw search results from GraphQL
+            
+        Returns:
+            Cleaned search results with enum issues resolved
+        """
+        if not isinstance(search_results, dict) or "searchResults" not in search_results:
+            return search_results
+            
+        cleaned_results = search_results.copy()
+        
+        for search_result in cleaned_results.get("searchResults", []):
+            entity = search_result.get("entity", {})
+            
+            if entity.get("type") == "ASSERTION":
+                # Handle potential enum issues in assertion info
+                info = entity.get("info", {})
+                if isinstance(info, dict):
+                    # If info.type has enum issues, replace with safe string
+                    if "type" in info and info["type"] is None:
+                        info["type"] = "UNKNOWN"
+                    
+                    # Handle enum issues in various assertion types
+                    for assertion_type in ["datasetAssertion", "freshnessAssertion", "volumeAssertion", 
+                                         "sqlAssertion", "fieldAssertion", "schemaAssertion", "customAssertion"]:
+                        if assertion_type in info and isinstance(info[assertion_type], dict):
+                            assertion_data = info[assertion_type]
+                            # Replace any None enum values with safe strings
+                            if "type" in assertion_data and assertion_data["type"] is None:
+                                assertion_data["type"] = "UNKNOWN"
+                
+                # Ensure required fields exist for UI compatibility
+                if "info" not in entity:
+                    entity["info"] = {
+                        "description": "Assertion details partially available",
+                        "type": "UNKNOWN"
+                    }
+                
+                if "platform" not in entity:
+                    entity["platform"] = {
+                        "name": "Unknown Platform"
+                    }
+        
+        return cleaned_results
+
+    def _get_assertions_simple(self, query="*", start=0, count=100):
+        """
+        Fallback method for getting assertions with a simpler query when advanced fields are not supported.
+        
+        Returns:
+            dict: Response containing assertions data
+        """
+        try:
+            # Very basic assertion query
+            graphql_query = """
+                query GetAssertionsSimple($input: SearchAcrossEntitiesInput!) {
+                  searchAcrossEntities(input: $input) {
+                    start
+                    count
+                    total
+                    searchResults {
+                      entity {
+                        urn
+                        type
+                        ... on Assertion {
+                          urn
+                          type
+                          platform {
+                            name
+                          }
+                          info {
+                            type
+                            description
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+            """
+            
+            variables = {
+                "input": {
+                    "query": query,
+                    "start": start,
+                    "count": count,
+                    "types": ["ASSERTION"]
+                }
+            }
+            
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result and "errors" in result:
+                errors = self._get_graphql_errors(result)
+                # Check for enum compatibility issues
+                for error in errors:
+                    if "AssertionType.$UNKNOWN" in error or "No enum constant" in error:
+                        self.logger.warning("Enum compatibility issue in simple assertion query, falling back to ultra-simple")
+                        return self._get_assertions_ultra_simple(query, start, count)
+                
+                self.logger.warning(f"Simple assertion query failed: {errors}")
+                return {"success": True, "data": {"searchResults": [], "total": 0, "start": start, "count": 0}}
+                
+            search_results = result.get("data", {}).get("searchAcrossEntities", {})
+            return {"success": True, "data": search_results}
+            
+        except Exception as e:
+            error_str = str(e)
+            if "AssertionType.$UNKNOWN" in error_str or "No enum constant" in error_str:
+                self.logger.warning("Enum compatibility issue in simple assertion query, falling back to ultra-simple")
+                return self._get_assertions_ultra_simple(query, start, count)
+            else:
+                self.logger.error(f"Error in simple assertions query: {error_str}")
+                return {"success": True, "data": {"searchResults": [], "total": 0, "start": start, "count": 0}}
+
+    def _get_assertions_ultra_simple(self, query="*", start=0, count=100):
+        """
+        Ultra-simple fallback method for getting assertions that avoids all enum fields and complex structures.
+        This handles cases where there are enum compatibility issues (e.g., AssertionType.$UNKNOWN).
+        
+        Returns:
+            dict: Response containing basic assertions data
+        """
+        try:
+            # Ultra-basic assertion query with minimal fields to avoid enum issues
+            graphql_query = """
+                query GetAssertionsUltraSimple($input: SearchAcrossEntitiesInput!) {
+                  searchAcrossEntities(input: $input) {
+                    start
+                    count
+                    total
+                    searchResults {
+                      entity {
+                        urn
+                        type
+                      }
+                    }
+                  }
+                }
+            """
+            
+            variables = {
+                "input": {
+                    "query": query,
+                    "start": start,
+                    "count": count,
+                    "types": ["ASSERTION"]
+                }
+            }
+            
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result and "errors" in result:
+                errors = self._get_graphql_errors(result)
+                # Check if it's still an enum error  
+                enum_errors = [e for e in errors if "AssertionType.$UNKNOWN" in e or "No enum constant" in e]
+                if enum_errors:
+                    self.logger.warning(f"Critical enum error even in ultra-simple query - assertions not compatible with this DataHub version")
+                    return {"success": True, "data": {"searchResults": [], "total": 0, "start": start, "count": 0}}
+                else:
+                    self.logger.warning(f"Ultra-simple assertion query failed with non-enum errors: {errors}")
+                    return {"success": True, "data": {"searchResults": [], "total": 0, "start": start, "count": 0}}
+                
+            search_results = result.get("data", {}).get("searchAcrossEntities", {})
+            
+            # Process results and add minimal info to avoid enum issues
+            if "searchResults" in search_results:
+                for search_result in search_results["searchResults"]:
+                    entity = search_result.get("entity", {})
+                    if entity.get("type") == "ASSERTION":
+                        # Add basic info structure to maintain compatibility with views
+                        entity["info"] = {
+                            "description": "Assertion details not available due to schema compatibility",
+                            "type": "UNKNOWN"  # Use string instead of enum
+                        }
+                        # Add basic platform info
+                        entity["platform"] = {
+                            "name": "Unknown Platform"
+                        }
+            
+            return {"success": True, "data": search_results}
+            
+        except Exception as e:
+            error_str = str(e)
+            if "AssertionType.$UNKNOWN" in error_str or "No enum constant" in error_str:
+                self.logger.error("Critical enum compatibility issue - returning empty results")
+                return {"success": True, "data": {"searchResults": [], "total": 0, "start": start, "count": 0}}
+            else:
+                self.logger.error(f"Error in ultra-simple assertions query: {error_str}")
+                return {"success": True, "data": {"searchResults": [], "total": 0, "start": start, "count": 0}}
+
+    def list_domains(self, query="*", start=0, count=100):
+        """
+        List domains in DataHub.
+        
+        Args:
+            query (str): Search query to filter domains
+            start (int): Starting offset for pagination
+            count (int): Maximum number of domains to return
+            
+        Returns:
+            list: List of domain objects
+        """
+        self.logger.info(
+            f"Listing domains with query: {query}, start: {start}, count: {count}"
+        )
+        
+        graphql_query = """
+        query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+                type
+                ... on Domain {
+                  properties {
+                    name
+                    description
+                  }
+                  ownership {
+                    owners {
+                      owner {
+                        ... on CorpUser {
+                          urn
+                          username
+                        }
+                        ... on CorpGroup {
+                          urn
+                          name
+                        }
+                      }
+                      type
+                    }
+                  }
+                  __typename
+                }
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+        }
+        """
+        
+        variables = {
+            "input": {
+                "types": ["DOMAIN"],
+                "query": query,
+                "start": start,
+                "count": count,
+                "filters": [],
+            }
+        }
+        
+        try:
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_results = result["data"]["searchAcrossEntities"]["searchResults"]
+                domains = []
+                
+                for item in search_results:
+                    if "entity" in item and item["entity"] is not None:
+                        entity = item["entity"]
+                        properties = entity.get("properties", {})
+                        
+                        domain = {
+                            "urn": entity.get("urn"),
+                            "name": properties.get("name"),
+                            "description": properties.get("description"),
+                            "properties": properties,
+                            "ownership": entity.get("ownership", {}),
+                        }
+                        
+                        domains.append(domain)
+                
+                return domains
+            
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.warning(
+                    f"GraphQL errors when listing domains: {', '.join(error_messages)}"
+                )
+            
+            return []
+        except Exception as e:
+            self.logger.error(f"Error listing domains: {str(e)}")
+            return []
+
+    def list_tests(self, query="*", start=0, count=100):
+        """
+        List tests in DataHub.
+        
+        Args:
+            query (str): Search query to filter tests
+            start (int): Starting offset for pagination
+            count (int): Maximum number of tests to return
+            
+        Returns:
+            list: List of test objects
+        """
+        self.logger.info(
+            f"Listing tests with query: {query}, start: {start}, count: {count}"
+        )
+        
+        # First, try to check if TEST type is supported
+        try:
+            # Simple test query to check if TEST type exists
+            test_query = """
+            query testTestSupport($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                total
+              }
+            }
+            """
+            
+            test_variables = {
+                "input": {
+                    "types": ["TEST"],
+                    "query": "*",
+                    "start": 0,
+                    "count": 1
+                }
+            }
+            
+            test_result = self.execute_graphql(test_query, test_variables)
+            
+            # Check if the test query failed due to unknown type
+            if test_result and "errors" in test_result:
+                for error in test_result["errors"]:
+                    if "Unknown type" in error.get("message", "") or "UnknownType" in error.get("message", ""):
+                        self.logger.warning("TEST entity type not supported in this DataHub version")
+                        return []
+            
+            # If test passed, proceed with full query
+            graphql_query = """
+            query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on Test {
+                      urn
+                      type
+                      properties {
+                        name
+                        description
+                        category
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            variables = {
+                "input": {
+                    "types": ["TEST"],
+                    "query": query,
+                    "start": start,
+                    "count": count
+                }
+            }
+            
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result and "errors" in result:
+                # Check for specific GraphQL validation errors
+                errors = self._get_graphql_errors(result)
+                for error in errors:
+                    if "FieldUndefined" in error or "Unknown type" in error:
+                        self.logger.warning("TEST entity type or fields not supported in this DataHub version")
+                        return []
+                    else:
+                        self.logger.error(f"GraphQL error listing tests: {error}")
+                return []
+            
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_results = result["data"]["searchAcrossEntities"].get("searchResults", [])
+                
+                # Process the results
+                processed_tests = []
+                for search_result in search_results:
+                    entity = search_result.get("entity", {})
+                    if entity.get("type") == "TEST":
+                        # Extract test information
+                        test_data = {
+                            "urn": entity.get("urn"),
+                            "type": entity.get("type"),
+                            "name": entity.get("properties", {}).get("name", ""),
+                            "description": entity.get("properties", {}).get("description", ""),
+                            "category": entity.get("properties", {}).get("category", ""),
+                        }
+                        processed_tests.append(test_data)
+                
+                return processed_tests
+            
+            return []
+            
+        except Exception as e:
+            # Check if it's a type validation error
+            error_str = str(e)
+            if "argument of type 'NoneType' is not iterable" in error_str:
+                self.logger.warning("TEST entity type not supported in this DataHub version")
+                return []
+            elif "Unknown type" in error_str or "FieldUndefined" in error_str:
+                self.logger.warning("TEST entity type not supported in this DataHub version")
+                return []
+            else:
+                self.logger.error(f"Error listing tests: {error_str}")
+                return []
+
+    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None, platform=None, use_platform_pagination=False, sort_by="name", editable_only=True):
+        """
+        Get entities with editable properties or schema metadata.
+        
+        Args:
+            start: Start index for pagination
+            count: Number of entities to return
+            query: Search query
+            entity_type: Type of entity to filter by
+            platform: Platform to filter by
+            use_platform_pagination: Whether to use platform-based pagination for complete results
+            sort_by: Field to sort by (name, type, updated)
+            editable_only: If True, only return entities with editableProperties or editableSchemaMetadata
+            
+        Returns:
+            Dictionary with search results
+        """
+        variables = {
+            "input": {
+                "query": query,
+                "start": start,
+                "count": count,
+                "orFilters": []
+            }
+        }
+        
+        if entity_type:
+            variables["input"]["types"] = [entity_type]
+            
+        if platform:
+            variables["input"]["filters"] = [{
+                "field": "platform",
+                "value": platform
+            }]
+            
+        # Use platform pagination if specified (for comprehensive search)
+        if use_platform_pagination and platform:
+            variables["input"]["orFilters"] = [{
+                "and": [{
+                    "field": "platform",
+                    "value": platform
+                }]
+            }]
+
+        # Comprehensive query that gets all necessary metadata including editableProperties and browsePathV2
+        graphql_query = """
+            query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on Dataset {
+                      name
+                      platform { 
+                        name
+                        properties { displayName }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
+                      }
+                      browsePaths { path }
+                      browsePathV2 {
+                        path {
+                          name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        name
+                        description
+                      }
+                      editableSchemaMetadata {
+                        editableSchemaFieldInfo {
+                          fieldPath
+                          description
+                          tags {
+                            tags {
+                              associatedUrn
+                              tag { urn }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    ... on Container {
+                      properties { name }
+                      platform { 
+                        name
+                        properties { displayName }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
+                      }
+                      browsePathV2 {
+                        path {
+                          name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                    }
+                    ... on Chart {
+                      properties { name }
+                      platform { 
+                        name
+                        properties { displayName }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
+                      }
+                      browsePaths { path }
+                      browsePathV2 {
+                        path {
+                          name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                    }
+                    ... on Dashboard {
+                      properties { name }
+                      platform { 
+                        name
+                        properties { displayName }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
+                      }
+                      browsePaths { path }
+                      browsePathV2 {
+                        path {
+                          name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                    }
+                    ... on DataFlow {
+                      properties { name }
+                      platform { 
+                        name
+                        properties { displayName }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
+                      }
+                      browsePaths { path }
+                      browsePathV2 {
+                        path {
+                          name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                    }
+                    ... on DataJob {
+                      properties { name }
+                      dataFlow { 
+                        flowId
+                        properties { name }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform { name }
+                      }
+                      browsePaths { path }
+                      browsePathV2 {
+                        path {
+                          name
+                          entity {
+                            ... on Container {
+                              container {
+                                urn
+                                properties { name }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """
+        
+        result = self.execute_graphql(graphql_query, variables)
+        
+        if "errors" in result:
+            self._log_graphql_errors(result)
+            return {"success": False, "error": f"GraphQL error: {result['errors'][0]['message']}"}
+            
+        search_results = result.get("data", {}).get("searchAcrossEntities", {})
+        
+        # If editable_only is True, filter results to only include entities with 
+        # editableProperties or editableSchemaMetadata
+        if editable_only and "searchResults" in search_results:
+            filtered_results = []
+            total_count = 0
+            
+            for result in search_results.get("searchResults", []):
+                entity = result.get("entity", {})
+                
+                # Check if entity has editable properties or schema metadata
+                has_editable_properties = entity.get("editableProperties") is not None
+                has_editable_schema = entity.get("editableSchemaMetadata") is not None
+                
+                if has_editable_properties or has_editable_schema:
+                    filtered_results.append(result)
+                    total_count += 1
+            
+            # Replace the search results with the filtered results
+            filtered_search_results = {
+                "start": search_results.get("start", 0),
+                "count": len(filtered_results),
+                "total": search_results.get("total", 0),
+                "filtered_total": total_count,
+                "searchResults": filtered_results
+            }
+            
+            return {"success": True, "data": filtered_search_results}
+        
+        return {"success": True, "data": search_results}
+
+    def update_entity_properties(self, entity_urn: str, entity_type: str, properties: dict) -> bool:
+        """Update editable properties of an entity.
+        
+        Args:
+            entity_urn (str): URN of the entity to update
+            entity_type (str): Type of the entity (e.g., 'DATASET', 'CONTAINER', etc.)
+            properties (dict): Dictionary containing the properties to update
+            
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        self.logger.info(f"Updating properties for {entity_type} {entity_urn}")
+        
+        # Prepare update input
+        update_input = {
+            'urn': entity_urn,
+            'editableProperties': properties.get('editableProperties', {}),
+        }
+        
+        # Add schema metadata for datasets if provided
+        if entity_type == 'DATASET' and 'editableSchemaMetadata' in properties:
+            update_input['editableSchemaMetadata'] = properties['editableSchemaMetadata']
+            
+        # Define GraphQL mutation
+        mutation = """
+        mutation updateEntity($input: UpdateEntityInput!) {
+            updateEntity(input: $input)
+        }
+        """
+        
+        variables = {'input': update_input}
+        
+        try:
+            result = self._execute_graphql(mutation, variables)
+            if result and 'updateEntity' in result:
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating entity properties: {str(e)}")
+            return False
+
+    def _log_graphql_errors(self, result):
+        """
+        Log GraphQL errors from a result.
+        
+        Args:
+            result (dict): The GraphQL response with errors
+        """
+        errors = self._get_graphql_errors(result)
+        for error in errors:
+            self.logger.error(f"GraphQL error: {error}")
+        
+        # Also log any extensions if available
+        if isinstance(result, dict) and 'errors' in result:
+            for error in result['errors']:
+                if isinstance(error, dict) and 'extensions' in error:
+                    self.logger.debug(f"GraphQL error extensions: {error['extensions']}")
+
+    def get_test(self, test_urn):
+        """
+        Get details of a metadata test by URN.
+        
+        Args:
+            test_urn (str): URN of the metadata test
+            
+        Returns:
+            dict: Test details or None if not found
+        """
+        self.logger.info(f"Getting metadata test with URN: {test_urn}")
+        
+        try:
+            # Simple test query to check if TEST type is supported
+            gql_query = """
+            query test($urn: String!) {
+              entity(urn: $urn) {
+                urn
+                type
+                ... on Test {
+                  urn
+                  type
+                  properties {
+                    name
+                    description
+                    category
+                  }
+                }
+              }
+            }
+            """
+            
+            variables = {"urn": test_urn}
+            
+            # Execute the GraphQL query
+            result = self._execute_graphql(gql_query, variables)
+            
+            if result and "errors" in result:
+                # Check for schema validation errors
+                errors = self._get_graphql_errors(result)
+                for error in errors:
+                    if "FieldUndefined" in error or "Unknown type" in error:
+                        self.logger.warning("TEST entity type not supported in this DataHub version")
+                        return None
+                
+            if result and 'data' in result and 'entity' in result['data']:
+                entity = result['data']['entity']
+                if entity and entity.get('type') == 'TEST':
+                    return {
+                        'urn': entity.get('urn'),
+                        'type': entity.get('type'),
+                        'name': entity.get('properties', {}).get('name', ''),
+                        'description': entity.get('properties', {}).get('description', ''),
+                        'category': entity.get('properties', {}).get('category', ''),
+                    }
+            
+            return None
+            
+        except Exception as e:
+            error_str = str(e)
+            if "FieldUndefined" in error_str or "Unknown type" in error_str:
+                self.logger.warning("TEST entity type not supported in this DataHub version")
+                return None
+            else:
+                self.logger.error(f"Error getting metadata test: {error_str}")
+                return None
+    
+    def create_test(self, name, description, category, definition_json):
+        """
+        Create a metadata test in DataHub.
+        
+        Args:
+            name (str): Name of the test
+            description (str): Description of the test
+            category (str): Category of the test (e.g., "Data Governance")
+            definition_json (str): JSON string of the test definition
+            
+        Returns:
+            str: URN of the created test or None if failed
+        """
+        self.logger.info(f"Creating metadata test: {name}")
+        
+        try:
+            # Check if test creation is supported
+            gql_mutation = """
+            mutation createTest($input: CreateTestInput!) {
+              createTest(input: $input)
+            }
+            """
+            
+            input_data = {
+                "name": name,
+                "description": description,
+                "category": category,
+                "definition": {
+                    "json": definition_json
+                }
+            }
+            
+            variables = {"input": input_data}
+            
+            # Execute the GraphQL mutation
+            result = self._execute_graphql(gql_mutation, variables)
+            
+            if result and "errors" in result:
+                # Check for schema validation errors
+                errors = self._get_graphql_errors(result)
+                for error in errors:
+                    if "FieldUndefined" in error or "Unknown type" in error or "UnknownDirective" in error:
+                        self.logger.warning("Test creation not supported in this DataHub version")
+                        return None
+            
+            if result and 'data' in result and 'createTest' in result['data']:
+                return result['data']['createTest']
+            
+            return None
+            
+        except Exception as e:
+            error_str = str(e)
+            if "FieldUndefined" in error_str or "Unknown type" in error_str:
+                self.logger.warning("Test creation not supported in this DataHub version")
+                return None
+            else:
+                self.logger.error(f"Error creating metadata test: {error_str}")
+                return None
+    
+    def update_test(self, test_urn, name=None, description=None, category=None, definition_json=None):
+        """
+        Update a metadata test in DataHub.
+        
+        Args:
+            test_urn (str): URN of the test to update
+            name (str, optional): New name for the test
+            description (str, optional): New description for the test
+            category (str, optional): New category for the test
+            definition_json (str, optional): New JSON string of the test definition
+            
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        self.logger.info(f"Updating metadata test with URN: {test_urn}")
+        
+        try:
+            # Prepare update input
+            update_input = {}
+            
+            if name is not None:
+                update_input["name"] = name
+                
+            if description is not None:
+                update_input["description"] = description
+                
+            if category is not None:
+                update_input["category"] = category
+                
+            if definition_json is not None:
+                update_input["definition"] = {"json": definition_json}
+                
+            if not update_input:
+                self.logger.warning("No fields to update for metadata test")
+                return False
+                
+            # Define GraphQL mutation for updating a test
+            gql_mutation = """
+            mutation updateTest($urn: String!, $input: UpdateTestInput!) {
+              updateTest(urn: $urn, input: $input)
+            }
+            """
+            
+            variables = {
+                "urn": test_urn,
+                "input": update_input
+            }
+            
+            # Execute the GraphQL mutation
+            result = self._execute_graphql(gql_mutation, variables)
+            
+            if result and "errors" in result:
+                # Check for schema validation errors
+                errors = self._get_graphql_errors(result)
+                for error in errors:
+                    if "FieldUndefined" in error or "Unknown type" in error or "UnknownDirective" in error:
+                        self.logger.warning("Test updates not supported in this DataHub version")
+                        return False
+            
+                        return False
+            
+            if result and 'data' in result and 'updateTest' in result['data']:
+                return True
+            
+            return False
+            
+        except Exception as e:
+            error_str = str(e)
+            if "FieldUndefined" in error_str or "Unknown type" in error_str:
+                self.logger.warning("Test updates not supported in this DataHub version")
+                return False
+            else:
+                self.logger.error(f"Error updating metadata test: {error_str}")
+                return False
+    
+    def delete_test(self, test_urn):
+        """
+        Delete a metadata test from DataHub.
+        
+        Args:
+            test_urn (str): URN of the test to delete
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        self.logger.info(f"Deleting metadata test with URN: {test_urn}")
+        
+        try:
+            # Define GraphQL mutation for deleting a test
+            gql_mutation = """
+            mutation deleteTest($urn: String!) {
+              deleteTest(urn: $urn)
+            }
+            """
+            
+            variables = {"urn": test_urn}
+            
+            # Execute the GraphQL mutation
+            result = self._execute_graphql(gql_mutation, variables)
+            
+            if result and "errors" in result:
+                # Check for schema validation errors
+                errors = self._get_graphql_errors(result)
+                for error in errors:
+                    if "FieldUndefined" in error or "Unknown type" in error or "UnknownDirective" in error:
+                        self.logger.warning("Test deletion not supported in this DataHub version")
+                        return False
+            
+            if result and 'data' in result and 'deleteTest' in result['data']:
+                return True
+            
+            return False
+            
+        except Exception as e:
+            error_str = str(e)
+            if "FieldUndefined" in error_str or "Unknown type" in error_str:
+                self.logger.warning("Test deletion not supported in this DataHub version")
+                return False
+            else:
+                self.logger.error(f"Error deleting metadata test: {error_str}")
+                return False
+
+    def get_data_contracts(self, query="*", start=0, count=100):
+        """
+        Get data contracts from DataHub using comprehensive GraphQL query.
+        
+        Args:
+            query (str): Search query (default: "*")
+            start (int): Start index for pagination (default: 0)
+            count (int): Number of results to return (default: 100)
+        
+        Returns:
+            dict: Response with success status and data contract data
+        """
+        try:
+            logger.info(f"Getting data contracts with query='{query}', start={start}, count={count}")
+            
+            # Comprehensive GraphQL query for data contracts
+            graphql_query = """
+            query GetDataContracts($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on DataContract {
+                      urn
+                      type
+                      properties {
+                        entityUrn
+                        freshness {
+                          assertion {
+                            urn
+                          }
+                        }
+                        schema {
+                          assertion {
+                            urn
+                          }
+                        }
+                        dataQuality {
+                          assertion {
+                            urn
+                          }
+                        }
+                      }
+                      status {
+                        state
+                      }
+                      structuredProperties {
+                        properties {
+                          values {
+                            ...on StringValue {
+                              stringValue
+                            }
+                            ...on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                            type
+                          }
+                          associatedUrn
+                        }
+                      }
+                      relationships(input: {types: [], direction: OUTGOING, start: 0, count: 100}) {
+                        relationships {
+                          type
+                          direction
+                          entity {
+                            urn
+                          }
+                          created {
+                            time
+                            actor
+                          }
+                        }
+                      }
+                      result(refresh: false) {
+                        __typename
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            # Build search input for data contracts
+            search_input = {
+                "types": ["DATA_CONTRACT"],
+                "query": query,
+                "start": start,
+                "count": count
+            }
+            
+            variables = {
+                "input": search_input
+            }
+            
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result is None:
+                logger.error("GraphQL execution returned None")
+                return {"success": False, "error": "GraphQL execution failed"}
+            
+            # Check for GraphQL errors
+            if "errors" in result:
+                error_messages = []
+                for error in result["errors"]:
+                    error_msg = error.get("message", "Unknown GraphQL error")
+                    error_messages.append(error_msg)
+                    logger.error(f"GraphQL error: {error_msg}")
+                
+                return {"success": False, "error": f"GraphQL errors: {'; '.join(error_messages)}"}
+            
+            # Extract data from response
+            if "data" not in result or not result["data"]:
+                logger.error("No data in GraphQL response")
+                return {"success": False, "error": "No data in response"}
+            
+            search_data = result["data"].get("searchAcrossEntities", {})
+            
+            logger.info(f"Successfully retrieved {len(search_data.get('searchResults', []))} data contracts")
+            
+            return {
+                "success": True,
+                "data": search_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting data contracts: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def get_data_products(self, query="*", start=0, count=100):
+        """
+        Get data products from DataHub using comprehensive GraphQL query.
+        
+        Args:
+            query (str): Search query (default: "*")
+            start (int): Start index for pagination (default: 0)
+            count (int): Number of results to return (default: 100)
+        
+        Returns:
+            dict: Response with success status and data product data
+        """
+        try:
+            logger.info(f"Getting data products with query='{query}', start={start}, count={count}")
+            
+            # Use the comprehensive search query with fragments
+            graphql_query = """
+            query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on DataProduct {
+                      urn
+                      type
+                      properties {
+                        name
+                        description
+                        externalUrl
+                      }
+                      ownership {
+                        owners {
+                          owner {
+                            ... on CorpUser {
+                              urn
+                              type
+                              username
+                              info {
+                                active
+                                displayName
+                                title
+                                email
+                                firstName
+                                lastName
+                                fullName
+                              }
+                              properties {
+                                active
+                                displayName
+                                title
+                                email
+                                firstName
+                                lastName
+                                fullName
+                              }
+                              editableProperties {
+                                displayName
+                                title
+                                pictureLink
+                                email
+                              }
+                            }
+                            ... on CorpGroup {
+                              urn
+                              type
+                              name
+                              properties {
+                                displayName
+                                email
+                              }
+                              info {
+                                displayName
+                                email
+                              }
+                            }
+                          }
+                          type
+                          ownershipType {
+                            urn
+                            type
+                            info {
+                              name
+                              description
+                            }
+                          }
+                          associatedUrn
+                        }
+                        lastModified {
+                          time
+                        }
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                            type
+                            name
+                            description
+                            properties {
+                              name
+                              colorHex
+                            }
+                          }
+                          context
+                          associatedUrn
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            name
+                            type
+                            hierarchicalName
+                            properties {
+                              name
+                              description
+                              definition
+                              termSource
+                            }
+                          }
+                          actor {
+                            urn
+                          }
+                          context
+                          associatedUrn
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                          type
+                          properties {
+                            name
+                            description
+                          }
+                        }
+                        associatedUrn
+                      }
+                      entities(input: {start: 0, count: 0, query: "*"}) {
+                        total
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                            type
+                            definition {
+                              displayName
+                              qualifiedName
+                              description
+                              cardinality
+                              valueType {
+                                urn
+                                type
+                                info {
+                                  type
+                                  displayName
+                                }
+                              }
+                            }
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                            type
+                          }
+                          associatedUrn
+                        }
+                      }
+                      institutionalMemory {
+                        elements {
+                          url
+                          description
+                          label
+                          created {
+                            actor
+                            time
+                          }
+                          associatedUrn
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            # Build search input for data products
+            search_input = {
+                "types": ["DATA_PRODUCT"],
+                "query": query,
+                "start": start,
+                "count": count
+            }
+            
+            variables = {
+                "input": search_input
+            }
+            
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result is None:
+                logger.error("GraphQL execution returned None")
+                return {"success": False, "error": "GraphQL execution failed"}
+            
+            # Check for GraphQL errors
+            if "errors" in result:
+                error_messages = []
+                for error in result["errors"]:
+                    error_msg = error.get("message", "Unknown GraphQL error")
+                    error_messages.append(error_msg)
+                    logger.error(f"GraphQL error: {error_msg}")
+                
+                return {"success": False, "error": f"GraphQL errors: {'; '.join(error_messages)}"}
+            
+            # Extract data from response
+            if "data" not in result or not result["data"]:
+                logger.error("No data in GraphQL response")
+                return {"success": False, "error": "No data in response"}
+            
+            search_data = result["data"].get("searchAcrossEntities", {})
+            
+            logger.info(f"Successfully retrieved {len(search_data.get('searchResults', []))} data products")
+            
+            return {
+                "success": True,
+                "data": search_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting data products: {str(e)}")
+            return {"success": False, "error": str(e)}

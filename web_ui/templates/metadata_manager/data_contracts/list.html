@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Data Contracts</h1>
+                <div>
+                    <button type="button" class="btn btn-primary me-2" title="Create Data Contract">
+                        <i class="fas fa-plus"></i> Create Data Contract
+                    </button>
+                </div>
+            </div>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+            
+            <!-- Data Contracts Table -->
+            <div class="card">
+                <div class="card-body">
+                    <div id="data-contracts-content">
+                        <!-- Content will be loaded via AJAX -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Contract Details Modal -->
+<div class="modal fade" id="dataContractDetailsModal" tabindex="-1" aria-labelledby="dataContractDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="dataContractDetailsModalLabel">Data Contract Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="dataContractDetailsBody">
+                <!-- Details will be populated by JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load remote data contract data asynchronously
+        loadRemoteDataContractData();
+    });
+    
+    function loadRemoteDataContractData() {
+        console.log('Loading remote data contract data...');
+        
+        // Show loading indicators
+        showLoadingIndicators();
+        
+        fetch('{% url "metadata_manager:get_remote_data_contracts_data" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Remote data contract data loaded successfully');
+                    showDataLoadedMessage(data.data);
+                } else {
+                    console.error('Error loading remote data contract data:', data.error);
+                    showErrorMessage(data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching remote data contract data:', error);
+                showErrorMessage('Failed to load remote data contract data: ' + error.message);
+            });
+    }
+    
+    function showLoadingIndicators() {
+        const content = document.getElementById('data-contracts-content');
+        if (content) {
+            content.innerHTML = `
+                <div class="alert alert-info">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span>Loading data contract data...</span>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    function showDataLoadedMessage(data) {
+        const contractCount = data.remote_data_contracts ? data.remote_data_contracts.length : 0;
+        
+        // Populate data contracts table
+        populateDataContractsTable(data.remote_data_contracts, data.datahub_url);
+        
+        // Show success message
+        const message = `
+            <div class="alert alert-success alert-dismissible fade show mb-3">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <div>
+                        <strong>Data contract data loaded!</strong><br>
+                        Found ${contractCount} data contracts.
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        
+        // Add the message at the top of the content
+        const content = document.getElementById('data-contracts-content');
+        if (content) {
+            content.insertAdjacentHTML('afterbegin', message);
+        }
+    }
+    
+    function populateDataContractsTable(dataContracts, datahubUrl) {
+        const content = document.getElementById('data-contracts-content');
+        if (!content) return;
+        
+        if (dataContracts && dataContracts.length > 0) {
+            // Create table HTML
+            let tableHTML = `
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>URN</th>
+                                <th>Entity URN</th>
+                                <th>Status</th>
+                                <th>Assertions</th>
+                                <th>Properties</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            dataContracts.forEach(contract => {
+                const urn = contract.urn || '';
+                const properties = contract.properties || {};
+                const entityUrn = properties.entityUrn || '-';
+                const status = contract.status || {};
+                const state = status.state || 'Unknown';
+                
+                // Count assertions
+                let assertionCount = 0;
+                if (properties.freshness && properties.freshness.assertion) assertionCount++;
+                if (properties.schema && properties.schema.assertion) assertionCount++;
+                if (properties.dataQuality && properties.dataQuality.assertion) assertionCount++;
+                
+                // Count structured properties
+                const structuredPropsCount = contract.structuredProperties?.properties?.length || 0;
+                
+                tableHTML += `
+                    <tr data-contract='${escapeHtml(JSON.stringify(contract))}'>
+                        <td title="${escapeHtml(urn)}">
+                            <code style="font-size: 0.85em;">${escapeHtml(urn.length > 60 ? urn.substring(0, 60) + '...' : urn)}</code>
+                        </td>
+                        <td title="${escapeHtml(entityUrn)}">
+                            <code style="font-size: 0.85em;">${escapeHtml(entityUrn.length > 50 ? entityUrn.substring(0, 50) + '...' : entityUrn)}</code>
+                        </td>
+                        <td>
+                            <span class="badge ${getStatusBadgeClass(state)}">${escapeHtml(state)}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">${assertionCount}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">${structuredPropsCount}</span>
+                        </td>
+                        <td>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-outline-secondary view-contract-details" 
+                                       data-urn="${escapeHtml(urn)}" title="View Contract Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                `;
+                
+                if (datahubUrl && urn) {
+                    tableHTML += `
+                        <a href="${datahubUrl}/dataContract/${encodeURIComponent(urn)}" 
+                           target="_blank" class="btn btn-sm btn-outline-primary" title="View in DataHub">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    `;
+                }
+                
+                tableHTML += `
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            content.insertAdjacentHTML('beforeend', tableHTML);
+            
+            // Add event listeners for view buttons
+            content.querySelectorAll('.view-contract-details').forEach(button => {
+                button.addEventListener('click', function() {
+                    const urn = this.getAttribute('data-urn');
+                    const row = this.closest('tr');
+                    const contractData = JSON.parse(row.getAttribute('data-contract'));
+                    showDataContractDetailsModal(contractData);
+                });
+            });
+        } else {
+            content.insertAdjacentHTML('beforeend', `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> No data contracts found.
+                </div>
+            `);
+        }
+    }
+    
+    function getStatusBadgeClass(status) {
+        switch (status?.toLowerCase()) {
+            case 'active':
+            case 'enforced':
+                return 'bg-success';
+            case 'inactive':
+            case 'unenforced':
+                return 'bg-warning';
+            case 'deprecated':
+                return 'bg-danger';
+            default:
+                return 'bg-secondary';
+        }
+    }
+    
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text ? text.replace(/[&<>"']/g, m => map[m]) : '';
+    }
+    
+    function showDataContractDetailsModal(contract) {
+        const modal = document.getElementById('dataContractDetailsModal');
+        const modalBody = document.getElementById('dataContractDetailsBody');
+        const modalTitle = document.getElementById('dataContractDetailsModalLabel');
+        
+        // Set title
+        modalTitle.textContent = `Data Contract Details: ${contract.urn || 'Unknown'}`;
+        
+        // Generate detailed content
+        let content = `
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Basic Information</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>URN:</strong><br>
+                                    <code class="text-break">${escapeHtml(contract.urn || 'N/A')}</code>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Type:</strong><br>
+                                    <span class="badge bg-info">${escapeHtml(contract.type || 'DATA_CONTRACT')}</span>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-12">
+                                    <strong>Entity URN:</strong><br>
+                                    <code class="text-break">${escapeHtml(contract.properties?.entityUrn || 'N/A')}</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+        `;
+        
+        // Status
+        if (contract.status) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Status</h6>
+                        </div>
+                        <div class="card-body">
+                            <strong>State:</strong> <span class="badge ${getStatusBadgeClass(contract.status.state)}">${escapeHtml(contract.status.state || 'Unknown')}</span>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Assertions
+        if (contract.properties) {
+            const props = contract.properties;
+            let assertionsHTML = '<div class="card mb-3"><div class="card-header"><h6 class="mb-0">Assertions</h6></div><div class="card-body">';
+            
+            if (props.freshness && props.freshness.assertion) {
+                assertionsHTML += `<div class="mb-2"><strong>Freshness:</strong> <code>${escapeHtml(props.freshness.assertion.urn)}</code></div>`;
+            }
+            if (props.schema && props.schema.assertion) {
+                assertionsHTML += `<div class="mb-2"><strong>Schema:</strong> <code>${escapeHtml(props.schema.assertion.urn)}</code></div>`;
+            }
+            if (props.dataQuality && props.dataQuality.assertion) {
+                assertionsHTML += `<div class="mb-2"><strong>Data Quality:</strong> <code>${escapeHtml(props.dataQuality.assertion.urn)}</code></div>`;
+            }
+            
+            if (!props.freshness && !props.schema && !props.dataQuality) {
+                assertionsHTML += '<em>No assertions defined</em>';
+            }
+            
+            assertionsHTML += '</div></div>';
+            content += assertionsHTML;
+        }
+        
+        // Structured Properties
+        if (contract.structuredProperties && contract.structuredProperties.properties) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Structured Properties</h6>
+                        </div>
+                        <div class="card-body">
+                            ${contract.structuredProperties.properties.map(prop => `
+                                <div class="border rounded p-2 mb-2">
+                                    <strong>Values:</strong> ${prop.values ? prop.values.map(v => v.stringValue || v.numberValue || 'N/A').join(', ') : 'N/A'}<br>
+                                    <strong>Associated URN:</strong> <code>${escapeHtml(prop.associatedUrn || 'N/A')}</code>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+            `;
+        }
+        
+        // Relationships
+        if (contract.relationships && contract.relationships.relationships) {
+            content += `
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Relationships</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Direction</th>
+                                            <th>Entity</th>
+                                            <th>Created</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${contract.relationships.relationships.map(rel => `
+                                            <tr>
+                                                <td>${escapeHtml(rel.type || 'N/A')}</td>
+                                                <td>${escapeHtml(rel.direction || 'N/A')}</td>
+                                                <td><code>${escapeHtml(rel.entity?.urn || 'N/A')}</code></td>
+                                                <td>${rel.created?.time ? new Date(rel.created.time).toLocaleString() : 'N/A'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        content += `
+                </div>
+            </div>
+            
+            <!-- Raw JSON Data -->
+            <div class="mt-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">Raw JSON Data</h6>
+                    </div>
+                    <div class="card-body">
+                        <pre><code>${escapeHtml(JSON.stringify(contract, null, 2))}</code></pre>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        modalBody.innerHTML = content;
+        
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+    }
+    
+    function showErrorMessage(message) {
+        const content = document.getElementById('data-contracts-content');
+        if (content) {
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Error loading data contract data: ${message}
+                </div>
+            `;
+        }
+    }
+</script>
+{% endblock %} 

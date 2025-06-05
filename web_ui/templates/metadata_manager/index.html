@@ -135,6 +135,44 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Data Contracts</h6>
+                                    <p class="card-text">Manage data contracts</p>
+                                </div>
+                                <div class="text-dark">
+                                    <i class="fas fa-file-contract fa-2x"></i>
+                                </div>
+                            </div>
+                            <a href="{% url 'metadata_manager:data_contract_list' %}" class="btn btn-sm btn-outline-dark mt-3">
+                                <i class="fas fa-arrow-right me-1"></i> Manage Contracts
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="card-subtitle mb-2 text-muted">Data Products</h6>
+                                    <p class="card-text">Manage data products</p>
+                                </div>
+                                <div class="text-purple">
+                                    <i class="fas fa-cube fa-2x"></i>
+                                </div>
+                            </div>
+                            <a href="{% url 'metadata_manager:data_product_list' %}" class="btn btn-sm btn-outline-primary mt-3">
+                                <i class="fas fa-arrow-right me-1"></i> Manage Products
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -157,6 +195,12 @@
                         </a>
                         <a href="{% url 'metadata_manager:assertion_create' %}" class="list-group-item list-group-item-action">
                             <i class="fas fa-plus-circle me-2"></i> Add Assertion
+                        </a>
+                        <a href="{% url 'metadata_manager:data_contract_list' %}" class="list-group-item list-group-item-action">
+                            <i class="fas fa-file-contract me-2"></i> View Data Contracts
+                        </a>
+                        <a href="{% url 'metadata_manager:data_product_list' %}" class="list-group-item list-group-item-action">
+                            <i class="fas fa-cube me-2"></i> View Data Products
                         </a>
                     </div>
                 </div>

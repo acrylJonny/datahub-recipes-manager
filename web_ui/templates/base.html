@@ -68,6 +68,10 @@
         .status-disconnected {
             background-color: var(--datahub-danger);
         }
+        
+        .text-purple {
+            color: #6f42c1;
+        }
     </style>
     
     <!-- Custom CSS -->
@@ -163,6 +167,16 @@
                                 <li>
                                     <a class="dropdown-item{% if request.path == '/metadata/entities/editable/' %} active{% endif %}" href="{% url 'metadata_manager:editable_properties' %}">
                                         <i class="fas fa-edit fa-fw me-2"></i> Editable Properties
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/data-contracts/' %} active{% endif %}" href="{% url 'metadata_manager:data_contract_list' %}">
+                                        <i class="fas fa-file-contract fa-fw me-2"></i> Data Contracts
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item{% if request.path == '/metadata/data-products/' %} active{% endif %}" href="{% url 'metadata_manager:data_product_list' %}">
+                                        <i class="fas fa-cube fa-fw me-2"></i> Data Products
                                     </a>
                                 </li>
                             </ul>

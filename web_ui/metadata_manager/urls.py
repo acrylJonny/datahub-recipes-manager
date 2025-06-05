@@ -7,6 +7,8 @@ from . import views_assertions
 from . import views_sync
 from . import views_tests
 from . import views_properties
+from . import views_data_contracts
+from . import views_data_products
 
 app_name = "metadata_manager"
 
@@ -219,6 +221,28 @@ urlpatterns = [
         name="domain_import_export",
     ),
     path("domains/pull/", views_domains.DomainPullView.as_view(), name="domain_pull"),
+    # Data Contracts
+    path(
+        "data-contracts/",
+        views_data_contracts.DataContractListView.as_view(),
+        name="data_contract_list",
+    ),
+    path(
+        "data-contracts/data/",
+        views_data_contracts.get_remote_data_contracts_data,
+        name="get_remote_data_contracts_data",
+    ),
+    # Data Products
+    path(
+        "data-products/",
+        views_data_products.DataProductListView.as_view(),
+        name="data_product_list",
+    ),
+    path(
+        "data-products/data/",
+        views_data_products.get_remote_data_products_data,
+        name="get_remote_data_products_data",
+    ),
     # Assertions
     path(
         "assertions/",
