@@ -755,9 +755,9 @@ class DomainPullView(View):
 
 
 def get_remote_domains_data(request):
-    """AJAX endpoint to get remote domains data"""
+    """AJAX endpoint to get enhanced remote domains data with ownership and relationships"""
     try:
-        logger.info("Loading remote domains data via AJAX")
+        logger.info("Loading enhanced remote domains data via AJAX")
 
         # Get DataHub connection
         connected, client = test_datahub_connection()
@@ -765,112 +765,219 @@ def get_remote_domains_data(request):
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
         # Get all local domains
-        domains = Domain.objects.all().order_by("name")
+        local_domains = Domain.objects.all().order_by("name")
 
-        # Fetch remote domains
-        synced_domains = []
-        local_domains = []
-        remote_only_domains = []
+        # Initialize data structures
+        synced_items = []
+        local_only_items = []
+        remote_only_items = []
         datahub_url = None
 
         try:
-            logger.debug("Fetching remote domains from DataHub")
-            # Get all remote domains from DataHub
-            remote_domains = client.list_domains(count=1000)
-            logger.debug(
-                f"Fetched {len(remote_domains) if remote_domains else 0} remote domains"
-            )
-
+            logger.debug("Fetching enhanced remote domains from DataHub")
+            
             # Get DataHub URL for direct links
             datahub_url = client.server_url
             if datahub_url.endswith("/api/gms"):
                 datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
 
-            # Extract domain URNs that exist locally
-            local_domain_urns = set(domains.values_list("deterministic_urn", flat=True))
+            # Get all remote domains from DataHub with enhanced data
+            remote_domains = client.list_domains(count=1000)
+            logger.debug(f"Fetched {len(remote_domains) if remote_domains else 0} remote domains")
 
-            # Process domains by comparing local and remote
-            for domain in domains:
+            # Enhance remote domains with ownership and relationship data
+            enhanced_remote_domains = {}
+            for domain in remote_domains:
+                domain_urn = domain.get("urn")
+                if domain_urn:
+                    # Extract basic properties
+                    properties = domain.get("properties", {})
+                    
+                    # Extract parent domain information
+                    parent_urn = None
+                    parent_domain = domain.get("parentDomain")
+                    if parent_domain:
+                        parent_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+                    
+                    enhanced_domain = {
+                        "urn": domain_urn,
+                        "name": properties.get("name", ""),
+                        "description": properties.get("description", ""),
+                        "type": "domain",
+                        "sync_status": "REMOTE_ONLY",
+                        "sync_status_display": "Remote Only",
+                        
+                        # Parent domain information for hierarchy
+                        "parent_urn": parent_urn,
+                        "parentDomain": parent_urn,  # Alternative field name
+                        
+                        # Extract ownership data
+                        "ownership": domain.get("ownership"),
+                        "owners_count": 0,
+                        "owner_names": [],
+                        
+                        # Extract relationships data
+                        "relationships": domain.get("relationships"),
+                        "relationships_count": 0,
+                        
+                        # Store raw data
+                        "raw_data": domain
+                    }
+                    
+                    # Process ownership information
+                    if enhanced_domain["ownership"] and enhanced_domain["ownership"].get("owners"):
+                        owners = enhanced_domain["ownership"]["owners"]
+                        enhanced_domain["owners_count"] = len(owners)
+                        
+                        # Extract owner names for display
+                        owner_names = []
+                        for owner_info in owners:
+                            owner = owner_info.get("owner", {})
+                            if owner.get("properties"):
+                                name = (
+                                    owner["properties"].get("displayName") or
+                                    owner.get("username") or
+                                    owner.get("name") or
+                                    "Unknown"
+                                )
+                            else:
+                                name = owner.get("username") or owner.get("name") or "Unknown"
+                            owner_names.append(name)
+                        enhanced_domain["owner_names"] = owner_names
+                    
+                    # Process relationships information
+                    if enhanced_domain["relationships"] and enhanced_domain["relationships"].get("relationships"):
+                        enhanced_domain["relationships_count"] = len(enhanced_domain["relationships"]["relationships"])
+                    
+                    enhanced_remote_domains[domain_urn] = enhanced_domain
+
+            # Extract domain URNs that exist locally
+            local_domain_urns = set(local_domains.values_list("deterministic_urn", flat=True))
+
+            # Process local domains
+            for domain in local_domains:
                 domain_urn = str(domain.deterministic_urn)
-                remote_match = next(
-                    (d for d in remote_domains if d.get("urn") == domain_urn), None
-                )
+                remote_match = enhanced_remote_domains.get(domain_urn)
+
+                # Create enhanced local domain data
+                local_domain_data = {
+                    "id": domain.id,
+                    "urn": domain_urn,
+                    "name": domain.name,
+                    "description": domain.description or "",
+                    "type": "domain",
+                    "sync_status": domain.sync_status,
+                    "sync_status_display": domain.get_sync_status_display(),
+                    
+                    # Initialize parent information (local domains don't store parent currently)
+                    "parent_urn": None,
+                    "parentDomain": None,
+                    
+                    # Initialize ownership data (not stored locally for domains)
+                    "ownership": None,
+                    "owners_count": 0,
+                    "owner_names": [],
+                    
+                    # Initialize relationships data (not stored locally for domains)
+                    "relationships": None,
+                    "relationships_count": 0,
+                    
+                    # Add local metadata
+                    "created_at": domain.created_at.isoformat() if domain.created_at else None,
+                    "updated_at": domain.updated_at.isoformat() if domain.updated_at else None,
+                }
 
                 if remote_match:
                     # Check if domain needs status update
                     local_description = domain.description or ""
-                    remote_description = remote_match.get("properties", {}).get(
-                        "description", ""
-                    )
+                    remote_description = remote_match.get("description", "")
 
                     # Update sync status based on comparison
                     if local_description != remote_description:
                         if domain.sync_status != "MODIFIED":
                             domain.sync_status = "MODIFIED"
                             domain.save(update_fields=["sync_status"])
-                            logger.debug(
-                                f"Updated domain {domain.name} status to MODIFIED"
-                            )
+                            logger.debug(f"Updated domain {domain.name} status to MODIFIED")
+                        local_domain_data["sync_status"] = "MODIFIED"
+                        local_domain_data["sync_status_display"] = "Modified"
                     else:
                         if domain.sync_status != "SYNCED":
                             domain.sync_status = "SYNCED"
                             domain.save(update_fields=["sync_status"])
-                            logger.debug(
-                                f"Updated domain {domain.name} status to SYNCED"
-                            )
+                            logger.debug(f"Updated domain {domain.name} status to SYNCED")
+                        local_domain_data["sync_status"] = "SYNCED"
+                        local_domain_data["sync_status_display"] = "Synced"
 
-                    synced_domains.append(
-                        {
-                            "local": {
-                                "id": domain.id,
-                                "name": domain.name,
-                                "description": domain.description,
-                                "sync_status": domain.sync_status,
-                            },
-                            "remote": remote_match,
-                        }
-                    )
+                    # Create combined data for synced items
+                    combined_data = local_domain_data.copy()
+                    # Add remote ownership and relationships data to combined data
+                    combined_data.update({
+                        "ownership": remote_match.get("ownership"),
+                        "owners_count": remote_match.get("owners_count", 0),
+                        "owner_names": remote_match.get("owner_names", []),
+                        "relationships": remote_match.get("relationships"),
+                        "relationships_count": remote_match.get("relationships_count", 0),
+                        # Add parent domain information from remote
+                        "parent_urn": remote_match.get("parent_urn"),
+                        "parentDomain": remote_match.get("parentDomain"),
+                    })
+
+                    synced_items.append({
+                        "local": local_domain_data,
+                        "remote": remote_match,
+                        "combined": combined_data
+                    })
                 else:
                     # Ensure local-only domains have correct status
                     if domain.sync_status != "LOCAL_ONLY":
                         domain.sync_status = "LOCAL_ONLY"
                         domain.save(update_fields=["sync_status"])
-                        logger.debug(
-                            f"Updated domain {domain.name} status to LOCAL_ONLY"
-                        )
+                        logger.debug(f"Updated domain {domain.name} status to LOCAL_ONLY")
+                    local_domain_data["sync_status"] = "LOCAL_ONLY"
+                    local_domain_data["sync_status_display"] = "Local Only"
 
-                    local_domains.append(
-                        {
-                            "id": domain.id,
-                            "name": domain.name,
-                            "description": domain.description,
-                            "sync_status": domain.sync_status,
-                        }
-                    )
+                    local_only_items.append(local_domain_data)
 
             # Find domains that exist remotely but not locally
-            remote_only_domains = [
-                d for d in remote_domains if d.get("urn") not in local_domain_urns
+            remote_only_items = [
+                enhanced_remote_domains[urn] 
+                for urn in enhanced_remote_domains.keys() 
+                if urn not in local_domain_urns
             ]
 
+            # Calculate statistics
+            total_items = len(synced_items) + len(local_only_items) + len(remote_only_items)
+            synced_count = len(synced_items)
+            owned_items = sum(1 for item in synced_items + local_only_items + remote_only_items 
+                            if (item.get("combined", item) if "combined" in item else item).get("owners_count", 0) > 0)
+            items_with_relationships = sum(1 for item in synced_items + local_only_items + remote_only_items 
+                                         if (item.get("combined", item) if "combined" in item else item).get("relationships_count", 0) > 0)
+
+            statistics = {
+                "total_items": total_items,
+                "synced_count": synced_count,
+                "owned_items": owned_items,
+                "items_with_relationships": items_with_relationships,
+            }
+
             logger.debug(
-                f"Categorized domains: {len(synced_domains)} synced, {len(local_domains)} local-only, {len(remote_only_domains)} remote-only"
+                f"Enhanced domain categorization: {len(synced_items)} synced, "
+                f"{len(local_only_items)} local-only, {len(remote_only_items)} remote-only"
             )
 
-            return JsonResponse(
-                {
-                    "success": True,
-                    "data": {
-                        "synced_domains": synced_domains,
-                        "local_domains": local_domains,
-                        "remote_only_domains": remote_only_domains,
-                        "datahub_url": datahub_url,
-                    },
+            return JsonResponse({
+                "success": True,
+                "data": {
+                    "synced_items": synced_items,
+                    "local_only_items": local_only_items,
+                    "remote_only_items": remote_only_items,
+                    "statistics": statistics,
+                    "datahub_url": datahub_url,
                 }
-            )
+            })
 
         except Exception as e:
-            logger.error(f"Error fetching remote domain data: {str(e)}")
+            logger.error(f"Error fetching enhanced remote domain data: {str(e)}")
             return JsonResponse(
                 {"success": False, "error": f"Error fetching remote domains: {str(e)}"}
             )

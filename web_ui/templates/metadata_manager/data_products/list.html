@@ -1,29 +1,232 @@
 {% extends "base.html" %}
+{% load static %}
+{% load metadata_manager_filters %}
+
+{% block title %}DataHub Data Products{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<style>
+    .description-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+        white-space: normal;
+    }
+    
+    .description-preview {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.4;
+        max-height: 4.2em;
+    }
+    
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .table-responsive {
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+    }
+    
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Hidden CSRF token for JavaScript -->
+    <form style="display: none;">
+        {% csrf_token %}
+    </form>
+    
     <div class="row">
         <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1>Data Products</h1>
-                <div>
-                    <button type="button" class="btn btn-primary me-2" title="Create Data Product">
-                        <i class="fas fa-plus"></i> Create Data Product
+                <h1>DataHub Data Products</h1>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" title="Create Data Product">
+                        <i class="fas fa-plus me-1"></i> Create Data Product
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="refreshProducts">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
                 </div>
             </div>
             
-            {% if error %}
-            <div class="alert alert-danger">
-                <strong>Error:</strong> {{ error }}
-            </div>
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
             {% endif %}
             
-            <!-- Data Products Table -->
-            <div class="card">
-                <div class="card-body">
-                    <div id="data-products-content">
-                        <!-- Content will be loaded via AJAX -->
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- Loading indicator -->
+            <div id="loading-indicator" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading data products data...</p>
+            </div>
+
+            <!-- Products content -->
+            <div id="products-content" style="display: none;">
+                <!-- Statistics -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="total-items">0</div>
+                                <small class="text-muted">Total Products</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="synced-count">0</div>
+                                <small class="text-muted">Synced</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="owned-products">0</div>
+                                <small class="text-muted">Owned</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="products-with-relationships">0</div>
+                                <small class="text-muted">With Relationships</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            
+                <!-- Products Tabs -->
+                <ul class="nav nav-tabs mb-4" id="productTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
+                               type="button" role="tab" aria-controls="synced-items" aria-selected="true">
+                            <i class="fas fa-sync-alt me-1"></i> Synced Products
+                            <span class="badge bg-success ms-1" id="synced-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-items" 
+                               type="button" role="tab" aria-controls="local-items" aria-selected="false">
+                            <i class="fas fa-laptop me-1"></i> Local Only Products
+                            <span class="badge bg-secondary ms-1" id="local-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
+                               type="button" role="tab" aria-controls="remote-items" aria-selected="false">
+                            <i class="fas fa-server me-1"></i> Remote Only Products
+                            <span class="badge bg-info ms-1" id="remote-badge">0</span>
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="productTabsContent">
+                    <!-- Synced Products Tab -->
+                    <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Synced Products</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="synced-search" class="form-control" placeholder="Search synced products...">
+                                    <button type="button" class="btn btn-outline-secondary" id="synced-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="synced-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Local Products Tab -->
+                    <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Local Only Products</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="local-search" class="form-control" placeholder="Search local products...">
+                                    <button type="button" class="btn btn-outline-secondary" id="local-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="local-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Remote Products Tab -->
+                    <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Remote Only Products</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="remote-search" class="form-control" placeholder="Search remote products...">
+                                    <button type="button" class="btn btn-outline-secondary" id="remote-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="remote-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -31,16 +234,138 @@
     </div>
 </div>
 
-<!-- Data Product Details Modal -->
-<div class="modal fade" id="dataProductDetailsModal" tabindex="-1" aria-labelledby="dataProductDetailsModalLabel" aria-hidden="true">
+<!-- Enhanced Product View Modal -->
+<div class="modal fade" id="productViewModal" tabindex="-1" aria-labelledby="productViewModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="dataProductDetailsModalLabel">Data Product Details</h5>
+                <h5 class="modal-title" id="productViewModalLabel">Data Product Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" id="dataProductDetailsBody">
-                <!-- Details will be populated by JavaScript -->
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Basic Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row">
+                                    <dt class="col-sm-4">Name:</dt>
+                                    <dd class="col-sm-8" id="modal-product-name">-</dd>
+                                    
+                                    <dt class="col-sm-4">Type:</dt>
+                                    <dd class="col-sm-8">
+                                        <i class="fas fa-cube text-primary me-1"></i>Data Product
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Domain:</dt>
+                                    <dd class="col-sm-8" id="modal-product-domain">-</dd>
+                                    
+                                    <dt class="col-sm-4">Description:</dt>
+                                    <dd class="col-sm-8" id="modal-product-description">-</dd>
+                                    
+                                    <dt class="col-sm-4">Status:</dt>
+                                    <dd class="col-sm-8">
+                                        <span id="modal-product-status" class="badge">-</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">URN:</dt>
+                                    <dd class="col-sm-8">
+                                        <code id="modal-product-urn" class="small">-</code>
+                                    </dd>
+                                </dl>
+                                
+                                <div class="mt-3">
+                                    <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
+                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-owners-list">
+                                    <p class="text-muted">No ownership information available</p>
+                                </div>
+                                
+                                <div id="modal-last-modified" class="mt-3">
+                                    <!-- Last modified info will be shown here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Entities -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-database me-2"></i>Entities</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-entities-list">
+                                    <p class="text-muted">No entities available</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Relationships -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-relationships-list">
+                                    <p class="text-muted">No relationships available</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Product Properties -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-cog me-2"></i>Product Properties</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-product-properties">
+                                    <p class="text-muted">No additional properties available</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Raw JSON Data -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -48,483 +373,606 @@
         </div>
     </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Load remote data product data asynchronously
-        loadRemoteDataProductData();
+// Global variables
+let productsData = {
+    synced_items: [],
+    local_only_items: [],
+    remote_only_items: [],
+    datahub_url: ''
+};
+let currentSearch = {
+    synced: '',
+    local: '',
+    remote: ''
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadProductsData();
+    
+    // Search functionality for each tab
+    ['synced', 'local', 'remote'].forEach(tab => {
+        const searchInput = document.getElementById(`${tab}-search`);
+        const clearButton = document.getElementById(`${tab}-clear`);
+        
+        searchInput.addEventListener('input', function() {
+            currentSearch[tab] = this.value.toLowerCase();
+            displayTabContent(tab);
+        });
+        
+        clearButton.addEventListener('click', function() {
+            searchInput.value = '';
+            currentSearch[tab] = '';
+            displayTabContent(tab);
+        });
     });
     
-    function loadRemoteDataProductData() {
-        console.log('Loading remote data product data...');
+    // Refresh button
+    document.getElementById('refreshProducts').addEventListener('click', function() {
+        loadProductsData();
+    });
+});
+
+function loadProductsData() {
+    console.log('Loading products data...');
+    showLoading(true);
+    
+    fetch('/metadata/data-products/data/')
+        .then(response => {
+            console.log('Received response:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
+            if (data.success) {
+                productsData = data.data;
+                updateStatistics(data.data.statistics);
+                updateTabBadges();
+                displayAllTabs();
+            } else {
+                console.error('Data loading failed:', data.error);
+                showError('Failed to load products: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error loading products:', error);
+            showError('Failed to load products data: ' + error.message);
+        })
+        .finally(() => {
+            showLoading(false);
+        });
+}
+
+function showLoading(show) {
+    document.getElementById('loading-indicator').style.display = show ? 'block' : 'none';
+    document.getElementById('products-content').style.display = show ? 'none' : 'block';
+}
+
+function updateStatistics(stats) {
+    document.getElementById('total-items').textContent = stats.total_items || 0;
+    document.getElementById('synced-count').textContent = stats.synced_count || 0;
+    document.getElementById('owned-products').textContent = stats.owned_items || 0;
+    document.getElementById('products-with-relationships').textContent = stats.items_with_relationships || 0;
+}
+
+function updateTabBadges() {
+    document.getElementById('synced-badge').textContent = productsData.synced_items.length;
+    document.getElementById('local-badge').textContent = productsData.local_only_items.length;
+    document.getElementById('remote-badge').textContent = productsData.remote_only_items.length;
+}
+
+function displayAllTabs() {
+    displayTabContent('synced');
+    displayTabContent('local');
+    displayTabContent('remote');
+}
+
+function displayTabContent(tabType) {
+    console.log('Displaying tab content for:', tabType);
+    
+    let items, contentId;
+    
+    try {
+        switch(tabType) {
+            case 'synced':
+                items = productsData.synced_items.map(item => item.combined);
+                contentId = 'synced-content';
+                break;
+            case 'local':
+                items = productsData.local_only_items;
+                contentId = 'local-content';
+                break;
+            case 'remote':
+                items = productsData.remote_only_items;
+                contentId = 'remote-content';
+                break;
+        }
         
-        // Show loading indicators
-        showLoadingIndicators();
+        console.log(`Tab ${tabType}: ${items?.length || 0} items`);
         
-        fetch('{% url "metadata_manager:get_remote_data_products_data" %}')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log('Remote data product data loaded successfully');
-                    showDataLoadedMessage(data.data);
-                } else {
-                    console.error('Error loading remote data product data:', data.error);
-                    showErrorMessage(data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching remote data product data:', error);
-                showErrorMessage('Failed to load remote data product data: ' + error.message);
+        // Sort items alphabetically by name (A-Z)
+        if (items && items.length > 0) {
+            items.sort((a, b) => {
+                const nameA = (a.properties?.name || a.name || '').toLowerCase();
+                const nameB = (b.properties?.name || b.name || '').toLowerCase();
+                return nameA.localeCompare(nameB);
             });
-    }
-    
-    function showLoadingIndicators() {
-        const content = document.getElementById('data-products-content');
+        }
+        
+        // Filter items based on search
+        const searchTerm = currentSearch[tabType];
+        if (searchTerm) {
+            items = items.filter(item => 
+                (item.properties?.name || item.name || '').toLowerCase().includes(searchTerm) ||
+                (item.properties?.description || item.description || '').toLowerCase().includes(searchTerm) ||
+                (item.domain?.domain?.properties?.name || '').toLowerCase().includes(searchTerm) ||
+                (item.urn || '').toLowerCase().includes(searchTerm)
+            );
+        }
+        
+        const content = document.getElementById(contentId);
+        if (!content) {
+            console.error('Content element not found:', contentId);
+            return;
+        }
+        
+        if (items.length === 0) {
+            console.log(`No items for ${tabType}, showing empty state`);
+            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
+            return;
+        }
+        
+        console.log(`Generating table for ${tabType} with ${items.length} items`);
+        const tableHTML = generateTableHTML(items, tabType);
+        content.innerHTML = tableHTML;
+        
+        // Attach click handlers for view buttons
+        content.querySelectorAll('.view-item').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const itemData = JSON.parse(row.dataset.item);
+                showProductDetails(itemData);
+            });
+        });
+        
+        console.log(`Successfully rendered ${tabType} tab`);
+        
+    } catch (error) {
+        console.error(`Error displaying ${tabType} tab:`, error);
+        const content = document.getElementById(contentId);
         if (content) {
-            content.innerHTML = `
-                <div class="alert alert-info">
-                    <div class="d-flex align-items-center">
-                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <span>Loading data product data...</span>
-                    </div>
-                </div>
-            `;
+            content.innerHTML = `<div class="alert alert-danger">Error loading ${tabType} products: ${error.message}</div>`;
         }
     }
+}
+
+function generateTableHTML(items, tabType) {
+    return `
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Domain</th>
+                        <th>Description</th>
+                        <th>Entities</th>
+                        <th>URN</th>
+                        <th>Status</th>
+                        <th>Owners</th>
+                        <th>Relationships</th>
+                        <th width="15%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(item => renderProductRow(item, tabType)).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderProductRow(product, tabType) {
+    const statusClass = getStatusBadgeClass(product.sync_status);
+    const typeIcon = 'fas fa-cube text-primary';
     
-    function showDataLoadedMessage(data) {
-        const productCount = data.remote_data_products ? data.remote_data_products.length : 0;
-        
-        // Populate data products table
-        populateDataProductsTable(data.remote_data_products, data.datahub_url);
-        
-        // Show success message
-        const message = `
-            <div class="alert alert-success alert-dismissible fade show mb-3">
+    // Extract product data
+    const name = product.properties?.name || product.name || 'Unnamed';
+    const description = product.properties?.description || product.description || '';
+    const domain = product.domain?.domain?.properties?.name || '';
+    const entityCount = product.entities?.total || 0;
+    const urn = product.urn || '';
+    
+    return `
+        <tr data-item='${JSON.stringify(product)}'>
+            <td>
                 <div class="d-flex align-items-center">
-                    <i class="fas fa-check-circle me-2"></i>
-                    <div>
-                        <strong>Data product data loaded!</strong><br>
-                        Found ${productCount} data products.
-                    </div>
+                    <i class="${typeIcon} me-2"></i>
+                    <strong>${escapeHtml(name)}</strong>
                 </div>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
-        
-        // Add the message at the top of the content
-        const content = document.getElementById('data-products-content');
-        if (content) {
-            content.insertAdjacentHTML('afterbegin', message);
-        }
-    }
-    
-    function populateDataProductsTable(dataProducts, datahubUrl) {
-        const content = document.getElementById('data-products-content');
-        if (!content) return;
-        
-        if (dataProducts && dataProducts.length > 0) {
-            // Create table HTML
-            let tableHTML = `
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th>Domain</th>
-                                <th>Entities</th>
-                                <th>Owners</th>
-                                <th>Properties</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            
-            dataProducts.forEach(product => {
-                const urn = product.urn || '';
-                const properties = product.properties || {};
-                const name = properties.name || 'Unnamed';
-                const description = properties.description || '-';
-                const domain = product.domain?.domain?.properties?.name || '-';
-                const entityCount = product.entities?.total || 0;
-                const ownerCount = product.ownership?.owners?.length || 0;
-                const structuredPropsCount = product.structuredProperties?.properties?.length || 0;
-                
-                tableHTML += `
-                    <tr data-product='${escapeHtml(JSON.stringify(product))}'>
-                        <td>
-                            <strong>${escapeHtml(name)}</strong><br>
-                            <small class="text-muted"><code>${escapeHtml(urn.length > 50 ? urn.substring(0, 50) + '...' : urn)}</code></small>
-                        </td>
-                        <td title="${escapeHtml(description)}">
-                            ${escapeHtml(description.length > 100 ? description.substring(0, 100) + '...' : description)}
-                        </td>
-                        <td>
-                            ${domain !== '-' ? `<span class="badge bg-info">${escapeHtml(domain)}</span>` : '-'}
-                        </td>
-                        <td>
-                            <span class="badge bg-primary">${entityCount}</span>
-                        </td>
-                        <td>
-                            <span class="badge bg-success">${ownerCount}</span>
-                        </td>
-                        <td>
-                            <span class="badge bg-secondary">${structuredPropsCount}</span>
-                        </td>
-                        <td>
-                            <div class="btn-group">
-                                <button type="button" class="btn btn-sm btn-outline-secondary view-product-details" 
-                                       data-urn="${escapeHtml(urn)}" title="View Product Details">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                `;
-                
-                if (datahubUrl && urn) {
-                    tableHTML += `
-                        <a href="${datahubUrl}/dataProduct/${encodeURIComponent(urn)}" 
-                           target="_blank" class="btn btn-sm btn-outline-primary" title="View in DataHub">
+            </td>
+            <td>
+                ${domain ? `<span class="badge bg-info">${escapeHtml(domain)}</span>` : '<span class="text-muted">None</span>'}
+            </td>
+            <td>
+                <span title="${escapeHtml(description)}">${escapeHtml(truncateText(description, 50))}</span>
+            </td>
+            <td>
+                <span class="badge bg-primary">${entityCount}</span>
+            </td>
+            <td>
+                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(urn)}">${escapeHtml(truncateUrn(urn, 30))}</code>
+            </td>
+            <td>
+                <span class="badge ${statusClass}">${product.sync_status_display || product.sync_status}</span>
+            </td>
+            <td>
+                ${product.owners_count ? `
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-users me-1"></i>
+                        <span class="badge bg-info">${product.owners_count}</span>
+                        ${product.owner_names && product.owner_names.length > 0 ? `
+                            <small class="ms-2 text-muted">${product.owner_names.slice(0, 2).join(', ')}${product.owner_names.length > 2 ? '...' : ''}</small>
+                        ` : ''}
+                    </div>
+                ` : `<span class="text-muted">None</span>`}
+            </td>
+            <td>
+                ${product.relationships_count ? `
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-project-diagram me-1"></i>
+                        <span class="badge bg-secondary">${product.relationships_count}</span>
+                    </div>
+                ` : `<span class="text-muted">None</span>`}
+            </td>
+            <td>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-sm btn-outline-primary view-item" 
+                            title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    ${product.urn && !product.urn.includes('local:') ? `
+                        <a href="${getDataHubUrl(product.urn, 'product')}" 
+                           class="btn btn-sm btn-outline-info" 
+                           target="_blank" title="View in DataHub">
                             <i class="fas fa-external-link-alt"></i>
                         </a>
-                    `;
-                }
+                    ` : ''}
+                    ${getActionButtons(product, tabType)}
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+function getActionButtons(item, tabType) {
+    // Implementation depends on backend endpoints
+    return '';
+}
+
+function getEmptyStateHTML(tabType, hasSearch) {
+    if (hasSearch) {
+        return `
+            <div class="py-5 text-center">
+                <div class="mb-3">
+                    <i class="fas fa-search fa-4x text-muted"></i>
+                </div>
+                <h4>No products found</h4>
+                <p class="text-muted">No products match your search criteria.</p>
+            </div>
+        `;
+    }
+    
+    const emptyStates = {
+        synced: {
+            icon: 'fas fa-sync-alt',
+            title: 'No synced products',
+            description: 'Products that exist both locally and in DataHub will appear here.'
+        },
+        local: {
+            icon: 'fas fa-laptop',
+            title: 'No local-only products',
+            description: 'Products that exist only in this application will appear here.',
+            action: `<div class="mt-2">
+                        <button type="button" class="btn btn-primary" title="Create Data Product">
+                            <i class="fas fa-plus me-1"></i> Create Data Product
+                        </button>
+                     </div>`
+        },
+        remote: {
+            icon: 'fas fa-server',
+            title: 'No remote-only products',
+            description: 'Products that exist only in DataHub will appear here.'
+        }
+    };
+    
+    const state = emptyStates[tabType];
+    return `
+        <div class="py-5 text-center">
+            <div class="mb-3">
+                <i class="${state.icon} fa-4x text-muted"></i>
+            </div>
+            <h4>${state.title}</h4>
+            <p class="text-muted">${state.description}</p>
+            ${state.action || ''}
+        </div>
+    `;
+}
+
+function showProductDetails(product) {
+    // Basic information
+    const name = product.properties?.name || product.name || 'Unnamed';
+    const description = product.properties?.description || product.description || 'No description available';
+    const domain = product.domain?.domain?.properties?.name || 'No domain assigned';
+    
+    document.getElementById('modal-product-name').textContent = name;
+    document.getElementById('modal-product-domain').innerHTML = domain !== 'No domain assigned' ? 
+        `<span class="badge bg-info">${escapeHtml(domain)}</span>` : domain;
+    document.getElementById('modal-product-description').textContent = description;
+    document.getElementById('modal-product-urn').textContent = product.urn || 'No URN available';
+    
+    // Status
+    const statusBadge = document.getElementById('modal-product-status');
+    statusBadge.textContent = product.sync_status_display || product.sync_status;
+    statusBadge.className = `badge ${getStatusBadgeClass(product.sync_status)}`;
+    
+    // DataHub link
+    const datahubLink = document.getElementById('modal-datahub-link');
+    if (product.urn && !product.urn.includes('local:') && productsData.datahub_url) {
+        datahubLink.href = getDataHubUrl(product.urn, 'product');
+        datahubLink.style.display = 'inline-block';
+    } else {
+        datahubLink.style.display = 'none';
+    }
+    
+    // Ownership information
+    const ownersList = document.getElementById('modal-owners-list');
+    if (product.ownership && product.ownership.owners && product.ownership.owners.length > 0) {
+        ownersList.innerHTML = product.ownership.owners.map(ownerInfo => {
+            const owner = ownerInfo.owner || {};
+            const ownershipType = ownerInfo.ownershipType || {};
+            const source = ownerInfo.source || {};
+            
+            const displayName = owner.properties ? 
+                (owner.properties.displayName || owner.properties.fullName || owner.username || owner.name) :
+                (owner.username || owner.name || 'Unknown');
                 
-                tableHTML += `
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            });
-            
-            tableHTML += `
-                        </tbody>
-                    </table>
-                </div>
-            `;
-            
-            content.insertAdjacentHTML('beforeend', tableHTML);
-            
-            // Add event listeners for view buttons
-            content.querySelectorAll('.view-product-details').forEach(button => {
-                button.addEventListener('click', function() {
-                    const urn = this.getAttribute('data-urn');
-                    const row = this.closest('tr');
-                    const productData = JSON.parse(row.getAttribute('data-product'));
-                    showDataProductDetailsModal(productData);
-                });
-            });
-        } else {
-            content.insertAdjacentHTML('beforeend', `
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i> No data products found.
-                </div>
-            `);
-        }
-    }
-    
-    function escapeHtml(text) {
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-        return text ? text.replace(/[&<>"']/g, m => map[m]) : '';
-    }
-    
-    function showDataProductDetailsModal(product) {
-        const modal = document.getElementById('dataProductDetailsModal');
-        const modalBody = document.getElementById('dataProductDetailsBody');
-        const modalTitle = document.getElementById('dataProductDetailsModalLabel');
-        
-        // Set title
-        modalTitle.textContent = `Data Product Details: ${product.properties?.name || 'Unknown'}`;
-        
-        // Generate detailed content
-        let content = `
-            <div class="row">
-                <div class="col-md-12">
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Basic Information</h6>
+            return `
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${escapeHtml(displayName)}</strong>
+                            <br>
+                            <small class="text-muted">${escapeHtml(ownershipType.info ? ownershipType.info.name : 'Owner')}</small>
                         </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <strong>URN:</strong><br>
-                                    <code class="text-break">${escapeHtml(product.urn || 'N/A')}</code>
-                                </div>
-                                <div class="col-md-6">
-                                    <strong>Type:</strong><br>
-                                    <span class="badge bg-info">${escapeHtml(product.type || 'DATA_PRODUCT')}</span>
-                                </div>
-                            </div>
-                            <div class="row mt-3">
-                                <div class="col-md-6">
-                                    <strong>Name:</strong><br>
-                                    ${escapeHtml(product.properties?.name || 'N/A')}
-                                </div>
-                                <div class="col-md-6">
-                                    <strong>External URL:</strong><br>
-                                    ${product.properties?.externalUrl ? `<a href="${escapeHtml(product.properties.externalUrl)}" target="_blank">${escapeHtml(product.properties.externalUrl)}</a>` : 'N/A'}
-                                </div>
-                            </div>
-                            <div class="row mt-3">
-                                <div class="col-md-12">
-                                    <strong>Description:</strong><br>
-                                    ${escapeHtml(product.properties?.description || 'N/A')}
-                                </div>
-                            </div>
+                        <div class="text-end">
+                            ${source.type ? `<span class="badge bg-light text-dark">${source.type}</span>` : ''}
                         </div>
                     </div>
+                    <div class="mt-1">
+                        <code class="small">${escapeHtml(owner.urn || '')}</code>
+                    </div>
+                    ${owner.properties && (owner.properties.email || owner.properties.title) ? `
+                        <div class="mt-2">
+                            ${owner.properties.email ? `<small class="text-muted d-block"><i class="fas fa-envelope me-1"></i>${escapeHtml(owner.properties.email)}</small>` : ''}
+                            ${owner.properties.title ? `<small class="text-muted d-block"><i class="fas fa-briefcase me-1"></i>${escapeHtml(owner.properties.title)}</small>` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+    } else {
+        ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
+    }
+    
+    // Last modified information
+    const lastModifiedDiv = document.getElementById('modal-last-modified');
+    if (product.ownership && product.ownership.lastModified) {
+        lastModifiedDiv.innerHTML = `
+            <div class="border rounded p-2">
+                <strong>Last Modified:</strong><br>
+                <small class="text-muted">
+                    ${formatDate(product.ownership.lastModified.time)}
+                    ${product.ownership.lastModified.actor ? ` by ${product.ownership.lastModified.actor}` : ''}
+                </small>
+            </div>
         `;
-        
-        // Domain
-        if (product.domain && product.domain.domain) {
-            content += `
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Domain</h6>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <strong>Name:</strong><br>
-                                    ${escapeHtml(product.domain.domain.properties?.name || 'N/A')}
-                                </div>
-                                <div class="col-md-6">
-                                    <strong>Domain URN:</strong><br>
-                                    <code>${escapeHtml(product.domain.domain.urn || 'N/A')}</code>
-                                </div>
-                            </div>
-                            <div class="row mt-3">
-                                <div class="col-md-12">
-                                    <strong>Description:</strong><br>
-                                    ${escapeHtml(product.domain.domain.properties?.description || 'N/A')}
-                                </div>
-                            </div>
-                        </div>
+    } else if (product.last_updated) {
+        lastModifiedDiv.innerHTML = `
+            <div class="border rounded p-2">
+                <strong>Last Updated:</strong><br>
+                <small class="text-muted">${formatDate(product.last_updated)}</small>
+            </div>
+        `;
+    } else {
+        lastModifiedDiv.innerHTML = '';
+    }
+    
+    // Entities
+    const entitiesList = document.getElementById('modal-entities-list');
+    if (product.entities && product.entities.relationships && product.entities.relationships.length > 0) {
+        entitiesList.innerHTML = product.entities.relationships.map(rel => `
+            <div class="border rounded p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${escapeHtml(rel.entity?.properties?.name || 'Unknown Entity')}</strong>
+                        <br>
+                        <small class="text-muted">${escapeHtml(rel.entity?.type || 'Unknown Type')}</small>
                     </div>
-            `;
-        }
-        
-        // Ownership
-        if (product.ownership && product.ownership.owners && product.ownership.owners.length > 0) {
-            content += `
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Ownership</h6>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Owner</th>
-                                            <th>Type</th>
-                                            <th>Ownership Type</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${product.ownership.owners.map(owner => {
-                                            const ownerEntity = owner.owner;
-                                            let ownerName = 'Unknown';
-                                            let ownerType = 'Unknown';
-                                            
-                                            if (ownerEntity) {
-                                                if (ownerEntity.username) {
-                                                    ownerName = ownerEntity.properties?.displayName || ownerEntity.username;
-                                                    ownerType = 'User';
-                                                } else if (ownerEntity.name) {
-                                                    ownerName = ownerEntity.properties?.displayName || ownerEntity.name;
-                                                    ownerType = 'Group';
-                                                }
-                                            }
-                                            
-                                            return `
-                                                <tr>
-                                                    <td>${escapeHtml(ownerName)}</td>
-                                                    <td><span class="badge bg-info">${escapeHtml(ownerType)}</span></td>
-                                                    <td>${escapeHtml(owner.ownershipType?.info?.name || 'Unknown')}</td>
-                                                </tr>
-                                            `;
-                                        }).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                    <div class="text-end">
+                        ${rel.created ? `<small class="text-muted">${formatDate(rel.created.time)}</small>` : ''}
                     </div>
-            `;
-        }
-        
-        // Tags
-        if (product.tags && product.tags.tags && product.tags.tags.length > 0) {
-            content += `
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Tags</h6>
-                        </div>
-                        <div class="card-body">
-                            <div class="d-flex flex-wrap gap-2">
-                                ${product.tags.tags.map(tagAssoc => {
-                                    const tag = tagAssoc.tag;
-                                    const colorHex = tag.properties?.colorHex || '#6c757d';
-                                    return `<span class="badge" style="background-color: ${colorHex};">${escapeHtml(tag.properties?.name || tag.name || 'Unknown')}</span>`;
-                                }).join('')}
-                            </div>
-                        </div>
+                </div>
+                <div class="mt-1">
+                    <code class="small">${escapeHtml(rel.entity?.urn || 'No URN')}</code>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        entitiesList.innerHTML = '<p class="text-muted">No entities associated</p>';
+    }
+    
+    // Relationships
+    const relationshipsList = document.getElementById('modal-relationships-list');
+    if (product.relationships && product.relationships.relationships && product.relationships.relationships.length > 0) {
+        relationshipsList.innerHTML = product.relationships.relationships.map(rel => `
+            <div class="border rounded p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${escapeHtml(rel.type || 'Unknown')}</strong>
+                        <span class="badge bg-${rel.direction === 'INCOMING' ? 'success' : 'primary'} ms-2">
+                            ${rel.direction || 'UNKNOWN'}
+                        </span>
                     </div>
-            `;
-        }
-        
-        // Glossary Terms
-        if (product.glossaryTerms && product.glossaryTerms.terms && product.glossaryTerms.terms.length > 0) {
-            content += `
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Glossary Terms</h6>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Term</th>
-                                            <th>Description</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${product.glossaryTerms.terms.map(termAssoc => {
-                                            const term = termAssoc.term;
-                                            return `
-                                                <tr>
-                                                    <td><strong>${escapeHtml(term.properties?.name || term.name || 'Unknown')}</strong></td>
-                                                    <td>${escapeHtml(term.properties?.description || 'No description')}</td>
-                                                </tr>
-                                            `;
-                                        }).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                    <div class="text-end">
+                        ${rel.created ? `<small class="text-muted">${formatDate(rel.created.time)}</small>` : ''}
                     </div>
-            `;
-        }
+                </div>
+                <div class="mt-1">
+                    <code class="small">${escapeHtml(rel.entity ? rel.entity.urn : 'No entity URN')}</code>
+                </div>
+                ${rel.entity && rel.entity.properties ? `
+                    <div class="mt-1">
+                        <small class="text-muted">${escapeHtml(rel.entity.properties.name || 'Unknown Entity')}</small>
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+    } else {
+        relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
+    }
+    
+    // Product Properties
+    const propertiesDiv = document.getElementById('modal-product-properties');
+    if (product.structuredProperties || product.globalTags || product.properties?.customProperties) {
+        let propertiesHTML = '';
         
-        // Structured Properties
         if (product.structuredProperties && product.structuredProperties.properties && product.structuredProperties.properties.length > 0) {
-            content += `
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Structured Properties</h6>
-                        </div>
-                        <div class="card-body">
-                            ${product.structuredProperties.properties.map(prop => {
-                                const structuredProp = prop.structuredProperty;
-                                return `
-                                    <div class="border rounded p-2 mb-2">
-                                        <strong>Property:</strong> ${escapeHtml(structuredProp?.definition?.displayName || 'Unknown')}<br>
-                                        <strong>Values:</strong> ${prop.values ? prop.values.map(v => v.stringValue || v.numberValue || 'N/A').join(', ') : 'N/A'}<br>
-                                        <strong>Type:</strong> ${escapeHtml(structuredProp?.definition?.valueType?.info?.displayName || 'Unknown')}
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-            `;
-        }
-        
-        // Entities
-        if (product.entities) {
-            content += `
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Entities</h6>
-                        </div>
-                        <div class="card-body">
-                            <strong>Total Entities:</strong> <span class="badge bg-primary">${product.entities.total || 0}</span>
-                        </div>
-                    </div>
-            `;
-        }
-        
-        // Institutional Memory
-        if (product.institutionalMemory && product.institutionalMemory.elements && product.institutionalMemory.elements.length > 0) {
-            content += `
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <h6 class="mb-0">Institutional Memory</h6>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Label</th>
-                                            <th>URL</th>
-                                            <th>Description</th>
-                                            <th>Created</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${product.institutionalMemory.elements.map(element => `
-                                            <tr>
-                                                <td>${escapeHtml(element.label || 'N/A')}</td>
-                                                <td>
-                                                    ${element.url ? `<a href="${escapeHtml(element.url)}" target="_blank">${escapeHtml(element.url.length > 50 ? element.url.substring(0, 50) + '...' : element.url)}</a>` : 'N/A'}
-                                                </td>
-                                                <td>${escapeHtml(element.description || 'N/A')}</td>
-                                                <td>${element.created?.time ? new Date(element.created.time).toLocaleString() : 'N/A'}</td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
+            propertiesHTML += `
+                <div class="border rounded p-2 mb-2">
+                    <strong>Structured Properties:</strong>
+                    <div class="mt-2">
+                        ${product.structuredProperties.properties.map(prop => `
+                            <div class="mb-2">
+                                <strong>${escapeHtml(prop.structuredPropertyKey || 'Unknown')}</strong>: 
+                                ${prop.value ? escapeHtml(JSON.stringify(prop.value)) : 'No value'}
                             </div>
-                        </div>
+                        `).join('')}
                     </div>
+                </div>
             `;
         }
         
-        content += `
-                </div>
-            </div>
-            
-            <!-- Raw JSON Data -->
-            <div class="mt-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h6 class="mb-0">Raw JSON Data</h6>
-                    </div>
-                    <div class="card-body">
-                        <pre><code>${escapeHtml(JSON.stringify(product, null, 2))}</code></pre>
+        if (product.globalTags && product.globalTags.tags && product.globalTags.tags.length > 0) {
+            propertiesHTML += `
+                <div class="border rounded p-2 mb-2">
+                    <strong>Tags:</strong>
+                    <div class="mt-2">
+                        ${product.globalTags.tags.map(tag => `
+                            <span class="badge bg-secondary me-1">${escapeHtml(tag.tag?.properties?.name || tag.tag?.name || 'Unknown Tag')}</span>
+                        `).join('')}
                     </div>
                 </div>
-            </div>
-        `;
+            `;
+        }
         
-        modalBody.innerHTML = content;
+        if (product.properties && product.properties.customProperties) {
+            propertiesHTML += `
+                <div class="border rounded p-2 mb-2">
+                    <strong>Custom Properties:</strong>
+                    <pre class="mt-2 mb-0"><code>${escapeHtml(JSON.stringify(product.properties.customProperties, null, 2))}</code></pre>
+                </div>
+            `;
+        }
         
-        // Show modal
-        const bootstrapModal = new bootstrap.Modal(modal);
-        bootstrapModal.show();
+        propertiesDiv.innerHTML = propertiesHTML;
+    } else {
+        propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
     }
     
-    function showErrorMessage(message) {
-        const content = document.getElementById('data-products-content');
-        if (content) {
-            content.innerHTML = `
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    Error loading data product data: ${message}
-                </div>
-            `;
-        }
+    // Raw JSON - Show comprehensive GraphQL data
+    const rawData = product.raw_data || product;
+    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
+    
+    // Show modal
+    new bootstrap.Modal(document.getElementById('productViewModal')).show();
+}
+
+// Utility functions
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+}
+
+function truncateUrn(urn, maxLength) {
+    if (!urn || urn.length <= maxLength) return urn;
+    return urn.substring(0, maxLength - 3) + '...';
+}
+
+function formatDate(timestamp) {
+    try {
+        const date = new Date(parseInt(timestamp));
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    } catch (e) {
+        return timestamp;
     }
+}
+
+function getDataHubUrl(urn, type) {
+    if (productsData.datahub_url) {
+        return `${productsData.datahub_url}/dataProduct/${encodeURIComponent(urn)}`;
+    }
+    return '#';
+}
+
+function getStatusBadgeClass(status) {
+    switch(status) {
+        case 'SYNCED': return 'bg-success';
+        case 'MODIFIED': return 'bg-warning';
+        case 'LOCAL_ONLY': return 'bg-secondary';
+        case 'REMOTE_ONLY': return 'bg-info';
+        default: return 'bg-primary';
+    }
+}
+
+function getCsrfToken() {
+    const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
+    return csrfElement ? csrfElement.value : '';
+}
+
+function showError(message) {
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger alert-dismissible fade show';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+}
 </script>
+
+<style>
+#modal-raw-json {
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    border-top: none;
+}
+</style>
 {% endblock %} 

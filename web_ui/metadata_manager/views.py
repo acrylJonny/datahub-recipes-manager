@@ -20,7 +20,7 @@ sys.path.append(project_root)
 # Import the deterministic URN utilities
 
 from utils.datahub_rest_client import DataHubRestClient
-from .models import Tag, GlossaryNode, GlossaryTerm, Domain, Assertion, Environment
+from .models import Tag, GlossaryNode, GlossaryTerm, Domain, Assertion, Environment, StructuredProperty
 
 # Create a logger
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 class MetadataIndexView(View):
     """Main index view for the metadata manager"""
-
+    
     def get(self, request):
         """Display the main dashboard for metadata management"""
         try:
@@ -39,6 +39,7 @@ class MetadataIndexView(View):
                 "glossary_terms_count": GlossaryTerm.objects.count(),
                 "domains_count": Domain.objects.count(),
                 "assertions_count": Assertion.objects.count(),
+                "structured_properties_count": StructuredProperty.objects.count(),
             }
 
             return render(
@@ -614,32 +615,32 @@ def update_entity_properties(request):
             return JsonResponse(
                 {"success": False, "error": "No active environment configured"}
             )
-
+        
         # Initialize DataHub client
         client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-
+        
         # Get entity details from request
         entity_urn = request.POST.get("entityUrn")
         entity_type = request.POST.get("entityType")
-
+        
         if not entity_urn or not entity_type:
             return JsonResponse(
                 {"success": False, "error": "Missing required parameters"}
             )
-
+        
         # Prepare properties update
         properties = {"editableProperties": {}}
-
+        
         # Add name if provided (only for Dataset)
         if entity_type == "DATASET" and request.POST.get("name"):
             properties["editableProperties"]["name"] = request.POST.get("name")
-
+        
         # Add description if provided
         if request.POST.get("description"):
             properties["editableProperties"]["description"] = request.POST.get(
                 "description"
             )
-
+        
         # Handle schema metadata for datasets
         if entity_type == "DATASET" and "schemaFields" in request.POST:
             schema_fields = []
@@ -654,19 +655,19 @@ def update_entity_properties(request):
             properties["editableSchemaMetadata"] = {
                 "editableSchemaFieldInfo": schema_fields
             }
-
+        
         # Use the client method to update properties
         success = client.update_entity_properties(
             entity_urn=entity_urn, entity_type=entity_type, properties=properties
         )
-
+        
         if success:
             return JsonResponse({"success": True, "data": {"urn": entity_urn}})
         else:
             return JsonResponse(
                 {"success": False, "error": "Failed to update entity properties"}
             )
-
+        
     except Exception as e:
         logger.error(f"Error updating entity properties: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
@@ -691,18 +692,18 @@ def get_entity_details(request, urn):
             return JsonResponse(
                 {"success": False, "error": "No active environment configured"}
             )
-
+        
         # Initialize DataHub client
         client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-
+        
         # Get entity details
         entity = client.get_entity(urn)
-
+        
         if not entity:
             return JsonResponse({"success": False, "error": "Entity not found"})
-
+        
         return JsonResponse({"success": True, "entity": entity})
-
+        
     except Exception as e:
         logger.error(f"Error getting entity details: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
@@ -719,18 +720,18 @@ def get_entity_schema(request, urn):
             return JsonResponse(
                 {"success": False, "error": "No active environment configured"}
             )
-
+        
         # Initialize DataHub client
         client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-
+        
         # Get schema details
         schema = client.get_schema(urn)
-
+        
         if not schema:
             return JsonResponse({"success": False, "error": "Schema not found"})
-
+        
         return JsonResponse({"success": True, "schema": schema})
-
+        
     except Exception as e:
         logger.error(f"Error getting schema details: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
@@ -747,20 +748,20 @@ def sync_metadata(request):
             return JsonResponse(
                 {"success": False, "error": "No active environment configured"}
             )
-
+        
         # Initialize DataHub client
         client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-
+        
         # Sync metadata
         success = client.sync_metadata()
-
+        
         if success:
             return JsonResponse(
                 {"success": True, "message": "Metadata synced successfully"}
             )
         else:
             return JsonResponse({"success": False, "error": "Failed to sync metadata"})
-
+        
     except Exception as e:
         logger.error(f"Error syncing metadata: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})

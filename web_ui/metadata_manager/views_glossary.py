@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 
 class GlossaryListView(View):
     """View to list glossary nodes and terms"""
-
+    
     def get(self, request):
         """Display list of glossary nodes and terms"""
         try:
             logger.info("Starting GlossaryListView.get")
-
+            
             # Get all local nodes and terms with proper relationships
             all_nodes = (
                 GlossaryNode.objects.all()
@@ -110,7 +110,7 @@ class GlossaryListView(View):
                     context["environments"] = environments
             except Exception as e:
                 logger.warning(f"Error checking git integration: {str(e)}")
-
+            
             logger.info("Rendering glossary list template")
             return render(request, "metadata_manager/glossary/list.html", context)
 
@@ -130,7 +130,7 @@ class GlossaryListView(View):
         """Build a hierarchical structure from flat remote nodes list"""
         nodes_by_urn = {}
         root_nodes = []
-
+        
         logger.debug(
             f"Building remote node hierarchy from {len(nodes_list) if nodes_list else 0} nodes"
         )
@@ -163,7 +163,7 @@ class GlossaryListView(View):
                     logger.debug(
                         f"Node has 'properties' field with keys: {list(first_node['properties'].keys()) if isinstance(first_node['properties'], dict) else 'Not a dict'}"
                     )
-
+        
         # First pass: Create node objects and store by URN
         for node in nodes_list:
             # Check if this is a wrapped entity response (from GraphQL)
@@ -217,7 +217,7 @@ class GlossaryListView(View):
 
             # Check for parent node relationship
             parent_urn = None
-
+            
             # Try multiple ways to find the parent node URN:
 
             # 1. Try parentNode (singular) for backward compatibility
@@ -510,13 +510,13 @@ class GlossaryListView(View):
 
         # Return the organized terms by parent node for rendering
         return terms_by_parent_node
-
+    
     def post(self, request):
         """Handle glossary node creation and batch actions"""
         try:
             # Check for batch actions
             action = request.POST.get("action")
-
+            
             # Handle different actions
             if action == "push_selected":
                 return self._handle_push_selected(request)
@@ -529,11 +529,11 @@ class GlossaryListView(View):
                 name = request.POST.get("name")
                 description = request.POST.get("description", "")
                 parent_id = request.POST.get("parent_id")
-
+                
                 if not name:
                     messages.error(request, "Glossary node name is required")
                     return redirect("metadata_manager:glossary_list")
-
+                
                 # Handle parent node if specified
                 parent = None
                 if parent_id:
@@ -542,7 +542,7 @@ class GlossaryListView(View):
                     except GlossaryNode.DoesNotExist:
                         messages.error(request, "Parent node not found")
                         return redirect("metadata_manager:glossary_list")
-
+                
                 # Generate deterministic URN
                 # For nodes with a parent, include the parent path in the URN
                 if parent:
@@ -552,7 +552,7 @@ class GlossaryListView(View):
                     )
                 else:
                     deterministic_urn = get_full_urn_from_name("glossaryNode", name)
-
+                
                 # Check if node with this URN already exists
                 if GlossaryNode.objects.filter(
                     deterministic_urn=deterministic_urn
@@ -561,7 +561,7 @@ class GlossaryListView(View):
                         request, f"Glossary node with name '{name}' already exists"
                     )
                     return redirect("metadata_manager:glossary_list")
-
+                
                 # Create the node
                 GlossaryNode.objects.create(
                     name=name,
@@ -578,28 +578,28 @@ class GlossaryListView(View):
             logger.error(f"Error in glossary list view post: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+            
     def _handle_push_selected(self, request):
         """Push selected glossary nodes and terms to DataHub"""
         try:
             # Get selected node and term IDs
             node_ids = request.POST.getlist("selected_nodes")
             term_ids = request.POST.getlist("selected_terms")
-
+            
             if not node_ids and not term_ids:
                 messages.warning(request, "No glossary items were selected")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Get DataHub client
             connected, client = test_datahub_connection()
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Track success/failure counts
             success_count = 0
             failed_count = 0
-
+            
             # Push nodes first
             for node_id in node_ids:
                 try:
@@ -615,7 +615,7 @@ class GlossaryListView(View):
                 except Exception as e:
                     logger.error(f"Error deploying node {node_id}: {str(e)}")
                     failed_count += 1
-
+            
             # Then push terms
             for term_id in term_ids:
                 try:
@@ -631,7 +631,7 @@ class GlossaryListView(View):
                 except Exception as e:
                     logger.error(f"Error deploying term {term_id}: {str(e)}")
                     failed_count += 1
-
+            
             # Show results
             if success_count > 0:
                 messages.success(
@@ -642,13 +642,13 @@ class GlossaryListView(View):
                 messages.warning(
                     request, f"Failed to deploy {failed_count} glossary items"
                 )
-
+                
             return redirect("metadata_manager:glossary_list")
         except Exception as e:
             logger.error(f"Error pushing selected glossary items: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+    
     def _handle_push_all(self, request):
         """Push all glossary nodes and terms to DataHub"""
         try:
@@ -657,7 +657,7 @@ class GlossaryListView(View):
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Get all local-only or modified nodes and terms
             nodes = GlossaryNode.objects.filter(
                 sync_status__in=["LOCAL_ONLY", "MODIFIED"]
@@ -665,15 +665,15 @@ class GlossaryListView(View):
             terms = GlossaryTerm.objects.filter(
                 sync_status__in=["LOCAL_ONLY", "MODIFIED"]
             )
-
+            
             if not nodes.exists() and not terms.exists():
                 messages.info(request, "No glossary items need to be pushed")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Track success/failure counts
             success_count = 0
             failed_count = 0
-
+            
             # Push nodes first
             for node in nodes:
                 try:
@@ -686,7 +686,7 @@ class GlossaryListView(View):
                 except Exception as e:
                     logger.error(f"Error deploying node {node.id}: {str(e)}")
                     failed_count += 1
-
+            
             # Then push terms
             for term in terms:
                 try:
@@ -699,7 +699,7 @@ class GlossaryListView(View):
                 except Exception as e:
                     logger.error(f"Error deploying term {term.id}: {str(e)}")
                     failed_count += 1
-
+            
             # Show results
             if success_count > 0:
                 messages.success(
@@ -710,30 +710,30 @@ class GlossaryListView(View):
                 messages.warning(
                     request, f"Failed to deploy {failed_count} glossary items"
                 )
-
+                
             return redirect("metadata_manager:glossary_list")
         except Exception as e:
             logger.error(f"Error pushing all glossary items: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+    
     def _handle_add_to_git(self, request):
         """Add selected glossary nodes and terms to a GitHub PR"""
         try:
             # Get selected node and term IDs
             node_ids = request.POST.getlist("selected_nodes")
             term_ids = request.POST.getlist("selected_terms")
-
+            
             if not node_ids and not term_ids:
                 messages.warning(request, "No glossary items were selected")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Check if Git integration is enabled
             github_settings = GitSettings.objects.first()
             if not github_settings or not github_settings.enabled:
                 messages.error(request, "Git integration is not enabled")
                 return redirect("metadata_manager:glossary_list")
-
+                
             # Get environment from request (default to None if not provided)
             environment_id = request.POST.get("environment")
             environment = None
@@ -753,11 +753,11 @@ class GlossaryListView(View):
                 logger.info(
                     f"No environment specified, using default: {environment.name}"
                 )
-
+                
             # Get Git settings
             settings = GitSettings.get_instance()
             current_branch = settings.current_branch or "main"
-
+            
             # Prevent pushing directly to main/master branch
             if current_branch.lower() in ["main", "master"]:
                 logger.warning(f"Attempted to push directly to {current_branch} branch")
@@ -766,27 +766,27 @@ class GlossaryListView(View):
                     "Cannot push directly to the main/master branch. Please create and use a feature branch.",
                 )
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Track success/failure counts
             success_count = 0
             failed_count = 0
-
+            
             # Create Git integration instance
             git_integration = GitIntegration()
-
+            
             # Push nodes first
             for node_id in node_ids:
                 try:
                     node = GlossaryNode.objects.get(id=node_id)
                     # Create commit message
                     commit_message = f"Add/update glossary node: {node.name}"
-
+                    
                     # Stage the node to the git repo
                     logger.info(
                         f"Staging glossary node {node.id} to Git branch {current_branch}"
                     )
                     result = git_integration.push_to_git(node, commit_message)
-
+                    
                     if result and result.get("success"):
                         logger.info(
                             f"Successfully staged glossary node {node.id} to Git branch {current_branch}"
@@ -803,20 +803,20 @@ class GlossaryListView(View):
                 except Exception as e:
                     logger.error(f"Error adding glossary node to git: {str(e)}")
                     failed_count += 1
-
+            
             # Then push terms
             for term_id in term_ids:
                 try:
                     term = GlossaryTerm.objects.get(id=term_id)
                     # Create commit message
                     commit_message = f"Add/update glossary term: {term.name}"
-
+                    
                     # Stage the term to the git repo
                     logger.info(
                         f"Staging glossary term {term.id} to Git branch {current_branch}"
                     )
                     result = git_integration.push_to_git(term, commit_message)
-
+                    
                     if result and result.get("success"):
                         logger.info(
                             f"Successfully staged glossary term {term.id} to Git branch {current_branch}"
@@ -833,7 +833,7 @@ class GlossaryListView(View):
                 except Exception as e:
                     logger.error(f"Error adding glossary term to git: {str(e)}")
                     failed_count += 1
-
+            
             # Show results
             if success_count > 0:
                 messages.success(
@@ -844,7 +844,7 @@ class GlossaryListView(View):
                 messages.warning(
                     request, f"Failed to add {failed_count} glossary items"
                 )
-
+                
             return redirect("metadata_manager:glossary_list")
         except Exception as e:
             logger.error(f"Error adding glossary items to git: {str(e)}")
@@ -855,9 +855,9 @@ class GlossaryListView(View):
         """Build a hierarchical structure from local nodes queryset"""
         nodes_by_id = {}
         root_nodes = []
-
+        
         logger.debug(f"Building local hierarchy from {nodes.count()} nodes")
-
+        
         # First pass: Create node objects and store by ID
         for node in nodes:
             logger.debug(
@@ -873,7 +873,7 @@ class GlossaryListView(View):
                 "terms": [],
             }
             nodes_by_id[node.id] = node_obj
-
+        
         # Second pass: Establish parent-child relationships
         for node in nodes:
             # If no parent, it's a root node
@@ -895,14 +895,14 @@ class GlossaryListView(View):
                     )
                     if node.id in nodes_by_id:
                         root_nodes.append(nodes_by_id[node.id])
-
+        
         # Third pass: Add terms to each node
         for node in nodes:
             if hasattr(node, "terms"):
                 node_terms = []
                 terms_qs = node.terms.filter(sync_status="LOCAL_ONLY")
                 logger.debug(f"Node {node.name} has {terms_qs.count()} local terms")
-
+                
                 for term in terms_qs:
                     term_obj = {
                         "id": term.id,
@@ -914,7 +914,7 @@ class GlossaryListView(View):
                         else True,
                     }
                     node_terms.append(term_obj)
-
+                
                 if node.id in nodes_by_id:
                     nodes_by_id[node.id]["terms"] = node_terms
                     # Flag to indicate this node has terms (needed for UI expansion)
@@ -959,7 +959,7 @@ class GlossaryPullView(View):
         try:
             # Get DataHub connection info
             connected, client = test_datahub_connection()
-
+            
             context = {
                 "page_title": "Pull from DataHub",
                 "has_datahub_connection": connected,
@@ -969,7 +969,7 @@ class GlossaryPullView(View):
             logger.error(f"Error in glossary pull view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+    
     def post(self, request):
         try:
             # Get DataHub client
@@ -977,15 +977,15 @@ class GlossaryPullView(View):
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Get selected items to pull
             node_urns = request.POST.getlist("node_urns", [])
             term_urns = request.POST.getlist("term_urns", [])
-
+            
             if not node_urns and not term_urns:
                 messages.error(request, "Please select at least one item to pull")
                 return redirect("metadata_manager:glossary_pull")
-
+            
             # Pull nodes
             for urn in node_urns:
                 try:
@@ -996,7 +996,7 @@ class GlossaryPullView(View):
                 except Exception as e:
                     logger.error(f"Error pulling node {urn}: {str(e)}")
                     messages.error(request, f"Error pulling node {urn}")
-
+            
             # Pull terms
             for urn in term_urns:
                 try:
@@ -1007,7 +1007,7 @@ class GlossaryPullView(View):
                 except Exception as e:
                     logger.error(f"Error pulling term {urn}: {str(e)}")
                     messages.error(request, f"Error pulling term {urn}")
-
+            
             messages.success(request, "Successfully pulled selected items from DataHub")
             return redirect("metadata_manager:glossary_list")
         except Exception as e:
@@ -1021,7 +1021,7 @@ class GlossaryImportExportView(View):
         try:
             # Get DataHub connection info
             connected, client = test_datahub_connection()
-
+            
             context = {
                 "page_title": "Import/Export Glossary",
                 "has_datahub_connection": connected,
@@ -1033,7 +1033,7 @@ class GlossaryImportExportView(View):
             logger.error(f"Error in glossary import/export view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+    
     def post(self, request):
         try:
             action = request.POST.get("action")
@@ -1041,7 +1041,7 @@ class GlossaryImportExportView(View):
                 if "file" not in request.FILES:
                     messages.error(request, "No file uploaded")
                     return redirect("metadata_manager:glossary_import_export")
-
+                
                 # Handle file import
                 file = request.FILES["file"]
                 try:
@@ -1075,11 +1075,11 @@ class GlossaryNodeCreateView(View):
             name = request.POST.get("name")
             description = request.POST.get("description", "")
             parent_id = request.POST.get("parent_id")
-
+            
             if not name:
                 messages.error(request, "Glossary node name is required")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Handle parent node if specified
             parent = None
             if parent_id:
@@ -1088,12 +1088,12 @@ class GlossaryNodeCreateView(View):
                 except GlossaryNode.DoesNotExist:
                     messages.error(request, "Parent node not found")
                     return redirect("metadata_manager:glossary_list")
-
+            
             # Create the node
             GlossaryNode.objects.create(
                 name=name, description=description, parent=parent
             )
-
+            
             messages.success(request, f"Glossary node '{name}' created successfully")
             return redirect("metadata_manager:glossary_list")
         except Exception as e:
@@ -1114,7 +1114,7 @@ class GlossaryNodeDetailView(View):
             logger.error(f"Error in glossary node detail view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+    
     def post(self, request, node_id):
         try:
             node = get_object_or_404(GlossaryNode, id=node_id)
@@ -1122,23 +1122,23 @@ class GlossaryNodeDetailView(View):
             description = request.POST.get("description", "")
             parent_id = request.POST.get("parent_id")
             color_hex = request.POST.get("color_hex", "")
-
+            
             if not name:
                 messages.error(request, "Glossary node name is required")
                 return redirect(
                     "metadata_manager:glossary_node_detail", node_id=node_id
                 )
-
+            
             # Update the node
             node.name = name
             node.description = description
-
+            
             # Handle color_hex field safely (may not exist in database schema)
             try:
                 node.color_hex = color_hex
             except Exception as e:
                 logger.warning(f"Could not set color_hex field: {str(e)}")
-
+            
             # Handle parent node if specified
             if parent_id:
                 try:
@@ -1149,7 +1149,7 @@ class GlossaryNodeDetailView(View):
                     return redirect(
                         "metadata_manager:glossary_node_detail", node_id=node_id
                     )
-
+            
             node.save()
             messages.success(request, f"Glossary node '{name}' updated successfully")
             return redirect("metadata_manager:glossary_node_detail", node_id=node_id)
@@ -1157,7 +1157,7 @@ class GlossaryNodeDetailView(View):
             logger.error(f"Error updating glossary node: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_node_detail", node_id=node_id)
-
+    
     def delete(self, request, node_id):
         try:
             # ... existing implementation ...
@@ -1173,17 +1173,17 @@ class GlossaryNodeDeployView(View):
     @method_decorator(require_POST)
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
-
+    
     def post(self, request, node_id):
         try:
             node = get_object_or_404(GlossaryNode, id=node_id)
-
+            
             if not node.can_deploy:
                 messages.error(request, f"Node '{node.name}' cannot be deployed")
                 return redirect(
                     "metadata_manager:glossary_node_detail", node_id=node_id
                 )
-
+            
             # Get DataHub client
             connected, client = test_datahub_connection()
             if not connected or not client:
@@ -1191,7 +1191,7 @@ class GlossaryNodeDeployView(View):
                 return redirect(
                     "metadata_manager:glossary_node_detail", node_id=node_id
                 )
-
+            
             # Deploy the node
             success = node.deploy_to_datahub(client)
             if success:
@@ -1202,7 +1202,7 @@ class GlossaryNodeDeployView(View):
                 messages.error(
                     request, f"Failed to deploy node '{node.name}' to DataHub"
                 )
-
+            
             return redirect("metadata_manager:glossary_node_detail", node_id=node_id)
         except Exception as e:
             logger.error(f"Error in glossary node deploy view: {str(e)}")
@@ -1224,11 +1224,11 @@ class GlossaryTermCreateView(View):
             description = request.POST.get("description", "")
             parent_node_id = request.POST.get("parent_node_id")
             term_source = request.POST.get("term_source", "")
-
+            
             if not name:
                 messages.error(request, "Glossary term name is required")
                 return redirect("metadata_manager:glossary_list")
-
+            
             # Handle parent node if specified
             parent_node = None
             if parent_node_id:
@@ -1237,7 +1237,7 @@ class GlossaryTermCreateView(View):
                 except GlossaryNode.DoesNotExist:
                     messages.error(request, "Parent node not found")
                     return redirect("metadata_manager:glossary_list")
-
+            
             # Create the term
             GlossaryTerm.objects.create(
                 name=name,
@@ -1245,7 +1245,7 @@ class GlossaryTermCreateView(View):
                 parent_node=parent_node,
                 term_source=term_source,
             )
-
+            
             messages.success(request, f"Glossary term '{name}' created successfully")
             return redirect("metadata_manager:glossary_list")
         except Exception as e:
@@ -1266,7 +1266,7 @@ class GlossaryTermDetailView(View):
             logger.error(f"Error in glossary term detail view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+    
     def post(self, request, term_id):
         try:
             term = get_object_or_404(GlossaryTerm, id=term_id)
@@ -1274,16 +1274,16 @@ class GlossaryTermDetailView(View):
             description = request.POST.get("description", "")
             parent_node_id = request.POST.get("parent_node_id")
             term_source = request.POST.get("term_source", "")
-
+            
             if not name:
                 messages.error(request, "Glossary term name is required")
             return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
-
+            
             # Update the term
             term.name = name
             term.description = description
             term.term_source = term_source
-
+                
             # Handle parent node if specified
             if parent_node_id:
                 try:
@@ -1294,7 +1294,7 @@ class GlossaryTermDetailView(View):
                     return redirect(
                         "metadata_manager:glossary_term_detail", term_id=term_id
                     )
-
+            
                     term.save()
             messages.success(request, f"Glossary term '{name}' updated successfully")
             return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
@@ -1302,7 +1302,7 @@ class GlossaryTermDetailView(View):
             logger.error(f"Error updating glossary term: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:glossary_list")
-
+            
     def delete(self, request, term_id):
         try:
             term = get_object_or_404(GlossaryTerm, id=term_id)
@@ -1325,17 +1325,17 @@ class GlossaryTermDeployView(View):
     @method_decorator(require_POST)
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
-
+    
     def post(self, request, term_id):
         try:
             term = get_object_or_404(GlossaryTerm, id=term_id)
-
+            
             if not term.can_deploy:
                 messages.error(request, f"Term '{term.name}' cannot be deployed")
                 return redirect(
                     "metadata_manager:glossary_term_detail", term_id=term_id
                 )
-
+            
             # Get DataHub client
             connected, client = test_datahub_connection()
             if not connected or not client:
@@ -1343,7 +1343,7 @@ class GlossaryTermDeployView(View):
                 return redirect(
                     "metadata_manager:glossary_term_detail", term_id=term_id
                 )
-
+            
             # Deploy the term
             success = term.deploy_to_datahub(client)
             if success:
@@ -1354,7 +1354,7 @@ class GlossaryTermDeployView(View):
                 messages.error(
                     request, f"Failed to deploy term '{term.name}' to DataHub"
                 )
-
+            
             return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
         except Exception as e:
             logger.error(f"Error in glossary term deploy view: {str(e)}")
@@ -1366,21 +1366,21 @@ class GlossaryTermGitPushView(View):
     @method_decorator(require_POST)
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
-
+    
     def post(self, request, term_id):
         try:
             term = get_object_or_404(GlossaryTerm, id=term_id)
-
+            
             # Check if git integration is enabled
             github_settings = GitSettings.objects.first()
             if not github_settings or not github_settings.enabled:
                 return JsonResponse(
                     {"success": False, "error": "Git integration is not enabled"}
                 )
-
+            
             # Add term to git staging
             term.add_to_git_staging()
-
+            
             return JsonResponse(
                 {
                     "success": True,
@@ -1400,17 +1400,17 @@ class GlossaryNodeGitPushView(View):
     def post(self, request, node_id):
         try:
             node = get_object_or_404(GlossaryNode, id=node_id)
-
+            
             # Check if git integration is enabled
             github_settings = GitSettings.objects.first()
             if not github_settings or not github_settings.enabled:
                 return JsonResponse(
                     {"success": False, "error": "Git integration is not enabled"}
                 )
-
+            
             # Add node to git staging
             node.add_to_git_staging()
-
+            
             return JsonResponse(
                 {
                     "success": True,
@@ -1423,337 +1423,343 @@ class GlossaryNodeGitPushView(View):
 
 
 def get_remote_glossary_data(request):
-    """AJAX endpoint to get remote glossary data"""
+    """Get comprehensive glossary data with local/remote/synced categorization and enhanced information."""
     try:
-        logger.info("Loading remote glossary data via AJAX")
-
-        # Get DataHub connection
-        connected, client = test_datahub_connection()
-        if not connected or not client:
-            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
-
+        logger.info("Loading comprehensive glossary data via AJAX")
+        
+        # Get active environment
+        environment = Environment.objects.filter(is_default=True).first()
+        if not environment:
+            return JsonResponse({
+                "success": False,
+                "error": "No active environment configured"
+            })
+        
+        # Get parameters
+        query = request.GET.get("query", "*")
+        start = int(request.GET.get("start", 0))
+        count = int(request.GET.get("count", 100))
+        
+        # Initialize DataHub client  
+        from utils.datahub_rest_client import DataHubRestClient
+        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        
+        # Test connection
+        if not client.test_connection():
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot connect to DataHub"
+            })
+        
         # Get all local nodes and terms
         local_nodes = GlossaryNode.objects.all().order_by("name")
         local_terms = GlossaryTerm.objects.all().order_by("name")
-
-        try:
-            logger.debug("Fetching remote glossary data from DataHub")
-
-            # Get remote nodes and terms
-            remote_nodes = client.list_glossary_nodes(count=1000)
-            remote_terms = client.list_glossary_terms(count=1000)
-
-            logger.debug(
-                f"Fetched {len(remote_nodes) if remote_nodes else 0} remote nodes"
-            )
-            logger.debug(
-                f"Fetched {len(remote_terms) if remote_terms else 0} remote terms"
-            )
-
-            # Get DataHub URL for direct links
-            datahub_url = client.server_url
-            if datahub_url.endswith("/api/gms"):
-                datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
-
-            # Organize data by sync status
-            synced_nodes = []
-            local_only_nodes = []
-            remote_only_nodes = []
-            synced_terms = []
-            local_only_terms = []
-            remote_only_terms = []
-
-            # Process nodes
-            local_node_urns = {
-                str(node.deterministic_urn): node for node in local_nodes
+        logger.debug(f"Found {local_nodes.count()} local nodes and {local_terms.count()} local terms")
+        
+        # Get remote nodes and terms with enhanced data
+        remote_nodes = client.list_glossary_nodes(query=query, count=1000) or []
+        remote_terms = client.list_glossary_terms(query=query, count=1000) or []
+        logger.debug(f"Found {len(remote_nodes)} remote nodes and {len(remote_terms)} remote terms")
+        
+        # Create URN mappings for quick lookup
+        remote_nodes_dict = {node.get("urn"): node for node in remote_nodes}
+        remote_terms_dict = {term.get("urn"): term for term in remote_terms}
+        
+        # Categorize items
+        synced_items = []
+        local_only_items = []
+        remote_only_items = []
+        
+        # Extract local URNs
+        local_node_urns = set(local_nodes.values_list("deterministic_urn", flat=True))
+        local_term_urns = set(local_terms.values_list("deterministic_urn", flat=True))
+        
+        # Process local nodes and match with remote
+        for local_node in local_nodes:
+            node_urn = str(local_node.deterministic_urn)
+            remote_match = remote_nodes_dict.get(node_urn)
+            
+            local_item_data = {
+                "id": str(local_node.id),
+                "name": local_node.name,
+                "description": local_node.description or "",
+                "urn": node_urn,
+                "type": "node",
+                "sync_status": local_node.sync_status,
+                "sync_status_display": local_node.get_sync_status_display(),
+                "parent_urn": str(local_node.parent.deterministic_urn) if local_node.parent else None,
+                "has_children": local_node.children.exists() or local_node.terms.exists(),
+                # Initialize empty ownership and relationships for local-only items
+                "owners_count": 0,
+                "owner_names": [],
+                "relationships_count": 0,
+                "ownership": None,
+                "relationships": None,
             }
-
-            # Find synced and local-only nodes
-            for local_node in local_nodes:
-                node_urn = str(local_node.deterministic_urn)
-                remote_match = next(
-                    (n for n in remote_nodes if n.get("urn") == node_urn), None
-                )
-
-                node_data = {
-                    "id": local_node.id,
-                    "name": local_node.name,
-                    "description": local_node.description or "",
-                    "urn": node_urn,
-                    "sync_status": local_node.sync_status,
-                    "parent_urn": str(local_node.parent.deterministic_urn)
-                    if local_node.parent
-                    else None,
-                    "has_children": local_node.children.exists()
-                    or local_node.terms.exists(),
-                }
-
-                if remote_match:
-                    # Update sync status based on comparison
-                    remote_description = remote_match.get("properties", {}).get(
-                        "description", ""
-                    )
-                    local_description = local_node.description or ""
-
-                    if local_description != remote_description:
-                        if local_node.sync_status != "MODIFIED":
-                            local_node.sync_status = "MODIFIED"
-                            local_node.save(update_fields=["sync_status"])
-                        node_data["sync_status"] = "MODIFIED"
-                    else:
-                        if local_node.sync_status != "SYNCED":
-                            local_node.sync_status = "SYNCED"
-                            local_node.save(update_fields=["sync_status"])
-                        node_data["sync_status"] = "SYNCED"
-
-                    synced_nodes.append(node_data)
-                else:
-                    # Local only
-                    if local_node.sync_status != "LOCAL_ONLY":
-                        local_node.sync_status = "LOCAL_ONLY"
+            
+            if remote_match:
+                # Check if item needs status update
+                local_description = local_node.description or ""
+                remote_description = remote_match.get("properties", {}).get("description", "")
+                
+                # Update sync status based on comparison
+                if local_description != remote_description:
+                    if local_node.sync_status != "MODIFIED":
+                        local_node.sync_status = "MODIFIED"
                         local_node.save(update_fields=["sync_status"])
-                    node_data["sync_status"] = "LOCAL_ONLY"
-                    local_only_nodes.append(node_data)
-
-            # Find remote-only nodes
-            for remote_node in remote_nodes:
-                node_urn = remote_node.get("urn")
-                if node_urn not in local_node_urns:
-                    properties = remote_node.get("properties", {})
-
-                    # Get parent URN - this should now be directly available from the updated query
-                    parent_urn = remote_node.get("parent_urn")
-
-                    # Extract relationships data
-                    relationships_data = remote_node.get("relationships", {})
-                    relationships = (
-                        relationships_data.get("relationships", [])
-                        if relationships_data
-                        else []
-                    )
-                    related_items = []
-
-                    for rel in relationships:
-                        if rel and rel.get("entity"):
-                            related_entity = rel.get("entity", {})
-                            related_props = related_entity.get("properties", {})
-                            related_items.append(
-                                {
-                                    "urn": related_entity.get("urn"),
-                                    "name": related_props.get("name", "Unknown"),
-                                    "type": related_entity.get("type", "")
-                                    .replace("GLOSSARY_", "")
-                                    .lower(),
-                                    "relationship_type": rel.get("type", "unknown"),
-                                    "direction": rel.get("direction", "OUTGOING"),
-                                }
-                            )
-
-                    # Extract ownership data
-                    ownership_data = remote_node.get("ownership", {})
-                    owners = []
-                    if ownership_data:
-                        owner_list = ownership_data.get("owners", [])
-                        for owner_data in owner_list:
-                            if owner_data and owner_data.get("owner"):
-                                owner = owner_data.get("owner", {})
-                                owners.append(
-                                    {
-                                        "urn": owner.get("urn"),
-                                        "name": owner.get("username")
-                                        or owner.get("name", "Unknown"),
-                                    }
-                                )
-
-                    remote_only_nodes.append(
-                        {
-                            "name": properties.get("name", "Unknown"),
-                            "description": properties.get("description", ""),
-                            "urn": node_urn,
-                            "sync_status": "REMOTE_ONLY",
-                            "parent_urn": parent_urn,
-                            "has_children": False,  # We don't track remote children for simplicity
-                            "related_items": related_items,
-                            "owners": owners,
-                            "custom_properties": properties.get("customProperties", []),
-                        }
-                    )
-
-            # Process terms
-            local_term_urns = {
-                str(term.deterministic_urn): term for term in local_terms
-            }
-
-            # Find synced and local-only terms
-            for local_term in local_terms:
-                term_urn = str(local_term.deterministic_urn)
-                remote_match = next(
-                    (t for t in remote_terms if t.get("urn") == term_urn), None
-                )
-
-                term_data = {
-                    "id": local_term.id,
-                    "name": local_term.name,
-                    "description": local_term.description or "",
-                    "urn": term_urn,
-                    "sync_status": local_term.sync_status,
-                    "parent_node_urn": str(local_term.parent_node.deterministic_urn)
-                    if local_term.parent_node
-                    else None,
-                }
-
-                if remote_match:
-                    # Update sync status based on comparison
-                    remote_description = remote_match.get("properties", {}).get(
-                        "description", ""
-                    )
-                    local_description = local_term.description or ""
-
-                    if local_description != remote_description:
-                        if local_term.sync_status != "MODIFIED":
-                            local_term.sync_status = "MODIFIED"
-                            local_term.save(update_fields=["sync_status"])
-                        term_data["sync_status"] = "MODIFIED"
-                    else:
-                        if local_term.sync_status != "SYNCED":
-                            local_term.sync_status = "SYNCED"
-                            local_term.save(update_fields=["sync_status"])
-                        term_data["sync_status"] = "SYNCED"
-
-                    synced_terms.append(term_data)
+                        logger.debug(f"Updated node {local_node.name} status to MODIFIED")
                 else:
-                    # Local only
-                    if local_term.sync_status != "LOCAL_ONLY":
-                        local_term.sync_status = "LOCAL_ONLY"
+                    if local_node.sync_status != "SYNCED":
+                        local_node.sync_status = "SYNCED" 
+                        local_node.save(update_fields=["sync_status"])
+                        logger.debug(f"Updated node {local_node.name} status to SYNCED")
+                
+                # Extract enhanced data from remote
+                ownership_data = remote_match.get("ownership", {})
+                relationships_data = remote_match.get("relationships", {})
+                
+                # Process ownership
+                owners = ownership_data.get("owners", []) if ownership_data else []
+                owner_names = []
+                for owner_info in owners:
+                    owner = owner_info.get("owner", {})
+                    if owner.get("username"):  # CorpUser
+                        owner_names.append(owner["username"])
+                    elif owner.get("name"):  # CorpGroup
+                        owner_names.append(owner["name"])
+                
+                # Process relationships
+                relationships = relationships_data.get("relationships", []) if relationships_data else []
+                
+                # Update local item data with remote information
+                local_item_data.update({
+                    "sync_status": local_node.sync_status,
+                    "sync_status_display": local_node.get_sync_status_display(),
+                    "owners_count": len(owners),
+                    "owner_names": owner_names,
+                    "relationships_count": len(relationships),
+                    "ownership": ownership_data,
+                    "relationships": relationships_data,
+                })
+                
+                synced_items.append({
+                    "local": local_item_data,
+                    "remote": remote_match,
+                    "combined": local_item_data  # Enhanced data for display
+                })
+            else:
+                # Ensure local-only items have correct status
+                if local_node.sync_status != "LOCAL_ONLY":
+                    local_node.sync_status = "LOCAL_ONLY"
+                    local_node.save(update_fields=["sync_status"])
+                    logger.debug(f"Updated node {local_node.name} status to LOCAL_ONLY")
+                
+                local_item_data["sync_status"] = "LOCAL_ONLY"
+                local_item_data["sync_status_display"] = "Local Only"
+                local_only_items.append(local_item_data)
+        
+        # Process local terms and match with remote
+        for local_term in local_terms:
+            term_urn = str(local_term.deterministic_urn)
+            remote_match = remote_terms_dict.get(term_urn)
+            
+            local_item_data = {
+                "id": str(local_term.id),
+                "name": local_term.name,
+                "description": local_term.description or "",
+                "urn": term_urn,
+                "type": "term",
+                "sync_status": local_term.sync_status,
+                "sync_status_display": local_term.get_sync_status_display(),
+                "parent_node_urn": str(local_term.parent_node.deterministic_urn) if local_term.parent_node else None,
+                "term_source": getattr(local_term, 'term_source', '') or "",
+                # Initialize empty ownership and relationships for local-only items
+                "owners_count": 0,
+                "owner_names": [],
+                "relationships_count": 0,
+                "ownership": None,
+                "relationships": None,
+            }
+            
+            if remote_match:
+                # Check if item needs status update
+                local_description = local_term.description or ""
+                remote_description = remote_match.get("properties", {}).get("description", "")
+                
+                # Update sync status based on comparison
+                if local_description != remote_description:
+                    if local_term.sync_status != "MODIFIED":
+                        local_term.sync_status = "MODIFIED"
                         local_term.save(update_fields=["sync_status"])
-                    term_data["sync_status"] = "LOCAL_ONLY"
-                    local_only_terms.append(term_data)
-
-            # Find remote-only terms
-            for remote_term in remote_terms:
-                term_urn = remote_term.get("urn")
-                if term_urn not in local_term_urns:
-                    properties = remote_term.get("properties", {})
-                    glossary_term_info = remote_term.get("glossaryTermInfo", {})
-
-                    # Get name and description, preferring glossaryTermInfo
-                    name = glossary_term_info.get("name") or properties.get(
-                        "name", "Unknown"
-                    )
-                    description = glossary_term_info.get(
-                        "description"
-                    ) or properties.get("description", "")
-
-                    # Get parent node URN - this should now be directly available
-                    parent_node_urn = remote_term.get("parent_node_urn")
-
-                    # Extract relationships data
-                    relationships_data = remote_term.get("relationships", {})
-                    relationships = (
-                        relationships_data.get("relationships", [])
-                        if relationships_data
-                        else []
-                    )
-                    related_items = []
-
-                    for rel in relationships:
-                        if rel and rel.get("entity"):
-                            related_entity = rel.get("entity", {})
-                            related_props = related_entity.get("properties", {})
-                            related_items.append(
-                                {
-                                    "urn": related_entity.get("urn"),
-                                    "name": related_props.get("name", "Unknown"),
-                                    "type": related_entity.get("type", "")
-                                    .replace("GLOSSARY_", "")
-                                    .lower(),
-                                    "relationship_type": rel.get("type", "unknown"),
-                                    "direction": rel.get("direction", "OUTGOING"),
-                                }
-                            )
-
-                    # Extract ownership data
-                    ownership_data = remote_term.get("ownership", {})
-                    owners = []
-                    if ownership_data:
-                        owner_list = ownership_data.get("owners", [])
-                        for owner_data in owner_list:
-                            if owner_data and owner_data.get("owner"):
-                                owner = owner_data.get("owner", {})
-                                owners.append(
-                                    {
-                                        "urn": owner.get("urn"),
-                                        "name": owner.get("username")
-                                        or owner.get("name", "Unknown"),
-                                    }
-                                )
-
-                    # Extract domain information
-                    domain_data = remote_term.get("domain", {})
-                    domain_info = None
-                    if domain_data and domain_data.get("domain"):
-                        domain_info = {"urn": domain_data.get("domain", {}).get("urn")}
-
-                    remote_only_terms.append(
-                        {
-                            "name": name,
-                            "description": description,
-                            "urn": term_urn,
-                            "sync_status": "REMOTE_ONLY",
-                            "parent_node_urn": parent_node_urn,
-                            "related_items": related_items,
-                            "owners": owners,
-                            "domain": domain_info,
-                            "term_source": glossary_term_info.get(
-                                "termSource", "INTERNAL"
-                            ),
-                            "source_ref": glossary_term_info.get("sourceRef"),
-                            "source_url": glossary_term_info.get("sourceUrl"),
-                            "custom_properties": glossary_term_info.get(
-                                "customProperties", []
-                            ),
-                            "deprecated": remote_term.get("deprecation", {}).get(
-                                "deprecated", False
-                            )
-                            if remote_term.get("deprecation")
-                            else False,
-                        }
-                    )
-
-            logger.debug(
-                f"Categorized - Synced: {len(synced_nodes)} nodes, {len(synced_terms)} terms"
-            )
-            logger.debug(
-                f"Categorized - Local: {len(local_only_nodes)} nodes, {len(local_only_terms)} terms"
-            )
-            logger.debug(
-                f"Categorized - Remote: {len(remote_only_nodes)} nodes, {len(remote_only_terms)} terms"
-            )
-
-            return JsonResponse(
-                {
-                    "success": True,
-                    "data": {
-                        "synced_nodes": synced_nodes,
-                        "local_only_nodes": local_only_nodes,
-                        "remote_only_nodes": remote_only_nodes,
-                        "synced_terms": synced_terms,
-                        "local_only_terms": local_only_terms,
-                        "remote_only_terms": remote_only_terms,
-                        "datahub_url": datahub_url,
-                    },
+                        logger.debug(f"Updated term {local_term.name} status to MODIFIED")
+                else:
+                    if local_term.sync_status != "SYNCED":
+                        local_term.sync_status = "SYNCED" 
+                        local_term.save(update_fields=["sync_status"])
+                        logger.debug(f"Updated term {local_term.name} status to SYNCED")
+                
+                # Extract enhanced data from remote
+                ownership_data = remote_match.get("ownership", {})
+                relationships_data = remote_match.get("relationships", {})
+                
+                # Process ownership
+                owners = ownership_data.get("owners", []) if ownership_data else []
+                owner_names = []
+                for owner_info in owners:
+                    owner = owner_info.get("owner", {})
+                    if owner.get("username"):  # CorpUser
+                        owner_names.append(owner["username"])
+                    elif owner.get("name"):  # CorpGroup
+                        owner_names.append(owner["name"])
+                
+                # Process relationships
+                relationships = relationships_data.get("relationships", []) if relationships_data else []
+                
+                # Update local item data with remote information
+                local_item_data.update({
+                    "sync_status": local_term.sync_status,
+                    "sync_status_display": local_term.get_sync_status_display(),
+                    "owners_count": len(owners),
+                    "owner_names": owner_names,
+                    "relationships_count": len(relationships),
+                    "ownership": ownership_data,
+                    "relationships": relationships_data,
+                })
+                
+                synced_items.append({
+                    "local": local_item_data,
+                    "remote": remote_match,
+                    "combined": local_item_data  # Enhanced data for display
+                })
+            else:
+                # Ensure local-only items have correct status
+                if local_term.sync_status != "LOCAL_ONLY":
+                    local_term.sync_status = "LOCAL_ONLY"
+                    local_term.save(update_fields=["sync_status"])
+                    logger.debug(f"Updated term {local_term.name} status to LOCAL_ONLY")
+                
+                local_item_data["sync_status"] = "LOCAL_ONLY"
+                local_item_data["sync_status_display"] = "Local Only"
+                local_only_items.append(local_item_data)
+        
+        # Find remote-only nodes
+        for node_urn, remote_node in remote_nodes_dict.items():
+            if node_urn not in local_node_urns:
+                properties = remote_node.get("properties", {})
+                ownership_data = remote_node.get("ownership", {})
+                relationships_data = remote_node.get("relationships", {})
+                
+                # Process ownership
+                owners = ownership_data.get("owners", []) if ownership_data else []
+                owner_names = []
+                for owner_info in owners:
+                    owner = owner_info.get("owner", {})
+                    if owner.get("username"):  # CorpUser
+                        owner_names.append(owner["username"])
+                    elif owner.get("name"):  # CorpGroup
+                        owner_names.append(owner["name"])
+                
+                # Process relationships
+                relationships = relationships_data.get("relationships", []) if relationships_data else []
+                
+                remote_only_items.append({
+                    "name": properties.get("name", "Unknown"),
+                    "description": properties.get("description", ""),
+                    "urn": node_urn,
+                    "type": "node",
+                    "sync_status": "REMOTE_ONLY",
+                    "sync_status_display": "Remote Only",
+                    "parent_urn": remote_node.get("parent_urn"),
+                    "has_children": False,  # Simplified for remote-only
+                    "owners_count": len(owners),
+                    "owner_names": owner_names,
+                    "relationships_count": len(relationships),
+                    "ownership": ownership_data,
+                    "relationships": relationships_data,
+                    "custom_properties": properties.get("customProperties", []),
+                })
+        
+        # Find remote-only terms
+        for term_urn, remote_term in remote_terms_dict.items():
+            if term_urn not in local_term_urns:
+                properties = remote_term.get("properties", {})
+                glossary_term_info = remote_term.get("glossaryTermInfo", {})
+                ownership_data = remote_term.get("ownership", {})
+                relationships_data = remote_term.get("relationships", {})
+                
+                # Get name and description, preferring glossaryTermInfo
+                name = glossary_term_info.get("name") or properties.get("name", "Unknown")
+                description = glossary_term_info.get("description") or properties.get("description", "")
+                
+                # Process ownership
+                owners = ownership_data.get("owners", []) if ownership_data else []
+                owner_names = []
+                for owner_info in owners:
+                    owner = owner_info.get("owner", {})
+                    if owner.get("username"):  # CorpUser
+                        owner_names.append(owner["username"])
+                    elif owner.get("name"):  # CorpGroup
+                        owner_names.append(owner["name"])
+                
+                # Process relationships
+                relationships = relationships_data.get("relationships", []) if relationships_data else []
+                
+                remote_only_items.append({
+                    "name": name,
+                    "description": description,
+                    "urn": term_urn,
+                    "type": "term",
+                    "sync_status": "REMOTE_ONLY",
+                    "sync_status_display": "Remote Only",
+                    "parent_node_urn": remote_term.get("parent_node_urn"),
+                    "term_source": glossary_term_info.get("termSource", ""),
+                    "owners_count": len(owners),
+                    "owner_names": owner_names,
+                    "relationships_count": len(relationships),
+                    "ownership": ownership_data,
+                    "relationships": relationships_data,
+                })
+        
+        # Calculate statistics
+        total_items = len(synced_items) + len(local_only_items) + len(remote_only_items)
+        owned_items = sum(1 for item_list in [synced_items, local_only_items, remote_only_items] 
+                         for item in item_list 
+                         if (item.get("combined", item) if "combined" in item else item).get("owners_count", 0) > 0)
+        items_with_relationships = sum(1 for item_list in [synced_items, local_only_items, remote_only_items]
+                                     for item in item_list
+                                     if (item.get("combined", item) if "combined" in item else item).get("relationships_count", 0) > 0)
+        
+        # Get DataHub URL for external links
+        datahub_url = environment.datahub_url
+        if datahub_url.endswith("/api/gms"):
+            datahub_url = datahub_url[:-8]
+        
+        logger.debug(
+            f"Categorized glossary items: {len(synced_items)} synced, {len(local_only_items)} local-only, {len(remote_only_items)} remote-only"
+        )
+        
+        return JsonResponse({
+            "success": True,
+            "data": {
+                "synced_items": synced_items,
+                "local_only_items": local_only_items,
+                "remote_only_items": remote_only_items,
+                "datahub_url": datahub_url,
+                "statistics": {
+                    "total_items": total_items,
+                    "synced_count": len(synced_items),
+                    "local_count": len(local_only_items),
+                    "remote_count": len(remote_only_items),
+                    "owned_items": owned_items,
+                    "items_with_relationships": items_with_relationships,
+                    "percentage_owned": round((owned_items / total_items * 100) if total_items else 0, 1),
                 }
-            )
-
-        except Exception as e:
-            logger.error(f"Error fetching remote glossary data: {str(e)}")
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": f"Error fetching remote glossary data: {str(e)}",
-                }
-            )
-
+            }
+        })
+        
     except Exception as e:
-        logger.error(f"Error in get_remote_glossary_data: {str(e)}")
-        return JsonResponse({"success": False, "error": str(e)})
+        logger.error(f"Error getting comprehensive glossary data: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })

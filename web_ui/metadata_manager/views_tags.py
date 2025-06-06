@@ -20,7 +20,7 @@ sys.path.append(
 from utils.urn_utils import get_full_urn_from_name
 from utils.datahub_utils import get_datahub_client, test_datahub_connection
 from web_ui.models import GitSettings
-from .models import Tag
+from .models import Tag, Environment
 
 logger = logging.getLogger(__name__)
 
@@ -806,127 +806,179 @@ class TagEntityView(View):
 
 
 def get_remote_tags_data(request):
-    """AJAX endpoint to get remote tags data"""
+    """Get comprehensive tags data with local/remote/synced categorization and enhanced information."""
     try:
-        logger.info("Loading remote tags data via AJAX")
-
-        # Get DataHub connection
-        connected, client = test_datahub_connection()
-        if not connected or not client:
-            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
-
+        logger.info("Loading comprehensive tags data via AJAX")
+        
+        # Get active environment
+        environment = Environment.objects.filter(is_default=True).first()
+        if not environment:
+            return JsonResponse({
+                "success": False,
+                "error": "No active environment configured"
+            })
+        
+        # Get parameters
+        query = request.GET.get("query", "*")
+        start = int(request.GET.get("start", 0))
+        count = int(request.GET.get("count", 100))
+        
+        # Initialize DataHub client  
+        from utils.datahub_rest_client import DataHubRestClient
+        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        
+        # Test connection
+        if not client.test_connection():
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot connect to DataHub"
+            })
+        
         # Get all local tags
-        tags = Tag.objects.all().order_by("name")
-
-        # Fetch remote tags
+        local_tags = Tag.objects.all().order_by("name")
+        logger.debug(f"Found {local_tags.count()} local tags")
+        
+        # Get remote tags with enhanced data
+        remote_tags_result = client.get_remote_tags_data(query=query, start=0, count=1000)
+        
+        if not remote_tags_result.get("success"):
+            # Fallback if enhanced method fails
+            remote_tags_list = client.list_tags(query=query, start=0, count=1000) or []
+            remote_tags = {tag.get("urn"): tag for tag in remote_tags_list}
+        else:
+            remote_tags_list = remote_tags_result["data"]["tags"]
+            remote_tags = {tag.get("urn"): tag for tag in remote_tags_list}
+        
+        logger.debug(f"Found {len(remote_tags)} remote tags")
+        
+        # Categorize tags
         synced_tags = []
-        local_tags = []
+        local_only_tags = []
         remote_only_tags = []
-        datahub_url = None
-
-        try:
-            logger.debug("Fetching remote tags from DataHub")
-            # Get all remote tags from DataHub
-            remote_tags = client.list_tags(count=1000)
-            logger.debug(
-                f"Fetched {len(remote_tags) if remote_tags else 0} remote tags"
-            )
-
-            # Get DataHub URL for direct links
-            datahub_url = client.server_url
-            if datahub_url.endswith("/api/gms"):
-                datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
-
-            # Extract tag URNs that exist locally
-            local_tag_urns = set(tags.values_list("deterministic_urn", flat=True))
-
-            # Process tags by comparing local and remote
-            for tag in tags:
-                tag_urn = str(tag.deterministic_urn)
-                remote_match = next(
-                    (t for t in remote_tags if t.get("urn") == tag_urn), None
-                )
-
-                if remote_match:
-                    # Check if tag needs status update
-                    local_description = tag.description or ""
-                    remote_description = remote_match.get("description", "")
-
-                    properties = remote_match.get("properties", {}) or {}
-                    remote_color = properties.get("colorHex", "#0d6efd")
-                    local_color = tag.color or "#0d6efd"
-
-                    # Update sync status based on comparison
-                    if (
-                        local_description != remote_description
-                        or local_color != remote_color
-                    ):
-                        if tag.sync_status != "MODIFIED":
-                            tag.sync_status = "MODIFIED"
-                            tag.save(update_fields=["sync_status"])
-                            logger.debug(f"Updated tag {tag.name} status to MODIFIED")
-                    else:
-                        if tag.sync_status != "SYNCED":
-                            tag.sync_status = "SYNCED"
-                            tag.save(update_fields=["sync_status"])
-                            logger.debug(f"Updated tag {tag.name} status to SYNCED")
-
-                    synced_tags.append(
-                        {
-                            "local": {
-                                "id": tag.id,
-                                "name": tag.name,
-                                "description": tag.description,
-                                "color": tag.color,
-                                "sync_status": tag.sync_status,
-                            },
-                            "remote": remote_match,
-                        }
-                    )
+        
+        # Extract local tag URNs
+        local_tag_urns = set(local_tags.values_list("deterministic_urn", flat=True))
+        
+        # Process local tags and match with remote
+        for local_tag in local_tags:
+            tag_urn = str(local_tag.deterministic_urn)
+            remote_match = remote_tags.get(tag_urn)
+            
+            local_tag_data = {
+                "id": local_tag.id,
+                "name": local_tag.name,
+                "description": local_tag.description,
+                "color": local_tag.color,
+                "colorHex": local_tag.color,
+                "urn": tag_urn,
+                "sync_status": local_tag.sync_status,
+                "sync_status_display": local_tag.get_sync_status_display(),
+                # Add empty ownership and relationships for local-only tags
+                "owners_count": 0,
+                "owner_names": [],
+                "relationships_count": 0,
+                "ownership": None,
+                "relationships": None,
+            }
+            
+            if remote_match:
+                # Check if tag needs status update
+                local_description = local_tag.description or ""
+                remote_description = remote_match.get("description", "")
+                
+                remote_color = remote_match.get("colorHex", "#0d6efd")
+                local_color = local_tag.color or "#0d6efd"
+                
+                # Update sync status based on comparison
+                if (local_description != remote_description or local_color != remote_color):
+                    if local_tag.sync_status != "MODIFIED":
+                        local_tag.sync_status = "MODIFIED"
+                        local_tag.save(update_fields=["sync_status"])
+                        logger.debug(f"Updated tag {local_tag.name} status to MODIFIED")
                 else:
-                    # Ensure local-only tags have correct status
-                    if tag.sync_status != "LOCAL_ONLY":
-                        tag.sync_status = "LOCAL_ONLY"
-                        tag.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated tag {tag.name} status to LOCAL_ONLY")
-
-                    local_tags.append(
-                        {
-                            "id": tag.id,
-                            "name": tag.name,
-                            "description": tag.description,
-                            "color": tag.color,
-                            "sync_status": tag.sync_status,
-                        }
-                    )
-
-            # Find tags that exist remotely but not locally
-            remote_only_tags = [
-                t for t in remote_tags if t.get("urn") not in local_tag_urns
-            ]
-
-            logger.debug(
-                f"Categorized tags: {len(synced_tags)} synced, {len(local_tags)} local-only, {len(remote_only_tags)} remote-only"
-            )
-
-            return JsonResponse(
-                {
-                    "success": True,
-                    "data": {
-                        "synced_tags": synced_tags,
-                        "local_tags": local_tags,
-                        "remote_only_tags": remote_only_tags,
-                        "datahub_url": datahub_url,
-                    },
+                    if local_tag.sync_status != "SYNCED":
+                        local_tag.sync_status = "SYNCED" 
+                        local_tag.save(update_fields=["sync_status"])
+                        logger.debug(f"Updated tag {local_tag.name} status to SYNCED")
+                
+                # Update local tag data with remote information
+                local_tag_data.update({
+                    "sync_status": local_tag.sync_status,
+                    "sync_status_display": local_tag.get_sync_status_display(),
+                    "owners_count": remote_match.get("owners_count", 0),
+                    "owner_names": remote_match.get("owner_names", []),
+                    "relationships_count": remote_match.get("relationships_count", 0),
+                    "ownership": remote_match.get("ownership"),
+                    "relationships": remote_match.get("relationships"),
+                })
+                
+                synced_tags.append({
+                    "local": local_tag_data,
+                    "remote": remote_match,
+                    "combined": local_tag_data  # Enhanced data for display
+                })
+            else:
+                # Ensure local-only tags have correct status
+                if local_tag.sync_status != "LOCAL_ONLY":
+                    local_tag.sync_status = "LOCAL_ONLY"
+                    local_tag.save(update_fields=["sync_status"])
+                    logger.debug(f"Updated tag {local_tag.name} status to LOCAL_ONLY")
+                
+                local_tag_data["sync_status"] = "LOCAL_ONLY"
+                local_tag_data["sync_status_display"] = "Local Only"
+                local_only_tags.append(local_tag_data)
+        
+        # Find remote-only tags
+        for tag_urn, remote_tag in remote_tags.items():
+            if tag_urn not in local_tag_urns:
+                # Add enhanced remote tag data
+                remote_tag_enhanced = {
+                    **remote_tag,
+                    "sync_status": "REMOTE_ONLY",
+                    "sync_status_display": "Remote Only",
                 }
-            )
-
-        except Exception as e:
-            logger.error(f"Error fetching remote tag data: {str(e)}")
-            return JsonResponse(
-                {"success": False, "error": f"Error fetching remote tags: {str(e)}"}
-            )
-
+                remote_only_tags.append(remote_tag_enhanced)
+        
+        # Calculate statistics
+        total_tags = len(synced_tags) + len(local_only_tags) + len(remote_only_tags)
+        owned_tags = sum(1 for tag_list in [synced_tags, local_only_tags, remote_only_tags] 
+                        for tag in tag_list 
+                        if (tag.get("combined", tag) if "combined" in tag else tag).get("owners_count", 0) > 0)
+        tags_with_relationships = sum(1 for tag_list in [synced_tags, local_only_tags, remote_only_tags]
+                                    for tag in tag_list
+                                    if (tag.get("combined", tag) if "combined" in tag else tag).get("relationships_count", 0) > 0)
+        
+        # Get DataHub URL for external links
+        datahub_url = environment.datahub_url
+        if datahub_url.endswith("/api/gms"):
+            datahub_url = datahub_url[:-8]
+        
+        logger.debug(
+            f"Categorized tags: {len(synced_tags)} synced, {len(local_only_tags)} local-only, {len(remote_only_tags)} remote-only"
+        )
+        
+        return JsonResponse({
+            "success": True,
+            "data": {
+                "synced_tags": synced_tags,
+                "local_only_tags": local_only_tags,
+                "remote_only_tags": remote_only_tags,
+                "datahub_url": datahub_url,
+                "statistics": {
+                    "total_tags": total_tags,
+                    "synced_count": len(synced_tags),
+                    "local_count": len(local_only_tags),
+                    "remote_count": len(remote_only_tags),
+                    "owned_tags": owned_tags,
+                    "tags_with_relationships": tags_with_relationships,
+                    "percentage_owned": round((owned_tags / total_tags * 100) if total_tags else 0, 1),
+                }
+            }
+        })
+        
     except Exception as e:
-        logger.error(f"Error in get_remote_tags_data: {str(e)}")
-        return JsonResponse({"success": False, "error": str(e)})
+        logger.error(f"Error getting comprehensive tags data: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })

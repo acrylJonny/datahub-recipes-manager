@@ -3374,7 +3374,7 @@ class DataHubRestClient:
 
     def list_tags(self, query="*", start=0, count=100) -> List[Dict[str, Any]]:
         """
-        List tags in DataHub with optional filtering.
+        List tags in DataHub with comprehensive information including ownership and relationships.
 
         Args:
             query (str): Search query to filter tags (default: "*")
@@ -3382,7 +3382,7 @@ class DataHubRestClient:
             count (int): Maximum number of tags to return
 
         Returns:
-            List of tag objects
+            List of tag objects with detailed information
         """
         self.logger.info(
             f"Listing tags with query: {query}, start: {start}, count: {count}"
@@ -3391,31 +3391,43 @@ class DataHubRestClient:
             f"Server URL: {self.server_url}, Token provided: {self.token is not None and len(self.token) > 0}, Verify SSL: {self.verify_ssl}"
         )
 
+        # Enhanced GraphQL query with ownership and relationships
         graphql_query = """
-        query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
+        query GetTags($input: SearchAcrossEntitiesInput!) {
           searchAcrossEntities(input: $input) {
             start
             count
             total
             searchResults {
               entity {
-                urn
-                type
                 ... on Tag {
-                  name
+                  urn
+                  type  
                   properties {
                     name
+                    description
                     colorHex
-                    __typename
                   }
-                  description
-                  __typename
+                  ownership {
+                    owners {
+                      owner {
+                        ... on CorpUser { urn, username, properties { displayName } }
+                        ... on CorpGroup { urn, name, properties { displayName } }
+                      }
+                      ownershipType { urn, info { name } }
+                      source {
+                        type
+                        url
+                      }
+                    }
+                    lastModified {
+                      time
+                      actor
+                    }
+                  }
                 }
-                __typename
               }
-              __typename
             }
-            __typename
           }
         }
         """
@@ -3440,18 +3452,47 @@ class DataHubRestClient:
                 for item in search_results:
                     if "entity" in item and item["entity"] is not None:
                         entity = item["entity"]
+                        
+                        # Extract basic tag information
                         tag = {
                             "urn": entity.get("urn"),
-                            "name": entity.get("name"),
-                            "description": entity.get("description"),
+                            "type": entity.get("type"),
+                            "name": entity.get("properties", {}).get("name") if entity.get("properties") else None,
+                            "description": entity.get("properties", {}).get("description") if entity.get("properties") else None,
+                            "colorHex": entity.get("properties", {}).get("colorHex") if entity.get("properties") else None,
                         }
-
-                        # Add properties if available
-                        if "properties" in entity and entity["properties"] is not None:
+                        
+                        # Add properties for backward compatibility
+                        if entity.get("properties"):
                             tag["properties"] = {
                                 "name": entity["properties"].get("name"),
+                                "description": entity["properties"].get("description"), 
                                 "colorHex": entity["properties"].get("colorHex"),
                             }
+
+                        # Add ownership information
+                        if entity.get("ownership"):
+                            tag["ownership"] = entity["ownership"]
+                            
+                            # Extract owner count and names for display
+                            owners = entity["ownership"].get("owners", [])
+                            tag["owners_count"] = len(owners)
+                            tag["owner_names"] = []
+                            
+                            for owner_info in owners:
+                                owner = owner_info.get("owner", {})
+                                if owner.get("username"):  # CorpUser
+                                    display_name = owner.get("properties", {}).get("displayName")
+                                    tag["owner_names"].append(display_name or owner["username"])
+                                elif owner.get("name"):  # CorpGroup
+                                    display_name = owner.get("properties", {}).get("displayName")
+                                    tag["owner_names"].append(display_name or owner["name"])
+                        else:
+                            tag["owners_count"] = 0
+                            tag["owner_names"] = []
+
+                        # Set relationships count to 0 since we're not querying for them
+                        tag["relationships_count"] = 0
 
                         tags.append(tag)
 
@@ -3469,6 +3510,73 @@ class DataHubRestClient:
         except Exception as e:
             self.logger.error(f"Error listing tags: {str(e)}")
             return []
+
+    def get_remote_tags_data(self, query="*", start=0, count=100) -> Dict[str, Any]:
+        """
+        Get remote tags data for async loading with comprehensive information.
+        
+        Args:
+            query (str): Search query to filter tags
+            start (int): Starting offset for pagination
+            count (int): Maximum number of tags to return
+            
+        Returns:
+            Dict containing enhanced tags data with statistics
+        """
+        try:
+            # Use the enhanced list_tags method
+            tags = self.list_tags(query=query, start=start, count=count)
+            
+            # Get total count from a separate query
+            total_result = self.execute_graphql(
+                """
+                query GetTagsCount($input: SearchAcrossEntitiesInput!) {
+                  searchAcrossEntities(input: $input) {
+                    total
+                  }
+                }
+                """,
+                {
+                    "input": {
+                        "types": ["TAG"],
+                        "query": query,
+                        "start": 0,
+                        "count": 1,
+                        "filters": [],
+                    }
+                }
+            )
+            
+            total_count = 0
+            if total_result and "data" in total_result and "searchAcrossEntities" in total_result["data"]:
+                total_count = total_result["data"]["searchAcrossEntities"].get("total", 0)
+            
+            # Calculate statistics
+            owned_tags = [tag for tag in tags if tag.get("owners_count", 0) > 0]
+            tags_with_relationships = [tag for tag in tags if tag.get("relationships_count", 0) > 0]
+            
+            return {
+                "success": True,
+                "data": {
+                    "tags": tags,
+                    "total": total_count,
+                    "start": start,
+                    "count": len(tags),
+                    "statistics": {
+                        "total_tags": total_count,
+                        "owned_tags": len(owned_tags),
+                        "tags_with_relationships": len(tags_with_relationships),
+                        "percentage_owned": round((len(owned_tags) / len(tags) * 100) if tags else 0, 1),
+                    }
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting remote tags data: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     def get_tag(self, tag_urn: str) -> Optional[Dict[str, Any]]:
         """
@@ -5950,12 +6058,17 @@ class DataHubRestClient:
             total
             searchResults {
               entity {
-                urn
-                type
                 ... on Domain {
+                  urn
+                  id
                   properties {
                     name
                     description
+                  }
+                  parentDomains {
+                    domains {
+                      urn
+                    }
                   }
                   ownership {
                     owners {
@@ -5963,22 +6076,98 @@ class DataHubRestClient:
                         ... on CorpUser {
                           urn
                           username
+                          properties {
+                            displayName
+                            fullName
+                          }
                         }
                         ... on CorpGroup {
                           urn
                           name
+                          properties {
+                            displayName
+                          }
                         }
                       }
-                      type
+                      ownershipType {
+                        urn
+                        info {
+                          name
+                          description
+                        }
+                      }
+                      source {
+                        type
+                        url
+                      }
+                    }
+                    lastModified {
+                      time
+                      actor
                     }
                   }
-                  __typename
+                  institutionalMemory {
+                    elements {
+                      url
+                      label
+                      actor {
+                        ... on CorpUser {
+                          urn
+                          username
+                          properties {
+                            displayName
+                            fullName
+                          }
+                        }
+                        ... on CorpGroup {
+                          urn
+                          name
+                          properties {
+                            displayName
+                          }
+                        }
+                      }
+                      created {
+                        time
+                        actor
+                      }
+                      updated {
+                        time
+                        actor
+                      }
+                      settings {
+                        showInAssetPreview
+                      }
+                    }
+                  }
+                  relationships(input: { types: ["ParentOf", "Contains"], direction: OUTGOING, start: 0, count: 100 }) {
+                    start
+                    count
+                    total
+                    relationships {
+                      type
+                      direction
+                      entity {
+                        urn
+                        type
+                      }
+                      created {
+                        time
+                        actor
+                      }
+                    }
+                  }
+                  displayProperties {
+                    colorHex
+                    icon {
+                      iconLibrary
+                      name
+                      style
+                    }
+                  }
                 }
-                __typename
               }
-              __typename
             }
-            __typename
           }
         }
         """
@@ -6005,12 +6194,26 @@ class DataHubRestClient:
                         entity = item["entity"]
                         properties = entity.get("properties", {})
                         
+                        # Extract parent domain URN from parentDomains structure
+                        parent_urn = None
+                        parent_domains = entity.get("parentDomains")
+                        if parent_domains and parent_domains.get("domains"):
+                            domains_list = parent_domains["domains"]
+                            if domains_list and len(domains_list) > 0:
+                                parent_urn = domains_list[0].get("urn")
+                        
                         domain = {
                             "urn": entity.get("urn"),
+                            "id": entity.get("id"),
                             "name": properties.get("name"),
                             "description": properties.get("description"),
                             "properties": properties,
-                            "ownership": entity.get("ownership", {}),
+                            "parentDomain": parent_urn,  # For backward compatibility
+                            "parentDomains": entity.get("parentDomains"),
+                            "ownership": entity.get("ownership"),
+                            "relationships": entity.get("relationships"),
+                            "institutionalMemory": entity.get("institutionalMemory"),
+                            "displayProperties": entity.get("displayProperties"),
                         }
                         
                         domains.append(domain)

@@ -67,7 +67,7 @@ class AssertionListView(View):
                 "domains": domains,
                 "has_datahub_connection": connected,
                 "datahub_url": None,  # Will be populated via AJAX
-                "page_title": "Metadata Assertions",
+                "page_title": "Assertions",
             }
 
             logger.info("Rendering assertion list template (async loading)")
@@ -78,7 +78,7 @@ class AssertionListView(View):
             return render(
                 request,
                 "metadata_manager/assertions/list.html",
-                {"error": str(e), "page_title": "Metadata Assertions"},
+                {"error": str(e), "page_title": "Assertions"},
             )
 
     def post(self, request):
@@ -794,7 +794,7 @@ def get_datahub_assertions(request):
         run_events_limit = int(request.GET.get("run_events_limit", 10))
 
         logger.info(
-            f"Getting DataHub assertions: query='{query}', start={start}, count={count}"
+            f"Getting Assertions: query='{query}', start={start}, count={count}"
         )
 
         # Get client from session
@@ -848,9 +848,9 @@ def get_datahub_assertions(request):
 
 
 def get_remote_assertions_data(request):
-    """AJAX endpoint to get remote assertions data"""
+    """AJAX endpoint to get enhanced remote assertions data with ownership and relationships"""
     try:
-        logger.info("Loading remote assertions data via AJAX")
+        logger.info("Loading enhanced remote assertions data via AJAX")
 
         # Get DataHub connection
         connected, client = test_datahub_connection()
@@ -860,72 +860,164 @@ def get_remote_assertions_data(request):
         # Get all local assertions
         local_assertions = Assertion.objects.all().order_by("name")
 
-        # Fetch remote assertions
-        remote_assertions = []
-        synced_assertions = []
+        # Initialize data structures
+        synced_items = []
+        local_only_items = []
+        remote_only_items = []
         datahub_url = None
 
         try:
-            logger.debug("Fetching remote assertions from DataHub")
-
+            logger.debug("Fetching enhanced remote assertions from DataHub")
+            
             # Get DataHub URL for direct links
             datahub_url = client.server_url
             if datahub_url.endswith("/api/gms"):
                 datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
 
-            # Get assertions from DataHub using the existing method
+            # Get all remote assertions from DataHub with enhanced data
             result = client.get_assertions(start=0, count=1000, query="*")
-
+            
+            # Process remote assertions data
+            enhanced_remote_assertions = {}
+            
             if result.get("success", False):
                 remote_assertions_data = result["data"].get("searchResults", [])
                 logger.debug(f"Fetched {len(remote_assertions_data)} remote assertions")
 
-                # Process the assertions
                 for assertion_result in remote_assertions_data:
                     assertion_data = assertion_result.get("entity", {})
                     if assertion_data:
-                        remote_assertions.append(assertion_data)
-
-                # TODO: Implement synced assertions logic when we have assertion syncing
-                # For now, all local assertions are considered local-only
-                synced_assertions = []
-
-            else:
-                logger.warning(
-                    f"Failed to fetch remote assertions: {result.get('error', 'Unknown error')}"
-                )
-
-            return JsonResponse(
-                {
-                    "success": True,
-                    "data": {
-                        "local_assertions": [
-                            {
-                                "id": assertion.id,
-                                "name": assertion.name,
-                                "description": assertion.description,
-                                "type": assertion.type,
-                                "last_run": assertion.last_run.isoformat()
-                                if assertion.last_run
-                                else None,
-                                "last_status": assertion.last_status,
+                        assertion_urn = assertion_data.get("urn")
+                        if assertion_urn:
+                            # Extract basic properties
+                            info = assertion_data.get("info", {})
+                            
+                            enhanced_assertion = {
+                                "urn": assertion_urn,
+                                "name": info.get("description", assertion_urn.split(":")[-1]),  # Use description as name or fallback to URN part
+                                "description": info.get("description", ""),
+                                "type": assertion_data.get("type", "Unknown"),
+                                "sync_status": "REMOTE_ONLY",
+                                "sync_status_display": "Remote Only",
+                                
+                                # Extract ownership data
+                                "ownership": assertion_data.get("ownership"),
+                                "owners_count": 0,
+                                "owner_names": [],
+                                
+                                # Extract relationships data  
+                                "relationships": assertion_data.get("relationships"),
+                                "relationships_count": 0,
+                                
+                                # Extract assertion-specific data
+                                "entity_urn": info.get("entity", {}).get("urn") if info.get("entity") else None,
+                                "source": info.get("source", {}),
+                                "last_updated": assertion_data.get("lastUpdated"),
+                                
+                                # Store raw data
+                                "raw_data": assertion_data
                             }
-                            for assertion in local_assertions
-                        ],
-                        "remote_assertions": remote_assertions,
-                        "synced_assertions": synced_assertions,
-                        "datahub_url": datahub_url,
-                    },
+                            
+                            # Process ownership information
+                            if enhanced_assertion["ownership"] and enhanced_assertion["ownership"].get("owners"):
+                                owners = enhanced_assertion["ownership"]["owners"]
+                                enhanced_assertion["owners_count"] = len(owners)
+                                
+                                # Extract owner names for display
+                                owner_names = []
+                                for owner_info in owners:
+                                    owner = owner_info.get("owner", {})
+                                    if owner.get("properties"):
+                                        name = (
+                                            owner["properties"].get("displayName") or
+                                            owner.get("username") or
+                                            owner.get("name") or
+                                            "Unknown"
+                                        )
+                                    else:
+                                        name = owner.get("username") or owner.get("name") or "Unknown"
+                                    owner_names.append(name)
+                                enhanced_assertion["owner_names"] = owner_names
+                            
+                            # Process relationships information
+                            if enhanced_assertion["relationships"] and enhanced_assertion["relationships"].get("relationships"):
+                                enhanced_assertion["relationships_count"] = len(enhanced_assertion["relationships"]["relationships"])
+                            
+                            enhanced_remote_assertions[assertion_urn] = enhanced_assertion
+
+            # Extract assertion URNs that exist locally (if we had URN mapping)
+            # For now, treat all local assertions as local-only since we don't have URN mapping
+            local_assertion_urns = set()  # Would be populated if we had URN mapping
+
+            # Process local assertions
+            for assertion in local_assertions:
+                # Create enhanced local assertion data
+                local_assertion_data = {
+                    "id": assertion.id,
+                    "urn": f"urn:li:assertion:local:{assertion.id}",  # Mock URN for consistency
+                    "name": assertion.name,
+                    "description": assertion.description or "",
+                    "type": assertion.type,
+                    "sync_status": "LOCAL_ONLY",
+                    "sync_status_display": "Local Only",
+                    
+                    # Initialize ownership data (not stored locally for assertions)
+                    "ownership": None,
+                    "owners_count": 0,
+                    "owner_names": [],
+                    
+                    # Initialize relationships data (not stored locally for assertions)
+                    "relationships": None,
+                    "relationships_count": 0,
+                    
+                    # Add local metadata
+                    "last_run": assertion.last_run.isoformat() if assertion.last_run else None,
+                    "last_status": assertion.last_status,
+                    "created_at": assertion.created_at.isoformat() if assertion.created_at else None,
+                    "updated_at": assertion.updated_at.isoformat() if assertion.updated_at else None,
                 }
+
+                # For now, all local assertions are local-only since we don't have syncing implemented
+                local_only_items.append(local_assertion_data)
+
+            # All remote assertions are remote-only since we don't have syncing implemented
+            remote_only_items = list(enhanced_remote_assertions.values())
+
+            # Calculate statistics
+            total_items = len(synced_items) + len(local_only_items) + len(remote_only_items)
+            synced_count = len(synced_items)
+            owned_items = sum(1 for item in synced_items + local_only_items + remote_only_items 
+                            if (item.get("combined", item) if "combined" in item else item).get("owners_count", 0) > 0)
+            items_with_relationships = sum(1 for item in synced_items + local_only_items + remote_only_items 
+                                         if (item.get("combined", item) if "combined" in item else item).get("relationships_count", 0) > 0)
+
+            statistics = {
+                "total_items": total_items,
+                "synced_count": synced_count,
+                "owned_items": owned_items,
+                "items_with_relationships": items_with_relationships,
+            }
+
+            logger.debug(
+                f"Enhanced assertion categorization: {len(synced_items)} synced, "
+                f"{len(local_only_items)} local-only, {len(remote_only_items)} remote-only"
             )
 
-        except Exception as e:
-            logger.error(f"Error fetching remote assertion data: {str(e)}")
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": f"Error fetching remote assertions: {str(e)}",
+            return JsonResponse({
+                "success": True,
+                "data": {
+                    "synced_items": synced_items,
+                    "local_only_items": local_only_items,
+                    "remote_only_items": remote_only_items,
+                    "statistics": statistics,
+                    "datahub_url": datahub_url,
                 }
+            })
+
+        except Exception as e:
+            logger.error(f"Error fetching enhanced remote assertion data: {str(e)}")
+            return JsonResponse(
+                {"success": False, "error": f"Error fetching remote assertions: {str(e)}"}
             )
 
     except Exception as e:

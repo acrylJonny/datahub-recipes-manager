@@ -70,7 +70,7 @@ urlpatterns = [
     ),
     # Tags
     path("tags/", views_tags.TagListView.as_view(), name="tag_list"),
-    path("tags/data/", views_tags.get_remote_tags_data, name="get_remote_tags_data"),
+    path("tags/remote-data/", views_tags.get_remote_tags_data, name="get_remote_tags_data"),
     path("tags/<uuid:tag_id>/", views_tags.TagDetailView.as_view(), name="tag_detail"),
     path(
         "tags/<uuid:tag_id>/edit/", views_tags.TagDetailView.as_view(), name="tag_edit"

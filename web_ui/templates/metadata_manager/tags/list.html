@@ -14,6 +14,9 @@
                     <a href="{% url 'metadata_manager:tag_import_export' %}" class="btn btn-outline-secondary">
                         <i class="fas fa-file-export me-1"></i> Import/Export
                     </a>
+                    <button type="button" class="btn btn-outline-info" id="refreshTags">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
+                    </button>
                 </div>
             </div>
             
@@ -36,320 +39,243 @@
                 {% endfor %}
             {% endif %}
             
-            <!-- Tags Tabs -->
-            <ul class="nav nav-tabs mb-4" id="tagTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-tags" 
-                           type="button" role="tab" aria-controls="synced-tags" aria-selected="true">
-                        <i class="fas fa-sync-alt me-1"></i> Synced Tags
-                        {% if synced_tags %}
-                        <span class="badge bg-success ms-1">{{ synced_tags|length }}</span>
-                        {% endif %}
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-tags" 
-                           type="button" role="tab" aria-controls="local-tags" aria-selected="false">
-                        <i class="fas fa-laptop me-1"></i> Local Only Tags
-                        {% if local_tags %}
-                        <span class="badge bg-secondary ms-1">{{ local_tags_count }}</span>
-                        {% endif %}
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-tags" 
-                           type="button" role="tab" aria-controls="remote-tags" aria-selected="false">
-                        <i class="fas fa-server me-1"></i> Remote Only Tags
-                        {% if remote_only_tags %}
-                        <span class="badge bg-info ms-1">{{ remote_only_tags|length }}</span>
-                        {% endif %}
-                    </button>
-                </li>
-            </ul>
-            
-            <div class="tab-content" id="tagTabsContent">
-                <!-- Synced Tags Tab -->
-                <div class="tab-pane fade show active" id="synced-tags" role="tabpanel" aria-labelledby="synced-tab">
-                    <div class="card mb-4">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">Synced Tags</h5>
-                            <div class="d-flex">
-                                <div class="input-group">
-                                    <input type="text" id="synced-tag-search" class="form-control form-control-sm me-2" 
-                                           placeholder="Filter tags..." value="">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="synced-clear-filter">
+            <!-- Loading indicator -->
+            <div id="loading-indicator" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading tags data...</p>
+            </div>
+
+            <!-- Tags content -->
+            <div id="tags-content" style="display: none;">
+                <!-- Statistics -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="total-tags">0</div>
+                                <small class="text-muted">Total Tags</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="synced-count">0</div>
+                                <small class="text-muted">Synced</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="owned-tags">0</div>
+                                <small class="text-muted">Owned</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="h4 mb-0" id="tags-with-relationships">0</div>
+                                <small class="text-muted">With Relationships</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tags Tabs -->
+                <ul class="nav nav-tabs mb-4" id="tagTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-tags" 
+                               type="button" role="tab" aria-controls="synced-tags" aria-selected="true">
+                            <i class="fas fa-sync-alt me-1"></i> Synced Tags
+                            <span class="badge bg-success ms-1" id="synced-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-tags" 
+                               type="button" role="tab" aria-controls="local-tags" aria-selected="false">
+                            <i class="fas fa-laptop me-1"></i> Local Only Tags
+                            <span class="badge bg-secondary ms-1" id="local-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-tags" 
+                               type="button" role="tab" aria-controls="remote-tags" aria-selected="false">
+                            <i class="fas fa-server me-1"></i> Remote Only Tags
+                            <span class="badge bg-info ms-1" id="remote-badge">0</span>
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="tagTabsContent">
+                    <!-- Synced Tags Tab -->
+                    <div class="tab-pane fade show active" id="synced-tags" role="tabpanel" aria-labelledby="synced-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Synced Tags</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="synced-search" class="form-control" placeholder="Search synced tags...">
+                                    <button type="button" class="btn btn-outline-secondary" id="synced-clear">
                                         <i class="fas fa-times"></i>
                                     </button>
                                 </div>
-                                <div class="ms-2">
-                                    <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-sm btn-outline-secondary" title="Refresh">
-                                        <i class="fas fa-sync-alt"></i>
+                            </div>
+                            <div class="card-body p-0" id="synced-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Local Tags Tab -->
+                    <div class="tab-pane fade" id="local-tags" role="tabpanel" aria-labelledby="local-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Local Only Tags</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="local-search" class="form-control" placeholder="Search local tags...">
+                                    <button type="button" class="btn btn-outline-secondary" id="local-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="local-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Remote Tags Tab -->
+                    <div class="tab-pane fade" id="remote-tags" role="tabpanel" aria-labelledby="remote-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Remote Only Tags</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="remote-search" class="form-control" placeholder="Search remote tags...">
+                                    <button type="button" class="btn btn-outline-secondary" id="remote-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="remote-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Tag View Modal -->
+<div class="modal fade" id="tagViewModal" tabindex="-1" aria-labelledby="tagViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tagViewModalLabel">Tag Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Basic Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row">
+                                    <dt class="col-sm-4">Name:</dt>
+                                    <dd class="col-sm-8" id="modal-tag-name">-</dd>
+                                    
+                                    <dt class="col-sm-4">Description:</dt>
+                                    <dd class="col-sm-8" id="modal-tag-description">-</dd>
+                                    
+                                    <dt class="col-sm-4">Color:</dt>
+                                    <dd class="col-sm-8">
+                                        <div class="d-flex align-items-center">
+                                            <div class="color-swatch me-2" id="modal-tag-color-swatch"></div>
+                                            <span id="modal-tag-color">-</span>
+                                        </div>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Status:</dt>
+                                    <dd class="col-sm-8">
+                                        <span id="modal-tag-status" class="badge">-</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">URN:</dt>
+                                    <dd class="col-sm-8">
+                                        <code id="modal-tag-urn" class="small">-</code>
+                                    </dd>
+                                </dl>
+                                
+                                <div class="mt-3">
+                                    <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
+                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                                     </a>
                                 </div>
                             </div>
                         </div>
-                        <div class="card-body p-0">
-                            {% if synced_tags %}
-                                <div class="table-responsive">
-                                    <table class="table table-hover table-striped mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>Name</th>
-                                                <th>Description</th>
-                                                <th>Color</th>
-                                                <th>Status</th>
-                                                <th width="20%">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for tag_pair in synced_tags %}
-                                                <tr>
-                                                    <td>
-                                                        <a href="{% url 'metadata_manager:tag_detail' tag_pair.local.id %}" class="text-decoration-none">
-                                                            {{ tag_pair.local.name }}
-                                                        </a>
-                                                    </td>
-                                                    <td>{{ tag_pair.local.description|truncatechars:50 }}</td>
-                                                    <td>
-                                                        <div class="d-flex align-items-center">
-                                                            <div class="color-swatch me-2" {% if tag_pair.local.color %}style="background-color: {{ tag_pair.local.color }};"{% endif %}></div>
-                                                            {{ tag_pair.local.color }}
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <span class="badge bg-{% if tag_pair.local.sync_status == 'SYNCED' %}success{% elif tag_pair.local.sync_status == 'MODIFIED' %}warning{% else %}primary{% endif %}">
-                                                            {{ tag_pair.local.get_sync_status_display }}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <div class="btn-group" role="group">
-                                                            <a href="{% url 'metadata_manager:tag_detail' tag_pair.local.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
-                                                                <i class="fas fa-eye"></i>
-                                                            </a>
-                                                            {% if tag_pair.local.sync_status == 'MODIFIED' and has_datahub_connection %}
-                                                            <form action="{% url 'metadata_manager:tag_deploy' tag_pair.local.id %}" method="post" class="d-inline">
-                                                                {% csrf_token %}
-                                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Update in DataHub">
-                                                                    <i class="fas fa-sync-alt"></i>
-                                                                </button>
-                                                            </form>
-                                                            {% endif %}
-                                                            {% if has_git_integration %}
-                                                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                                                    data-tag-id="{{ tag_pair.local.id }}" title="Add to GitHub PR">
-                                                                <i class="fab fa-github"></i>
-                                                            </button>
-                                                            {% endif %}
-                                                            <button type="button" class="btn btn-sm btn-outline-danger delete-tag" 
-                                                                    data-bs-toggle="modal" data-bs-target="#deleteTagModal"
-                                                                    data-tag-id="{{ tag_pair.local.id }}" data-tag-name="{{ tag_pair.local.name }}" title="Delete">
-                                                                <i class="fas fa-trash"></i>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
+                    </div>
+                    
+                    <!-- Ownership Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-owners-list">
+                                    <p class="text-muted">No ownership information available</p>
                                 </div>
-                            {% else %}
-                                <div class="py-5 text-center">
-                                    <div class="mb-3">
-                                        <i class="fas fa-sync-alt fa-4x text-muted"></i>
-                                    </div>
-                                    <h4>No synced tags</h4>
-                                    <p class="text-muted">Tags that exist both locally and in DataHub will appear here.</p>
+                                
+                                <div id="modal-last-modified" class="mt-3">
+                                    <!-- Last modified info will be shown here -->
                                 </div>
-                            {% endif %}
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Local Tags Tab -->
-                <div class="tab-pane fade" id="local-tags" role="tabpanel" aria-labelledby="local-tab">
-                    <div class="card mb-4">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">Local Tags</h5>
-                            <div class="d-flex">
-                                <div class="input-group">
-                                    <input type="text" id="local-tag-search" class="form-control form-control-sm me-2" 
-                                           placeholder="Filter tags..." value="">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="local-clear-filter">
-                                        <i class="fas fa-times"></i>
-                                    </button>
+                <!-- Relationships -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-relationships-list">
+                                    <p class="text-muted">No relationships available</p>
                                 </div>
                             </div>
-                        </div>
-                        <div class="card-body p-0">
-                            {% if local_tags %}
-                                <div class="table-responsive">
-                                    <table class="table table-hover table-striped mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>Name</th>
-                                                <th>Description</th>
-                                                <th>Color</th>
-                                                <th>Status</th>
-                                                <th width="20%">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for tag in local_tags %}
-                                                {% if tag.sync_status == 'LOCAL_ONLY' %}
-                                                <tr>
-                                                    <td>
-                                                        <a href="{% url 'metadata_manager:tag_detail' tag.id %}" class="text-decoration-none">
-                                                            {{ tag.name }}
-                                                        </a>
-                                                    </td>
-                                                    <td>{{ tag.description|truncatechars:50 }}</td>
-                                                    <td>
-                                                        <div class="d-flex align-items-center">
-                                                            <div class="color-swatch me-2" {% if tag.color %}style="background-color: {{ tag.color }};"{% endif %}></div>
-                                                            {{ tag.color }}
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <span class="badge bg-secondary">
-                                                            {{ tag.get_sync_status_display }}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <div class="btn-group" role="group">
-                                                            <a href="{% url 'metadata_manager:tag_detail' tag.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
-                                                                <i class="fas fa-eye"></i>
-                                                            </a>
-                                                            {% if has_datahub_connection %}
-                                                            <form action="{% url 'metadata_manager:tag_deploy' tag.id %}" method="post" class="d-inline">
-                                                                {% csrf_token %}
-                                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
-                                                                    <i class="fas fa-cloud-upload-alt"></i>
-                                                                </button>
-                                                            </form>
-                                                            {% endif %}
-                                                            {% if has_git_integration %}
-                                                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                                                    data-tag-id="{{ tag.id }}" title="Add to GitHub PR">
-                                                                <i class="fab fa-github"></i>
-                                                            </button>
-                                                            {% endif %}
-                                                            <button type="button" class="btn btn-sm btn-outline-danger delete-tag" 
-                                                                    data-bs-toggle="modal" data-bs-target="#deleteTagModal"
-                                                                    data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}" title="Delete">
-                                                                <i class="fas fa-trash"></i>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                                {% endif %}
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            {% else %}
-                                <div class="py-5 text-center">
-                                    <div class="mb-3">
-                                        <i class="fas fa-laptop fa-4x text-muted"></i>
-                                    </div>
-                                    <h4>No local-only tags</h4>
-                                    <p class="text-muted">Tags that exist only in this application will appear here.</p>
-                                    <a href="#" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#createTagModal">
-                                        <i class="fas fa-plus me-1"></i> Create New Tag
-                                    </a>
-                                </div>
-                            {% endif %}
                         </div>
                     </div>
                 </div>
                 
-                <!-- Remote Tags Tab -->
-                <div class="tab-pane fade" id="remote-tags" role="tabpanel" aria-labelledby="remote-tab">
-                    <div class="card mb-4">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">Remote Tags</h5>
-                            <div class="d-flex">
-                                <div class="input-group">
-                                    <input type="text" id="remote-tag-search" class="form-control form-control-sm me-2" 
-                                           placeholder="Filter tags..." value="">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="remote-clear-filter">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
+                <!-- Raw JSON Data -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
                             </div>
-                        </div>
-                        <div class="card-body p-0">
-                            {% if remote_only_tags %}
-                                <div class="table-responsive">
-                                    <table class="table table-hover table-striped mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>Name</th>
-                                                <th>Description</th>
-                                                <th>Color</th>
-                                                <th>URN</th>
-                                                <th width="15%">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for tag in remote_only_tags %}
-                                                <tr>
-                                                    <td>{{ tag.name }}</td>
-                                                    <td>{{ tag.description|truncatechars:50 }}</td>
-                                                    <td>
-                                                        {% if tag.properties.colorHex %}
-                                                        <div class="d-flex align-items-center">
-                                                            <div class="color-swatch me-2" {% if tag.properties.colorHex %}style="background-color: {{ tag.properties.colorHex }};"{% endif %}></div>
-                                                            {{ tag.properties.colorHex }}
-                                                        </div>
-                                                        {% else %}
-                                                        <span class="text-muted">No color</span>
-                                                        {% endif %}
-                                                    </td>
-                                                    <td><code>{{ tag.urn }}</code></td>
-                                                    <td>
-                                                        <div class="btn-group" role="group">
-                                                            {% if datahub_url %}
-                                                            <a href="{{ datahub_url }}/tag/{{ tag.urn|urlencode:'' }}" target="_blank" class="btn btn-sm btn-outline-primary" title="View in DataHub">
-                                                                <i class="fas fa-external-link-alt"></i>
-                                                            </a>
-                                                            {% endif %}
-                                                            <form action="{% url 'metadata_manager:tag_pull' %}" method="post" class="d-inline">
-                                                                {% csrf_token %}
-                                                                <input type="hidden" name="tag_urn" value="{{ tag.urn }}">
-                                                                <input type="hidden" name="tag_name" value="{{ tag.name }}">
-                                                                <input type="hidden" name="tag_description" value="{{ tag.description|default:'' }}">
-                                                                <input type="hidden" name="tag_color_hex" value="{{ tag.properties.colorHex|default:'' }}">
-                                                                <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
-                                                                    <i class="fas fa-download"></i>
-                                                                </button>
-                                                            </form>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            {% else %}
-                                <div class="py-5 text-center">
-                                    <div class="mb-3">
-                                        <i class="fas fa-server fa-4x text-muted"></i>
-                                    </div>
-                                    <h4>No remote-only tags</h4>
-                                    <p class="text-muted">Tags that exist only in DataHub will appear here.</p>
-                                    {% if has_datahub_connection %}
-                                    <form method="post" action="{% url 'metadata_manager:tag_pull' %}" class="d-inline">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-primary mt-2">
-                                            <i class="fas fa-cloud-download-alt me-1"></i> Pull from DataHub
-                                        </button>
-                                    </form>
-                                    {% endif %}
-                                </div>
-                            {% endif %}
+                            <div class="card-body">
+                                <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -359,35 +285,29 @@
 <div class="modal fade" id="createTagModal" tabindex="-1" aria-labelledby="createTagModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'metadata_manager:tag_list' %}">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createTagModalLabel">Create New Tag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post">
                 {% csrf_token %}
-                <div class="modal-header">
-                    <h5 class="modal-title" id="createTagModalLabel">Create New Tag</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="name" class="form-label">Tag Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="name" name="name" required>
+                        <label for="tagName" class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="tagName" name="name" required>
+                        <div class="form-text">Tag name should be unique and descriptive</div>
                     </div>
+                    
                     <div class="mb-3">
-                        <label for="description" class="form-label">Description</label>
-                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                        <label for="tagDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="tagDescription" name="description" rows="3"></textarea>
+                        <div class="form-text">Optional description for the tag</div>
                     </div>
+                    
                     <div class="mb-3">
-                        <label for="color" class="form-label">Tag Color</label>
-                        <div class="input-group">
-                            <input type="color" class="form-control form-control-color" id="color" name="color" value="#0d6efd" title="Choose tag color">
-                            <input type="text" class="form-control" value="#0d6efd" id="colorText" readonly>
-                            <div class="input-group-text">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="createNoColorCheck">
-                                    <label class="form-check-label" for="createNoColorCheck">
-                                        No color
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
+                        <label for="tagColor" class="form-label">Color</label>
+                        <input type="color" class="form-control form-control-color" id="tagColor" name="color" value="#0d6efd">
+                        <div class="form-text">Color for the tag (optional)</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -399,680 +319,562 @@
     </div>
 </div>
 
-<!-- Delete Tag Modal -->
-<div class="modal fade" id="deleteTagModal" tabindex="-1" aria-labelledby="deleteTagModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="deleteTagModalLabel">Confirm Delete</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to delete the tag <strong id="delete-tag-name"></strong>?</p>
-                <p class="text-danger">This action cannot be undone.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirm-delete">Delete</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 {% endblock %}
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Load remote tag data asynchronously
-        loadRemoteTagData();
+// Global variables
+let tagsData = {
+    synced_tags: [],
+    local_only_tags: [],
+    remote_only_tags: [],
+    datahub_url: ''
+};
+let currentSearch = {
+    synced: '',
+    local: '',
+    remote: ''
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadTagsData();
+    
+    // Search functionality for each tab
+    ['synced', 'local', 'remote'].forEach(tab => {
+        const searchInput = document.getElementById(`${tab}-search`);
+        const clearButton = document.getElementById(`${tab}-clear`);
         
-        // Setup tooltips
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
+        searchInput.addEventListener('input', function() {
+            currentSearch[tab] = this.value.toLowerCase();
+            displayTabContent(tab);
         });
         
-        // Color picker for create form
-        const colorPicker = document.getElementById('color');
-        const colorText = document.getElementById('colorText');
-        const noColorCheck = document.getElementById('createNoColorCheck');
-        
-        if (colorPicker && colorText) {
-            colorPicker.addEventListener('input', function() {
-                colorText.value = this.value;
-            });
-        }
-        
-        if (noColorCheck && colorPicker && colorText) {
-            noColorCheck.addEventListener('change', function() {
-                if (this.checked) {
-                    colorPicker.disabled = true;
-                    colorText.value = '';
-                    
-                    // Add a hidden input to signal no color
-                    let hiddenInput = document.createElement('input');
-                    hiddenInput.type = 'hidden';
-                    hiddenInput.name = 'color';
-                    hiddenInput.value = '';
-                    hiddenInput.id = 'hiddenColorInput';
-                    colorPicker.parentNode.appendChild(hiddenInput);
-                } else {
-                    colorPicker.disabled = false;
-                    colorText.value = colorPicker.value;
-                    
-                    // Remove hidden input if exists
-                    let hiddenInput = document.getElementById('hiddenColorInput');
-                    if (hiddenInput) hiddenInput.remove();
-                }
-            });
-        }
-        
-        // Handle delete modal
-        const deleteModal = document.getElementById('deleteTagModal');
-        if (deleteModal) {
-            deleteModal.addEventListener('show.bs.modal', function(event) {
-                const button = event.relatedTarget;
-                const tagId = button.getAttribute('data-tag-id');
-                const tagName = button.getAttribute('data-tag-name');
-                
-                document.getElementById('delete-tag-name').textContent = tagName;
-                
-                // Setup confirm delete button
-                const confirmDelete = document.getElementById('confirm-delete');
-                confirmDelete.onclick = function() {
-                    // Send DELETE request
-                    fetch(`/metadata/tags/${tagId}/`, {
-                        method: 'DELETE',
-                        headers: {
-                            'X-CSRFToken': '{{ csrf_token }}',
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            // Show success message and reload page
-                            const toast = document.createElement('div');
-                            toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
-                            toast.setAttribute('role', 'alert');
-                            toast.setAttribute('aria-live', 'assertive');
-                            toast.setAttribute('aria-atomic', 'true');
-                            toast.innerHTML = `
-                                <div class="d-flex">
-                                    <div class="toast-body">
-                                        <i class="fas fa-check-circle me-2"></i>
-                                        ${data.message}
-                                    </div>
-                                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                                </div>
-                            `;
-                            document.body.appendChild(toast);
-                            
-                            // Initialize and show the toast
-                            const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
-                            bsToast.show();
-                            
-                            // Hide modal and reload page
-                            const bsModal = bootstrap.Modal.getInstance(deleteModal);
-                            bsModal.hide();
-                            
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 500);
-                        } else {
-                            alert(`Error: ${data.message || 'Failed to delete tag'}`);
-                        }
-                    })
-                    .catch(error => {
-                        alert(`Error: ${error.message || error}`);
-                    });
-                };
-            });
-        }
-        
-        // Handle "Add to Git PR" buttons
-        const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
-        addToGitPrButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const tagId = this.getAttribute('data-tag-id');
-                
-                // Show loading state
-                const originalHTML = this.innerHTML;
-                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                this.disabled = true;
-                
-                // Send POST request to add tag to GitHub PR
-                fetch(`/metadata/tags/${tagId}/push-github/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': '{{ csrf_token }}'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Create a toast notification
-                        const toast = document.createElement('div');
-                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
-                        toast.setAttribute('role', 'alert');
-                        toast.setAttribute('aria-live', 'assertive');
-                        toast.setAttribute('aria-atomic', 'true');
-                        toast.innerHTML = `
-                            <div class="d-flex">
-                                <div class="toast-body">
-                                    <i class="fas fa-check-circle me-2"></i>
-                                    Tag added to GitHub PR successfully!
-                                </div>
-                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                            </div>
-                        `;
-                        document.body.appendChild(toast);
-                        
-                        // Initialize and show the toast
-                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
-                        bsToast.show();
-                        
-                        // Refresh page to update status
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1000);
-                    } else {
-                        alert(`Error: ${data.error || 'Failed to add tag to GitHub PR'}`);
-                    }
-                })
-                .catch(error => {
-                    alert(`Error: ${error.message || error}`);
-                })
-                .finally(() => {
-                    // Restore button state
-                    this.innerHTML = originalHTML;
-                    this.disabled = false;
-                });
-            });
-        });
-        
-        // Setup filter functionality for each tab
-        ['synced', 'local', 'remote'].forEach(tabName => {
-            const searchInput = document.getElementById(`${tabName}-tag-search`);
-            const clearButton = document.getElementById(`${tabName}-clear-filter`);
-            const tbody = document.querySelector(`#${tabName}-tags table tbody`);
-            
-            if (searchInput && clearButton && tbody) {
-                searchInput.addEventListener('input', function() {
-                    const searchText = this.value.toLowerCase();
-                    const rows = tbody.querySelectorAll('tr');
-                    
-                    rows.forEach(row => {
-                        const text = row.textContent.toLowerCase();
-                        row.style.display = text.includes(searchText) ? '' : 'none';
-                    });
-                });
-                
-                clearButton.addEventListener('click', function() {
-                    searchInput.value = '';
-                    const rows = tbody.querySelectorAll('tr');
-                    rows.forEach(row => row.style.display = '');
-                });
-            }
+        clearButton.addEventListener('click', function() {
+            searchInput.value = '';
+            currentSearch[tab] = '';
+            displayTabContent(tab);
         });
     });
     
-    function loadRemoteTagData() {
-        console.log('Loading remote tag data...');
-        
-        // Show loading indicators
-        showLoadingIndicators();
-        
-        fetch('{% url "metadata_manager:get_remote_tags_data" %}')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log('Remote tag data loaded successfully');
-                    // Show success message and prompt to refresh
-                    showDataLoadedMessage(data.data);
-                } else {
-                    console.error('Error loading remote tag data:', data.error);
-                    showErrorMessage(data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching remote tag data:', error);
-                showErrorMessage('Failed to load remote tag data: ' + error.message);
-            });
-    }
-    
-    function showLoadingIndicators() {
-        // Add loading spinners to each tab content
-        ['synced-tags', 'local-tags', 'remote-tags'].forEach(tabId => {
-            const tabContent = document.getElementById(tabId);
-            if (tabContent) {
-                const cardBody = tabContent.querySelector('.card-body');
-                if (cardBody) {
-                    const existingContent = cardBody.innerHTML;
-                    if (!existingContent.includes('Loading remote tag data')) {
-                        cardBody.innerHTML = `
-                            <div class="alert alert-info">
-                                <div class="d-flex align-items-center">
-                                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
-                                        <span class="visually-hidden">Loading...</span>
-                                    </div>
-                                    <span>Loading remote tag data...</span>
-                                </div>
-                            </div>
-                            ${existingContent}
-                        `;
-                    }
-                }
-            }
-        });
-    }
-    
-    function showDataLoadedMessage(data) {
-        // Count the tags
-        const syncedCount = data.synced_tags ? data.synced_tags.length : 0;
-        const localCount = data.local_tags ? data.local_tags.length : 0;
-        const remoteCount = data.remote_only_tags ? data.remote_only_tags.length : 0;
-        
-        // Update badge counts in tab headers
-        updateTabBadges(syncedCount, localCount, remoteCount);
-        
-        // Populate the synced tags tab
-        populateSyncedTags(data.synced_tags || []);
-        
-        // Populate the local tags tab  
-        populateLocalTags(data.local_tags || []);
-        
-        // Populate the remote tags tab
-        populateRemoteTags(data.remote_only_tags || [], data.datahub_url);
-        
-        // Show success notification
-        showSuccessNotification(syncedCount, localCount, remoteCount);
-        
-        // Remove loading indicators
-        document.querySelectorAll('.spinner-border').forEach(spinner => {
-            const alert = spinner.closest('.alert');
-            if (alert && alert.textContent.includes('Loading remote tag data')) {
-                alert.remove();
-            }
-        });
-    }
-    
-    function updateTabBadges(syncedCount, localCount, remoteCount) {
-        // Update synced tab badge
-        const syncedTab = document.getElementById('synced-tab');
-        const syncedBadge = syncedTab.querySelector('.badge');
-        if (syncedBadge) {
-            syncedBadge.textContent = syncedCount;
-            syncedBadge.className = syncedCount > 0 ? 'badge bg-success ms-1' : 'badge bg-secondary ms-1';
-        } else if (syncedCount > 0) {
-            syncedTab.innerHTML += ` <span class="badge bg-success ms-1">${syncedCount}</span>`;
-        }
-        
-        // Update local tab badge
-        const localTab = document.getElementById('local-tab');
-        const localBadge = localTab.querySelector('.badge');
-        if (localBadge) {
-            localBadge.textContent = localCount;
-            localBadge.className = localCount > 0 ? 'badge bg-secondary ms-1' : 'badge bg-secondary ms-1';
-        } else if (localCount > 0) {
-            localTab.innerHTML += ` <span class="badge bg-secondary ms-1">${localCount}</span>`;
-        }
-        
-        // Update remote tab badge
-        const remoteTab = document.getElementById('remote-tab');
-        const remoteBadge = remoteTab.querySelector('.badge');
-        if (remoteBadge) {
-            remoteBadge.textContent = remoteCount;
-            remoteBadge.className = remoteCount > 0 ? 'badge bg-info ms-1' : 'badge bg-secondary ms-1';
-        } else if (remoteCount > 0) {
-            remoteTab.innerHTML += ` <span class="badge bg-info ms-1">${remoteCount}</span>`;
-        }
-    }
-    
-    function populateSyncedTags(syncedTags) {
-        const container = document.querySelector('#synced-tags .card-body');
-        if (!container) return;
-        
-        if (syncedTags.length === 0) {
-            container.innerHTML = `
-                <div class="py-5 text-center">
-                    <div class="mb-3">
-                        <i class="fas fa-sync-alt fa-4x text-muted"></i>
-                    </div>
-                    <h4>No synced tags</h4>
-                    <p class="text-muted">Tags that exist both locally and in DataHub will appear here.</p>
-                </div>
-            `;
-            return;
-        }
-        
-        let tableHTML = `
-            <div class="table-responsive">
-                <table class="table table-hover table-striped mb-0">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Description</th>
-                            <th>Color</th>
-                            <th>Status</th>
-                            <th width="20%">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-        
-        syncedTags.forEach(tagPair => {
-            const localTag = tagPair.local;
-            const description = localTag.description && localTag.description.length > 50 
-                ? localTag.description.substring(0, 50) + '...' 
-                : (localTag.description || '');
-            
-            tableHTML += `
-                <tr>
-                    <td>
-                        <a href="/metadata/tags/${localTag.id}/" class="text-decoration-none">
-                            ${localTag.name}
-                        </a>
-                    </td>
-                    <td>${description}</td>
-                    <td>
-                        <div class="d-flex align-items-center">
-                            <div class="color-swatch me-2" ${localTag.color ? `style="background-color: ${localTag.color};"` : ''}></div>
-                            ${localTag.color || ''}
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge ${getStatusBadgeClass(localTag.sync_status)}">
-                            ${getStatusDisplayName(localTag.sync_status)}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="btn-group" role="group">
-                            <a href="/metadata/tags/${localTag.id}/" class="btn btn-sm btn-outline-primary" title="View Details">
-                                <i class="fas fa-eye"></i>
-                            </a>
-                            ${localTag.sync_status === 'MODIFIED' ? `
-                                <form action="/metadata/tags/${localTag.id}/deploy/" method="post" class="d-inline">
-                                    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Update in DataHub">
-                                        <i class="fas fa-sync-alt"></i>
-                                    </button>
-                                </form>
-                            ` : ''}
-                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                    data-tag-id="${localTag.id}" title="Add to GitHub PR">
-                                <i class="fab fa-github"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger delete-tag" 
-                                    data-bs-toggle="modal" data-bs-target="#deleteTagModal"
-                                    data-tag-id="${localTag.id}" data-tag-name="${localTag.name}" title="Delete">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        tableHTML += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-        
-        container.innerHTML = tableHTML;
-    }
-    
-    function populateLocalTags(localTags) {
-        const container = document.querySelector('#local-tags .card-body');
-        if (!container) return;
-        
-        if (localTags.length === 0) {
-            container.innerHTML = `
-                <div class="py-5 text-center">
-                    <div class="mb-3">
-                        <i class="fas fa-laptop fa-4x text-muted"></i>
-                    </div>
-                    <h4>No local-only tags</h4>
-                    <p class="text-muted">Tags that exist only in this application will appear here.</p>
-                    <a href="#" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#createTagModal">
-                        <i class="fas fa-plus me-1"></i> Create New Tag
-                    </a>
-                </div>
-            `;
-            return;
-        }
-        
-        let tableHTML = `
-            <div class="table-responsive">
-                <table class="table table-hover table-striped mb-0">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Description</th>
-                            <th>Color</th>
-                            <th>Status</th>
-                            <th width="20%">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-        
-        localTags.forEach(tag => {
-            const description = tag.description && tag.description.length > 50 
-                ? tag.description.substring(0, 50) + '...' 
-                : (tag.description || '');
-            
-            tableHTML += `
-                <tr>
-                    <td>
-                        <a href="/metadata/tags/${tag.id}/" class="text-decoration-none">
-                            ${tag.name}
-                        </a>
-                    </td>
-                    <td>${description}</td>
-                    <td>
-                        <div class="d-flex align-items-center">
-                            <div class="color-swatch me-2" ${tag.color ? `style="background-color: ${tag.color};"` : ''}></div>
-                            ${tag.color || ''}
-                        </div>
-                    </td>
-                    <td>
-                        <span class="badge bg-secondary">
-                            ${getStatusDisplayName(tag.sync_status)}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="btn-group" role="group">
-                            <a href="/metadata/tags/${tag.id}/" class="btn btn-sm btn-outline-primary" title="View Details">
-                                <i class="fas fa-eye"></i>
-                            </a>
-                            <form action="/metadata/tags/${tag.id}/deploy/" method="post" class="d-inline">
-                                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
-                                    <i class="fas fa-cloud-upload-alt"></i>
-                                </button>
-                            </form>
-                            <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                    data-tag-id="${tag.id}" title="Add to GitHub PR">
-                                <i class="fab fa-github"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger delete-tag" 
-                                    data-bs-toggle="modal" data-bs-target="#deleteTagModal"
-                                    data-tag-id="${tag.id}" data-tag-name="${tag.name}" title="Delete">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        tableHTML += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-        
-        container.innerHTML = tableHTML;
-    }
-    
-    function populateRemoteTags(remoteTags, datahubUrl) {
-        const container = document.querySelector('#remote-tags .card-body');
-        if (!container) return;
-        
-        if (remoteTags.length === 0) {
-            container.innerHTML = `
-                <div class="py-5 text-center">
-                    <div class="mb-3">
-                        <i class="fas fa-server fa-4x text-muted"></i>
-                    </div>
-                    <h4>No remote-only tags</h4>
-                    <p class="text-muted">Tags that exist only in DataHub will appear here.</p>
-                    <form method="post" action="/metadata/tags/pull/" class="d-inline">
-                        <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-primary mt-2">
-                            <i class="fas fa-cloud-download-alt me-1"></i> Pull from DataHub
-                        </button>
-                    </form>
-                </div>
-            `;
-            return;
-        }
-        
-        let tableHTML = `
-            <div class="table-responsive">
-                <table class="table table-hover table-striped mb-0">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Description</th>
-                            <th>Color</th>
-                            <th>URN</th>
-                            <th width="15%">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-        
-        remoteTags.forEach(tag => {
-            const description = tag.description && tag.description.length > 50 
-                ? tag.description.substring(0, 50) + '...' 
-                : (tag.description || '');
-            const colorHex = tag.properties && tag.properties.colorHex ? tag.properties.colorHex : '';
-            
-            tableHTML += `
-                <tr>
-                    <td>${tag.name}</td>
-                    <td>${description}</td>
-                    <td>
-                        ${colorHex ? `
-                            <div class="d-flex align-items-center">
-                                <div class="color-swatch me-2" style="background-color: ${colorHex};"></div>
-                                ${colorHex}
-                            </div>
-                        ` : '<span class="text-muted">No color</span>'}
-                    </td>
-                    <td><code>${tag.urn}</code></td>
-                    <td>
-                        <div class="btn-group" role="group">
-                            ${datahubUrl ? `
-                                <a href="${datahubUrl}/tag/${encodeURIComponent(tag.urn)}" target="_blank" class="btn btn-sm btn-outline-primary" title="View in DataHub">
-                                    <i class="fas fa-external-link-alt"></i>
-                                </a>
-                            ` : ''}
-                            <form action="/metadata/tags/pull/" method="post" class="d-inline">
-                                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-                                <input type="hidden" name="tag_urn" value="${tag.urn}">
-                                <input type="hidden" name="tag_name" value="${tag.name}">
-                                <input type="hidden" name="tag_description" value="${tag.description || ''}">
-                                <input type="hidden" name="tag_color_hex" value="${colorHex}">
-                                <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
-                                    <i class="fas fa-download"></i>
-                                </button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        tableHTML += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-        
-        container.innerHTML = tableHTML;
-    }
-    
-    function getStatusBadgeClass(status) {
-        switch(status) {
-            case 'SYNCED': return 'bg-success';
-            case 'MODIFIED': return 'bg-warning';
-            case 'LOCAL_ONLY': return 'bg-secondary';
-            default: return 'bg-primary';
-        }
-    }
-    
-    function getStatusDisplayName(status) {
-        switch(status) {
-            case 'SYNCED': return 'Synced';
-            case 'MODIFIED': return 'Modified';
-            case 'LOCAL_ONLY': return 'Local Only';
-            default: return status;
-        }
-    }
-    
-    function showSuccessNotification(syncedCount, localCount, remoteCount) {
-        // Show a smaller, less intrusive notification
-        const message = `
-            <div class="alert alert-success alert-dismissible fade show" style="position: fixed; top: 20px; right: 20px; z-index: 1050; max-width: 400px;">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-check-circle me-2"></i>
-                    <div>
-                        <strong>Remote data loaded!</strong><br>
-                        <small>${syncedCount} synced, ${localCount} local, ${remoteCount} remote tags</small>
-                    </div>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
-        
-        document.body.insertAdjacentHTML('beforeend', message);
-        
-        // Auto-dismiss after 5 seconds
-        setTimeout(() => {
-            const notification = document.querySelector('.alert[style*="position: fixed"]');
-            if (notification) notification.remove();
-        }, 5000);
-    }
-    
-    function showErrorMessage(message) {
-        // Remove loading indicators
-        document.querySelectorAll('.spinner-border').forEach(spinner => {
-            const alert = spinner.closest('.alert');
-            if (alert && alert.textContent.includes('Loading remote tag data')) {
-                alert.innerHTML = `
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    Error loading tag data: ${message}
-                `;
-                alert.className = 'alert alert-danger';
-            }
-        });
-    }
-</script>
-{% endblock %}
+    // Refresh button
+    document.getElementById('refreshTags').addEventListener('click', function() {
+        loadTagsData();
+    });
+});
 
-{% block styles %}
-<style>
-    .color-swatch {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border-radius: 3px;
+function loadTagsData() {
+    showLoading(true);
+    
+    fetch('/metadata/tags/remote-data/')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            tagsData = data.data;
+            updateStatistics(data.data.statistics);
+            updateTabBadges();
+            displayAllTabs();
+        } else {
+            showError('Failed to load tags: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error loading tags:', error);
+        showError('Failed to load tags data');
+    })
+    .finally(() => {
+        showLoading(false);
+    });
+}
+
+function showLoading(show) {
+    document.getElementById('loading-indicator').style.display = show ? 'block' : 'none';
+    document.getElementById('tags-content').style.display = show ? 'none' : 'block';
+}
+
+function updateStatistics(stats) {
+    document.getElementById('total-tags').textContent = stats.total_tags || 0;
+    document.getElementById('synced-count').textContent = stats.synced_count || 0;
+    document.getElementById('owned-tags').textContent = stats.owned_tags || 0;
+    document.getElementById('tags-with-relationships').textContent = stats.tags_with_relationships || 0;
+}
+
+function updateTabBadges() {
+    document.getElementById('synced-badge').textContent = tagsData.synced_tags.length;
+    document.getElementById('local-badge').textContent = tagsData.local_only_tags.length;
+    document.getElementById('remote-badge').textContent = tagsData.remote_only_tags.length;
+}
+
+function displayAllTabs() {
+    displayTabContent('synced');
+    displayTabContent('local');
+    displayTabContent('remote');
+}
+
+function displayTabContent(tabType) {
+    console.log('Displaying tab content for:', tabType);
+    
+    let items, contentId;
+    
+    try {
+        switch(tabType) {
+            case 'synced':
+                items = tagsData.synced_tags.map(item => item.combined);
+                contentId = 'synced-content';
+                break;
+            case 'local':
+                items = tagsData.local_only_tags;
+                contentId = 'local-content';
+                break;
+            case 'remote':
+                items = tagsData.remote_only_tags;
+                contentId = 'remote-content';
+                break;
+        }
+        
+        console.log(`Tab ${tabType}: ${items?.length || 0} items`);
+        
+        // Sort items alphabetically by name (A-Z)
+        if (items && items.length > 0) {
+            items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+        }
+        
+        // Filter items based on search
+        const searchTerm = currentSearch[tabType];
+        if (searchTerm) {
+            items = items.filter(item => 
+                (item.name || '').toLowerCase().includes(searchTerm) ||
+                (item.description || '').toLowerCase().includes(searchTerm) ||
+                (item.color || '').toLowerCase().includes(searchTerm) ||
+                (item.urn || '').toLowerCase().includes(searchTerm)
+            );
+        }
+        
+        const content = document.getElementById(contentId);
+        if (!content) {
+            console.error('Content element not found:', contentId);
+            return;
+        }
+        
+        if (items.length === 0) {
+            console.log(`No items for ${tabType}, showing empty state`);
+            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
+            return;
+        }
+        
+        console.log(`Generating table for ${tabType} with ${items.length} items`);
+        const tableHTML = generateTableHTML(items, tabType);
+        content.innerHTML = tableHTML;
+        
+        // Attach click handlers for view buttons
+        content.querySelectorAll('.view-item').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const itemData = JSON.parse(row.dataset.item);
+                showTagDetails(itemData);
+            });
+        });
+        
+        console.log(`Successfully rendered ${tabType} tab`);
+        
+    } catch (error) {
+        console.error(`Error displaying ${tabType} tab:`, error);
+        const content = document.getElementById(contentId);
+        if (content) {
+            content.innerHTML = `<div class="alert alert-danger">Error loading ${tabType} tags: ${error.message}</div>`;
+        }
     }
+}
+
+function renderTagRow(tag, tabType) {
+    const statusClass = getStatusBadgeClass(tag.sync_status);
+    const colorIcon = tag.color ? 
+        `<i class="fas fa-circle me-2" style="color: ${tag.color}"></i>` : 
+        '<i class="fas fa-tag text-secondary me-2"></i>';
+    
+    return `
+        <tr data-item='${JSON.stringify(tag)}'>
+            <td>
+                <div class="d-flex align-items-center">
+                    ${colorIcon}
+                    <strong>${escapeHtml(tag.name || 'Unnamed')}</strong>
+                </div>
+            </td>
+            <td>
+                <span title="${escapeHtml(tag.description || '')}">${escapeHtml(truncateText(tag.description || '', 50))}</span>
+            </td>
+            <td>
+                ${tag.color ? `
+                    <div class="d-flex align-items-center">
+                        <span class="badge border me-2" style="background-color: ${tag.color}; color: ${getContrastColor(tag.color)};">
+                            ${escapeHtml(tag.color)}
+                        </span>
+                    </div>
+                ` : `<span class="text-muted">None</span>`}
+            </td>
+            <td>
+                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(tag.urn || '')}">${escapeHtml(truncateUrn(tag.urn || '', 30))}</code>
+            </td>
+            <td>
+                <span class="badge ${statusClass}">${tag.sync_status_display || tag.sync_status}</span>
+            </td>
+            <td>
+                ${tag.owners_count ? `
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-users me-1"></i>
+                        <span class="badge bg-info">${tag.owners_count}</span>
+                        ${tag.owner_names && tag.owner_names.length > 0 ? `
+                            <small class="ms-2 text-muted">${tag.owner_names.slice(0, 2).join(', ')}${tag.owner_names.length > 2 ? '...' : ''}</small>
+                        ` : ''}
+                    </div>
+                ` : `<span class="text-muted">None</span>`}
+            </td>
+            <td>
+                ${tag.relationships_count ? `
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-project-diagram me-1"></i>
+                        <span class="badge bg-secondary">${tag.relationships_count}</span>
+                    </div>
+                ` : `<span class="text-muted">None</span>`}
+            </td>
+            <td>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-sm btn-outline-primary view-item" 
+                            title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    ${tag.urn && !tag.urn.includes('local:') ? `
+                        <a href="${getDataHubUrl(tag.urn, 'tag')}" 
+                           class="btn btn-sm btn-outline-info" 
+                           target="_blank" title="View in DataHub">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    ` : ''}
+                    ${getActionButtons(tag, tabType)}
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+function generateTableHTML(items, tabType) {
+    return `
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Color</th>
+                        <th>URN</th>
+                        <th>Status</th>
+                        <th>Owners</th>
+                        <th>Relationships</th>
+                        <th width="15%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(item => renderTagRow(item, tabType)).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function getActionButtons(tag, tabType) {
+    const hasDataHubConnection = true; // This should come from the template context
+    let buttons = '';
+    
+    if (tabType === 'synced' && tag.sync_status === 'MODIFIED' && hasDataHubConnection) {
+        buttons += `
+            <form action="/metadata/tags/${tag.id}/deploy/" method="post" class="d-inline">
+                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                <button type="submit" class="btn btn-sm btn-outline-warning" title="Update in DataHub">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </form>
+        `;
+    }
+    
+    if (tabType === 'local' && hasDataHubConnection) {
+        buttons += `
+            <form action="/metadata/tags/${tag.id}/deploy/" method="post" class="d-inline">
+                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                <button type="submit" class="btn btn-sm btn-outline-success" title="Deploy to DataHub">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                </button>
+            </form>
+        `;
+    }
+    
+    if (tabType === 'remote') {
+        buttons += `
+            <form action="/metadata/tags/pull/" method="post" class="d-inline">
+                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                <input type="hidden" name="tag_urn" value="${tag.urn}">
+                <input type="hidden" name="tag_name" value="${tag.name}">
+                <input type="hidden" name="tag_description" value="${tag.description || ''}">
+                <input type="hidden" name="tag_color_hex" value="${tag.colorHex || ''}">
+                <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
+                    <i class="fas fa-download"></i>
+                </button>
+            </form>
+        `;
+    }
+    
+    return buttons;
+}
+
+function getEmptyStateHTML(tabType, hasSearch) {
+    if (hasSearch) {
+        return `
+            <div class="py-5 text-center">
+                <div class="mb-3">
+                    <i class="fas fa-search fa-4x text-muted"></i>
+                </div>
+                <h4>No tags found</h4>
+                <p class="text-muted">No tags match your search criteria.</p>
+            </div>
+        `;
+    }
+    
+    const emptyStates = {
+        synced: {
+            icon: 'fas fa-sync-alt',
+            title: 'No synced tags',
+            description: 'Tags that exist both locally and in DataHub will appear here.'
+        },
+        local: {
+            icon: 'fas fa-laptop',
+            title: 'No local-only tags',
+            description: 'Tags that exist only in this application will appear here.',
+            action: `<a href="#" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#createTagModal">
+                        <i class="fas fa-plus me-1"></i> Create New Tag
+                     </a>`
+        },
+        remote: {
+            icon: 'fas fa-server',
+            title: 'No remote-only tags',
+            description: 'Tags that exist only in DataHub will appear here.'
+        }
+    };
+    
+    const state = emptyStates[tabType];
+    return `
+        <div class="py-5 text-center">
+            <div class="mb-3">
+                <i class="${state.icon} fa-4x text-muted"></i>
+            </div>
+            <h4>${state.title}</h4>
+            <p class="text-muted">${state.description}</p>
+            ${state.action || ''}
+        </div>
+    `;
+}
+
+function showTagDetails(tag) {
+    // Basic information
+    document.getElementById('modal-tag-name').textContent = tag.name || 'Unnamed';
+    document.getElementById('modal-tag-description').textContent = tag.description || 'No description available';
+    document.getElementById('modal-tag-color').textContent = tag.colorHex || tag.color || '#0d6efd';
+    document.getElementById('modal-tag-color-swatch').style.backgroundColor = tag.colorHex || tag.color || '#0d6efd';
+    document.getElementById('modal-tag-urn').textContent = tag.urn || 'No URN available';
+    
+    // Status
+    const statusBadge = document.getElementById('modal-tag-status');
+    statusBadge.textContent = tag.sync_status_display || tag.sync_status;
+    statusBadge.className = `badge ${getStatusBadgeClass(tag.sync_status)}`;
+    
+    // DataHub link
+    const datahubLink = document.getElementById('modal-datahub-link');
+    if (tag.urn && tagsData.datahub_url) {
+        datahubLink.href = getDataHubUrl(tag.urn);
+        datahubLink.style.display = 'inline-block';
+    } else {
+        datahubLink.style.display = 'none';
+    }
+    
+    // Ownership information
+    const ownersList = document.getElementById('modal-owners-list');
+    if (tag.ownership && tag.ownership.owners && tag.ownership.owners.length > 0) {
+        ownersList.innerHTML = tag.ownership.owners.map(ownerInfo => {
+            const owner = ownerInfo.owner || {};
+            const ownershipType = ownerInfo.ownershipType || {};
+            const source = ownerInfo.source || {};
+            
+            const displayName = owner.properties ? 
+                (owner.properties.displayName || owner.username || owner.name) :
+                (owner.username || owner.name || 'Unknown');
+                
+            return `
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${escapeHtml(displayName)}</strong>
+                            <br>
+                            <small class="text-muted">${escapeHtml(ownershipType.info ? ownershipType.info.name : 'Owner')}</small>
+                        </div>
+                        <div class="text-end">
+                            ${source.type ? `<span class="badge bg-light text-dark">${source.type}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="mt-1">
+                        <code class="small">${escapeHtml(owner.urn || '')}</code>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } else {
+        ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
+    }
+    
+    // Last modified information
+    const lastModifiedDiv = document.getElementById('modal-last-modified');
+    if (tag.ownership && tag.ownership.lastModified) {
+        lastModifiedDiv.innerHTML = `
+            <div class="border rounded p-2">
+                <strong>Last Modified:</strong><br>
+                <small class="text-muted">
+                    ${formatDate(tag.ownership.lastModified.time)}
+                    ${tag.ownership.lastModified.actor ? ` by ${tag.ownership.lastModified.actor}` : ''}
+                </small>
+            </div>
+        `;
+    } else {
+        lastModifiedDiv.innerHTML = '';
+    }
+    
+    // Relationships
+    const relationshipsList = document.getElementById('modal-relationships-list');
+    if (tag.relationships && tag.relationships.relationships && tag.relationships.relationships.length > 0) {
+        relationshipsList.innerHTML = tag.relationships.relationships.map(rel => `
+            <div class="border rounded p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${escapeHtml(rel.type || 'Unknown')}</strong>
+                        <span class="badge bg-${rel.direction === 'INCOMING' ? 'success' : 'primary'} ms-2">
+                            ${rel.direction || 'UNKNOWN'}
+                        </span>
+                    </div>
+                    <div class="text-end">
+                        ${rel.created ? `<small class="text-muted">${formatDate(rel.created.time)}</small>` : ''}
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <code class="small">${escapeHtml(rel.entity ? rel.entity.urn : 'No entity URN')}</code>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
+    }
+    
+    // Raw JSON
+    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(tag, null, 2))}</code>`;
+    
+    // Show modal
+    new bootstrap.Modal(document.getElementById('tagViewModal')).show();
+}
+
+// Utility functions
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+}
+
+function truncateUrn(urn, maxLength) {
+    if (!urn || urn.length <= maxLength) return urn;
+    
+    // Keep the beginning of the URN and truncate from the end
+    return urn.substring(0, maxLength - 3) + '...';
+}
+
+function getContrastColor(hexColor) {
+    // Handle cases where color might not be a hex value
+    if (!hexColor || !hexColor.startsWith('#')) {
+        return '#000000';
+    }
+    
+    // Convert hex to RGB
+    const r = parseInt(hexColor.slice(1, 3), 16);
+    const g = parseInt(hexColor.slice(3, 5), 16);
+    const b = parseInt(hexColor.slice(5, 7), 16);
+    
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    
+    // Return black or white based on luminance
+    return luminance > 0.5 ? '#000000' : '#ffffff';
+}
+
+function formatDate(timestamp) {
+    try {
+        const date = new Date(parseInt(timestamp));
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    } catch (e) {
+        return timestamp;
+    }
+}
+
+function getDataHubUrl(urn, type) {
+    if (tagsData.datahub_url) {
+        return `${tagsData.datahub_url}/${type}/${encodeURIComponent(urn)}`;
+    }
+    return '#';
+}
+
+function getStatusBadgeClass(status) {
+    switch(status) {
+        case 'SYNCED': return 'bg-success';
+        case 'MODIFIED': return 'bg-warning';
+        case 'LOCAL_ONLY': return 'bg-secondary';
+        case 'REMOTE_ONLY': return 'bg-info';
+        default: return 'bg-primary';
+    }
+}
+
+function getCsrfToken() {
+    return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+function showError(message) {
+    // Create and show error alert
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger alert-dismissible fade show';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+}
+</script>
+
+<style>
+.color-swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    display: inline-block;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    border-top: none;
+}
+
+#modal-raw-json {
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+}
 </style>
 {% endblock %} 
