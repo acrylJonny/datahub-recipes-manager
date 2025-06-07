@@ -866,7 +866,30 @@ function renderHierarchicalDomains(items, tabType, level) {
 
 function renderDomainRow(domain, tabType, level = 0, hasChildren = false) {
     const statusClass = getStatusBadgeClass(domain.sync_status);
-    const typeIcon = 'fas fa-sitemap text-primary';
+    
+    // Get domain icon and color from GraphQL data
+    let domainIcon = 'fas fa-sitemap text-primary';
+    let domainColor = '';
+    
+    // Check if domain has display properties from GraphQL
+    if (domain.raw_data && domain.raw_data.displayProperties) {
+        const displayProps = domain.raw_data.displayProperties;
+        
+        // Use custom color if available
+        if (displayProps.colorHex) {
+            domainColor = `style="color: ${displayProps.colorHex};"`;
+        }
+        
+        // Use custom icon if available
+        if (displayProps.icon && displayProps.icon.name) {
+            const iconLibrary = displayProps.icon.iconLibrary === 'font-awesome' ? 'fas' : 'fas';
+            const iconStyle = displayProps.icon.style === 'solid' ? 'fas' : 'far';
+            domainIcon = `${iconStyle} fa-${displayProps.icon.name}`;
+            if (!domainColor) {
+                domainIcon += ' text-primary';
+            }
+        }
+    }
     
     // Create indentation for hierarchy
     const indent = level * 20;
@@ -883,8 +906,11 @@ function renderDomainRow(domain, tabType, level = 0, hasChildren = false) {
                             </button>
                         ` : ''}
                     </div>
-                    <i class="${typeIcon} me-2"></i>
+                    <i class="${domainIcon} me-2" ${domainColor}></i>
                     <span class="item-name">${escapeHtml(domain.name || 'Unnamed')}</span>
+                    ${domain.raw_data && domain.raw_data.displayProperties && domain.raw_data.displayProperties.colorHex ? `
+                        <span class="badge ms-2" style="background-color: ${domain.raw_data.displayProperties.colorHex}; color: white; font-size: 0.7em;">●</span>
+                    ` : ''}
                 </div>
             </td>
             <td>
@@ -1045,8 +1071,30 @@ function truncateText(text, maxLength) {
 }
 
 function showDomainDetails(domain) {
-    // Basic information
-    document.getElementById('modal-domain-name').textContent = domain.name || 'Unnamed';
+    // Basic information with display properties
+    const nameElement = document.getElementById('modal-domain-name');
+    let nameHTML = escapeHtml(domain.name || 'Unnamed');
+    
+    // Add icon and color if available from GraphQL data
+    if (domain.raw_data && domain.raw_data.displayProperties) {
+        const displayProps = domain.raw_data.displayProperties;
+        
+        // Add icon if available
+        if (displayProps.icon && displayProps.icon.name) {
+            const iconLibrary = displayProps.icon.iconLibrary === 'font-awesome' ? 'fas' : 'fas';
+            const iconStyle = displayProps.icon.style === 'solid' ? 'fas' : 'far';
+            const iconClass = `${iconStyle} fa-${displayProps.icon.name}`;
+            const iconColor = displayProps.colorHex ? `style="color: ${displayProps.colorHex};"` : '';
+            nameHTML = `<i class="${iconClass} me-2" ${iconColor}></i>${nameHTML}`;
+        }
+        
+        // Add color indicator if available
+        if (displayProps.colorHex) {
+            nameHTML += ` <span class="badge ms-2" style="background-color: ${displayProps.colorHex}; color: white; font-size: 0.8em;">●</span>`;
+        }
+    }
+    
+    nameElement.innerHTML = nameHTML;
     document.getElementById('modal-domain-description').textContent = domain.description || 'No description available';
     document.getElementById('modal-domain-urn').textContent = domain.urn || 'No URN available';
     

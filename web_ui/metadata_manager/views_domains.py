@@ -565,6 +565,32 @@ class DomainPullView(View):
                             existing_domain.original_urn = domain_urn
                             existing_domain.sync_status = "SYNCED"
                             existing_domain.last_synced = timezone.now()
+                            
+                            # Update display properties from GraphQL
+                            display_props = domain_data.get("displayProperties", {})
+                            existing_domain.color_hex = display_props.get("colorHex")
+                            icon_data = display_props.get("icon", {})
+                            existing_domain.icon_name = icon_data.get("name")
+                            existing_domain.icon_style = icon_data.get("style", "solid")
+                            existing_domain.icon_library = icon_data.get("iconLibrary", "font-awesome")
+                            
+                            # Update parent domain
+                            parent_domains = domain_data.get("parentDomains", {})
+                            if parent_domains.get("domains"):
+                                existing_domain.parent_domain_urn = parent_domains["domains"][0].get("urn")
+                            else:
+                                existing_domain.parent_domain_urn = None
+                            
+                            # Update counts
+                            ownership = domain_data.get("ownership", {})
+                            existing_domain.owners_count = len(ownership.get("owners", [])) if ownership else 0
+                            
+                            relationships = domain_data.get("relationships", {})
+                            existing_domain.relationships_count = len(relationships.get("relationships", [])) if relationships else 0
+                            
+                            # Store raw GraphQL data
+                            existing_domain.raw_data = domain_data
+                            
                             existing_domain.save()
 
                             results.append(
@@ -675,6 +701,32 @@ class DomainPullView(View):
                                 existing_domain.original_urn = domain_urn
                                 existing_domain.sync_status = "SYNCED"
                                 existing_domain.last_synced = timezone.now()
+                                
+                                # Update display properties from GraphQL
+                                display_props = domain_data.get("displayProperties", {})
+                                existing_domain.color_hex = display_props.get("colorHex")
+                                icon_data = display_props.get("icon", {})
+                                existing_domain.icon_name = icon_data.get("name")
+                                existing_domain.icon_style = icon_data.get("style", "solid")
+                                existing_domain.icon_library = icon_data.get("iconLibrary", "font-awesome")
+                                
+                                # Update parent domain
+                                parent_domains = domain_data.get("parentDomains", {})
+                                if parent_domains.get("domains"):
+                                    existing_domain.parent_domain_urn = parent_domains["domains"][0].get("urn")
+                                else:
+                                    existing_domain.parent_domain_urn = None
+                                
+                                # Update counts
+                                ownership = domain_data.get("ownership", {})
+                                existing_domain.owners_count = len(ownership.get("owners", [])) if ownership else 0
+                                
+                                relationships = domain_data.get("relationships", {})
+                                existing_domain.relationships_count = len(relationships.get("relationships", [])) if relationships else 0
+                                
+                                # Store raw GraphQL data
+                                existing_domain.raw_data = domain_data
+                                
                                 existing_domain.save()
 
                                 domains_updated += 1
@@ -687,6 +739,23 @@ class DomainPullView(View):
                                 )
                             else:
                                 # Create new domain
+                                # Extract display properties from GraphQL
+                                display_props = domain_data.get("displayProperties", {})
+                                icon_data = display_props.get("icon", {})
+                                
+                                # Extract parent domain
+                                parent_domain_urn = None
+                                parent_domains = domain_data.get("parentDomains", {})
+                                if parent_domains.get("domains"):
+                                    parent_domain_urn = parent_domains["domains"][0].get("urn")
+                                
+                                # Extract counts
+                                ownership = domain_data.get("ownership", {})
+                                owners_count = len(ownership.get("owners", [])) if ownership else 0
+                                
+                                relationships = domain_data.get("relationships", {})
+                                relationships_count = len(relationships.get("relationships", [])) if relationships else 0
+                                
                                 Domain.objects.create(
                                     name=domain_data.get("name"),
                                     description=domain_data.get("description") or "",
@@ -694,6 +763,15 @@ class DomainPullView(View):
                                     original_urn=domain_urn,
                                     sync_status="SYNCED",
                                     last_synced=timezone.now(),
+                                    # Add new fields
+                                    parent_domain_urn=parent_domain_urn,
+                                    color_hex=display_props.get("colorHex"),
+                                    icon_name=icon_data.get("name"),
+                                    icon_style=icon_data.get("style", "solid"),
+                                    icon_library=icon_data.get("iconLibrary", "font-awesome"),
+                                    owners_count=owners_count,
+                                    relationships_count=relationships_count,
+                                    raw_data=domain_data,
                                 )
 
                                 domains_created += 1

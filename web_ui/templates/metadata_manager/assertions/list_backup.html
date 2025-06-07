@@ -136,8 +136,8 @@
     }
     
     /* Tighter spacing for statistics rows */
-    .row.g-1.mb-1 {
-        margin-bottom: 3px !important;
+    .row.g-1.mb-0 {
+        margin-bottom: 2px !important;
     }
 </style>
 {% endblock %}
@@ -203,116 +203,116 @@
                 <!-- Statistics -->
                 <div class="mb-2">
                     <!-- Row 1: Total and sync status -->
-                    <div class="row g-1 mb-1">
+                    <div class="row g-1 mb-0">
                         <div class="col-md-3">
                             <div class="card text-center clickable-stat" data-filter="total">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="total-items">0</div>
-                                    <small class="text-muted">Total Assertions</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" id="total-items">0</div>
+                                    <small class="text-muted" style="font-size: 0.7rem;">Total</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="card text-center clickable-stat" data-filter="synced">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="synced-count">0</div>
-                                    <small class="text-muted">Synced</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" id="synced-count">0</div>
+                                    <small class="text-muted" style="font-size: 0.7rem;">Synced</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="card text-center clickable-stat" data-filter="local">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="local-count">0</div>
-                                    <small class="text-muted">Local Only</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" id="local-count">0</div>
+                                    <small class="text-muted" style="font-size: 0.7rem;">Local</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="card text-center clickable-stat" data-filter="remote">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="remote-count">0</div>
-                                    <small class="text-muted">Remote Only</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" id="remote-count">0</div>
+                                    <small class="text-muted" style="font-size: 0.7rem;">Remote</small>
                                 </div>
                             </div>
                         </div>
                     </div>
                     
                     <!-- Row 2: Types -->
-                    <div class="row g-1 mb-1">
+                    <div class="row g-1 mb-0">
                         <div class="col-md-2">
                             <div class="card text-center clickable-stat" data-filter="type-field">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="field-assertions">0</div>
-                                    <small class="text-muted">Field</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="field-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Field</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-2">
                             <div class="card text-center clickable-stat" data-filter="type-sql">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="sql-assertions">0</div>
-                                    <small class="text-muted">SQL</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="sql-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">SQL</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-2">
                             <div class="card text-center clickable-stat" data-filter="type-volume">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="volume-assertions">0</div>
-                                    <small class="text-muted">Volume</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="volume-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Volume</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-2">
                             <div class="card text-center clickable-stat" data-filter="type-freshness">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="freshness-assertions">0</div>
-                                    <small class="text-muted">Freshness</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="freshness-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Freshness</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-2">
                             <div class="card text-center clickable-stat" data-filter="type-schema">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="schema-assertions">0</div>
-                                    <small class="text-muted">Schema</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="schema-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Schema</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-2">
                             <div class="card text-center clickable-stat" data-filter="type-custom">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="custom-assertions">0</div>
-                                    <small class="text-muted">Custom</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="custom-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Custom</small>
                                 </div>
                             </div>
                         </div>
                     </div>
                     
                     <!-- Row 3: Status -->
-                    <div class="row g-1 mb-1">
+                    <div class="row g-1 mb-0">
                         <div class="col-md-4">
                             <div class="card text-center clickable-stat" data-filter="status-passing">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0 text-success" id="passing-assertions">0</div>
-                                    <small class="text-muted">Passing</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0 text-success" style="font-size: 0.9rem;" id="passing-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Passing</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="card text-center clickable-stat" data-filter="status-failing">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0 text-danger" id="failing-assertions">0</div>
-                                    <small class="text-muted">Failing</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0 text-danger" style="font-size: 0.9rem;" id="failing-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Failing</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="card text-center clickable-stat" data-filter="status-error">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0 text-warning" id="error-assertions">0</div>
-                                    <small class="text-muted">Erroring</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0 text-warning" style="font-size: 0.9rem;" id="error-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Erroring</small>
                                 </div>
                             </div>
                         </div>
@@ -322,17 +322,17 @@
                     <div class="row g-1">
                         <div class="col-md-6">
                             <div class="card text-center clickable-stat" data-filter="source-native">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="native-assertions">0</div>
-                                    <small class="text-muted">Native</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="native-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">Native</small>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="card text-center clickable-stat" data-filter="source-external">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="external-assertions">0</div>
-                                    <small class="text-muted">External</small>
+                                <div class="card-body p-1">
+                                    <div class="fw-bold mb-0" style="font-size: 0.9rem;" id="external-assertions">0</div>
+                                    <small class="text-muted" style="font-size: 0.65rem;">External</small>
                                 </div>
                             </div>
                         </div>
@@ -815,21 +815,9 @@ function displayTabContent(tabType) {
             items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
         }
         
-        console.log(`Starting with ${items?.length || 0} items for tab ${tabType}`);
-        
-        // Apply statistic-based filters first (but not tab filters)
-        if (currentFilter && !['synced', 'local', 'remote', 'total'].includes(currentFilter)) {
-            console.log('Applying statistic filter:', currentFilter);
-            const beforeFilter = items.length;
-            items = items.filter(item => matchesFilter(item, currentFilter));
-            console.log(`Statistic filter applied: ${beforeFilter} -> ${items.length} items`);
-        }
-        
-        // Then apply search filter on the filtered results
+        // Filter items based on search
         const searchTerm = currentSearch[tabType];
         if (searchTerm) {
-            console.log('Applying search filter:', searchTerm);
-            const beforeSearch = items.length;
             items = items.filter(item => 
                 (item.name || '').toLowerCase().includes(searchTerm) ||
                 (item.description || '').toLowerCase().includes(searchTerm) ||
@@ -837,10 +825,14 @@ function displayTabContent(tabType) {
                 (item.urn || '').toLowerCase().includes(searchTerm) ||
                 (item.entity_urn || '').toLowerCase().includes(searchTerm)
             );
-            console.log(`Search filter applied: ${beforeSearch} -> ${items.length} items`);
         }
         
-        console.log(`Final filtered results: ${items.length} items`)
+        // Apply statistic-based filters
+        if (currentFilter) {
+            console.log('Applying filter:', currentFilter);
+            items = items.filter(item => matchesFilter(item, currentFilter));
+            console.log(`Filtered to ${items.length} items`);
+        }
         
         const content = document.getElementById(contentId);
         if (!content) {
@@ -2018,17 +2010,6 @@ function applyStatisticFilter(filter) {
     currentFilter = filter === 'total' ? null : filter;
     console.log('Set current filter to:', currentFilter);
     
-    // For debugging: log the filter type
-    if (currentFilter) {
-        if (currentFilter.startsWith('type-')) {
-            console.log('Type filter detected:', currentFilter);
-        } else if (currentFilter.startsWith('status-')) {
-            console.log('Status filter detected:', currentFilter);
-        } else if (currentFilter.startsWith('source-')) {
-            console.log('Source filter detected:', currentFilter);
-        }
-    }
-    
     // Apply filter based on type
     switch(filter) {
         case 'total':
@@ -2067,20 +2048,17 @@ function switchToTab(tabName) {
 }
 
 function clearAllFilters() {
-    console.log('Clearing all filters');
-    
-    // Clear the current filter
-    currentFilter = null;
-    
-    // Remove active class from all statistic cards
-    document.querySelectorAll('.clickable-stat').forEach(card => {
-        card.classList.remove('active');
+    // Clear search inputs
+    ['synced', 'local', 'remote'].forEach(tab => {
+        const searchInput = document.getElementById(`${tab}-search`);
+        if (searchInput) {
+            searchInput.value = '';
+            currentSearch[tab] = '';
+        }
     });
     
-    // Refresh the current active tab
-    const activeTab = document.querySelector('.nav-link.active').id.replace('-tab', '');
-    console.log('Refreshing tab after clearing filters:', activeTab);
-    displayTabContent(activeTab);
+    // Refresh all tabs
+    displayAllTabs();
 }
 
 function applyContentFilter(filter) {
@@ -2125,54 +2103,6 @@ function attachStatisticsClickHandlers() {
     });
 }
 
-function matchesFilter(item, filter) {
-    const rawData = item.raw_data || {};
-    const info = rawData.info || {};
-    
-    console.log('matchesFilter called with filter:', filter, 'item type:', info.type || item.type);
-    
-    if (filter.startsWith('type-')) {
-        const filterType = filter.replace('type-', '').toUpperCase();
-        const itemType = (info.type || item.type || '').toUpperCase();
-        console.log('Type filter - looking for:', filterType, 'item has:', itemType);
-        return itemType === filterType;
-    }
-    
-    if (filter.startsWith('status-')) {
-        const runEvents = rawData.runEvents;
-        if (!runEvents || !runEvents.runEvents || runEvents.runEvents.length === 0) {
-            return false;
-        }
-        
-        const latestRun = runEvents.runEvents[0];
-        const status = latestRun.status;
-        const resultType = latestRun.result ? latestRun.result.type : null;
-        
-        switch (filter) {
-            case 'status-passing':
-                return status === 'SUCCESS' || (resultType && ['SUCCESS', 'PASSED'].includes(resultType));
-            case 'status-failing':
-                return status === 'FAILURE' || (resultType && ['FAILURE', 'FAILED'].includes(resultType));
-            case 'status-error':
-                return status === 'ERROR' || (resultType && ['ERROR', 'INCOMPLETE', 'PARTIAL'].includes(resultType));
-        }
-    }
-    
-    if (filter.startsWith('source-')) {
-        const source = info.source || {};
-        const sourceType = source.type;
-        
-        switch (filter) {
-            case 'source-native':
-                return !sourceType || sourceType !== 'EXTERNAL';
-            case 'source-external':
-                return sourceType === 'EXTERNAL';
-        }
-    }
-    
-    return true;
-}
-
 </script>
 
 <style>
@@ -2206,8 +2136,8 @@ function matchesFilter(item, filter) {
     }
     
     /* Tighter spacing for statistics rows */
-    .row.g-1.mb-1 {
-        margin-bottom: 3px !important;
+    .row.g-1.mb-0 {
+        margin-bottom: 2px !important;
     }
 </style>
 {% endblock %} 

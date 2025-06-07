@@ -191,23 +191,78 @@ class GlossaryTerm(BaseMetadataModel):
 class Domain(BaseMetadataModel):
     """Represents a DataHub Domain"""
 
+    # Parent domain relationship
+    parent_domain_urn = models.CharField(max_length=255, blank=True, null=True)
+    
+    # Display properties from DataHub
+    color_hex = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Color in hex format (e.g. #FF5733)",
+    )
+    icon_name = models.CharField(max_length=100, blank=True, null=True)
+    icon_style = models.CharField(max_length=50, blank=True, null=True, default="solid")
+    icon_library = models.CharField(max_length=50, blank=True, null=True, default="font-awesome")
+    
+    # Ownership and relationship counts for quick access
+    owners_count = models.IntegerField(default=0)
+    relationships_count = models.IntegerField(default=0)
+    
+    # Store raw GraphQL data for comprehensive details
+    raw_data = models.JSONField(blank=True, null=True)
+
     class Meta:
         verbose_name = "Domain"
         verbose_name_plural = "Domains"
 
     def to_dict(self):
         """Convert domain to dictionary for export/syncing purposes"""
-        return {
+        data = {
             "name": self.name,
             "description": self.description,
             "urn": self.deterministic_urn,
             "original_urn": self.original_urn if self.original_urn else None,
         }
+        
+        # Add parent domain if exists
+        if self.parent_domain_urn:
+            data["parentDomains"] = {"domains": [{"urn": self.parent_domain_urn}]}
+        
+        # Add display properties if they exist
+        if self.color_hex or self.icon_name:
+            display_props = {}
+            if self.color_hex:
+                display_props["colorHex"] = self.color_hex
+            if self.icon_name:
+                display_props["icon"] = {
+                    "name": self.icon_name,
+                    "style": self.icon_style or "solid",
+                    "iconLibrary": self.icon_library or "font-awesome",
+                }
+            data["displayProperties"] = display_props
+        
+        return data
 
     @property
     def can_deploy(self):
         """Check if this domain can be deployed to DataHub"""
         return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @property
+    def display_icon_html(self):
+        """Get HTML for displaying the icon"""
+        if self.icon_name:
+            library_prefix = "fas" if self.icon_library == "font-awesome" else ""
+            return f'<i class="{library_prefix} fa-{self.icon_name}"></i>'
+        return ""
+
+    @property
+    def display_color_style(self):
+        """Get CSS style for the color"""
+        if self.color_hex:
+            return f"color: {self.color_hex};"
+        return ""
 
 
 class Assertion(models.Model):

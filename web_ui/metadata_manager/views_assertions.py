@@ -1023,3 +1023,222 @@ def get_remote_assertions_data(request):
     except Exception as e:
         logger.error(f"Error in get_remote_assertions_data: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["POST"])
+def run_remote_assertion(request):
+    """Run a remote assertion by URN"""
+    try:
+        import json
+        data = json.loads(request.body)
+        assertion_urn = data.get('assertion_urn')
+        
+        if not assertion_urn:
+            return JsonResponse({"success": False, "error": "Assertion URN is required"})
+        
+        # Get DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Import the metadata API client for running assertions
+        from utils.datahub_metadata_api import DataHubMetadataApiClient
+        
+        # Create metadata API client
+        metadata_client = DataHubMetadataApiClient(
+            server_url=client.server_url,
+            token=client.token,
+            verify_ssl=client.verify_ssl
+        )
+        
+        # Run the assertion
+        result = metadata_client.run_assertion(assertion_urn, save_result=True)
+        
+        if result:
+            logger.info(f"Successfully ran remote assertion: {assertion_urn}")
+            return JsonResponse({
+                "success": True, 
+                "message": "Assertion run successfully",
+                "result": result
+            })
+        else:
+            return JsonResponse({"success": False, "error": "Failed to run assertion"})
+            
+    except Exception as e:
+        logger.error(f"Error running remote assertion: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["POST"])
+def sync_assertion_to_local(request):
+    """Sync a remote assertion to local storage"""
+    try:
+        import json
+        data = json.loads(request.body)
+        assertion_urn = data.get('assertion_urn')
+        
+        if not assertion_urn:
+            return JsonResponse({"success": False, "error": "Assertion URN is required"})
+        
+        # Get DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Get the assertion data from DataHub
+        result = client.get_assertions(query=f'urn:"{assertion_urn}"', count=1)
+        
+        if not result.get("success") or not result["data"].get("searchResults"):
+            return JsonResponse({"success": False, "error": "Assertion not found in DataHub"})
+        
+        assertion_data = result["data"]["searchResults"][0]["entity"]
+        info = assertion_data.get("info", {})
+        
+        # Create local assertion from remote data
+        assertion = Assertion.objects.create(
+            name=info.get("description", assertion_urn.split(":")[-1]),
+            description=info.get("description", ""),
+            type=info.get("type", "Unknown"),
+            config={
+                "synced_from_datahub": True,
+                "original_urn": assertion_urn,
+                "raw_data": assertion_data
+            }
+        )
+        
+        logger.info(f"Successfully synced assertion to local: {assertion_urn} -> {assertion.id}")
+        return JsonResponse({
+            "success": True,
+            "message": "Assertion synced to local storage successfully",
+            "assertion_id": assertion.id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error syncing assertion to local: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["POST"])
+def push_assertion_to_datahub(request, assertion_id):
+    """Push a local assertion to DataHub"""
+    try:
+        assertion = get_object_or_404(Assertion, id=assertion_id)
+        
+        # Get DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Import the metadata API client
+        from utils.datahub_metadata_api import DataHubMetadataApiClient
+        
+        # Create metadata API client
+        metadata_client = DataHubMetadataApiClient(
+            server_url=client.server_url,
+            token=client.token,
+            verify_ssl=client.verify_ssl
+        )
+        
+        # Convert local assertion to DataHub format and create
+        # This is a simplified implementation - you may need to enhance based on assertion type
+        if assertion.type == "sql":
+            config = assertion.config or {}
+            dataset_urn = config.get("dataset_urn", "urn:li:dataset:(urn:li:dataPlatform:unknown,unknown,PROD)")
+            sql_statement = config.get("query", "SELECT 1")
+            
+            result_urn = metadata_client.create_sql_assertion(
+                dataset_urn=dataset_urn,
+                sql_statement=sql_statement,
+                operator="EQUAL_TO",
+                value="1",
+                description=assertion.description or assertion.name
+            )
+            
+            if result_urn:
+                # Update local assertion with DataHub URN
+                assertion.config = assertion.config or {}
+                assertion.config["datahub_urn"] = result_urn
+                assertion.save()
+                
+                logger.info(f"Successfully pushed assertion to DataHub: {assertion.id} -> {result_urn}")
+                return JsonResponse({
+                    "success": True,
+                    "message": "Assertion pushed to DataHub successfully",
+                    "datahub_urn": result_urn
+                })
+            else:
+                return JsonResponse({"success": False, "error": "Failed to create assertion in DataHub"})
+        else:
+            return JsonResponse({"success": False, "error": f"Pushing {assertion.type} assertions is not yet implemented"})
+            
+    except Exception as e:
+        logger.error(f"Error pushing assertion to DataHub: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["POST"])
+def resync_assertion(request, assertion_id):
+    """Resync a local assertion with its DataHub counterpart"""
+    try:
+        import json
+        data = json.loads(request.body)
+        assertion_urn = data.get('assertion_urn')
+        
+        assertion = get_object_or_404(Assertion, id=assertion_id)
+        
+        if not assertion_urn:
+            return JsonResponse({"success": False, "error": "Assertion URN is required"})
+        
+        # Get DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Get the latest assertion data from DataHub
+        result = client.get_assertions(query=f'urn:"{assertion_urn}"', count=1)
+        
+        if not result.get("success") or not result["data"].get("searchResults"):
+            return JsonResponse({"success": False, "error": "Assertion not found in DataHub"})
+        
+        assertion_data = result["data"]["searchResults"][0]["entity"]
+        info = assertion_data.get("info", {})
+        
+        # Update local assertion with latest remote data
+        assertion.name = info.get("description", assertion.name)
+        assertion.description = info.get("description", assertion.description)
+        assertion.type = info.get("type", assertion.type)
+        assertion.config = assertion.config or {}
+        assertion.config["raw_data"] = assertion_data
+        assertion.config["last_synced"] = timezone.now().isoformat()
+        assertion.save()
+        
+        logger.info(f"Successfully resynced assertion: {assertion_id} with {assertion_urn}")
+        return JsonResponse({
+            "success": True,
+            "message": "Assertion resynced successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error resyncing assertion: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["DELETE"])
+def delete_local_assertion(request, assertion_id):
+    """Delete a local assertion (local storage only, not DataHub)"""
+    try:
+        assertion = get_object_or_404(Assertion, id=assertion_id)
+        assertion_name = assertion.name
+        
+        # Delete the local assertion
+        assertion.delete()
+        
+        logger.info(f"Successfully deleted local assertion: {assertion_id} ({assertion_name})")
+        return JsonResponse({
+            "success": True,
+            "message": f"Local assertion '{assertion_name}' deleted successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting local assertion: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
