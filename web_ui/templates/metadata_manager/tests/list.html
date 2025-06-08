@@ -69,36 +69,36 @@
     
     <div class="row">
         <div class="col-md-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>DataHub Metadata Tests</h1>
                 <div class="d-flex gap-2">
-                    <a href="{% url 'metadata_manager:test_create' %}" class="btn btn-primary">
+            <a href="{% url 'metadata_manager:test_create' %}" class="btn btn-primary">
                         <i class="fas fa-plus me-1"></i> Create Test
                     </a>
                     <button type="button" class="btn btn-outline-secondary" id="refreshTests">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
-                    </button>
-                </div>
-            </div>
-            
-            {% if not has_datahub_connection %}
+            </button>
+        </div>
+    </div>
+
+    {% if not has_datahub_connection %}
                 <div class="alert alert-warning" role="alert">
                     <i class="fas fa-exclamation-triangle me-2"></i>
                     Not connected to DataHub. Please check your connection settings.
                     <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
                         <i class="fas fa-cog"></i> Settings
                     </a>
-                </div>
-            {% endif %}
-            
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
+    </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
 
             <!-- Loading indicator -->
             <div id="loading-indicator" class="text-center py-5">
@@ -147,8 +147,8 @@
                 </div>
             
                 <!-- Tests Tabs -->
-                <ul class="nav nav-tabs mb-4" id="testTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
+    <ul class="nav nav-tabs mb-4" id="testTabs" role="tablist">
+        <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
                                type="button" role="tab" aria-controls="synced-items" aria-selected="true">
                             <i class="fas fa-sync-alt me-1"></i> Synced Tests
@@ -160,30 +160,30 @@
                                type="button" role="tab" aria-controls="local-items" aria-selected="false">
                             <i class="fas fa-laptop me-1"></i> Local Only Tests
                             <span class="badge bg-secondary ms-1" id="local-badge">0</span>
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
                         <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
                                type="button" role="tab" aria-controls="remote-items" aria-selected="false">
                             <i class="fas fa-server me-1"></i> Remote Only Tests
                             <span class="badge bg-info ms-1" id="remote-badge">0</span>
-                        </button>
-                    </li>
-                </ul>
-                
-                <div class="tab-content" id="testTabsContent">
+            </button>
+        </li>
+    </ul>
+    
+    <div class="tab-content" id="testTabsContent">
                     <!-- Synced Tests Tab -->
                     <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
-                        <div class="card mb-4">
-                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Synced Tests</h5>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="synced-search" class="form-control" placeholder="Search synced tests...">
                                     <button type="button" class="btn btn-outline-secondary" id="synced-clear">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
                             </div>
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
@@ -201,31 +201,31 @@
                                     <input type="text" id="local-search" class="form-control" placeholder="Search local tests...">
                                     <button type="button" class="btn btn-outline-secondary" id="local-clear">
                                         <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </div>
+                                                    </button>
+                                                </div>
+                        </div>
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
-                            </div>
-                        </div>
-                    </div>
-                    
+                </div>
+            </div>
+        </div>
+        
                     <!-- Remote Tests Tab -->
                     <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
-                        <div class="card mb-4">
-                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Remote Only Tests</h5>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="remote-search" class="form-control" placeholder="Search remote tests...">
                                     <button type="button" class="btn btn-outline-secondary" id="remote-clear">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </div>
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
-                            </div>
+                    </div>
                         </div>
                     </div>
                 </div>
@@ -249,7 +249,7 @@
                         <div class="card h-100">
                             <div class="card-header">
                                 <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
-                            </div>
+            </div>
                             <div class="card-body">
                                 <dl class="row">
                                     <dt class="col-sm-4">Name:</dt>
@@ -281,11 +281,11 @@
                                     <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
                                         <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                                     </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
+            </div>
+        </div>
+    </div>
+</div>
+
                     <!-- Ownership Information -->
                     <div class="col-md-6">
                         <div class="card h-100">
@@ -295,32 +295,32 @@
                             <div class="card-body">
                                 <div id="modal-owners-list">
                                     <p class="text-muted">No ownership information available</p>
-                                </div>
+            </div>
                                 
                                 <div id="modal-last-modified" class="mt-3">
                                     <!-- Last modified info will be shown here -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
+            </div>
+            </div>
+        </div>
+    </div>
+</div>
+
                 <!-- Relationships -->
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header">
                                 <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
-                            </div>
+            </div>
                             <div class="card-body">
                                 <div id="modal-relationships-list">
                                     <p class="text-muted">No relationships available</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
+            </div>
+            </div>
+        </div>
+    </div>
+</div>
+
                 <!-- Test Properties -->
                 <div class="row mt-3">
                     <div class="col-12">
@@ -334,7 +334,7 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+            </div>
                 </div>
                 
                 <!-- Raw JSON Data -->
@@ -375,7 +375,7 @@ let currentSearch = {
     remote: ''
 };
 
-document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function() {
     loadTestsData();
     
     // Search functionality for each tab
@@ -398,8 +398,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Refresh button
     document.getElementById('refreshTests').addEventListener('click', function() {
         loadTestsData();
-    });
-});
+            });
+        });
 
 function loadTestsData() {
     console.log('Loading tests data...');
@@ -518,7 +518,7 @@ function displayTabContent(tabType) {
                 showTestDetails(itemData);
             });
         });
-        
+
         console.log(`Successfully rendered ${tabType} tab`);
         
     } catch (error) {
@@ -781,7 +781,7 @@ function showTestDetails(test) {
                 ` : ''}
             </div>
         `).join('');
-    } else {
+                } else {
         relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
     }
     
@@ -809,7 +809,7 @@ function showTestDetails(test) {
         }
         
         propertiesDiv.innerHTML = propertiesHTML;
-    } else {
+                } else {
         propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
     }
     

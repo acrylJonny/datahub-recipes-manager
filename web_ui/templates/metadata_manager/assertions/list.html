@@ -139,6 +139,78 @@
     .row.g-1.mb-1 {
         margin-bottom: 3px !important;
     }
+    
+    /* Unified Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #dee2e6;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    /* Single-select (overview row) */
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    /* Multi-select styling */
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    .clickable-stat.active .text-success,
+    .clickable-stat.active .text-danger, 
+    .clickable-stat.active .text-warning {
+        color: white !important;
+    }
+    
+    /* Row label styling */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+    }
+    
+    /* Larger text for better readability */
+    .filter-stat .h5 {
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+    
+    .filter-stat .h6 {
+        font-size: 1.25rem;
+        font-weight: 600;
+    }
+    
+    .filter-stat .text-muted {
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
 </style>
 {% endblock %}
 
@@ -200,139 +272,125 @@
 
             <!-- Assertions content -->
             <div id="assertions-content" style="display: none;">
-                <!-- Statistics -->
-                <div class="mb-2">
-                    <!-- Row 1: Total and sync status -->
-                    <div class="row g-1 mb-1">
-                        <div class="col-md-3">
-                            <div class="card text-center clickable-stat" data-filter="total">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="total-items">0</div>
-                                    <small class="text-muted">Total Assertions</small>
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Total and sync status -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local" data-category="overview">
+                                        <div class="h5 mb-0" id="local-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center clickable-stat" data-filter="synced">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="synced-count">0</div>
-                                    <small class="text-muted">Synced</small>
+                            
+                            <!-- Row 2: Types -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Types</strong>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-field" data-category="type">
+                                        <div class="h6 mb-0" id="field-assertions">0</div>
+                                        <div class="text-muted">Field</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-sql" data-category="type">
+                                        <div class="h6 mb-0" id="sql-assertions">0</div>
+                                        <div class="text-muted">SQL</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-volume" data-category="type">
+                                        <div class="h6 mb-0" id="volume-assertions">0</div>
+                                        <div class="text-muted">Volume</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-freshness" data-category="type">
+                                        <div class="h6 mb-0" id="freshness-assertions">0</div>
+                                        <div class="text-muted">Freshness</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-schema" data-category="type">
+                                        <div class="h6 mb-0" id="schema-assertions">0</div>
+                                        <div class="text-muted">Schema</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-custom" data-category="type">
+                                        <div class="h6 mb-0" id="custom-assertions">0</div>
+                                        <div class="text-muted">Custom</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center clickable-stat" data-filter="local">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="local-count">0</div>
-                                    <small class="text-muted">Local Only</small>
+                            
+                            <!-- Row 3: Status -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Status</strong>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="status-passing" data-category="status">
+                                        <div class="h6 mb-0 text-success" id="passing-assertions">0</div>
+                                        <div class="text-muted">Passing</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="status-failing" data-category="status">
+                                        <div class="h6 mb-0 text-danger" id="failing-assertions">0</div>
+                                        <div class="text-muted">Failing</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="status-error" data-category="status">
+                                        <div class="h6 mb-0 text-warning" id="error-assertions">0</div>
+                                        <div class="text-muted">Error</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center clickable-stat" data-filter="remote">
-                                <div class="card-body py-2">
-                                    <div class="h6 mb-0" id="remote-count">0</div>
-                                    <small class="text-muted">Remote Only</small>
+                            
+                            <!-- Row 4: Source -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Source</strong>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Row 2: Types -->
-                    <div class="row g-1 mb-1">
-                        <div class="col-md-2">
-                            <div class="card text-center clickable-stat" data-filter="type-field">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="field-assertions">0</div>
-                                    <small class="text-muted">Field</small>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="source-native" data-category="source">
+                                        <div class="h6 mb-0" id="native-assertions">0</div>
+                                        <div class="text-muted">Native</div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="card text-center clickable-stat" data-filter="type-sql">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="sql-assertions">0</div>
-                                    <small class="text-muted">SQL</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="card text-center clickable-stat" data-filter="type-volume">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="volume-assertions">0</div>
-                                    <small class="text-muted">Volume</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="card text-center clickable-stat" data-filter="type-freshness">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="freshness-assertions">0</div>
-                                    <small class="text-muted">Freshness</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="card text-center clickable-stat" data-filter="type-schema">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="schema-assertions">0</div>
-                                    <small class="text-muted">Schema</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <div class="card text-center clickable-stat" data-filter="type-custom">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="custom-assertions">0</div>
-                                    <small class="text-muted">Custom</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Row 3: Status -->
-                    <div class="row g-1 mb-1">
-                        <div class="col-md-4">
-                            <div class="card text-center clickable-stat" data-filter="status-passing">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0 text-success" id="passing-assertions">0</div>
-                                    <small class="text-muted">Passing</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card text-center clickable-stat" data-filter="status-failing">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0 text-danger" id="failing-assertions">0</div>
-                                    <small class="text-muted">Failing</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card text-center clickable-stat" data-filter="status-error">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0 text-warning" id="error-assertions">0</div>
-                                    <small class="text-muted">Erroring</small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Row 4: Source -->
-                    <div class="row g-1">
-                        <div class="col-md-6">
-                            <div class="card text-center clickable-stat" data-filter="source-native">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="native-assertions">0</div>
-                                    <small class="text-muted">Native</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="card text-center clickable-stat" data-filter="source-external">
-                                <div class="card-body py-2">
-                                    <div class="small mb-0" id="external-assertions">0</div>
-                                    <small class="text-muted">External</small>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="source-external" data-category="source">
+                                        <div class="h6 mb-0" id="external-assertions">0</div>
+                                        <div class="text-muted">External</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -535,42 +593,235 @@
     </div>
 </div>
 
-<!-- Create Assertion Modal (keeping existing functionality) -->
+<!-- Create Assertion Modal -->
 <div class="modal fade" id="createAssertionModal" tabindex="-1" aria-labelledby="createAssertionModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="createAssertionModalLabel">Create New Assertion</h5>
+                <h5 class="modal-title" id="createAssertionModalLabel">Create New DataHub Assertion</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="post">
+            <form method="post" id="createAssertionForm">
                 {% csrf_token %}
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="assertionName" class="form-label">Assertion Name</label>
-                        <input type="text" class="form-control" id="assertionName" name="name" required>
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="assertionName" class="form-label">Assertion Name</label>
+                            <input type="text" class="form-control" id="assertionName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="datasetUrn" class="form-label">Dataset URN</label>
+                            <input type="text" class="form-control" id="datasetUrn" name="dataset_urn" required 
+                                   placeholder="urn:li:dataset:(urn:li:dataPlatform:snowflake,database.schema.table,PROD)">
+                        </div>
                     </div>
-                    <div class="mb-3">
+                    
+                    <div class="mb-4">
                         <label for="assertionDescription" class="form-label">Description</label>
-                        <textarea class="form-control" id="assertionDescription" name="description" rows="3"></textarea>
+                        <textarea class="form-control" id="assertionDescription" name="description" rows="2"></textarea>
                     </div>
-                    <div class="mb-3">
+                    
+                    <!-- Assertion Type Selection -->
+                    <div class="mb-4">
                         <label for="assertionType" class="form-label">Assertion Type</label>
                         <select class="form-control" id="assertionType" name="type" required>
-                            <option value="">Select type...</option>
-                            <option value="domain_exists">Domain Exists</option>
-                            <option value="sql">SQL Assertion</option>
-                            <option value="tag_exists">Tag Exists</option>
-                            <option value="glossary_term_exists">Glossary Term Exists</option>
+                            <option value="">Select assertion type...</option>
+                            <option value="FIELD">Field Assertion - Validate column values</option>
+                            <option value="SQL">SQL Assertion - Custom SQL query validation</option>
+                            <option value="VOLUME">Volume Assertion - Row count validation</option>
+                            <option value="FRESHNESS">Freshness Assertion - Data recency validation</option>
+                            <option value="SCHEMA">Schema Assertion - Column structure validation</option>
+                            <option value="CUSTOM">Custom Assertion - Custom logic validation</option>
                         </select>
                     </div>
                     
-                    <!-- Type-specific fields will be shown here based on selection -->
-                    <div id="type-specific-fields"></div>
+                    <!-- Type-specific fields -->
+                    <div id="type-specific-fields">
+                        
+                        <!-- Field Assertion Fields -->
+                        <div id="field-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-primary"><i class="fas fa-columns me-2"></i>Field Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="fieldPath" class="form-label">Field/Column Path</label>
+                                    <input type="text" class="form-control" id="fieldPath" name="field_path" placeholder="column_name">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="fieldType" class="form-label">Field Type</label>
+                                    <select class="form-control" id="fieldType" name="field_type">
+                                        <option value="NUMBER">Number</option>
+                                        <option value="STRING">String</option>
+                                        <option value="BOOLEAN">Boolean</option>
+                                        <option value="DATE">Date</option>
+                                        <option value="TIMESTAMP">Timestamp</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="nativeType" class="form-label">Native Type</label>
+                                    <input type="text" class="form-control" id="nativeType" name="native_type" placeholder="VARCHAR, INT, etc.">
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-4">
+                                    <label for="fieldOperator" class="form-label">Operator</label>
+                                    <select class="form-control" id="fieldOperator" name="field_operator">
+                                        <option value="EQUAL_TO">Equal To</option>
+                                        <option value="NOT_EQUAL_TO">Not Equal To</option>
+                                        <option value="GREATER_THAN">Greater Than</option>
+                                        <option value="GREATER_THAN_OR_EQUAL_TO">Greater Than or Equal</option>
+                                        <option value="LESS_THAN">Less Than</option>
+                                        <option value="LESS_THAN_OR_EQUAL_TO">Less Than or Equal</option>
+                                        <option value="BETWEEN">Between</option>
+                                        <option value="NOT_NULL">Not Null</option>
+                                        <option value="CONTAINS">Contains</option>
+                                        <option value="REGEX_MATCH">Regex Match</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="fieldValue" class="form-label">Value</label>
+                                    <input type="text" class="form-control" id="fieldValue" name="field_value" placeholder="Comparison value">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="failThreshold" class="form-label">Fail Threshold</label>
+                                    <input type="number" class="form-control" id="failThreshold" name="fail_threshold" value="0" min="0">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- SQL Assertion Fields -->
+                        <div id="sql-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-warning"><i class="fas fa-database me-2"></i>SQL Assertion Configuration</h6>
+                            <div class="mb-3">
+                                <label for="sqlStatement" class="form-label">SQL Statement</label>
+                                <textarea class="form-control" id="sqlStatement" name="sql_statement" rows="4" 
+                                          placeholder="SELECT COUNT(*) FROM table WHERE condition"></textarea>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="sqlOperator" class="form-label">Operator</label>
+                                    <select class="form-control" id="sqlOperator" name="sql_operator">
+                                        <option value="EQUAL_TO">Equal To</option>
+                                        <option value="GREATER_THAN">Greater Than</option>
+                                        <option value="GREATER_THAN_OR_EQUAL_TO">Greater Than or Equal</option>
+                                        <option value="LESS_THAN">Less Than</option>
+                                        <option value="LESS_THAN_OR_EQUAL_TO">Less Than or Equal</option>
+                                        <option value="BETWEEN">Between</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="sqlValue" class="form-label">Expected Value</label>
+                                    <input type="text" class="form-control" id="sqlValue" name="sql_value" placeholder="Expected result">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Volume Assertion Fields -->
+                        <div id="volume-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-info"><i class="fas fa-chart-bar me-2"></i>Volume Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label for="volumeOperator" class="form-label">Operator</label>
+                                    <select class="form-control" id="volumeOperator" name="volume_operator">
+                                        <option value="EQUAL_TO">Equal To</option>
+                                        <option value="GREATER_THAN">Greater Than</option>
+                                        <option value="GREATER_THAN_OR_EQUAL_TO">Greater Than or Equal</option>
+                                        <option value="LESS_THAN">Less Than</option>
+                                        <option value="LESS_THAN_OR_EQUAL_TO">Less Than or Equal</option>
+                                        <option value="BETWEEN">Between</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="volumeValue" class="form-label">Row Count Value</label>
+                                    <input type="number" class="form-control" id="volumeValue" name="volume_value" placeholder="Expected row count">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="volumeMaxValue" class="form-label">Max Value (for Between)</label>
+                                    <input type="number" class="form-control" id="volumeMaxValue" name="volume_max_value" placeholder="Maximum value">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Freshness Assertion Fields -->
+                        <div id="freshness-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-secondary"><i class="fas fa-clock me-2"></i>Freshness Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="freshnessInterval" class="form-label">Freshness Interval</label>
+                                    <input type="number" class="form-control" id="freshnessInterval" name="freshness_interval" value="24" min="1">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="freshnessUnit" class="form-label">Interval Unit</label>
+                                    <select class="form-control" id="freshnessUnit" name="freshness_unit">
+                                        <option value="HOUR">Hours</option>
+                                        <option value="DAY">Days</option>
+                                        <option value="WEEK">Weeks</option>
+                                        <option value="MINUTE">Minutes</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Schema Assertion Fields -->
+                        <div id="schema-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-success"><i class="fas fa-table me-2"></i>Schema Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="schemaCompatibility" class="form-label">Compatibility Level</label>
+                                    <select class="form-control" id="schemaCompatibility" name="schema_compatibility">
+                                        <option value="EXACT_MATCH">Exact Match</option>
+                                        <option value="SUBSET_FIELDS">Subset Fields</option>
+                                        <option value="SUPERSET_FIELDS">Superset Fields</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="expectedFields" class="form-label">Expected Fields</label>
+                                    <textarea class="form-control" id="expectedFields" name="expected_fields" rows="3" 
+                                              placeholder="field1:STRING&#10;field2:NUMBER&#10;field3:BOOLEAN"></textarea>
+                                    <small class="form-text text-muted">One field per line in format: field_name:field_type</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Custom Assertion Fields -->
+                        <div id="custom-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-dark"><i class="fas fa-cogs me-2"></i>Custom Assertion Configuration</h6>
+                            <div class="mb-3">
+                                <label for="customLogic" class="form-label">Custom Logic</label>
+                                <textarea class="form-control" id="customLogic" name="custom_logic" rows="4" 
+                                          placeholder="Describe your custom assertion logic here"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Scheduling Configuration -->
+                    <div class="mt-4">
+                        <h6 class="text-muted"><i class="fas fa-calendar me-2"></i>Evaluation Schedule</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="timezone" class="form-label">Timezone</label>
+                                <select class="form-control" id="timezone" name="timezone">
+                                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                                    <option value="America/New_York">America/New_York</option>
+                                    <option value="America/Chicago">America/Chicago</option>
+                                    <option value="Europe/London">Europe/London</option>
+                                    <option value="UTC">UTC</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="cronExpression" class="form-label">Cron Expression</label>
+                                <input type="text" class="form-control" id="cronExpression" name="cron_expression" 
+                                       value="0 */8 * * *" placeholder="0 */8 * * *">
+                                <small class="form-text text-muted">Default: Every 8 hours</small>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Assertion</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Create Assertion
+                    </button>
                 </div>
             </form>
         </div>
@@ -593,7 +844,13 @@ let currentSearch = {
     local: '',
     remote: ''
 };
-let currentFilter = null;
+// Updated filtering system with multiple selection support
+let currentFilters = {
+    overview: null,  // single select for overview (total, synced, local, remote)
+    type: [],       // multi-select for types
+    status: [],     // multi-select for status
+    source: []      // multi-select for source
+};
 
 document.addEventListener('DOMContentLoaded', function() {
     loadAssertionsData();
@@ -625,12 +882,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target.closest('.clickable-stat')) {
             const card = e.target.closest('.clickable-stat');
             const filter = card.dataset.filter;
-            console.log('Statistics card clicked via delegation:', filter);
+            console.log('🎯 Statistics card clicked via delegation:', filter);
+            console.log('🎯 Card element:', card);
+            console.log('🎯 Current filters before:', currentFilters);
+            console.log('🎯 Assertions data available:', !!assertionsData);
+            console.log('🎯 Data structure:', {
+                synced: assertionsData?.synced_items?.length || 0,
+                local: assertionsData?.local_only_items?.length || 0, 
+                remote: assertionsData?.remote_only_items?.length || 0
+            });
             e.preventDefault(); // Prevent any default behavior
             try {
                 applyStatisticFilter(filter);
+                console.log('🎯 Current filters after:', currentFilters);
             } catch (error) {
-                console.error('Error applying filter:', error);
+                console.error('❌ Error applying filter:', error);
+                console.error(error.stack);
             }
         }
     });
@@ -652,6 +919,8 @@ function loadAssertionsData() {
                 updateStatistics(data.data.statistics);
                 updateTabBadges();
                 displayAllTabs();
+                
+                // Note: Click handlers are already attached via event delegation in DOMContentLoaded
             } else {
                 console.error('Data loading failed:', data.error);
                 showError('Failed to load assertions: ' + (data.error || 'Unknown error'));
@@ -817,12 +1086,24 @@ function displayTabContent(tabType) {
         
         console.log(`Starting with ${items?.length || 0} items for tab ${tabType}`);
         
-        // Apply statistic-based filters first (but not tab filters)
-        if (currentFilter && !['synced', 'local', 'remote', 'total'].includes(currentFilter)) {
-            console.log('Applying statistic filter:', currentFilter);
+        // Apply statistic-based filters first using the new filtering system
+        const hasActiveFilters = currentFilters.type.length > 0 || 
+                               currentFilters.status.length > 0 || 
+                               currentFilters.source.length > 0;
+        
+        if (hasActiveFilters) {
+            console.log('🔍 Applying statistic filters:', currentFilters);
+            console.log('🔍 Items before filter:', items.length);
+            console.log('🔍 Sample item for testing:', items[0]);
             const beforeFilter = items.length;
-            items = items.filter(item => matchesFilter(item, currentFilter));
-            console.log(`Statistic filter applied: ${beforeFilter} -> ${items.length} items`);
+            items = items.filter(item => {
+                const result = matchesFilter(item);
+                console.log('🔍 Testing item:', item.name || item.urn, 'Result:', result, 'Type:', item.raw_data?.info?.type || item.type);
+                return result;
+            });
+            console.log(`🔍 Statistic filter applied: ${beforeFilter} -> ${items.length} items`);
+        } else {
+            console.log('🔍 No statistic filters applied. Current filters:', currentFilters);
         }
         
         // Then apply search filter on the filtered results
@@ -870,6 +1151,9 @@ function displayTabContent(tabType) {
         // Attach click handlers for action buttons
         attachActionButtonHandlers(content);
         
+        // Attach sorting handlers to table headers
+        attachSortingHandlers(content, tabType);
+        
         console.log(`Successfully rendered ${tabType} tab`);
         
     } catch (error) {
@@ -887,15 +1171,15 @@ function generateTableHTML(items, tabType) {
             <table class="table table-hover table-striped mb-0">
                 <thead>
                     <tr>
-                        <th>URN</th>
-                        <th>Type</th>
+                        <th class="sortable-header" data-sort="urn">URN</th>
+                        <th class="sortable-header" data-sort="type">Type</th>
                         <th>Logic</th>
-                        <th>Status</th>
-                        <th>Assertee URN</th>
-                        <th>Parameters</th>
+                        <th class="sortable-header" data-sort="status">Status</th>
+                        <th class="sortable-header" data-sort="asserteeUrn">Assertee URN</th>
+                        <th class="sortable-header" data-sort="parameters">Parameters</th>
                         <th>Schedule</th>
                         <th>URL</th>
-                        <th>Tags</th>
+                        <th class="sortable-header" data-sort="tags">Tags</th>
                         <th>Source</th>
                         <th>Sync Status</th>
                         <th width="15%">Actions</th>
@@ -1997,63 +2281,7 @@ function formatTimeAgo(timestamp) {
     }
 }
 
-function applyStatisticFilter(filter) {
-    console.log('applyStatisticFilter called with filter:', filter);
-    
-    // Remove active class from all cards
-    document.querySelectorAll('.clickable-stat').forEach(card => {
-        card.classList.remove('active');
-    });
-    
-    // Add active class to clicked card
-    const clickedCard = document.querySelector(`[data-filter="${filter}"]`);
-    if (clickedCard) {
-        clickedCard.classList.add('active');
-        console.log('Added active class to card:', filter);
-    } else {
-        console.error('Could not find card with filter:', filter);
-    }
-    
-    // Set the current filter
-    currentFilter = filter === 'total' ? null : filter;
-    console.log('Set current filter to:', currentFilter);
-    
-    // For debugging: log the filter type
-    if (currentFilter) {
-        if (currentFilter.startsWith('type-')) {
-            console.log('Type filter detected:', currentFilter);
-        } else if (currentFilter.startsWith('status-')) {
-            console.log('Status filter detected:', currentFilter);
-        } else if (currentFilter.startsWith('source-')) {
-            console.log('Source filter detected:', currentFilter);
-        }
-    }
-    
-    // Apply filter based on type
-    switch(filter) {
-        case 'total':
-            console.log('Clearing all filters');
-            clearAllFilters();
-            break;
-        case 'synced':
-            console.log('Switching to synced tab');
-            switchToTab('synced');
-            break;
-        case 'local':
-            console.log('Switching to local tab');
-            switchToTab('local');
-            break;
-        case 'remote':
-            console.log('Switching to remote tab');
-            switchToTab('remote');
-            break;
-        default:
-            console.log('Applying filter and refreshing current tab');
-            // Refresh the current active tab with the new filter
-            const activeTab = document.querySelector('.nav-link.active').id.replace('-tab', '');
-            displayTabContent(activeTab);
-    }
-}
+// REMOVED DUPLICATE - using newer version below
 
 function switchToTab(tabName) {
     console.log('switchToTab called with:', tabName);
@@ -2069,8 +2297,13 @@ function switchToTab(tabName) {
 function clearAllFilters() {
     console.log('Clearing all filters');
     
-    // Clear the current filter
-    currentFilter = null;
+    // Clear all filter arrays
+    currentFilters = {
+        overview: null,
+        type: [],
+        status: [],
+        source: []
+    };
     
     // Remove active class from all statistic cards
     document.querySelectorAll('.clickable-stat').forEach(card => {
@@ -2114,63 +2347,458 @@ function applyContentFilter(filter) {
     }
 }
 
-function attachStatisticsClickHandlers() {
-    console.log('Attaching statistics click handlers...');
-    document.querySelectorAll('.clickable-stat').forEach(card => {
-        card.addEventListener('click', function() {
-            const filter = this.dataset.filter;
-            console.log('Statistics card clicked:', filter);
-            applyStatisticFilter(filter);
+// Function removed - using event delegation instead
+
+function matchesFilter(item, filterType = null) {
+    const rawData = item.raw_data || {};
+    const info = rawData.info || {};
+    
+    // If no filters are active, show all items
+    const hasActiveFilters = currentFilters.type.length > 0 || 
+                           currentFilters.status.length > 0 || 
+                           currentFilters.source.length > 0;
+    
+    if (!hasActiveFilters) {
+        return true;
+    }
+    
+    let matchesType = true;
+    let matchesStatus = true;
+    let matchesSource = true;
+    
+    // Check type filter
+    if (currentFilters.type.length > 0) {
+        const itemType = (info.type || item.type || '').toUpperCase();
+        matchesType = currentFilters.type.some(type => type.toUpperCase() === itemType);
+    }
+    
+    // Check status filter
+    if (currentFilters.status.length > 0) {
+        const runEvents = rawData.runEvents;
+        matchesStatus = false;
+        
+        if (runEvents && runEvents.runEvents && runEvents.runEvents.length > 0) {
+            const latestRun = runEvents.runEvents[0];
+            const status = latestRun.status;
+            const resultType = latestRun.result ? latestRun.result.type : null;
+            
+            matchesStatus = currentFilters.status.some(statusFilter => {
+                switch (statusFilter) {
+                    case 'passing':
+                        return status === 'SUCCESS' || (resultType && ['SUCCESS', 'PASSED'].includes(resultType));
+                    case 'failing':
+                        return status === 'FAILURE' || (resultType && ['FAILURE', 'FAILED'].includes(resultType));
+                    case 'error':
+                        return status === 'ERROR' || (resultType && ['ERROR', 'INCOMPLETE', 'PARTIAL'].includes(resultType));
+                    default:
+                        return false;
+                }
+            });
+        }
+    }
+    
+    // Check source filter
+    if (currentFilters.source.length > 0) {
+        const source = info.source || {};
+        const sourceType = source.type;
+        
+        matchesSource = currentFilters.source.some(sourceFilter => {
+            switch (sourceFilter) {
+                case 'native':
+                    return !sourceType || sourceType !== 'EXTERNAL';
+                case 'external':
+                    return sourceType === 'EXTERNAL';
+                default:
+                    return false;
+            }
+        });
+    }
+    
+    return matchesType && matchesStatus && matchesSource;
+}
+
+// Create Assertion Form Handler
+document.addEventListener('DOMContentLoaded', function() {
+    const assertionTypeSelect = document.getElementById('assertionType');
+    const typeSpecificFields = document.getElementById('type-specific-fields');
+    
+    if (assertionTypeSelect) {
+        assertionTypeSelect.addEventListener('change', function() {
+            // Hide all type-specific field groups
+            document.querySelectorAll('.assertion-type-fields').forEach(group => {
+                group.style.display = 'none';
+            });
+            
+            // Show the selected type's fields
+            const selectedType = this.value.toLowerCase();
+            if (selectedType) {
+                const fieldsGroup = document.getElementById(`${selectedType}-assertion-fields`);
+                if (fieldsGroup) {
+                    fieldsGroup.style.display = 'block';
+                }
+            }
+        });
+    }
+    
+    // Handle form submission
+    const createAssertionForm = document.getElementById('createAssertionForm');
+    if (createAssertionForm) {
+        createAssertionForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const assertionType = formData.get('type');
+            
+            // Add type-specific validation
+            if (!validateAssertionForm(assertionType, formData)) {
+                return;
+            }
+            
+            // Submit the form
+            submitAssertionForm(formData);
+        });
+    }
+});
+
+function validateAssertionForm(assertionType, formData) {
+    const datasetUrn = formData.get('dataset_urn');
+    const name = formData.get('name');
+    
+    // Basic validation
+    if (!name || !datasetUrn || !assertionType) {
+        alert('Please fill in all required fields: Name, Dataset URN, and Assertion Type');
+        return false;
+    }
+    
+    // Type-specific validation
+    switch (assertionType) {
+        case 'FIELD':
+            if (!formData.get('field_path')) {
+                alert('Field path is required for field assertions');
+                return false;
+            }
+            break;
+        case 'SQL':
+            if (!formData.get('sql_statement')) {
+                alert('SQL statement is required for SQL assertions');
+                return false;
+            }
+            break;
+        case 'VOLUME':
+            if (!formData.get('volume_value') && formData.get('volume_operator') !== 'BETWEEN') {
+                alert('Volume value is required for volume assertions');
+                return false;
+            }
+            break;
+        case 'FRESHNESS':
+            if (!formData.get('freshness_interval')) {
+                alert('Freshness interval is required for freshness assertions');
+                return false;
+            }
+            break;
+        case 'SCHEMA':
+            if (!formData.get('expected_fields')) {
+                alert('Expected fields are required for schema assertions');
+                return false;
+            }
+            break;
+        case 'CUSTOM':
+            if (!formData.get('custom_logic')) {
+                alert('Custom logic is required for custom assertions');
+                return false;
+            }
+            break;
+    }
+    
+    return true;
+}
+
+function submitAssertionForm(formData) {
+    // Show loading state
+    const submitButton = document.querySelector('#createAssertionForm button[type="submit"]');
+    const originalText = submitButton.innerHTML;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Creating...';
+    submitButton.disabled = true;
+    
+    fetch('/metadata/assertions/create/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Close modal and refresh data
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createAssertionModal'));
+            modal.hide();
+            
+            // Reset form
+            document.getElementById('createAssertionForm').reset();
+            document.querySelectorAll('.assertion-type-fields').forEach(group => {
+                group.style.display = 'none';
+            });
+            
+            // Refresh assertions data
+            loadAssertionsData();
+            
+            // Show success message
+            showSuccess('Assertion created successfully!');
+        } else {
+            showError('Failed to create assertion: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error creating assertion:', error);
+        showError('Error creating assertion: ' + error.message);
+    })
+    .finally(() => {
+        // Restore button state
+        submitButton.innerHTML = originalText;
+        submitButton.disabled = false;
+    });
+}
+
+// Table sorting functionality - REMOVED DUPLICATE (keeping newer version below)
+
+// NEW FUNCTIONALITY FOR DIRECT TABLE FILTERING AND SORTING
+
+// Global sorting state  
+let currentSort = { column: null, direction: null, tabType: null };
+
+// Attach sorting handlers to table headers
+function attachSortingHandlers(content, tabType) {
+    const sortableHeaders = content.querySelectorAll('.sortable-header');
+    
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const sortColumn = this.dataset.sort;
+            
+            // Toggle sort direction
+            if (currentSort.column === sortColumn && currentSort.tabType === tabType) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = sortColumn;
+                currentSort.direction = 'asc';
+                currentSort.tabType = tabType;
+            }
+            
+            // Update header classes in this table only
+            const tableHeaders = content.querySelectorAll('.sortable-header');
+            tableHeaders.forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+            });
+            this.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            
+            // Sort the current table
+            sortCurrentTable(content, tabType);
         });
     });
 }
 
-function matchesFilter(item, filter) {
-    const rawData = item.raw_data || {};
-    const info = rawData.info || {};
+// Sort the current table without re-rendering
+function sortCurrentTable(content, tabType) {
+    const tbody = content.querySelector('tbody');
+    if (!tbody) return;
     
-    console.log('matchesFilter called with filter:', filter, 'item type:', info.type || item.type);
+    const rows = Array.from(tbody.querySelectorAll('tr'));
     
-    if (filter.startsWith('type-')) {
-        const filterType = filter.replace('type-', '').toUpperCase();
-        const itemType = (info.type || item.type || '').toUpperCase();
-        console.log('Type filter - looking for:', filterType, 'item has:', itemType);
-        return itemType === filterType;
+    // Sort rows based on current sort settings
+    rows.sort((a, b) => {
+        const aVal = getSortValueFromRow(a, currentSort.column);
+        const bVal = getSortValueFromRow(b, currentSort.column);
+        
+        if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+    
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+    
+    console.log(`✅ Sorted ${rows.length} rows by ${currentSort.column} (${currentSort.direction})`);
+}
+
+// Get sort value from a table row
+function getSortValueFromRow(row, column) {
+    const cells = row.querySelectorAll('td');
+    
+    switch(column) {
+        case 'urn':
+            return cells[0]?.textContent?.trim().toLowerCase() || '';
+        case 'type':
+            return cells[1]?.textContent?.trim().toLowerCase() || '';
+        case 'logic':
+            return cells[2]?.textContent?.trim().toLowerCase() || '';
+        case 'status':
+            return cells[3]?.textContent?.trim().toLowerCase() || '';
+        case 'asserteeUrn':
+            return cells[4]?.textContent?.trim().toLowerCase() || '';
+        case 'parameters':
+            return cells[5]?.textContent?.trim().toLowerCase() || '';
+        case 'schedule':
+            return cells[6]?.textContent?.trim().toLowerCase() || '';
+        case 'tags':
+            return cells[8]?.textContent?.trim().toLowerCase() || '';
+        case 'source':
+            return cells[9]?.textContent?.trim().toLowerCase() || '';
+        case 'syncStatus':
+            return cells[10]?.textContent?.trim().toLowerCase() || '';
+        default:
+            return '';
     }
+}
+
+// Apply filters directly to table rows (hide/show approach)
+function applyFiltersToTable(tabType) {
+    const contentId = `${tabType}-content`;
+    const content = document.getElementById(contentId);
+    if (!content) return;
     
-    if (filter.startsWith('status-')) {
-        const runEvents = rawData.runEvents;
-        if (!runEvents || !runEvents.runEvents || runEvents.runEvents.length === 0) {
-            return false;
+    const tbody = content.querySelector('tbody');
+    if (!tbody) return;
+    
+    const rows = tbody.querySelectorAll('tr');
+    let visibleCount = 0;
+    
+    console.log(`🔍 Applying filters to ${rows.length} rows in ${tabType} tab`);
+    console.log('🔍 Current filters:', currentFilters);
+    
+    const hasActiveFilters = currentFilters.type.length > 0 || 
+                           currentFilters.status.length > 0 || 
+                           currentFilters.source.length > 0;
+    
+    rows.forEach(row => {
+        if (!hasActiveFilters) {
+            // No filters active - show all rows
+            row.classList.remove('filtered-out');
+            visibleCount++;
+            return;
         }
         
-        const latestRun = runEvents.runEvents[0];
-        const status = latestRun.status;
-        const resultType = latestRun.result ? latestRun.result.type : null;
-        
-        switch (filter) {
-            case 'status-passing':
-                return status === 'SUCCESS' || (resultType && ['SUCCESS', 'PASSED'].includes(resultType));
-            case 'status-failing':
-                return status === 'FAILURE' || (resultType && ['FAILURE', 'FAILED'].includes(resultType));
-            case 'status-error':
-                return status === 'ERROR' || (resultType && ['ERROR', 'INCOMPLETE', 'PARTIAL'].includes(resultType));
+        try {
+            const itemData = JSON.parse(row.dataset.item);
+            const shouldShow = matchesFilter(itemData);
+            
+            if (shouldShow) {
+                row.classList.remove('filtered-out');
+                visibleCount++;
+            } else {
+                row.classList.add('filtered-out');
+            }
+        } catch (error) {
+            console.error('Error parsing item data for filtering:', error);
+            // Show row if there's an error parsing data
+            row.classList.remove('filtered-out');
+            visibleCount++;
         }
-    }
+    });
     
-    if (filter.startsWith('source-')) {
-        const source = info.source || {};
-        const sourceType = source.type;
+    console.log(`🔍 Showing ${visibleCount}/${rows.length} rows after filtering`);
+}
+
+// Override the applyStatisticFilter function to use direct table filtering
+function applyStatisticFilter(filter) {
+    console.log('applyStatisticFilter called with filter:', filter);
+    
+    const clickedCard = document.querySelector(`[data-filter="${filter}"]`);
+    if (!clickedCard) {
+        console.error('Could not find card with filter:', filter);
+        return;
+    }
+
+    const category = clickedCard.getAttribute('data-category');
+    
+    if (category === 'overview') {
+        // Single select for overview - clear others and switch tabs if needed
+        document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(card => {
+            card.classList.remove('active');
+        });
         
-        switch (filter) {
-            case 'source-native':
-                return !sourceType || sourceType !== 'EXTERNAL';
-            case 'source-external':
-                return sourceType === 'EXTERNAL';
+        if (filter !== 'total') {
+            clickedCard.classList.add('active');
+            currentFilters.overview = filter;
+        } else {
+            currentFilters.overview = null;
         }
+        
+        // Clear all other filters when switching overview
+        currentFilters.type = [];
+        currentFilters.status = [];
+        currentFilters.source = [];
+        document.querySelectorAll('.multi-select.active').forEach(card => {
+            card.classList.remove('active');
+        });
+        
+        // Handle tab switching for overview filters
+        switch(filter) {
+            case 'total':
+                console.log('Clearing all filters');
+                clearAllFilters();
+                break;
+            case 'synced':
+                console.log('Switching to synced tab');
+                switchToTab('synced');
+                break;
+            case 'local':
+                console.log('Switching to local tab');  
+                switchToTab('local');
+                break;
+            case 'remote':
+                console.log('Switching to remote tab');
+                switchToTab('remote');
+                break;
+        }
+    } else {
+        // Multi-select for type, status, source
+        const isActive = clickedCard.classList.contains('active');
+        const filterValue = filter.replace(`${category}-`, '');
+        
+        if (isActive) {
+            // Remove from active filters
+            clickedCard.classList.remove('active');
+            const index = currentFilters[category].indexOf(filterValue);
+            if (index > -1) {
+                currentFilters[category].splice(index, 1);
+            }
+        } else {
+            // Add to active filters
+            clickedCard.classList.add('active');
+            if (!currentFilters[category].includes(filterValue)) {
+                currentFilters[category].push(filterValue);
+            }
+        }
+        
+        console.log('Updated filters:', currentFilters);
+        
+        // Apply filters to all currently visible tabs
+        ['synced', 'local', 'remote'].forEach(tabType => {
+            applyFiltersToTable(tabType);
+        });
     }
+}
+
+function clearAllFilters() {
+    console.log('Clearing all filters');
     
-    return true;
+    // Clear all filter arrays
+    currentFilters = {
+        overview: null,
+        type: [],
+        status: [],
+        source: []
+    };
+    
+    // Remove active class from all statistic cards
+    document.querySelectorAll('.clickable-stat').forEach(card => {
+        card.classList.remove('active');
+    });
+    
+    // Show all rows in all tabs
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        applyFiltersToTable(tabType);
+    });
 }
 
 </script>
@@ -2205,9 +2833,341 @@ function matchesFilter(item, filter) {
         box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
     }
     
-    /* Tighter spacing for statistics rows */
+    /* Unified Filter Statistics Styling - removes gaps and creates cohesive appearance */
+    
+    /* Override existing clickable-stat for unified bar */
+    .clickable-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #dee2e6;
+        background-color: transparent;
+        border-radius: 0 !important;
+        border-top: none !important;
+        border-bottom: none !important;
+        border-left: none !important;
+        margin: 0 !important;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    .clickable-stat:last-child {
+        border-right: none;
+    }
+    
+    .clickable-stat:hover {
+        background-color: #f8f9fa;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    .clickable-stat.active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+        box-shadow: none !important;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.8) !important;
+    }
+    
+    .clickable-stat.active .text-success,
+    .clickable-stat.active .text-danger,
+    .clickable-stat.active .text-warning {
+        color: white !important;
+    }
+    
+    /* Remove gaps between rows for seamless appearance */
     .row.g-1.mb-1 {
-        margin-bottom: 3px !important;
+        margin-bottom: 0px !important;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .row.g-1:last-child {
+        border-bottom: none;
+    }
+    
+    /* Enhanced Filter Row Styling */
+    .filter-row {
+        min-height: 80px;
+    }
+    
+    /* Row label styling */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+        font-size: 1rem;
+    }
+    
+    /* Enhanced filter stat styling */
+    .filter-stat {
+        min-height: 80px;
+        padding: 1rem 0.75rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Larger text for better readability */
+    .filter-stat .h5 {
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .h6 {
+        font-size: 1.5rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .text-muted {
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Default blue styling for all active states */
+    .clickable-stat.active {
+        background-color: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+    }
+    
+    /* Color-matched styling for status filters - match the text color */
+    .clickable-stat[data-filter="status-passing"].active {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    
+    .clickable-stat[data-filter="status-failing"].active {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    
+    .clickable-stat[data-filter="status-error"].active {
+        background-color: #ffc107 !important;
+        color: black !important;
+        border-color: #ffc107 !important;
+    }
+    
+    /* Enhanced Filter Row Styling */
+    .filter-row {
+        min-height: 80px;
+    }
+    
+    /* Row label styling */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+        font-size: 1rem;
+    }
+    
+    /* Enhanced filter stat styling */
+    .filter-stat {
+        min-height: 80px;
+        padding: 1rem 0.75rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Larger text for better readability */
+    .filter-stat .h5 {
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .h6 {
+        font-size: 1.5rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .text-muted {
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Default blue styling for all active states */
+    .clickable-stat.active {
+        background-color: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+    }
+    
+    /* Color-matched styling for status filters - match the text color */
+    .clickable-stat[data-filter="status-passing"].active {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    
+    .clickable-stat[data-filter="status-failing"].active {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    
+    .clickable-stat[data-filter="status-error"].active {
+        background-color: #ffc107 !important;
+        color: black !important;
+        border-color: #ffc107 !important;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Tighter card body padding */
+    .clickable-stat .card-body {
+        padding: 0.5rem 0.25rem !important;
+        border: none;
+    }
+    
+    /* UPDATED COLOR SCHEME - Default blue, status colors match their text */
+    .clickable-stat.active {
+        background-color: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+    }
+    
+    /* Color-matched styling for status filters */
+    .clickable-stat[data-filter="status-passing"].active {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    
+    .clickable-stat[data-filter="status-failing"].active {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    
+    .clickable-stat[data-filter="status-error"].active {
+        background-color: #ffc107 !important;
+        color: black !important;
+        border-color: #ffc107 !important;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* NEW FIXES */
+    
+    /* Smaller rows for types, status, source (rows 2, 3, 4) */
+    .filter-row:not(:first-child) {
+        min-height: 60px !important;
+    }
+    
+    .filter-row:not(:first-child) .filter-stat {
+        min-height: 60px !important;
+        padding: 0.75rem 0.5rem !important;
+    }
+    
+    /* Hidden rows for filtering */
+    .filtered-out {
+        display: none !important;
     }
 </style>
 {% endblock %} 

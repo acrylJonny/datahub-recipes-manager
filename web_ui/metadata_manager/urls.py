@@ -261,7 +261,7 @@ urlpatterns = [
     ),
     path(
         "assertions/create/",
-        views_assertions.AssertionListView.as_view(),
+        views_assertions.create_datahub_assertion,
         name="assertion_create",
     ),
     path(
@@ -302,6 +302,32 @@ urlpatterns = [
     ),
     path(
         "assertions/<int:assertion_id>/delete/",
+        views_assertions.delete_local_assertion,
+        name="delete_local_assertion",
+    ),
+    # New assertion action endpoints
+    path(
+        "assertions/run-remote/",
+        views_assertions.run_remote_assertion,
+        name="run_remote_assertion",
+    ),
+    path(
+        "assertions/sync-to-local/",
+        views_assertions.sync_assertion_to_local,
+        name="sync_assertion_to_local",
+    ),
+    path(
+        "assertions/<int:assertion_id>/push/",
+        views_assertions.push_assertion_to_datahub,
+        name="push_assertion_to_datahub",
+    ),
+    path(
+        "assertions/<int:assertion_id>/resync/",
+        views_assertions.resync_assertion,
+        name="resync_assertion",
+    ),
+    path(
+        "assertions/<int:assertion_id>/delete-local/",
         views_assertions.delete_local_assertion,
         name="delete_local_assertion",
     ),

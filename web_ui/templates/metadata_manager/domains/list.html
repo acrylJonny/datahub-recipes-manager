@@ -344,37 +344,37 @@
                     </div>
                 </div>
             
-                <!-- Domains Tabs -->
-                <ul class="nav nav-tabs mb-4" id="domainTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
+            <!-- Domains Tabs -->
+            <ul class="nav nav-tabs mb-4" id="domainTabs" role="tablist">
+                <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
                                type="button" role="tab" aria-controls="synced-items" aria-selected="true">
-                            <i class="fas fa-sync-alt me-1"></i> Synced Domains
+                        <i class="fas fa-sync-alt me-1"></i> Synced Domains
                             <span class="badge bg-success ms-1" id="synced-badge">0</span>
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
                         <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-items" 
                                type="button" role="tab" aria-controls="local-items" aria-selected="false">
-                            <i class="fas fa-laptop me-1"></i> Local Only Domains
+                        <i class="fas fa-laptop me-1"></i> Local Only Domains
                             <span class="badge bg-secondary ms-1" id="local-badge">0</span>
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
                         <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
                                type="button" role="tab" aria-controls="remote-items" aria-selected="false">
-                            <i class="fas fa-server me-1"></i> Remote Only Domains
+                        <i class="fas fa-server me-1"></i> Remote Only Domains
                             <span class="badge bg-info ms-1" id="remote-badge">0</span>
-                        </button>
-                    </li>
-                </ul>
-
-                <div class="tab-content" id="domainTabsContent">
-                    <!-- Synced Domains Tab -->
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content" id="domainTabsContent">
+                <!-- Synced Domains Tab -->
                     <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
-                        <div class="card mb-4">
-                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <h5 class="card-title mb-0">Synced Domains</h5>
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">Synced Domains</h5>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button type="button" class="btn btn-outline-secondary" onclick="expandAllDomains()" title="Expand All">
@@ -388,14 +388,14 @@
                                         <span class="input-group-text"><i class="fas fa-search"></i></span>
                                         <input type="text" id="synced-search" class="form-control" placeholder="Search synced domains...">
                                         <button type="button" class="btn btn-outline-secondary" id="synced-clear">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </div>
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
                                 </div>
                             </div>
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
-                            </div>
+                        </div>
                         </div>
                     </div>
                     
@@ -408,30 +408,30 @@
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button type="button" class="btn btn-outline-secondary" onclick="expandAllDomains()" title="Expand All">
                                             <i class="fas fa-expand-arrows-alt"></i>
-                                        </button>
+                                                                </button>
                                         <button type="button" class="btn btn-outline-secondary" onclick="collapseAllDomains()" title="Collapse All">
                                             <i class="fas fa-compress-arrows-alt"></i>
-                                        </button>
+                                                            </button>
                                     </div>
                                     <div class="input-group" style="width: 300px;">
                                         <span class="input-group-text"><i class="fas fa-search"></i></span>
                                         <input type="text" id="local-search" class="form-control" placeholder="Search local domains...">
                                         <button type="button" class="btn btn-outline-secondary" id="local-clear">
                                             <i class="fas fa-times"></i>
-                                        </button>
-                                    </div>
+                                                            </button>
+                                                        </div>
                                 </div>
-                            </div>
+                                    </div>
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
-                            </div>
                         </div>
                     </div>
-                    
+                </div>
+                
                     <!-- Remote Domains Tab -->
                     <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
-                        <div class="card mb-4">
-                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <div class="card mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Remote Only Domains</h5>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="btn-group btn-group-sm" role="group">
@@ -446,16 +446,16 @@
                                         <span class="input-group-text"><i class="fas fa-search"></i></span>
                                         <input type="text" id="remote-search" class="form-control" placeholder="Search remote domains...">
                                         <button type="button" class="btn btn-outline-secondary" id="remote-clear">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </div>
+                                        <i class="fas fa-times"></i>
+                                    </button>
                                 </div>
                             </div>
+                        </div>
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
-                            </div>
-                        </div>
-                    </div>
+                                                        </div>
+                                </div>
+                                    </div>
                 </div>
             </div>
         </div>
@@ -512,28 +512,28 @@
                                         <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                                     </a>
                                 </div>
-                            </div>
                         </div>
                     </div>
-                    
+                </div>
+                
                     <!-- Ownership Information -->
                     <div class="col-md-6">
                         <div class="card h-100">
                             <div class="card-header">
                                 <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
-                            </div>
+                                </div>
                             <div class="card-body">
                                 <div id="modal-owners-list">
                                     <p class="text-muted">No ownership information available</p>
-                                </div>
+                            </div>
                                 
                                 <div id="modal-last-modified" class="mt-3">
                                     <!-- Last modified info will be shown here -->
-                                </div>
-                            </div>
                         </div>
-                    </div>
-                </div>
+                                                        </div>
+                                </div>
+                                    </div>
+                                </div>
                 
                 <!-- Relationships -->
                 <div class="row mt-3">
@@ -541,11 +541,11 @@
                         <div class="card">
                             <div class="card-header">
                                 <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
-                            </div>
+                        </div>
                             <div class="card-body">
                                 <div id="modal-relationships-list">
                                     <p class="text-muted">No relationships available</p>
-                                </div>
+                    </div>
                             </div>
                         </div>
                     </div>
@@ -561,29 +561,29 @@
                             <div class="card-body">
                                 <div id="modal-domain-properties">
                                     <p class="text-muted">No additional properties available</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
-                
+            </div>
+        </div>
+    </div>
+</div>
+
                 <!-- Raw JSON Data -->
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header">
                                 <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
-                            </div>
+                </div>
                             <div class="card-body">
                                 <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
-                            </div>
+                    </div>
                         </div>
                     </div>
+                    </div>
                 </div>
-            </div>
-            <div class="modal-footer">
+                <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
+                </div>
         </div>
     </div>
 </div>
@@ -598,7 +598,7 @@
             </div>
             <form method="post">
                 {% csrf_token %}
-                <div class="modal-body">
+            <div class="modal-body">
                     <div class="mb-3">
                         <label for="domainName" class="form-label">Domain Name</label>
                         <input type="text" class="form-control" id="domainName" name="name" required>
@@ -607,11 +607,11 @@
                         <label for="domainDescription" class="form-label">Description</label>
                         <textarea class="form-control" id="domainDescription" name="description" rows="3"></textarea>
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Create Domain</button>
-                </div>
+            </div>
             </form>
         </div>
     </div>
@@ -634,7 +634,7 @@ let currentSearch = {
     remote: ''
 };
 
-document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function() {
     loadDomainsData();
     
     // Search functionality for each tab
@@ -669,9 +669,9 @@ function loadDomainsData() {
             console.log('Received response:', response.status);
             return response.json();
         })
-        .then(data => {
+                    .then(data => {
             console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
-            if (data.success) {
+                        if (data.success) {
                 domainsData = data.data;
                 updateStatistics(data.data.statistics);
                 updateTabBadges();
@@ -822,8 +822,8 @@ function generateTableHTML(items, tabType) {
                     ${renderHierarchicalDomains(hierarchy, tabType, 0)}
                 </tbody>
             </table>
-        </div>
-    `;
+                                </div>
+                            `;
 }
 
 function organizeDomainHierarchy(items) {
@@ -841,7 +841,7 @@ function organizeDomainHierarchy(items) {
         if (item.parent_urn && itemMap.has(item.parent_urn)) {
             // Add to parent's children
             itemMap.get(item.parent_urn).children.push(itemMap.get(item.urn));
-        } else {
+                        } else {
             // Root level item
             rootItems.push(itemMap.get(item.urn));
         }
@@ -1147,7 +1147,7 @@ function showDomainDetails(domain) {
                             <strong>${escapeHtml(displayName)}</strong>
                             <br>
                             <small class="text-muted">${escapeHtml(ownershipType.info ? ownershipType.info.name : 'Owner')}</small>
-                        </div>
+                                </div>
                         <div class="text-end">
                             ${source.type ? `<span class="badge bg-light text-dark">${source.type}</span>` : ''}
                         </div>
@@ -1161,8 +1161,8 @@ function showDomainDetails(domain) {
                             ${owner.properties.title ? `<small class="text-muted d-block"><i class="fas fa-briefcase me-1"></i>${escapeHtml(owner.properties.title)}</small>` : ''}
                         </div>
                     ` : ''}
-                </div>
-            `;
+                            </div>
+                        `;
         }).join('');
     } else {
         ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
@@ -1217,7 +1217,7 @@ function showDomainDetails(domain) {
                 ` : ''}
             </div>
         `).join('');
-    } else {
+                    } else {
         relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
     }
     
@@ -1391,9 +1391,9 @@ function expandAllDomains() {
             const childRows = document.querySelectorAll(`[data-parent-domain="${domainUrn}"]`);
             childRows.forEach(row => {
                 row.style.display = 'table-row';
-            });
-        }
-    });
+                });
+            }
+        });
 }
 
 // Collapse all domains

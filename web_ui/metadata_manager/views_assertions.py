@@ -40,12 +40,12 @@ logger = logging.getLogger(__name__)
 
 class AssertionListView(View):
     """View to list and create assertions"""
-
+    
     def get(self, request):
         """Display list of assertions"""
         try:
             logger.info("Starting AssertionListView.get")
-
+            
             # Get all local assertions and domains for domain assertions
             local_assertions = Assertion.objects.all().order_by("name")
             domains = Domain.objects.all().order_by("name")
@@ -58,7 +58,7 @@ class AssertionListView(View):
             logger.debug("Testing DataHub connection from AssertionListView")
             connected, client = test_datahub_connection()
             logger.debug(f"DataHub connection test result: {connected}")
-
+            
             # Initialize context with local data only
             context = {
                 "local_assertions": local_assertions,
@@ -80,25 +80,25 @@ class AssertionListView(View):
                 "metadata_manager/assertions/list.html",
                 {"error": str(e), "page_title": "Assertions"},
             )
-
+    
     def post(self, request):
         """Create a new assertion"""
         try:
             name = request.POST.get("name")
             description = request.POST.get("description", "")
             assertion_type = request.POST.get("type")
-
+            
             if not name:
                 messages.error(request, "Assertion name is required")
                 return redirect("assertion_list")
-
+            
             if not assertion_type:
                 messages.error(request, "Assertion type is required")
                 return redirect("assertion_list")
-
+            
             # Initialize config based on assertion type
             config = {}
-
+            
             if assertion_type == "domain_exists":
                 domain_id = request.POST.get("domain_id")
                 if not domain_id:
@@ -107,7 +107,7 @@ class AssertionListView(View):
                         "Please select a domain for the domain existence assertion",
                     )
                     return redirect("assertion_list")
-
+                
                 try:
                     domain = Domain.objects.get(id=domain_id)
                     config = {
@@ -122,36 +122,36 @@ class AssertionListView(View):
             elif assertion_type == "sql":
                 sql_query = request.POST.get("sql_query")
                 expected_result = request.POST.get("expected_result")
-
+                
                 if not sql_query:
                     messages.error(request, "SQL query is required")
                     return redirect("assertion_list")
-
+                
                 config = {"query": sql_query, "expected_result": expected_result}
-
+            
             elif assertion_type == "tag_exists":
                 tag_name = request.POST.get("tag_name")
-
+                
                 if not tag_name:
                     messages.error(request, "Tag name is required")
                     return redirect("assertion_list")
-
+                
                 config = {"tag_name": tag_name}
-
+            
             elif assertion_type == "glossary_term_exists":
                 term_name = request.POST.get("term_name")
-
+                
                 if not term_name:
                     messages.error(request, "Glossary term name is required")
                     return redirect("assertion_list")
-
+                
                 config = {"term_name": term_name}
-
+            
             # Create the assertion
             Assertion.objects.create(
                 name=name, description=description, type=assertion_type, config=config
             )
-
+            
             messages.success(request, f"Assertion '{name}' created successfully")
             return redirect("assertion_list")
         except Exception as e:
@@ -162,7 +162,7 @@ class AssertionListView(View):
 
 class AssertionDetailView(View):
     """View to display, edit, and delete assertions"""
-
+    
     def get(self, request, assertion_id):
         """Display assertion details"""
         try:
@@ -188,29 +188,29 @@ class AssertionDetailView(View):
 
 class AssertionRunView(View):
     """View to run an assertion"""
-
+    
     @method_decorator(require_POST)
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
-
+    
     def post(self, request, assertion_id):
         """Run an assertion"""
         try:
             assertion = get_object_or_404(Assertion, id=assertion_id)
-
+            
             # Get DataHub connection
             connected, client = test_datahub_connection()
-
+            
             if not connected or not client:
                 messages.error(
                     request,
                     "Cannot connect to DataHub. Please check your connection settings.",
                 )
                 return redirect("assertion_detail", assertion_id=assertion_id)
-
+            
             # Run assertion based on type
             result = None
-
+            
             if assertion.type == "domain_exists":
                 result = self.run_domain_exists_assertion(assertion, client)
             elif assertion.type == "sql":
@@ -219,7 +219,7 @@ class AssertionRunView(View):
                 result = self.run_tag_exists_assertion(assertion, client)
             elif assertion.type == "glossary_term_exists":
                 result = self.run_glossary_term_exists_assertion(assertion, client)
-
+            
             if result:
                 # Save the result
                 AssertionResult.objects.create(
@@ -228,12 +228,12 @@ class AssertionRunView(View):
                     details=result["details"],
                     run_at=timezone.now(),
                 )
-
+                
                 # Update assertion
                 assertion.last_run = timezone.now()
                 assertion.last_status = "SUCCESS" if result["success"] else "FAILED"
                 assertion.save()
-
+                
                 if result["success"]:
                     messages.success(request, f"Assertion '{assertion.name}' passed")
                 else:
@@ -243,19 +243,19 @@ class AssertionRunView(View):
                     )
             else:
                 messages.error(request, "Failed to run assertion")
-
+            
             return redirect("assertion_detail", assertion_id=assertion_id)
         except Exception as e:
             logger.error(f"Error running assertion: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("assertion_list")
-
+    
     def run_domain_exists_assertion(self, assertion, client):
         """Run a domain_exists assertion"""
         try:
             config = assertion.config
             domain_urn = config.get("domain_urn")
-
+            
             if not domain_urn:
                 return {
                     "success": False,
@@ -263,12 +263,12 @@ class AssertionRunView(View):
                         "message": "Domain URN not found in assertion configuration"
                     },
                 }
-
+            
             # Check if domain exists in DataHub
             domain = client.get_domain(domain_urn)
-
+            
             exists = domain is not None
-
+            
             return {
                 "success": exists,
                 "details": {
@@ -285,7 +285,7 @@ class AssertionRunView(View):
                 "success": False,
                 "details": {"message": f"Error running assertion: {str(e)}"},
             }
-
+    
     def run_sql_assertion(self, assertion, client):
         """Run a SQL assertion"""
         # This is a placeholder, actual implementation would depend on DataHub's SQL execution capabilities
@@ -293,13 +293,13 @@ class AssertionRunView(View):
             "success": False,
             "details": {"message": "SQL assertions are not yet implemented"},
         }
-
+    
     def run_tag_exists_assertion(self, assertion, client):
         """Run a tag_exists assertion"""
         try:
             config = assertion.config
             tag_name = config.get("tag_name")
-
+            
             if not tag_name:
                 return {
                     "success": False,
@@ -307,15 +307,15 @@ class AssertionRunView(View):
                         "message": "Tag name not found in assertion configuration"
                     },
                 }
-
+            
             # Generate the tag URN
             tag_urn = get_full_urn_from_name("tag", tag_name)
-
+            
             # Check if tag exists in DataHub
             tag = client.get_tag(tag_urn)
-
+            
             exists = tag is not None
-
+            
             return {
                 "success": exists,
                 "details": {
@@ -332,13 +332,13 @@ class AssertionRunView(View):
                 "success": False,
                 "details": {"message": f"Error running assertion: {str(e)}"},
             }
-
+    
     def run_glossary_term_exists_assertion(self, assertion, client):
         """Run a glossary_term_exists assertion"""
         try:
             config = assertion.config
             term_name = config.get("term_name")
-
+            
             if not term_name:
                 return {
                     "success": False,
@@ -346,15 +346,15 @@ class AssertionRunView(View):
                         "message": "Glossary term name not found in assertion configuration"
                     },
                 }
-
+            
             # Generate the term URN (this is a simplified approach, actual URN may depend on parent path)
             term_urn = get_full_urn_from_name("glossaryTerm", term_name)
-
+            
             # Check if term exists in DataHub
             term = client.get_glossary_term(term_urn)
-
+            
             exists = term is not None
-
+            
             return {
                 "success": exists,
                 "details": {
@@ -375,20 +375,20 @@ class AssertionRunView(View):
 
 class AssertionDeleteView(View):
     """View to delete an assertion"""
-
+    
     @method_decorator(require_POST)
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
-
+    
     def post(self, request, assertion_id):
         """Delete an assertion"""
         try:
             assertion = get_object_or_404(Assertion, id=assertion_id)
-
+            
             # Delete the assertion
             assertion_name = assertion.name
             assertion.delete()
-
+            
             messages.success(
                 request, f"Assertion '{assertion_name}' deleted successfully"
             )
@@ -401,15 +401,15 @@ class AssertionDeleteView(View):
 
 class AssertionListView(View):
     """View to list and create SQL assertions"""
-
+    
     def get(self, request):
         """Display list of SQL assertions"""
         try:
             assertions = Assertion.objects.all().order_by("-updated_at")
-
+            
             # Check connection to DataHub
             connected, client = test_datahub_connection()
-
+            
             return render(
                 request,
                 "metadata_manager/assertions/list.html",
@@ -427,39 +427,39 @@ class AssertionListView(View):
                 "metadata_manager/assertions/list.html",
                 {"page_title": "SQL Assertions", "error": str(e)},
             )
-
+    
     def post(self, request):
         """Create a new SQL assertion"""
         try:
             name = request.POST.get("name")
             description = request.POST.get("description", "")
             assertion_type = request.POST.get("type", "SQL")
-
+            
             # Get SQL query configuration
             database_platform = request.POST.get("database_platform")
             query = request.POST.get("query", "")
             expected_result = request.POST.get("expected_result", "SUCCESS")
-
+            
             if not name:
                 messages.error(request, "Assertion name is required")
                 return redirect("metadata_manager:assertion_list")
-
+                
             if not query:
                 messages.error(request, "SQL query is required")
                 return redirect("metadata_manager:assertion_list")
-
+                
             # Create config JSON
             config = {
                 "database_platform": database_platform,
                 "query": query,
                 "expected_result": expected_result,
             }
-
+            
             # Create the assertion
             Assertion.objects.create(
                 name=name, description=description, type=assertion_type, config=config
             )
-
+            
             messages.success(request, f"SQL assertion '{name}' created successfully")
             return redirect("metadata_manager:assertion_list")
         except Exception as e:
@@ -470,20 +470,20 @@ class AssertionListView(View):
 
 class AssertionDetailView(View):
     """View to view, edit and run SQL assertions"""
-
+    
     def get(self, request, assertion_id):
         """Display assertion details"""
         try:
             assertion = get_object_or_404(Assertion, id=assertion_id)
-
+            
             # Get previous results
             results = AssertionResult.objects.filter(assertion=assertion).order_by(
                 "-run_at"
             )[:10]
-
+            
             # Check connection to DataHub
             connected, client = test_datahub_connection()
-
+            
             return render(
                 request,
                 "metadata_manager/assertions/detail.html",
@@ -498,45 +498,45 @@ class AssertionDetailView(View):
             logger.error(f"Error in assertion detail view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:assertion_list")
-
+    
     def post(self, request, assertion_id):
         """Update SQL assertion"""
         try:
             assertion = get_object_or_404(Assertion, id=assertion_id)
-
+            
             name = request.POST.get("name")
             description = request.POST.get("description", "")
-
+            
             # Get SQL query configuration
             database_platform = request.POST.get("database_platform")
             query = request.POST.get("query", "")
             expected_result = request.POST.get("expected_result", "SUCCESS")
-
+            
             if not name:
                 messages.error(request, "Assertion name is required")
                 return redirect(
                     "metadata_manager:assertion_detail", assertion_id=assertion_id
                 )
-
+                
             if not query:
                 messages.error(request, "SQL query is required")
                 return redirect(
                     "metadata_manager:assertion_detail", assertion_id=assertion_id
                 )
-
+                
             # Update config JSON
             config = {
                 "database_platform": database_platform,
                 "query": query,
                 "expected_result": expected_result,
             }
-
+            
             # Update the assertion
             assertion.name = name
             assertion.description = description
             assertion.config = config
             assertion.save()
-
+            
             messages.success(request, f"SQL assertion '{name}' updated successfully")
             return redirect(
                 "metadata_manager:assertion_detail", assertion_id=assertion_id
@@ -545,7 +545,7 @@ class AssertionDetailView(View):
             logger.error(f"Error updating SQL assertion: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:assertion_list")
-
+    
     def delete(self, request, assertion_id):
         """Delete assertion"""
         try:
@@ -567,23 +567,23 @@ class AssertionDetailView(View):
 
 class AssertionRunView(View):
     """View to run a SQL assertion"""
-
+    
     @method_decorator(require_POST)
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
-
+    
     def post(self, request, assertion_id):
         """Run a SQL assertion"""
         try:
             assertion = get_object_or_404(Assertion, id=assertion_id)
-
+            
             # Check connection to DataHub
             connected, client = test_datahub_connection()
             if not connected or not client:
                 return JsonResponse(
                     {"success": False, "message": "Not connected to DataHub"}
                 )
-
+            
             # Run the assertion through DataHub
             result = client.run_sql_assertion(
                 name=assertion.name,
@@ -591,21 +591,21 @@ class AssertionRunView(View):
                 query=assertion.config.get("query", ""),
                 expected_result=assertion.config.get("expected_result", "SUCCESS"),
             )
-
+            
             if result:
                 # Create a result record
                 status = result.get("status", "UNKNOWN")
                 details = result.get("details", {})
-
+                
                 AssertionResult.objects.create(
                     assertion=assertion, status=status, details=details
                 )
-
+                
                 # Update assertion with last run info
                 assertion.last_run = timezone.now()
                 assertion.last_status = status
                 assertion.save()
-
+                
                 return JsonResponse(
                     {
                         "success": True,
@@ -627,16 +627,16 @@ class AssertionRunView(View):
 
 class AssertionGitPushView(View):
     """View to add an assertion to a GitHub PR"""
-
+    
     @method_decorator(require_POST)
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
-
+    
     def post(self, request, assertion_id):
         """Add assertion to GitHub PR"""
         try:
             assertion = get_object_or_404(Assertion, id=assertion_id)
-
+            
             # Check if Git integration is available
             if not GIT_INTEGRATION_AVAILABLE:
                 return JsonResponse(
@@ -649,7 +649,7 @@ class AssertionGitPushView(View):
                 return JsonResponse(
                     {"success": False, "message": "GitHub integration not enabled"}
                 )
-
+            
             # Get environment from request (default to None if not provided)
             environment_id = request.POST.get("environment")
             environment = None
@@ -667,11 +667,11 @@ class AssertionGitPushView(View):
                 logger.info(
                     f"No environment specified, using default: {environment.name}"
                 )
-
+            
             # Get Git settings
             settings = GitSettings.get_instance()
             current_branch = settings.current_branch or "main"
-
+            
             # Prevent pushing directly to main/master branch
             if current_branch.lower() in ["main", "master"]:
                 logger.warning(f"Attempted to push directly to {current_branch} branch")
@@ -681,7 +681,7 @@ class AssertionGitPushView(View):
                         "error": "Cannot push directly to the main/master branch. Please create and use a feature branch.",
                     }
                 )
-
+            
             # Create a simple Assertion object that GitIntegration can handle
             class SQLAssertion:
                 def __init__(self, assertion, environment):
@@ -694,7 +694,7 @@ class AssertionGitPushView(View):
                     self.content = (
                         self.to_yaml()
                     )  # GitIntegration expects a content attribute
-
+                
                 def to_dict(self):
                     # Return a dictionary representation of the assertion
                     return {
@@ -704,26 +704,26 @@ class AssertionGitPushView(View):
                         "type": self.type,
                         "config": self.config,
                     }
-
+                
                 def to_yaml(self):
                     # Return YAML representation of the assertion
                     return yaml.dump(self.to_dict(), default_flow_style=False)
-
+            
             # Create the assertion object
             sql_assertion = SQLAssertion(assertion, environment)
-
+            
             # Create commit message
             commit_message = f"Add/update SQL assertion: {assertion.name}"
-
+            
             # Stage the assertion to the git repo
             logger.info(
                 f"Staging assertion {assertion.id} to Git branch {current_branch}"
             )
             git_integration = GitIntegration()
-
+            
             # Use GitIntegration to stage the changes
             result = git_integration.push_to_git(sql_assertion, commit_message)
-
+            
             if result and result.get("success"):
                 # Success response
                 logger.info(
@@ -740,7 +740,7 @@ class AssertionGitPushView(View):
                 error_message = f'Failed to stage SQL assertion "{assertion.name}"'
                 if isinstance(result, dict) and "error" in result:
                     error_message += f": {result['error']}"
-
+                
                 logger.error(f"Failed to stage assertion: {error_message}")
                 return JsonResponse({"success": False, "error": error_message})
         except Exception as e:
@@ -1242,3 +1242,217 @@ def delete_local_assertion(request, assertion_id):
     except Exception as e:
         logger.error(f"Error deleting local assertion: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["POST"])
+def create_datahub_assertion(request):
+    """Create DataHub assertion with comprehensive type support"""
+    try:
+        # Get basic info
+        name = request.POST.get("name")
+        description = request.POST.get("description", "")
+        assertion_type = request.POST.get("type")
+        dataset_urn = request.POST.get("dataset_urn")
+        timezone = request.POST.get("timezone", "America/Los_Angeles")
+        cron_expression = request.POST.get("cron_expression", "0 */8 * * *")
+        
+        if not all([name, assertion_type, dataset_urn]):
+            return JsonResponse({
+                "success": False,
+                "error": "Name, assertion type, and dataset URN are required"
+            })
+        
+        # Get DataHub client
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({
+                "success": False,
+                "error": "DataHub connection not available"
+            })
+        
+        assertion_urn = None
+        
+        # Create assertion based on type
+        if assertion_type == "FIELD":
+            field_path = request.POST.get("field_path")
+            field_type = request.POST.get("field_type", "NUMBER")
+            native_type = request.POST.get("native_type", "")
+            field_operator = request.POST.get("field_operator")
+            field_value = request.POST.get("field_value")
+            fail_threshold = int(request.POST.get("fail_threshold", 0))
+            
+            if not all([field_path, field_operator]):
+                return JsonResponse({
+                    "success": False,
+                    "error": "Field path and operator are required for field assertions"
+                })
+            
+            assertion_urn = client.create_field_assertion(
+                dataset_urn=dataset_urn,
+                field_path=field_path,
+                field_type=field_type,
+                native_type=native_type,
+                operator=field_operator,
+                value=field_value or "0",
+                fail_threshold=fail_threshold,
+                timezone=timezone,
+                cron=cron_expression,
+                description=description
+            )
+            
+        elif assertion_type == "SQL":
+            sql_statement = request.POST.get("sql_statement")
+            sql_operator = request.POST.get("sql_operator", "EQUAL_TO")
+            sql_value = request.POST.get("sql_value", "1")
+            
+            if not sql_statement:
+                return JsonResponse({
+                    "success": False,
+                    "error": "SQL statement is required for SQL assertions"
+                })
+            
+            assertion_urn = client.create_sql_assertion(
+                dataset_urn=dataset_urn,
+                sql_statement=sql_statement,
+                operator=sql_operator,
+                value=sql_value,
+                timezone=timezone,
+                cron=cron_expression,
+                description=description
+            )
+            
+        elif assertion_type == "VOLUME":
+            volume_operator = request.POST.get("volume_operator")
+            volume_value = request.POST.get("volume_value")
+            volume_max_value = request.POST.get("volume_max_value")
+            
+            if not volume_operator:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Volume operator is required for volume assertions"
+                })
+            
+            kwargs = {
+                "dataset_urn": dataset_urn,
+                "operator": volume_operator,
+                "timezone": timezone,
+                "cron": cron_expression,
+                "description": description
+            }
+            
+            if volume_operator == "BETWEEN":
+                kwargs["min_value"] = volume_value
+                kwargs["max_value"] = volume_max_value
+            else:
+                kwargs["value"] = volume_value
+            
+            assertion_urn = client.create_volume_assertion(**kwargs)
+            
+        elif assertion_type == "FRESHNESS":
+            freshness_interval = int(request.POST.get("freshness_interval", 24))
+            freshness_unit = request.POST.get("freshness_unit", "HOUR")
+            
+            assertion_urn = client.create_freshness_assertion(
+                dataset_urn=dataset_urn,
+                schedule_interval=freshness_interval,
+                schedule_unit=freshness_unit,
+                timezone=timezone,
+                cron=cron_expression,
+                description=description
+            )
+            
+        elif assertion_type == "SCHEMA":
+            schema_compatibility = request.POST.get("schema_compatibility", "EXACT_MATCH")
+            expected_fields = request.POST.get("expected_fields", "")
+            
+            if not expected_fields:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Expected fields are required for schema assertions"
+                })
+            
+            # Parse expected fields
+            fields = []
+            for line in expected_fields.strip().split('\n'):
+                if ':' in line:
+                    field_name, field_type = line.strip().split(':', 1)
+                    fields.append({
+                        "path": field_name.strip(),
+                        "type": field_type.strip()
+                    })
+            
+            assertion_urn = client.create_schema_assertion(
+                dataset_urn=dataset_urn,
+                fields=fields,
+                compatibility=schema_compatibility,
+                description=description
+            )
+            
+        elif assertion_type == "CUSTOM":
+            custom_logic = request.POST.get("custom_logic")
+            
+            if not custom_logic:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Custom logic is required for custom assertions"
+                })
+            
+            # For custom assertions, we'll create a local record for now
+            # DataHub's custom assertion creation may need specific implementation
+            assertion = Assertion.objects.create(
+                name=name,
+                description=description,
+                type="CUSTOM",
+                config={
+                    "dataset_urn": dataset_urn,
+                    "custom_logic": custom_logic,
+                    "timezone": timezone,
+                    "cron_expression": cron_expression
+                }
+            )
+            
+            return JsonResponse({
+                "success": True,
+                "message": f"Custom assertion '{name}' created locally",
+                "assertion_id": assertion.id
+            })
+        
+        else:
+            return JsonResponse({
+                "success": False,
+                "error": f"Unsupported assertion type: {assertion_type}"
+            })
+        
+        if assertion_urn:
+            # Create local record of the assertion
+            assertion = Assertion.objects.create(
+                name=name,
+                description=description,
+                type=assertion_type,
+                config={
+                    "dataset_urn": dataset_urn,
+                    "datahub_urn": assertion_urn,
+                    "timezone": timezone,
+                    "cron_expression": cron_expression,
+                    **dict(request.POST.items())  # Store all form data
+                }
+            )
+            
+            return JsonResponse({
+                "success": True,
+                "message": f"{assertion_type} assertion '{name}' created successfully in DataHub",
+                "assertion_urn": assertion_urn,
+                "assertion_id": assertion.id
+            })
+        else:
+            return JsonResponse({
+                "success": False,
+                "error": f"Failed to create {assertion_type} assertion in DataHub"
+            })
+            
+    except Exception as e:
+        logger.error(f"Error creating DataHub assertion: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
