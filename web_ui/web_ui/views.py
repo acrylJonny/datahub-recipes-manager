@@ -3105,11 +3105,22 @@ def github_index(request):
     settings = GitSettings.get_instance()
     pull_requests = GitHubPR.objects.all().order_by("-created_at")[:10]
 
+    # Load branches asynchronously to avoid race conditions
+    branches = []
+    if settings.is_configured():
+        try:
+            # Try to load branches with a timeout to avoid blocking the page
+            from web_ui.models import GitIntegration
+            branches = GitIntegration.get_branches()
+        except Exception as e:
+            logger.warning(f"Failed to load branches on page load: {str(e)}")
+            # Branches will be loaded via AJAX to avoid blocking the page
+
     context = {
         "github_settings": settings,
         "pull_requests": pull_requests,
         "is_configured": settings.is_configured(),
-        "branches": GitSettings.get_branches(),
+        "branches": branches,
     }
 
     return render(request, "github/index.html", context)
@@ -3189,6 +3200,52 @@ def github_test_connection(request):
         return JsonResponse({"success": False, "error": str(e)})
 
 
+def validate_github_branch_name(branch_name):
+    """Validate GitHub branch name according to Git standards."""
+    errors = []
+    
+    if not branch_name or not branch_name.strip():
+        errors.append("Branch name cannot be empty")
+        return errors
+    
+    trimmed = branch_name.strip()
+    
+    # GitHub branch naming rules
+    if ' ' in trimmed:
+        errors.append("Branch name cannot contain spaces")
+    
+    if trimmed.startswith('.') or trimmed.endswith('.'):
+        errors.append("Branch name cannot start or end with a period")
+    
+    if '..' in trimmed:
+        errors.append("Branch name cannot contain consecutive periods (..)")
+    
+    if trimmed.startswith('/') or trimmed.endswith('/'):
+        errors.append("Branch name cannot start or end with a slash")
+    
+    if '//' in trimmed:
+        errors.append("Branch name cannot contain consecutive slashes")
+    
+    # Check for invalid characters
+    import re
+    if re.search(r'[~^:\\*\[\]?@{}\x00-\x1f\x7f]', trimmed):
+        errors.append("Branch name contains invalid characters (~, ^, :, \\, ?, *, [, ], @, {, }, or control characters)")
+    
+    # Check for reserved names
+    if trimmed in ['.', '..']:
+        errors.append('Branch name cannot be "." or ".."')
+    
+    # Check length (GitHub limit is 250 characters)
+    if len(trimmed) > 250:
+        errors.append("Branch name cannot exceed 250 characters")
+    
+    # Check for @{ sequence
+    if '@{' in trimmed:
+        errors.append('Branch name cannot contain "@{" sequence')
+    
+    return errors
+
+
 @require_POST
 def github_create_branch(request):
     """Create a new branch on GitHub."""
@@ -3201,6 +3258,13 @@ def github_create_branch(request):
 
     if not branch_name:
         messages.error(request, "Branch name is required")
+        return redirect("github_index")
+    
+    # Validate branch name
+    validation_errors = validate_github_branch_name(branch_name)
+    if validation_errors:
+        for error in validation_errors:
+            messages.error(request, f"Invalid branch name: {error}")
         return redirect("github_index")
 
     settings = GitSettings.get_instance()
@@ -5758,3 +5822,27 @@ def get_recipe_by_id(recipe_id):
     except Exception as e:
         logger.error(f"Error retrieving recipe {recipe_id}: {str(e)}")
         return None
+
+
+@csrf_exempt
+def github_load_branches(request):
+    """Load branches asynchronously to avoid race conditions."""
+    if not GitSettings.is_configured():
+        return JsonResponse(
+            {"success": False, "error": "GitHub integration is not configured."}
+        )
+
+    try:
+        # Get all branches using GitIntegration instead of GitSettings
+        from web_ui.models import GitIntegration
+        branches = GitIntegration.get_branches()
+        settings = GitSettings.get_instance()
+        
+        return JsonResponse({
+            "success": True, 
+            "branches": branches,
+            "current_branch": settings.current_branch
+        })
+    except Exception as e:
+        logger.error(f"Error loading branches: {str(e)}")
+        return JsonResponse({"success": False, "error": f"Error: {str(e)}"})

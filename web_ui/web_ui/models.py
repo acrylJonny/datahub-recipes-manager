@@ -1682,6 +1682,82 @@ class GitIntegration:
 
                 pr_title = f"Add/update metadata test: {instance_or_template.name}"
 
+            # Handle assertions (identified by having to_dict method and assertion_type)
+            elif (
+                hasattr(instance_or_template, "to_dict")
+                and hasattr(instance_or_template, "assertion_type")
+                and hasattr(instance_or_template, "environment")
+            ):
+                logger.info(f"Exporting assertion: {instance_or_template.name}")
+
+                # Get environment
+                environment = instance_or_template.environment
+
+                # Create metadata-manager directory structure
+                metadata_manager_dir = base_dir / "metadata-manager" / environment / "assertions"
+                metadata_manager_dir.mkdir(parents=True, exist_ok=True)
+
+                # Get assertion data which includes the unique filename
+                assertion_data = instance_or_template.to_dict()
+                
+                # Determine operation and type for filename
+                operation = assertion_data.get("operation", "create")
+                assertion_type = assertion_data.get("assertion_type", "UNKNOWN")
+                
+                # Use the filename from assertion data to ensure uniqueness and prevent overwrites
+                filename = assertion_data.get("filename")
+                if not filename:
+                    # Fallback to ID-based naming if filename not present
+                    filename = f"{operation}_{assertion_type}_{instance_or_template.id}_{instance_or_template.name.lower().replace(' ', '_')}.json"
+                
+                file_path = metadata_manager_dir / filename
+
+                # Export the assertion as JSON
+                import json
+                with open(file_path, "w") as f:
+                    json.dump(assertion_data, f, indent=2)
+
+                pr_title = f"Add assertion '{instance_or_template.name}' for {environment} environment"
+
+            # Handle metadata tests (identified by having id, name, definition, and environment attributes)
+            elif (
+                hasattr(instance_or_template, "id")
+                and hasattr(instance_or_template, "name")
+                and hasattr(instance_or_template, "definition")
+                and hasattr(instance_or_template, "environment")
+            ):
+                logger.info(f"Exporting metadata test: {instance_or_template.name}")
+
+                # Get environment (default to 'prod' if not specified)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+
+                # Create environment directory if it doesn't exist
+                env_tests_dir = metadata_tests_dir / environment
+                env_tests_dir.mkdir(exist_ok=True)
+
+                # Generate a safe file name from the test name
+                import re
+
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+                file_path = env_tests_dir / f"{safe_name}.yaml"
+
+                # Get test content
+                if hasattr(instance_or_template, "to_yaml"):
+                    content = instance_or_template.to_yaml()
+                else:
+                    content = instance_or_template.definition
+
+                # Export the test content
+                with open(file_path, "w") as f:
+                    f.write(content)
+
+                pr_title = f"Add/update metadata test: {instance_or_template.name}"
+
             else:
                 err_msg = f"Invalid object type: {type(instance_or_template)}"
                 logger.error(err_msg)

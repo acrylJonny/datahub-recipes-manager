@@ -135,6 +135,12 @@
                     </div>
                     
                     <div class="d-grid mt-2">
+                        <a href="{% url 'github_branches' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-code-branch me-1"></i> Manage Branches
+                        </a>
+                    </div>
+                    
+                    <div class="d-grid mt-2">
                         <a href="{% url 'github_secrets' %}" class="btn btn-outline-secondary">
                             <i class="fas fa-key me-1"></i> Manage Repository Secrets
                         </a>
@@ -322,15 +328,17 @@
                 <h5 class="modal-title" id="createBranchModalLabel">Create New Branch</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="post" action="{% url 'github_create_branch' %}">
+            <form method="post" action="{% url 'github_create_branch' %}" id="create-branch-form">
                 {% csrf_token %}
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="branch_name" class="form-label">Branch Name</label>
                         <input type="text" class="form-control" id="branch_name" name="branch_name" 
                                placeholder="feature/my-new-feature" required>
+                        <div id="branch-name-feedback" class="invalid-feedback"></div>
                         <div class="form-text">
-                            Branch will be created from the main branch.
+                            <strong>Examples:</strong> feature/new-login, bugfix/auth-issue, hotfix/security-patch<br>
+                            <strong>Rules:</strong> No spaces, periods at start/end, consecutive periods, or special characters (~^:*[]?@{})
                         </div>
                     </div>
                     <div class="mb-3">
@@ -338,10 +346,11 @@
                         <textarea class="form-control" id="branch_description" name="branch_description" 
                                   rows="3" placeholder="Describe the purpose of this branch"></textarea>
                     </div>
+                    <div id="branch-validation-error" class="alert alert-danger d-none"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Branch</button>
+                    <button type="submit" class="btn btn-primary" id="create-branch-submit-btn">Create Branch</button>
                 </div>
             </form>
         </div>
@@ -652,9 +661,21 @@
                 prTitleInput.value = `Changes from ${currentBranch}`;
             }
             
-            // Set default base branch to 'main' or first available branch that's not current
+            // Populate base branch dropdown with dynamically loaded branches
             const prBaseSelect = document.getElementById('pr-base');
-            if (prBaseSelect) {
+            if (prBaseSelect && window.loadedBranches) {
+                // Clear existing options
+                prBaseSelect.innerHTML = '';
+                
+                // Add branches as options
+                window.loadedBranches.forEach(branch => {
+                    const option = document.createElement('option');
+                    option.value = branch;
+                    option.textContent = branch;
+                    option.disabled = (branch === currentBranch);
+                    prBaseSelect.appendChild(option);
+                });
+                
                 // Try to select 'main' by default
                 for (let i = 0; i < prBaseSelect.options.length; i++) {
                     if (prBaseSelect.options[i].value === 'main' && prBaseSelect.options[i].value !== currentBranch) {
@@ -1129,6 +1150,183 @@
             });
         });
         
+                // Function to load branches asynchronously
+        function loadBranches() {
+            const branchDropdown = document.getElementById('branchDropdown');
+            if (!branchDropdown) {
+                console.log('Branch dropdown not found');
+                return;
+            }
+            
+            const branchDropdownMenu = branchDropdown.nextElementSibling;
+            if (!branchDropdownMenu) {
+                console.log('Branch dropdown menu not found');
+                return;
+            }
+            
+            // Always load branches via AJAX to avoid race conditions
+            console.log('Loading branches via AJAX...');
+            
+            // Show loading state
+            branchDropdown.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Loading...';
+            branchDropdown.disabled = true;
+            
+            fetch('{% url "github_load_branches" %}', {
+                method: 'GET',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => {
+                console.log('Branch loading response:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Branch loading data:', data);
+                if (data.success && data.branches) {
+                    // Store branches globally for use by other components
+                    window.loadedBranches = data.branches;
+                    
+                    // Update current branch in dropdown button
+                    branchDropdown.innerHTML = data.current_branch || 'main';
+                    branchDropdown.disabled = false;
+                    
+                    // Update dropdown menu with branches
+                    let branchHtml = '';
+                    data.branches.forEach(branch => {
+                        const isActive = branch === data.current_branch ? ' active' : '';
+                        const deleteBtn = (branch !== data.current_branch && branch !== 'main' && branch !== 'master') 
+                            ? `<button type="button" class="btn btn-sm text-danger me-2 delete-branch-btn" 
+                                       data-branch="${branch}" data-bs-toggle="modal" data-bs-target="#deleteBranchModal">
+                                   <i class="fas fa-trash-alt"></i>
+                               </button>` 
+                            : '';
+                        
+                        branchHtml += `
+                            <li>
+                                <div class="d-flex align-items-center">
+                                     <a class="dropdown-item flex-grow-1${isActive}" 
+                                         href="/github/switch-branch/${encodeURIComponent(branch)}/">
+                                         ${branch}
+                                     </a>
+                                    ${deleteBtn}
+                                </div>
+                            </li>`;
+                    });
+                    branchDropdownMenu.innerHTML = branchHtml;
+                    
+                    console.log(`Loaded ${data.branches.length} branches successfully`);
+                    
+                    // Re-bind delete branch button events
+                    document.querySelectorAll('.delete-branch-btn').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const branchName = this.getAttribute('data-branch');
+                            document.getElementById('branch-to-delete').value = branchName;
+                            document.getElementById('branch-name-placeholder').textContent = branchName;
+                        });
+                    });
+                } else {
+                    branchDropdown.innerHTML = data.current_branch || 'main';
+                    branchDropdown.disabled = false;
+                    console.error('Error loading branches:', data.error || 'No branches returned');
+                    
+                    // Show error message in dropdown menu
+                    branchDropdownMenu.innerHTML = '<li><span class="dropdown-item text-danger">Error loading branches</span></li>';
+                }
+            })
+            .catch(error => {
+                branchDropdown.innerHTML = 'Error';
+                branchDropdown.disabled = false;
+                console.error('Error loading branches:', error);
+                
+                // Show error message in dropdown menu
+                if (branchDropdownMenu) {
+                    branchDropdownMenu.innerHTML = '<li><span class="dropdown-item text-danger">Error loading branches</span></li>';
+                }
+            });
+        }
+
+        // Function to validate GitHub branch name
+        function validateBranchName(branchName) {
+            const errors = [];
+            
+            // Check for empty name
+            if (!branchName || branchName.trim() === '') {
+                errors.push('Branch name cannot be empty');
+                return errors;
+            }
+            
+            const trimmed = branchName.trim();
+            
+            // GitHub branch naming rules
+            if (trimmed.includes(' ')) {
+                errors.push('Branch name cannot contain spaces');
+            }
+            
+            if (trimmed.startsWith('.') || trimmed.endsWith('.')) {
+                errors.push('Branch name cannot start or end with a period');
+            }
+            
+            if (trimmed.includes('..')) {
+                errors.push('Branch name cannot contain consecutive periods (..)');
+            }
+            
+            if (trimmed.startsWith('/') || trimmed.endsWith('/')) {
+                errors.push('Branch name cannot start or end with a slash');
+            }
+            
+            if (trimmed.includes('//')) {
+                errors.push('Branch name cannot contain consecutive slashes');
+            }
+            
+            // Check for invalid characters
+            const invalidChars = /[~^:\\*\[\]?@{}\x00-\x1f\x7f]/;
+            if (invalidChars.test(trimmed)) {
+                errors.push('Branch name contains invalid characters (~, ^, :, \\, ?, *, [, ], @, {, }, or control characters)');
+            }
+            
+            // Check for reserved names
+            if (trimmed === '.' || trimmed === '..') {
+                errors.push('Branch name cannot be "." or ".."');
+            }
+            
+            // Check length (GitHub limit is 250 characters)
+            if (trimmed.length > 250) {
+                errors.push('Branch name cannot exceed 250 characters');
+            }
+            
+            // Check for @{ sequence
+            if (trimmed.includes('@{')) {
+                errors.push('Branch name cannot contain "@{" sequence');
+            }
+            
+            return errors;
+        }
+
+        // Function to update branch name validation UI
+        function updateBranchValidation(input, isValid, errors = []) {
+            const feedback = document.getElementById('branch-name-feedback');
+            const submitBtn = document.getElementById('create-branch-submit-btn');
+            const errorAlert = document.getElementById('branch-validation-error');
+            
+            if (isValid) {
+                input.classList.remove('is-invalid');
+                input.classList.add('is-valid');
+                if (feedback) feedback.textContent = '';
+                if (submitBtn) submitBtn.disabled = false;
+                if (errorAlert) errorAlert.classList.add('d-none');
+            } else {
+                input.classList.remove('is-valid');
+                input.classList.add('is-invalid');
+                if (feedback) feedback.textContent = errors[0] || 'Invalid branch name';
+                if (submitBtn) submitBtn.disabled = true;
+                if (errorAlert) {
+                    errorAlert.innerHTML = '<strong>Invalid branch name:</strong><br>' + errors.join('<br>');
+                    errorAlert.classList.remove('d-none');
+                }
+            }
+        }
+
         // Document-ready event may be fired twice, let's add a debug message
         console.log('Loading initial data...');
         
@@ -1161,7 +1359,50 @@
             });
         }
         
-        // Load initial data
+        // Set up branch name validation
+        const branchNameInput = document.getElementById('branch_name');
+        const createBranchForm = document.getElementById('create-branch-form');
+        
+        if (branchNameInput) {
+            // Validate on input
+            branchNameInput.addEventListener('input', function() {
+                const branchName = this.value;
+                const errors = validateBranchName(branchName);
+                const isValid = errors.length === 0;
+                updateBranchValidation(this, isValid, errors);
+            });
+            
+            // Validate on paste
+            branchNameInput.addEventListener('paste', function() {
+                // Use setTimeout to validate after paste content is applied
+                setTimeout(() => {
+                    const branchName = this.value;
+                    const errors = validateBranchName(branchName);
+                    const isValid = errors.length === 0;
+                    updateBranchValidation(this, isValid, errors);
+                }, 10);
+            });
+        }
+        
+        if (createBranchForm) {
+            // Validate on form submission
+            createBranchForm.addEventListener('submit', function(e) {
+                const branchNameInput = document.getElementById('branch_name');
+                if (branchNameInput) {
+                    const branchName = branchNameInput.value;
+                    const errors = validateBranchName(branchName);
+                    
+                    if (errors.length > 0) {
+                        e.preventDefault();
+                        updateBranchValidation(branchNameInput, false, errors);
+                        return false;
+                    }
+                }
+            });
+        }
+
+        // Load initial data - load branches first to avoid race conditions
+        loadBranches();
         loadCIWorkflows();
         loadStagedChanges();
     });

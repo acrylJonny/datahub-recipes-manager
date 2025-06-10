@@ -239,9 +239,65 @@ urlpatterns = [
         name="data_product_list",
     ),
     path(
+        "data-products/create/",
+        views_data_products.DataProductListView.as_view(),
+        name="data_product_create",
+    ),
+    path(
         "data-products/data/",
         views_data_products.get_remote_data_products_data,
         name="get_remote_data_products_data",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/",
+        views_data_products.DataProductDetailView.as_view(),
+        name="data_product_detail",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/edit/",
+        views_data_products.DataProductDetailView.as_view(),
+        name="data_product_edit",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/delete/",
+        views_data_products.DataProductDetailView.as_view(),
+        name="data_product_delete",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/add-to-pr/",
+        views_data_products.add_data_product_to_pr,
+        name="add_data_product_to_pr",
+    ),
+    # Additional data product action endpoints
+    path(
+        "data-products/sync-to-local/",
+        views_data_products.sync_data_product_to_local,
+        name="sync_data_product_to_local",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/sync/",
+        views_data_products.sync_data_product_to_local,
+        name="data_product_sync",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/push-to-datahub/",
+        views_data_products.push_data_product_to_datahub,
+        name="push_data_product_to_datahub",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/resync/",
+        views_data_products.resync_data_product,
+        name="resync_data_product",
+    ),
+    path(
+        "data-products/delete-remote/",
+        views_data_products.delete_remote_data_product,
+        name="delete_remote_data_product",
+    ),
+    path(
+        "data-products/add-remote-to-pr/",
+        views_data_products.add_remote_data_product_to_pr,
+        name="add_remote_data_product_to_pr",
     ),
     # Assertions
     path(
@@ -265,17 +321,22 @@ urlpatterns = [
         name="assertion_create",
     ),
     path(
-        "assertions/<int:assertion_id>/",
+        "assertions/create-local/",
+        views_assertions.create_local_assertion,
+        name="assertion_create_local",
+    ),
+    path(
+        "assertions/<uuid:assertion_id>/",
         views_assertions.AssertionDetailView.as_view(),
         name="assertion_detail",
     ),
     path(
-        "assertions/<int:assertion_id>/run/",
+        "assertions/<uuid:assertion_id>/run/",
         views_assertions.AssertionRunView.as_view(),
         name="assertion_run",
     ),
     path(
-        "assertions/<int:assertion_id>/delete/",
+        "assertions/<uuid:assertion_id>/delete/",
         views_assertions.AssertionDeleteView.as_view(),
         name="assertion_delete",
     ),
@@ -291,45 +352,29 @@ urlpatterns = [
         name="sync_assertion_to_local",
     ),
     path(
-        "assertions/<int:assertion_id>/push/",
+        "assertions/<uuid:assertion_id>/push/",
         views_assertions.push_assertion_to_datahub,
         name="push_assertion_to_datahub",
     ),
     path(
-        "assertions/<int:assertion_id>/resync/",
+        "assertions/<uuid:assertion_id>/resync/",
         views_assertions.resync_assertion,
         name="resync_assertion",
     ),
     path(
-        "assertions/<int:assertion_id>/delete/",
+        "assertions/<uuid:assertion_id>/delete-local/",
         views_assertions.delete_local_assertion,
         name="delete_local_assertion",
     ),
-    # New assertion action endpoints
     path(
-        "assertions/run-remote/",
-        views_assertions.run_remote_assertion,
-        name="run_remote_assertion",
+        "assertions/<uuid:assertion_id>/add-to-pr/",
+        views_assertions.add_assertion_to_pr,
+        name="add_assertion_to_pr",
     ),
     path(
-        "assertions/sync-to-local/",
-        views_assertions.sync_assertion_to_local,
-        name="sync_assertion_to_local",
-    ),
-    path(
-        "assertions/<int:assertion_id>/push/",
-        views_assertions.push_assertion_to_datahub,
-        name="push_assertion_to_datahub",
-    ),
-    path(
-        "assertions/<int:assertion_id>/resync/",
-        views_assertions.resync_assertion,
-        name="resync_assertion",
-    ),
-    path(
-        "assertions/<int:assertion_id>/delete-local/",
-        views_assertions.delete_local_assertion,
-        name="delete_local_assertion",
+        "assertions/<uuid:assertion_id>/edit/",
+        views_assertions.edit_assertion,
+        name="edit_assertion",
     ),
     # Metadata Tests
     path("tests/", views_tests.TestListView.as_view(), name="tests_list"),

@@ -7,10 +7,12 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST, require_http_methods
 from django.utils.decorators import method_decorator
 import yaml
+import subprocess
 
 # Add project root to sys.path
 import sys
 import os
+import subprocess
 
 project_root = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -945,42 +947,139 @@ def get_remote_assertions_data(request):
                             
                             enhanced_remote_assertions[assertion_urn] = enhanced_assertion
 
-            # Extract assertion URNs that exist locally (if we had URN mapping)
-            # For now, treat all local assertions as local-only since we don't have URN mapping
-            local_assertion_urns = set()  # Would be populated if we had URN mapping
+            # Extract assertion URNs that exist locally and map them
+            local_assertion_urns = {}  # Map original_urn -> local assertion
+            local_assertion_ids = {}   # Map assertion_id -> local assertion
+            
+            try:
+                for assertion in local_assertions:
+                    # Map by original URN if it exists (synced assertions)
+                    if assertion.original_urn:
+                        local_assertion_urns[assertion.original_urn] = assertion
+                    # Also map by ID for local-only assertions - handle UUID safely
+                    try:
+                        assertion_id = str(assertion.id)  # Convert to string to avoid UUID issues
+                        local_assertion_ids[assertion_id] = assertion
+                    except Exception as e:
+                        logger.warning(f"Error processing assertion ID {assertion.id}: {str(e)}")
+                        continue
+            except Exception as e:
+                logger.error(f"Error mapping local assertions: {str(e)}")
+                # Fallback to treating all as remote-only
+                local_assertion_urns = {}
+                local_assertion_ids = {}
 
-            # Process local assertions
-            for assertion in local_assertions:
-                # Create enhanced local assertion data
-                local_assertion_data = {
-                    "id": assertion.id,
-                    "urn": f"urn:li:assertion:local:{assertion.id}",  # Mock URN for consistency
-                    "name": assertion.name,
-                    "description": assertion.description or "",
-                    "type": assertion.type,
-                    "sync_status": "LOCAL_ONLY",
-                    "sync_status_display": "Local Only",
-                    
-                    # Initialize ownership data (not stored locally for assertions)
-                    "ownership": None,
-                    "owners_count": 0,
-                    "owner_names": [],
-                    
-                    # Initialize relationships data (not stored locally for assertions)
-                    "relationships": None,
-                    "relationships_count": 0,
-                    
-                    # Add local metadata
-                    "last_run": assertion.last_run.isoformat() if assertion.last_run else None,
-                    "last_status": assertion.last_status,
-                    "created_at": assertion.created_at.isoformat() if assertion.created_at else None,
-                    "updated_at": assertion.updated_at.isoformat() if assertion.updated_at else None,
-                }
+            # Process local assertions and categorize them - with error handling
+            try:
+                for assertion in local_assertions:
+                    try:
+                        # Create enhanced local assertion data
+                        local_assertion_data = {
+                            "id": str(assertion.id),  # Convert to string to avoid UUID issues
+                            "urn": assertion.original_urn or f"urn:li:assertion:local:{assertion.id}",
+                            "name": assertion.name,
+                            "description": assertion.description or "",
+                            "type": assertion.assertion_type or assertion.type,
+                            "sync_status": getattr(assertion, 'sync_status', 'LOCAL_ONLY'),
+                            "sync_status_display": getattr(assertion, 'get_sync_status_display', lambda: 'Local Only')() if hasattr(assertion, 'get_sync_status_display') else 'Local Only',
+                            
+                            # Use stored ownership and relationship data
+                            "ownership": getattr(assertion, 'ownership_data', None),
+                            "owners_count": getattr(assertion, 'owners_count', 0),
+                            "owner_names": [],
+                            
+                            "relationships": getattr(assertion, 'relationships_data', None),
+                            "relationships_count": getattr(assertion, 'relationships_count', 0),
+                            
+                            # Assertion-specific data
+                            "entity_urn": getattr(assertion, 'entity_urn', None),
+                            "platform_name": getattr(assertion, 'platform_name', None),
+                            "external_url": getattr(assertion, 'external_url', None),
+                            "removed": getattr(assertion, 'removed', False),
+                            
+                            # Local metadata
+                            "last_run": assertion.last_run.isoformat() if assertion.last_run else None,
+                            "last_status": assertion.last_status,
+                            "last_synced": assertion.last_synced.isoformat() if hasattr(assertion, 'last_synced') and assertion.last_synced else None,
+                            "created_at": assertion.created_at.isoformat() if assertion.created_at else None,
+                            "updated_at": assertion.updated_at.isoformat() if assertion.updated_at else None,
+                        }
 
-                # For now, all local assertions are local-only since we don't have syncing implemented
-                local_only_items.append(local_assertion_data)
+                        # Extract owner names for display from stored ownership data
+                        ownership_data = getattr(assertion, 'ownership_data', None)
+                        if ownership_data and ownership_data.get("owners"):
+                            owner_names = []
+                            for owner_info in ownership_data["owners"]:
+                                owner = owner_info.get("owner", {})
+                                if owner.get("properties"):
+                                    name = (
+                                        owner["properties"].get("displayName") or
+                                        owner.get("username") or
+                                        owner.get("name") or
+                                        "Unknown"
+                                    )
+                                else:
+                                    name = owner.get("username") or owner.get("name") or "Unknown"
+                                owner_names.append(name)
+                            local_assertion_data["owner_names"] = owner_names
 
-            # All remote assertions are remote-only since we don't have syncing implemented
+                        # Categorize based on sync status
+                        sync_status = getattr(assertion, 'sync_status', 'LOCAL_ONLY')
+                        if sync_status == "SYNCED":
+                            # This is a synced assertion
+                            if assertion.original_urn and assertion.original_urn in enhanced_remote_assertions:
+                                # Found in remote results - perfect sync
+                                remote_data = enhanced_remote_assertions[assertion.original_urn]
+                                synced_items.append({
+                                    "local": local_assertion_data,
+                                    "remote": remote_data,
+                                    "combined": {
+                                        **local_assertion_data,
+                                        "sync_status": "SYNCED",
+                                        "sync_status_display": "Synced",
+                                    }
+                                })
+                                # Remove from remote-only list since it's synced
+                                del enhanced_remote_assertions[assertion.original_urn]
+                            elif assertion.original_urn:
+                                # Synced but not found in current remote search (could be indexing delay)
+                                # Still treat as synced since we have the sync_status
+                                synced_items.append({
+                                    "local": local_assertion_data,
+                                    "remote": None,  # Not found in current search
+                                    "combined": {
+                                        **local_assertion_data,
+                                        "sync_status": "SYNCED",
+                                        "sync_status_display": "Synced (Remote Pending Index)",
+                                    }
+                                })
+                            else:
+                                # Marked as synced but no original_urn - data inconsistency
+                                local_assertion_data["sync_status"] = "LOCAL_ONLY"
+                                local_assertion_data["sync_status_display"] = "Local Only (Sync Error)"
+                                local_only_items.append(local_assertion_data)
+                        else:
+                            # Local-only, modified, or pending push
+                            local_only_items.append(local_assertion_data)
+                    except Exception as e:
+                        logger.error(f"Error processing assertion {assertion.name}: {str(e)}")
+                        # Add to local-only with minimal data
+                        local_only_items.append({
+                            "id": str(assertion.id) if assertion.id else "unknown",
+                            "name": assertion.name,
+                            "description": assertion.description or "",
+                            "type": assertion.type,
+                            "sync_status": "LOCAL_ONLY",
+                            "sync_status_display": "Local Only (Error)",
+                            "error": str(e)
+                        })
+                        continue
+            except Exception as e:
+                logger.error(f"Error processing local assertions: {str(e)}")
+                # Add empty results to avoid total failure
+                local_only_items = []
+
+            # Remaining remote assertions are remote-only
             remote_only_items = list(enhanced_remote_assertions.values())
 
             # Calculate statistics
@@ -1071,7 +1170,7 @@ def run_remote_assertion(request):
 
 @require_http_methods(["POST"])
 def sync_assertion_to_local(request):
-    """Sync a remote assertion to local storage"""
+    """Sync a remote assertion to local storage with comprehensive data"""
     try:
         import json
         data = json.loads(request.body)
@@ -1092,25 +1191,198 @@ def sync_assertion_to_local(request):
             return JsonResponse({"success": False, "error": "Assertion not found in DataHub"})
         
         assertion_data = result["data"]["searchResults"][0]["entity"]
-        info = assertion_data.get("info", {})
         
-        # Create local assertion from remote data
-        assertion = Assertion.objects.create(
-            name=info.get("description", assertion_urn.split(":")[-1]),
-            description=info.get("description", ""),
-            type=info.get("type", "Unknown"),
-            config={
+        # Defensive check - ensure assertion_data is not None
+        if not assertion_data or not isinstance(assertion_data, dict):
+            return JsonResponse({"success": False, "error": "Invalid assertion data received from DataHub"})
+        
+        info = assertion_data.get("info", {})
+        if not isinstance(info, dict):
+            info = {}
+        
+        # Ensure we have a valid name - never NULL or empty
+        description = info.get("description") or ""  # Handle None case
+        assertion_name = description.strip() if description else ""
+        if not assertion_name:
+            # Fallback to URN-based name
+            urn_parts = assertion_urn.split(":")
+            assertion_name = f"Assertion_{urn_parts[-1]}" if urn_parts else "Unknown_Assertion"
+        
+        # Extract entity URN from various assertion types
+        entity_urn = None
+        dataset_assertion = info.get("datasetAssertion")
+        if dataset_assertion and isinstance(dataset_assertion, dict) and "datasetUrn" in dataset_assertion:
+            entity_urn = dataset_assertion["datasetUrn"]
+        else:
+            freshness_assertion = info.get("freshnessAssertion")
+            if freshness_assertion and isinstance(freshness_assertion, dict) and "entityUrn" in freshness_assertion:
+                entity_urn = freshness_assertion["entityUrn"]
+            else:
+                sql_assertion = info.get("sqlAssertion")
+                if sql_assertion and isinstance(sql_assertion, dict) and "entityUrn" in sql_assertion:
+                    entity_urn = sql_assertion["entityUrn"]
+                else:
+                    field_assertion = info.get("fieldAssertion")
+                    if field_assertion and isinstance(field_assertion, dict) and "entityUrn" in field_assertion:
+                        entity_urn = field_assertion["entityUrn"]
+                    else:
+                        volume_assertion = info.get("volumeAssertion")
+                        if volume_assertion and isinstance(volume_assertion, dict) and "entityUrn" in volume_assertion:
+                            entity_urn = volume_assertion["entityUrn"]
+                        else:
+                            schema_assertion = info.get("schemaAssertion")
+                            if schema_assertion and isinstance(schema_assertion, dict) and "entityUrn" in schema_assertion:
+                                entity_urn = schema_assertion["entityUrn"]
+                            else:
+                                custom_assertion = info.get("customAssertion")
+                                if custom_assertion and isinstance(custom_assertion, dict) and "entityUrn" in custom_assertion:
+                                    entity_urn = custom_assertion["entityUrn"]
+        
+        # Extract assertion type
+        assertion_type = info.get("type", "UNKNOWN")
+        if assertion_type == "UNKNOWN":
+            # Try to determine type from the info structure
+            if info.get("datasetAssertion"):
+                assertion_type = "DATASET"
+            elif info.get("freshnessAssertion"):
+                assertion_type = "FRESHNESS"
+            elif info.get("sqlAssertion"):
+                assertion_type = "SQL"
+            elif info.get("fieldAssertion"):
+                assertion_type = "FIELD"
+            elif info.get("volumeAssertion"):
+                assertion_type = "VOLUME"
+            elif info.get("schemaAssertion"):
+                assertion_type = "SCHEMA"
+            elif info.get("customAssertion"):
+                assertion_type = "CUSTOM"
+        
+        # Extract platform information
+        platform_name = None
+        platform_data = assertion_data.get("platform")
+        if platform_data and isinstance(platform_data, dict):
+            platform_name = platform_data.get("name")
+        
+        # Extract ownership data and count
+        ownership_data = assertion_data.get("ownership")
+        owners_count = 0
+        if ownership_data and isinstance(ownership_data, dict) and ownership_data.get("owners"):
+            try:
+                owners_count = len(ownership_data["owners"])
+            except (TypeError, KeyError):
+                owners_count = 0
+        
+        # Extract relationships data and count
+        relationships_data = assertion_data.get("relationships")
+        relationships_count = 0
+        if relationships_data and isinstance(relationships_data, dict) and relationships_data.get("relationships"):
+            try:
+                relationships_count = len(relationships_data["relationships"])
+            except (TypeError, KeyError):
+                relationships_count = 0
+        
+        # Generate deterministic URN for local storage
+        safe_name = assertion_name.lower().replace(' ', '_').replace('-', '_')
+        deterministic_urn = f"urn:li:assertion:synced_{safe_name}_{assertion_urn.split(':')[-1]}"
+        
+        # Extract status safely
+        status_data = assertion_data.get("status")
+        removed = False
+        if status_data and isinstance(status_data, dict):
+            removed = status_data.get("removed", False)
+        
+        # Check if assertion already exists (by deterministic_urn or original_urn)
+        existing_assertion = None
+        try:
+            existing_assertion = Assertion.objects.get(deterministic_urn=deterministic_urn)
+        except Assertion.DoesNotExist:
+            try:
+                existing_assertion = Assertion.objects.get(original_urn=assertion_urn)
+            except Assertion.DoesNotExist:
+                pass
+        
+        if existing_assertion:
+            # Update existing assertion
+            existing_assertion.name = assertion_name
+            existing_assertion.description = description
+            existing_assertion.type = assertion_type  # Legacy field
+            existing_assertion.assertion_type = assertion_type
+            existing_assertion.deterministic_urn = deterministic_urn
+            existing_assertion.original_urn = assertion_urn
+            existing_assertion.entity_urn = entity_urn
+            existing_assertion.platform_name = platform_name
+            existing_assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
+            existing_assertion.removed = removed
+            existing_assertion.sync_status = "SYNCED"
+            existing_assertion.last_synced = timezone.now()
+            
+            # Update comprehensive data
+            existing_assertion.info_data = info
+            existing_assertion.ownership_data = ownership_data
+            existing_assertion.owners_count = owners_count
+            existing_assertion.relationships_data = relationships_data
+            existing_assertion.relationships_count = relationships_count
+            existing_assertion.run_events_data = assertion_data.get("runEvents")
+            existing_assertion.tags_data = assertion_data.get("tags")
+            existing_assertion.monitor_data = assertion_data.get("monitor")
+            
+            # Update config
+            existing_assertion.config = existing_assertion.config or {}
+            existing_assertion.config.update({
                 "synced_from_datahub": True,
                 "original_urn": assertion_urn,
                 "raw_data": assertion_data
-            }
-        )
+            })
+            
+            existing_assertion.save()
+            assertion = existing_assertion
+            action = "updated"
+        else:
+            # Create new assertion from remote data with comprehensive fields
+            assertion = Assertion.objects.create(
+                name=assertion_name,
+                description=description,
+                type=assertion_type,  # Legacy field
+                assertion_type=assertion_type,
+                config={
+                    "synced_from_datahub": True,
+                    "original_urn": assertion_urn,
+                    "raw_data": assertion_data
+                },
+                
+                # URN tracking
+                deterministic_urn=deterministic_urn,
+                original_urn=assertion_urn,
+                
+                # Entity and platform info
+                entity_urn=entity_urn,
+                platform_name=platform_name,
+                external_url=info.get("externalUrl") if isinstance(info, dict) else None,
+                
+                # Status
+                removed=removed,
+                sync_status="SYNCED",  # Mark as synced since we just synced it
+                last_synced=timezone.now(),
+                
+                # Comprehensive data storage
+                info_data=info,
+                ownership_data=ownership_data,
+                owners_count=owners_count,
+                relationships_data=relationships_data,
+                relationships_count=relationships_count,
+                run_events_data=assertion_data.get("runEvents"),
+                tags_data=assertion_data.get("tags"),
+                monitor_data=assertion_data.get("monitor"),
+            )
+            action = "created"
         
-        logger.info(f"Successfully synced assertion to local: {assertion_urn} -> {assertion.id}")
+        logger.info(f"Successfully {action} assertion: {assertion_urn}")
         return JsonResponse({
             "success": True,
-            "message": "Assertion synced to local storage successfully",
-            "assertion_id": assertion.id
+            "message": f"Assertion '{assertion_name}' {action} successfully",
+            "assertion_id": assertion.id,
+            "sync_status": assertion.sync_status,
+            "action": action
         })
         
     except Exception as e:
@@ -1178,7 +1450,7 @@ def push_assertion_to_datahub(request, assertion_id):
 
 @require_http_methods(["POST"])
 def resync_assertion(request, assertion_id):
-    """Resync a local assertion with its DataHub counterpart"""
+    """Resync a local assertion with its DataHub counterpart using comprehensive data"""
     try:
         import json
         data = json.loads(request.body)
@@ -1201,21 +1473,137 @@ def resync_assertion(request, assertion_id):
             return JsonResponse({"success": False, "error": "Assertion not found in DataHub"})
         
         assertion_data = result["data"]["searchResults"][0]["entity"]
-        info = assertion_data.get("info", {})
         
-        # Update local assertion with latest remote data
-        assertion.name = info.get("description", assertion.name)
-        assertion.description = info.get("description", assertion.description)
-        assertion.type = info.get("type", assertion.type)
+        # Defensive check - ensure assertion_data is not None
+        if not assertion_data or not isinstance(assertion_data, dict):
+            return JsonResponse({"success": False, "error": "Invalid assertion data received from DataHub"})
+        
+        info = assertion_data.get("info", {})
+        if not isinstance(info, dict):
+            info = {}
+        
+        
+        # Update local assertion with latest remote data - ensure name is never empty
+        description = info.get("description") or ""  # Handle None case
+        new_name = description.strip() if description else ""
+        if new_name:  # Only update name if we have a valid non-empty name
+            assertion.name = new_name
+        
+        # Update basic fields
+        assertion.description = description or assertion.description
+        
+        # Extract and update entity URN
+        entity_urn = None
+        dataset_assertion = info.get("datasetAssertion")
+        if dataset_assertion and isinstance(dataset_assertion, dict) and "datasetUrn" in dataset_assertion:
+            entity_urn = dataset_assertion["datasetUrn"]
+        else:
+            freshness_assertion = info.get("freshnessAssertion")
+            if freshness_assertion and isinstance(freshness_assertion, dict) and "entityUrn" in freshness_assertion:
+                entity_urn = freshness_assertion["entityUrn"]
+            else:
+                sql_assertion = info.get("sqlAssertion")
+                if sql_assertion and isinstance(sql_assertion, dict) and "entityUrn" in sql_assertion:
+                    entity_urn = sql_assertion["entityUrn"]
+                else:
+                    field_assertion = info.get("fieldAssertion")
+                    if field_assertion and isinstance(field_assertion, dict) and "entityUrn" in field_assertion:
+                        entity_urn = field_assertion["entityUrn"]
+                    else:
+                        volume_assertion = info.get("volumeAssertion")
+                        if volume_assertion and isinstance(volume_assertion, dict) and "entityUrn" in volume_assertion:
+                            entity_urn = volume_assertion["entityUrn"]
+                        else:
+                            schema_assertion = info.get("schemaAssertion")
+                            if schema_assertion and isinstance(schema_assertion, dict) and "entityUrn" in schema_assertion:
+                                entity_urn = schema_assertion["entityUrn"]
+                            else:
+                                custom_assertion = info.get("customAssertion")
+                                if custom_assertion and isinstance(custom_assertion, dict) and "entityUrn" in custom_assertion:
+                                    entity_urn = custom_assertion["entityUrn"]
+        
+        # Update assertion type
+        assertion_type = info.get("type", "UNKNOWN")
+        if assertion_type == "UNKNOWN":
+            # Try to determine type from the info structure
+            if info.get("datasetAssertion"):
+                assertion_type = "DATASET"
+            elif info.get("freshnessAssertion"):
+                assertion_type = "FRESHNESS"
+            elif info.get("sqlAssertion"):
+                assertion_type = "SQL"
+            elif info.get("fieldAssertion"):
+                assertion_type = "FIELD"
+            elif info.get("volumeAssertion"):
+                assertion_type = "VOLUME"
+            elif info.get("schemaAssertion"):
+                assertion_type = "SCHEMA"
+            elif info.get("customAssertion"):
+                assertion_type = "CUSTOM"
+        
+        # Update platform information
+        platform_name = None
+        platform_data = assertion_data.get("platform")
+        if platform_data and isinstance(platform_data, dict):
+            platform_name = platform_data.get("name")
+        
+        # Update ownership data and count
+        ownership_data = assertion_data.get("ownership")
+        owners_count = 0
+        if ownership_data and isinstance(ownership_data, dict) and ownership_data.get("owners"):
+            try:
+                owners_count = len(ownership_data["owners"])
+            except (TypeError, KeyError):
+                owners_count = 0
+        
+        # Update relationships data and count
+        relationships_data = assertion_data.get("relationships")
+        relationships_count = 0
+        if relationships_data and isinstance(relationships_data, dict) and relationships_data.get("relationships"):
+            try:
+                relationships_count = len(relationships_data["relationships"])
+            except (TypeError, KeyError):
+                relationships_count = 0
+        
+        # Extract status safely
+        status_data = assertion_data.get("status")
+        removed = False
+        if status_data and isinstance(status_data, dict):
+            removed = status_data.get("removed", False)
+        
+        # Update all fields
+        assertion.type = assertion_type  # Legacy field
+        assertion.assertion_type = assertion_type
+        assertion.original_urn = assertion_urn
+        assertion.entity_urn = entity_urn
+        assertion.platform_name = platform_name
+        assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
+        assertion.removed = removed
+        
+        # Update comprehensive data
+        assertion.info_data = info
+        assertion.ownership_data = ownership_data
+        assertion.owners_count = owners_count
+        assertion.relationships_data = relationships_data
+        assertion.relationships_count = relationships_count
+        assertion.run_events_data = assertion_data.get("runEvents")
+        assertion.tags_data = assertion_data.get("tags")
+        assertion.monitor_data = assertion_data.get("monitor")
+        
+        # Update config and sync status
         assertion.config = assertion.config or {}
         assertion.config["raw_data"] = assertion_data
         assertion.config["last_synced"] = timezone.now().isoformat()
+        assertion.sync_status = "SYNCED"
+        assertion.last_synced = timezone.now()
+        
         assertion.save()
         
         logger.info(f"Successfully resynced assertion: {assertion_id} with {assertion_urn}")
         return JsonResponse({
             "success": True,
-            "message": "Assertion resynced successfully"
+            "message": "Assertion resynced successfully",
+            "sync_status": "SYNCED"
         })
         
     except Exception as e:
@@ -1262,13 +1650,23 @@ def create_datahub_assertion(request):
                 "error": "Name, assertion type, and dataset URN are required"
             })
         
-        # Get DataHub client
+        # Get DataHub connection
         connected, client = test_datahub_connection()
         if not connected or not client:
             return JsonResponse({
                 "success": False,
                 "error": "DataHub connection not available"
             })
+        
+        # Import the metadata API client
+        from utils.datahub_metadata_api import DataHubMetadataApiClient
+        
+        # Create metadata API client
+        metadata_client = DataHubMetadataApiClient(
+            server_url=client.server_url,
+            token=client.token,
+            verify_ssl=client.verify_ssl
+        )
         
         assertion_urn = None
         
@@ -1287,7 +1685,7 @@ def create_datahub_assertion(request):
                     "error": "Field path and operator are required for field assertions"
                 })
             
-            assertion_urn = client.create_field_assertion(
+            assertion_urn = metadata_client.create_field_assertion(
                 dataset_urn=dataset_urn,
                 field_path=field_path,
                 field_type=field_type,
@@ -1311,7 +1709,7 @@ def create_datahub_assertion(request):
                     "error": "SQL statement is required for SQL assertions"
                 })
             
-            assertion_urn = client.create_sql_assertion(
+            assertion_urn = metadata_client.create_sql_assertion(
                 dataset_urn=dataset_urn,
                 sql_statement=sql_statement,
                 operator=sql_operator,
@@ -1346,13 +1744,13 @@ def create_datahub_assertion(request):
             else:
                 kwargs["value"] = volume_value
             
-            assertion_urn = client.create_volume_assertion(**kwargs)
+            assertion_urn = metadata_client.create_volume_assertion(**kwargs)
             
         elif assertion_type == "FRESHNESS":
             freshness_interval = int(request.POST.get("freshness_interval", 24))
             freshness_unit = request.POST.get("freshness_unit", "HOUR")
             
-            assertion_urn = client.create_freshness_assertion(
+            assertion_urn = metadata_client.create_freshness_assertion(
                 dataset_urn=dataset_urn,
                 schedule_interval=freshness_interval,
                 schedule_unit=freshness_unit,
@@ -1381,7 +1779,7 @@ def create_datahub_assertion(request):
                         "type": field_type.strip()
                     })
             
-            assertion_urn = client.create_schema_assertion(
+            assertion_urn = metadata_client.create_schema_assertion(
                 dataset_urn=dataset_urn,
                 fields=fields,
                 compatibility=schema_compatibility,
@@ -1452,6 +1850,583 @@ def create_datahub_assertion(request):
             
     except Exception as e:
         logger.error(f"Error creating DataHub assertion: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
+
+
+@require_http_methods(["POST"])
+def add_assertion_to_pr(request, assertion_id):
+    """Add an assertion to a GitHub PR using the same pattern as recipes and policies"""
+    try:
+        from web_ui.models import GitIntegration, GitSettings
+        import json
+        import os
+        from pathlib import Path
+        from django.conf import settings
+        from web_ui.models import Environment as WebUIEnvironment
+        
+        assertion = get_object_or_404(Assertion, id=assertion_id)
+        
+        # Check if git integration is enabled
+        if not GitIntegration.is_configured():
+            return JsonResponse({
+                "success": False, 
+                "error": "Git integration is not configured. Please configure GitHub settings first."
+            })
+        
+        # Get current branch
+        git_settings = GitSettings.get_instance()
+        current_branch = git_settings.current_branch or "main"
+        
+        # Prevent pushing directly to main/master branch
+        if current_branch.lower() in ["main", "master"]:
+            logger.warning(f"Attempted to push directly to {current_branch} branch")
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot push directly to the main/master branch. Please create and use a feature branch from the Git Repository tab."
+            })
+        
+        # Get environment name - prioritize database environment with ENVIRONMENT variable as override
+        environment_name = os.getenv('ENVIRONMENT')
+        
+        if not environment_name:
+            # Use database environment (prioritize web_ui environment over metadata_manager)
+            environment = None
+            try:
+                # Try web_ui environment first (this has the correct "dev" environment)
+                environment = WebUIEnvironment.objects.filter(is_default=True).first()
+                if not environment:
+                    environment = WebUIEnvironment.objects.first()
+                logger.info(f"Using web_ui environment: {environment.name if environment else None}")
+            except Exception as e:
+                logger.info(f"web_ui environment lookup failed: {e}")
+                environment_name = "dev"  # Final fallback
+            
+            if environment:
+                environment_name = environment.name.lower().replace(" ", "-")
+                logger.info(f"Using database environment: {environment.name} -> {environment_name}")
+            else:
+                environment_name = "dev"  # Final fallback
+                logger.info("No database environment found, using 'dev' fallback")
+        else:
+            logger.info(f"Using ENVIRONMENT variable override: {environment_name}")
+        
+        # Normalize environment name (remove spaces, lowercase)
+        environment_name = environment_name.lower().replace(" ", "-")
+        logger.info(f"Final normalized environment name: {environment_name}")
+        
+        # Create an assertion-like object that GitIntegration can handle
+        # This mimics how policies create a Policy object for GitIntegration
+        class AssertionForGit:
+            def __init__(self, assertion, environment):
+                self.id = assertion.id
+                self.name = assertion.name
+                self.description = assertion.description
+                # Fix assertion type resolution - treat 'UNKNOWN' as invalid and fall back to legacy field
+                assertion_type = assertion.assertion_type
+                if not assertion_type or assertion_type == "UNKNOWN":
+                    assertion_type = assertion.config.get("type") or assertion.type or "SQL"
+                self.assertion_type = assertion_type
+                self.config = assertion.config
+                self.environment = environment
+                self.sync_status = assertion.sync_status
+                
+            def to_dict(self):
+                """Convert assertion to DataHub GraphQL format for file output"""
+                # Determine operation based on sync status
+                operation = "create"  # Default for local assertions
+                if self.sync_status == "SYNCED" or self.config.get("synced_from_datahub"):
+                    operation = "update"
+                
+                # Use the assertion_type that was properly resolved in __init__
+                assertion_type = self.assertion_type.upper() if self.assertion_type else "UNKNOWN"
+                
+                assertion_data = {
+                    "operation": operation,
+                    "assertion_type": assertion_type,
+                    "name": self.name,
+                    "description": self.description,
+                    "config": self.config,
+                    "local_id": str(self.id),
+                    # Add unique filename for this assertion to prevent overwrites
+                    "filename": f"{operation}_{assertion_type}_{self.id}_{self.name.lower().replace(' ', '_')}.json"
+                }
+                
+                # Add specific GraphQL input based on assertion type
+                if assertion_type == "FIELD":
+                    assertion_data["graphql_input"] = {
+                        "mutation": "createFieldAssertion" if operation == "create" else "upsertDatasetFieldAssertionMonitor",
+                        "input": generate_field_assertion_input(assertion)
+                    }
+                elif assertion_type == "SQL":
+                    assertion_data["graphql_input"] = {
+                        "mutation": "createSqlAssertion" if operation == "create" else "upsertDatasetSqlAssertionMonitor", 
+                        "input": generate_sql_assertion_input(assertion)
+                    }
+                elif assertion_type == "VOLUME":
+                    assertion_data["graphql_input"] = {
+                        "mutation": "createVolumeAssertion" if operation == "create" else "upsertDatasetVolumeAssertionMonitor",
+                        "input": generate_volume_assertion_input(assertion)
+                    }
+                elif assertion_type == "FRESHNESS":
+                    assertion_data["graphql_input"] = {
+                        "mutation": "createFreshnessAssertion" if operation == "create" else "upsertDatasetFreshnessAssertionMonitor",
+                        "input": generate_freshness_assertion_input(assertion)
+                    }
+                elif assertion_type == "DATASET":
+                    assertion_data["graphql_input"] = {
+                        "mutation": "createDatasetAssertion" if operation == "create" else "updateDatasetAssertion",
+                        "input": generate_dataset_assertion_input(assertion)
+                    }
+                elif assertion_type == "SCHEMA":
+                    assertion_data["graphql_input"] = {
+                        "mutation": "upsertDatasetSchemaAssertionMonitor",
+                        "input": generate_schema_assertion_input(assertion)
+                    }
+                elif assertion_type == "CUSTOM":
+                    assertion_data["graphql_input"] = {
+                        "mutation": "upsertCustomAssertion",
+                        "input": generate_custom_assertion_input(assertion)
+                    }
+                else:
+                    # Default fallback
+                    assertion_data["graphql_input"] = {
+                        "mutation": "createDatasetAssertion",
+                        "input": generate_dataset_assertion_input(assertion)
+                    }
+                
+                return assertion_data
+
+        # Create assertion object for Git integration
+        assertion_for_git = AssertionForGit(assertion, environment_name)
+        
+        # Create commit message
+        commit_message = f"Add assertion '{assertion.name}' for {environment_name} environment"
+        
+        # Use GitIntegration to push to git (same as recipes and policies)
+        logger.info(f"Staging assertion {assertion.id} to Git branch {current_branch}")
+        git_integration = GitIntegration()
+        result = git_integration.push_to_git(assertion_for_git, commit_message)
+        
+        if result and result.get("success"):
+            logger.info(f"Successfully staged assertion {assertion.id} to Git branch {current_branch}")
+            
+            response_data = {
+                "success": True,
+                "message": f'Assertion "{assertion.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
+                "environment": environment_name,
+                "branch": current_branch,
+                "redirect_url": "/github/repo/"  # Same as recipes
+            }
+            
+            # Add file path info if available
+            if "file_path" in result:
+                response_data["file_path"] = result["file_path"]
+            
+            return JsonResponse(response_data)
+        else:
+            # Failed to stage changes
+            error_message = f'Failed to stage assertion "{assertion.name}"'
+            if isinstance(result, dict) and "error" in result:
+                error_message += f": {result['error']}"
+            
+            logger.error(f"Failed to stage assertion: {error_message}")
+            return JsonResponse({"success": False, "error": error_message})
+        
+    except Exception as e:
+        logger.error(f"Error adding assertion to PR: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+def create_git_branch_and_commit(project_root, file_path, assertion_name, environment):
+    """Create a Git branch and commit the assertion file for PR workflow"""
+    try:
+        # Generate branch name
+        branch_name = f"assertion/{environment}/{assertion_name.lower().replace(' ', '-')}"
+        
+        # Change to project root directory
+        original_cwd = os.getcwd()
+        os.chdir(project_root)
+        
+        try:
+            # Check if we're in a git repository
+            subprocess.run(['git', 'status'], check=True, capture_output=True)
+            
+            # Check if branch already exists
+            result = subprocess.run(
+                ['git', 'branch', '--list', branch_name], 
+                capture_output=True, text=True
+            )
+            
+            if branch_name in result.stdout:
+                # Switch to existing branch
+                subprocess.run(['git', 'checkout', branch_name], check=True, capture_output=True)
+            else:
+                # Create and switch to new branch
+                subprocess.run(['git', 'checkout', '-b', branch_name], check=True, capture_output=True)
+            
+            # Add the assertion file
+            subprocess.run(['git', 'add', str(file_path.relative_to(project_root))], check=True, capture_output=True)
+            
+            # Commit the file
+            commit_message = f"Add assertion '{assertion_name}' for {environment} environment"
+            subprocess.run(['git', 'commit', '-m', commit_message], check=True, capture_output=True)
+            
+            return {
+                "success": True,
+                "branch": branch_name,
+                "message": f"Created branch '{branch_name}' and committed assertion file"
+            }
+            
+        finally:
+            os.chdir(original_cwd)
+            
+    except subprocess.CalledProcessError as e:
+        return {
+            "success": False,
+            "error": f"Git command failed: {e.stderr.decode() if e.stderr else str(e)}"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Git integration error: {str(e)}"
+        }
+
+
+def generate_field_assertion_input(assertion):
+    """Generate CreateFieldAssertionInput from assertion config"""
+    config = assertion.config
+    return {
+        "datasetUrn": config.get("dataset_urn", ""),
+        "fields": config.get("fields", []),
+        "type": config.get("field_assertion_type", "NOT_NULL"),
+        "description": assertion.description
+    }
+
+
+def generate_sql_assertion_input(assertion):
+    """Generate CreateSqlAssertionInput from assertion config"""
+    config = assertion.config
+    return {
+        "datasetUrn": config.get("dataset_urn", ""),
+        "statement": config.get("sql_statement", config.get("query", "")),
+        "operator": config.get("operator", "EQUAL_TO"),
+        "expectedValue": config.get("expected_value", config.get("expected_result", "1")),
+        "description": assertion.description
+    }
+
+
+def generate_volume_assertion_input(assertion):
+    """Generate CreateVolumeAssertionInput from assertion config"""
+    config = assertion.config
+    return {
+        "datasetUrn": config.get("dataset_urn", ""),
+        "operator": config.get("operator", "GREATER_THAN"),
+        "parameters": {
+            "value": config.get("value"),
+            "maxValue": config.get("max_value"),
+            "minValue": config.get("min_value")
+        },
+        "description": assertion.description
+    }
+
+
+def generate_freshness_assertion_input(assertion):
+    """Generate CreateFreshnessAssertionInput from assertion config"""
+    config = assertion.config
+    return {
+        "datasetUrn": config.get("dataset_urn", ""),
+        "schedule": {
+            "cron": config.get("cron", "0 8 * * *"),
+            "timezone": config.get("timezone", "UTC")
+        },
+        "description": assertion.description
+    }
+
+
+def generate_dataset_assertion_input(assertion):
+    """Generate CreateDatasetAssertionInput from assertion config"""
+    config = assertion.config
+    return {
+        "datasetUrn": config.get("dataset_urn", ""),
+        "scope": config.get("scope", "DATASET_ROWS"),
+        "operator": config.get("operator", "EQUAL_TO"),
+        "parameters": config.get("parameters", {}),
+        "description": assertion.description
+    }
+
+
+def generate_schema_assertion_input(assertion):
+    """Generate Schema assertion input from assertion config"""
+    config = assertion.config
+    return {
+        "datasetUrn": config.get("dataset_urn", ""),
+        "description": assertion.description
+    }
+
+
+def generate_custom_assertion_input(assertion):
+    """Generate UpsertCustomAssertionInput from assertion config"""
+    config = assertion.config
+    return {
+        "urn": config.get("original_urn"),
+        "input": {
+            "entityUrn": config.get("entity_urn", config.get("dataset_urn", "")),
+            "type": config.get("custom_type", "CUSTOM"),
+            "logic": config.get("logic", ""),
+            "description": assertion.description
+        }
+    }
+
+
+@require_http_methods(["POST"])
+def create_local_assertion(request):
+    """Create a local-only assertion (not synchronized to DataHub)"""
+    try:
+        # Get basic info
+        name = request.POST.get("name")
+        description = request.POST.get("description", "")
+        assertion_type = request.POST.get("type", "SQL")
+        dataset_urn = request.POST.get("dataset_urn")  # This is the assertee URN
+        
+        if not name:
+            return JsonResponse({
+                "success": False,
+                "error": "Assertion name is required"
+            })
+        
+        # Generate proper assertion URN (not using "local:" prefix)
+        deterministic_urn = get_full_urn_from_name("assertion", name)
+        
+        # Handle different assertion types for local creation
+        config = {}
+        
+        if assertion_type == "SQL":
+            # SQL assertion config
+            database_platform = request.POST.get("database_platform")
+            query = request.POST.get("query", "")
+            expected_result = request.POST.get("expected_result", "SUCCESS")
+            
+            if not query:
+                return JsonResponse({
+                    "success": False,
+                    "error": "SQL query is required for SQL assertions"
+                })
+            
+            config = {
+                "database_platform": database_platform,
+                "query": query,
+                "expected_result": expected_result,
+                "dataset_urn": dataset_urn,  # Store the assertee URN
+            }
+            
+        elif assertion_type == "DOMAIN_EXISTS":
+            # Domain existence assertion
+            domain_urn = request.POST.get("domain_urn")
+            if not domain_urn:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Domain URN is required for domain existence assertions"
+                })
+            config = {
+                "domain_urn": domain_urn,
+                "dataset_urn": dataset_urn,
+            }
+            
+        elif assertion_type == "TAG_EXISTS":
+            # Tag existence assertion  
+            tag_urn = request.POST.get("tag_urn")
+            entity_urn = request.POST.get("entity_urn") or dataset_urn
+            if not all([tag_urn, entity_urn]):
+                return JsonResponse({
+                    "success": False,
+                    "error": "Tag URN and Entity URN are required for tag existence assertions"
+                })
+            config = {
+                "tag_urn": tag_urn, 
+                "entity_urn": entity_urn,
+                "dataset_urn": dataset_urn,
+            }
+            
+        elif assertion_type == "GLOSSARY_TERM_EXISTS":
+            # Glossary term existence assertion
+            term_urn = request.POST.get("term_urn")
+            entity_urn = request.POST.get("entity_urn") or dataset_urn
+            if not all([term_urn, entity_urn]):
+                return JsonResponse({
+                    "success": False,
+                    "error": "Term URN and Entity URN are required for glossary term existence assertions"
+                })
+            config = {
+                "term_urn": term_urn, 
+                "entity_urn": entity_urn,
+                "dataset_urn": dataset_urn,
+            }
+            
+        elif assertion_type == "CUSTOM":
+            # Custom assertion
+            custom_logic = request.POST.get("custom_logic")
+            if not custom_logic:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Custom logic is required for custom assertions"
+                })
+            config = {
+                "custom_logic": custom_logic,
+                "dataset_urn": dataset_urn,
+            }
+            
+        elif assertion_type in ["FIELD", "VOLUME", "FRESHNESS", "SCHEMA"]:
+            # DataHub assertion types - capture all form fields
+            config = {key: value for key, value in request.POST.items() 
+                     if key not in ['name', 'description', 'type']}
+            # Ensure dataset_urn is included
+            if dataset_urn:
+                config["dataset_urn"] = dataset_urn
+                
+        else:
+            # Generic assertion - store all form data
+            config = {key: value for key, value in request.POST.items() 
+                     if key not in ['name', 'description', 'type']}
+            # Ensure dataset_urn is included
+            if dataset_urn:
+                config["dataset_urn"] = dataset_urn
+        
+        # Create the local assertion
+        assertion = Assertion.objects.create(
+            name=name,
+            description=description,
+            assertion_type=assertion_type,  # Use the new field
+            entity_urn=dataset_urn,  # Store the assertee URN in the entity_urn field  
+            deterministic_urn=deterministic_urn,
+            type=assertion_type,  # Keep for backward compatibility
+            config=config,
+            sync_status="LOCAL_ONLY"  # Mark as local-only
+        )
+        
+        logger.info(f"Successfully created local assertion: {assertion.name} with URN: {assertion.deterministic_urn}")
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"Local assertion '{name}' created successfully",
+            "assertion_id": assertion.id,
+            "assertion_type": assertion_type,
+            "urn": assertion.deterministic_urn
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating local assertion: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
+
+
+@require_http_methods(["GET", "POST"])
+def edit_assertion(request, assertion_id):
+    """Edit an existing assertion (both local and synced)"""
+    try:
+        assertion = get_object_or_404(Assertion, id=assertion_id)
+        
+        if request.method == "GET":
+            # Return assertion data for editing
+            return JsonResponse({
+                "success": True,
+                "assertion": {
+                    "id": str(assertion.id),
+                    "name": assertion.name,
+                    "description": assertion.description,
+                    "assertion_type": assertion.assertion_type,
+                    "entity_urn": assertion.entity_urn,
+                    "sync_status": assertion.sync_status,
+                    "config": assertion.config or {},
+                }
+            })
+        
+        elif request.method == "POST":
+            # Update assertion
+            name = request.POST.get("name")
+            description = request.POST.get("description", "")
+            assertion_type = request.POST.get("type")
+            dataset_urn = request.POST.get("dataset_urn")
+            
+            if not name:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Assertion name is required"
+                })
+            
+            # Update basic fields
+            assertion.name = name
+            assertion.description = description
+            assertion.entity_urn = dataset_urn
+            
+            # Update assertion type if provided
+            if assertion_type:
+                assertion.assertion_type = assertion_type
+                assertion.type = assertion_type  # Keep legacy field in sync
+            
+            # Handle type-specific configuration updates
+            config = assertion.config or {}
+            
+            if assertion_type == "SQL":
+                # SQL assertion config
+                query = request.POST.get("query", "")
+                expected_result = request.POST.get("expected_result", "SUCCESS")
+                
+                if not query:
+                    return JsonResponse({
+                        "success": False,
+                        "error": "SQL query is required for SQL assertions"
+                    })
+                
+                config.update({
+                    "query": query,
+                    "expected_result": expected_result,
+                    "dataset_urn": dataset_urn,
+                })
+                
+            elif assertion_type in ["FIELD", "VOLUME", "FRESHNESS", "SCHEMA", "CUSTOM"]:
+                # DataHub assertion types - update all form fields
+                for key, value in request.POST.items():
+                    if key not in ['name', 'description', 'type']:
+                        config[key] = value
+                        
+                # Ensure dataset_urn is included
+                if dataset_urn:
+                    config["dataset_urn"] = dataset_urn
+                    
+            else:
+                # Generic assertion - update all form data
+                for key, value in request.POST.items():
+                    if key not in ['name', 'description', 'type']:
+                        config[key] = value
+                        
+                # Ensure dataset_urn is included
+                if dataset_urn:
+                    config["dataset_urn"] = dataset_urn
+            
+            assertion.config = config
+            
+            # Update sync status if it was synced before
+            if assertion.sync_status == "SYNCED":
+                assertion.sync_status = "MODIFIED"
+            
+            assertion.save()
+            
+            logger.info(f"Successfully updated assertion: {assertion.name}")
+            
+            return JsonResponse({
+                "success": True,
+                "message": f"Assertion '{name}' updated successfully",
+                "assertion_id": str(assertion.id),
+                "assertion_type": assertion_type,
+            })
+        
+    except Exception as e:
+        logger.error(f"Error editing assertion: {str(e)}")
         return JsonResponse({
             "success": False,
             "error": str(e)

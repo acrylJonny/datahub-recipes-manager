@@ -23,7 +23,7 @@ def github_index(request):
         "git_settings": settings,
         "pull_requests": pull_requests,
         "is_configured": settings.is_configured(),
-        "branches": GitSettings.get_branches(),
+        "branches": GitIntegration.get_branches(),
     }
 
     return render(request, "github/index.html", context)

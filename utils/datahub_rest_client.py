@@ -7327,3 +7327,279 @@ class DataHubRestClient:
         except Exception as e:
             logger.error(f"Error getting data products: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    def create_data_product(self, data_product_data):
+        """
+        Create a data product in DataHub using GraphQL.
+        
+        Args:
+            data_product_data (dict): Data product information
+            
+        Returns:
+            dict: Response with success status and created data product URN
+        """
+        self.logger.info(f"Creating data product: {data_product_data.get('name')}")
+        
+        try:
+            # GraphQL mutation for creating data product
+            mutation = """
+            mutation createDataProduct($input: CreateDataProductInput!) {
+                createDataProduct(input: $input) {
+                    urn
+                    properties {
+                        name
+                        description
+                        externalUrl
+                    }
+                }
+            }
+            """
+            
+            # Prepare input
+            input_data = {
+                "name": data_product_data.get("name"),
+                "description": data_product_data.get("description", ""),
+                "id": data_product_data.get("id", data_product_data.get("name")),
+            }
+            
+            # Add optional fields
+            if data_product_data.get("externalUrl"):
+                input_data["externalUrl"] = data_product_data["externalUrl"]
+                
+            if data_product_data.get("domainUrn"):
+                input_data["domainUrn"] = data_product_data["domainUrn"]
+                
+            variables = {"input": input_data}
+            
+            result = self.execute_graphql(mutation, variables)
+            
+            if result and "data" in result and "createDataProduct" in result["data"]:
+                created_urn = result["data"]["createDataProduct"]["urn"]
+                self.logger.info(f"Successfully created data product: {created_urn}")
+                
+                # If entity URNs are provided, add them to the data product
+                if data_product_data.get("entity_urns"):
+                    self.add_entities_to_data_product(created_urn, data_product_data["entity_urns"])
+                
+                return {
+                    "success": True,
+                    "urn": created_urn,
+                    "data": result["data"]["createDataProduct"]
+                }
+            
+            if result and "errors" in result:
+                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
+                self.logger.error(f"GraphQL errors creating data product: {error_msg}")
+                return {"success": False, "error": error_msg}
+                
+            return {"success": False, "error": "Unknown error creating data product"}
+            
+        except Exception as e:
+            self.logger.error(f"Error creating data product: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def update_data_product(self, urn, data_product_data):
+        """
+        Update a data product in DataHub using GraphQL.
+        
+        Args:
+            urn (str): Data product URN
+            data_product_data (dict): Updated data product information
+            
+        Returns:
+            dict: Response with success status
+        """
+        self.logger.info(f"Updating data product: {urn}")
+        
+        try:
+            # GraphQL mutation for updating data product
+            mutation = """
+            mutation updateDataProduct($urn: String!, $input: UpdateDataProductInput!) {
+                updateDataProduct(urn: $urn, input: $input) {
+                    urn
+                    properties {
+                        name
+                        description
+                        externalUrl
+                    }
+                }
+            }
+            """
+            
+            # Prepare input
+            input_data = {}
+            
+            if "name" in data_product_data:
+                input_data["name"] = data_product_data["name"]
+                
+            if "description" in data_product_data:
+                input_data["description"] = data_product_data["description"]
+                
+            if "externalUrl" in data_product_data:
+                input_data["externalUrl"] = data_product_data["externalUrl"]
+                
+            if "domainUrn" in data_product_data:
+                input_data["domainUrn"] = data_product_data["domainUrn"]
+                
+            variables = {"urn": urn, "input": input_data}
+            
+            result = self.execute_graphql(mutation, variables)
+            
+            if result and "data" in result and "updateDataProduct" in result["data"]:
+                self.logger.info(f"Successfully updated data product: {urn}")
+                return {
+                    "success": True,
+                    "data": result["data"]["updateDataProduct"]
+                }
+            
+            if result and "errors" in result:
+                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
+                self.logger.error(f"GraphQL errors updating data product: {error_msg}")
+                return {"success": False, "error": error_msg}
+                
+            return {"success": False, "error": "Unknown error updating data product"}
+            
+        except Exception as e:
+            self.logger.error(f"Error updating data product: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def delete_data_product(self, urn):
+        """
+        Delete a data product from DataHub using GraphQL.
+        
+        Args:
+            urn (str): Data product URN
+            
+        Returns:
+            dict: Response with success status
+        """
+        self.logger.info(f"Deleting data product: {urn}")
+        
+        try:
+            # GraphQL mutation for deleting data product
+            mutation = """
+            mutation deleteDataProduct($urn: String!) {
+                deleteDataProduct(urn: $urn)
+            }
+            """
+            
+            variables = {"urn": urn}
+            
+            result = self.execute_graphql(mutation, variables)
+            
+            if result and "data" in result and "deleteDataProduct" in result["data"]:
+                success = result["data"]["deleteDataProduct"]
+                if success:
+                    self.logger.info(f"Successfully deleted data product: {urn}")
+                    return {"success": True}
+                else:
+                    return {"success": False, "error": "Delete operation returned false"}
+            
+            if result and "errors" in result:
+                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
+                self.logger.error(f"GraphQL errors deleting data product: {error_msg}")
+                return {"success": False, "error": error_msg}
+                
+            return {"success": False, "error": "Unknown error deleting data product"}
+            
+        except Exception as e:
+            self.logger.error(f"Error deleting data product: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def add_entities_to_data_product(self, data_product_urn, entity_urns):
+        """
+        Add entities to a data product.
+        
+        Args:
+            data_product_urn (str): Data product URN
+            entity_urns (list): List of entity URNs to add
+            
+        Returns:
+            dict: Response with success status
+        """
+        self.logger.info(f"Adding {len(entity_urns)} entities to data product: {data_product_urn}")
+        
+        try:
+            # GraphQL mutation for adding entities to data product
+            mutation = """
+            mutation batchUpdateDataProductAssets($input: BatchUpdateDataProductAssetsInput!) {
+                batchUpdateDataProductAssets(input: $input)
+            }
+            """
+            
+            input_data = {
+                "dataProductUrn": data_product_urn,
+                "assetUrns": entity_urns
+            }
+            
+            variables = {"input": input_data}
+            
+            result = self.execute_graphql(mutation, variables)
+            
+            if result and "data" in result and "batchUpdateDataProductAssets" in result["data"]:
+                success = result["data"]["batchUpdateDataProductAssets"]
+                if success:
+                    self.logger.info(f"Successfully added entities to data product: {data_product_urn}")
+                    return {"success": True}
+                else:
+                    return {"success": False, "error": "Add entities operation returned false"}
+            
+            if result and "errors" in result:
+                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
+                self.logger.error(f"GraphQL errors adding entities to data product: {error_msg}")
+                return {"success": False, "error": error_msg}
+                
+            return {"success": False, "error": "Unknown error adding entities to data product"}
+            
+        except Exception as e:
+            self.logger.error(f"Error adding entities to data product: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def remove_entities_from_data_product(self, data_product_urn, entity_urns):
+        """
+        Remove entities from a data product.
+        
+        Args:
+            data_product_urn (str): Data product URN
+            entity_urns (list): List of entity URNs to remove
+            
+        Returns:
+            dict: Response with success status
+        """
+        self.logger.info(f"Removing {len(entity_urns)} entities from data product: {data_product_urn}")
+        
+        try:
+            # GraphQL mutation for removing entities from data product
+            mutation = """
+            mutation batchRemoveDataProductAssets($input: BatchRemoveDataProductAssetsInput!) {
+                batchRemoveDataProductAssets(input: $input)
+            }
+            """
+            
+            input_data = {
+                "dataProductUrn": data_product_urn,
+                "assetUrns": entity_urns
+            }
+            
+            variables = {"input": input_data}
+            
+            result = self.execute_graphql(mutation, variables)
+            
+            if result and "data" in result and "batchRemoveDataProductAssets" in result["data"]:
+                success = result["data"]["batchRemoveDataProductAssets"]
+                if success:
+                    self.logger.info(f"Successfully removed entities from data product: {data_product_urn}")
+                    return {"success": True}
+                else:
+                    return {"success": False, "error": "Remove entities operation returned false"}
+            
+            if result and "errors" in result:
+                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
+                self.logger.error(f"GraphQL errors removing entities from data product: {error_msg}")
+                return {"success": False, "error": error_msg}
+                
+            return {"success": False, "error": "Unknown error removing entities from data product"}
+            
+        except Exception as e:
+            self.logger.error(f"Error removing entities from data product: {str(e)}")
+            return {"success": False, "error": str(e)}

@@ -50,6 +50,8 @@ def generate_deterministic_urn(
         "glossaryterm": "glossaryTerm",
         "glossarynode": "glossaryNode",
         "domain": "domain",
+        "assertion": "assertion",
+        "dataproduct": "dataProduct",
     }
 
     urn_type = type_map.get(entity_type, entity_type)

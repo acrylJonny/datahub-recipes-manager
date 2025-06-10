@@ -7,6 +7,7 @@ class BaseMetadataModel(models.Model):
     """Base model for all metadata entities"""
 
     SYNC_STATUS_CHOICES = [
+        ("NOT_SYNCED", "Not Synced"),
         ("SYNCED", "Synced"),
         ("LOCAL_ONLY", "Local Only"),
         ("REMOTE_ONLY", "Remote Only"),
@@ -16,11 +17,11 @@ class BaseMetadataModel(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
+    description = models.TextField(blank=True, null=True)
 
     # URN handling
     deterministic_urn = models.CharField(max_length=255, unique=True)
-    original_urn = models.CharField(max_length=255, blank=True)
+    original_urn = models.CharField(max_length=255, blank=True, null=True)
 
     # Status tracking
     datahub_id = models.CharField(
@@ -88,7 +89,7 @@ class Environment(models.Model):
     """Model representing an environment to facilitate CI/CD processes"""
 
     name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
+    description = models.TextField(blank=True, null=True)
     is_default = models.BooleanField(default=False)
 
     # Config
@@ -265,24 +266,107 @@ class Domain(BaseMetadataModel):
         return ""
 
 
-class Assertion(models.Model):
-    """Represents a metadata assertion"""
+class Assertion(BaseMetadataModel):
+    """Represents a metadata assertion from DataHub"""
 
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True, null=True)
-    type = models.CharField(max_length=50)
-    config = models.JSONField()
+    # Assertion type - field, sql, volume, freshness, dataset, schema, custom
+    assertion_type = models.CharField(max_length=50, default="UNKNOWN")
+    
+    # Entity that this assertion is attached to
+    entity_urn = models.CharField(max_length=500, blank=True, null=True)
+    
+    # Platform information
+    platform_name = models.CharField(max_length=100, blank=True, null=True)
+    
+    # External URL for assertion
+    external_url = models.URLField(blank=True, null=True)
+    
+    # Status information
+    removed = models.BooleanField(default=False)
+    
+    # Store comprehensive assertion data structure from DataHub
+    info_data = models.JSONField(blank=True, null=True, help_text="Complete info structure from DataHub")
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
+    owners_count = models.IntegerField(default=0)
+    
+    # Store relationships data
+    relationships_data = models.JSONField(blank=True, null=True)
+    relationships_count = models.IntegerField(default=0)
+    
+    # Store run events data
+    run_events_data = models.JSONField(blank=True, null=True)
+    
+    # Store tags data
+    tags_data = models.JSONField(blank=True, null=True)
+    
+    # Store monitor data
+    monitor_data = models.JSONField(blank=True, null=True)
+    
+    # Legacy fields for backward compatibility
+    type = models.CharField(max_length=50, blank=True, null=True)  # Keep for backward compatibility
+    config = models.JSONField(blank=True, null=True)  # Keep for backward compatibility
     last_run = models.DateTimeField(null=True, blank=True)
     last_status = models.CharField(max_length=20, null=True, blank=True)
-    created_at = models.DateTimeField(default=timezone.now)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.name
 
     class Meta:
         verbose_name = "Assertion"
         verbose_name_plural = "Assertions"
+        ordering = ["name"]
+
+    def to_dict(self):
+        """Convert assertion to dictionary for export/syncing purposes"""
+        data = {
+            "id": str(self.id),  # Include the ID for frontend action buttons
+            "name": self.name,
+            "description": self.description,
+            "urn": self.deterministic_urn,
+            "original_urn": self.original_urn if self.original_urn else None,
+            "assertion_type": self.assertion_type,
+            "entity_urn": self.entity_urn,
+            "platform_name": self.platform_name,
+            "external_url": self.external_url,
+            "removed": self.removed,
+            "sync_status": self.sync_status,
+            "sync_status_display": self.get_sync_status_display(),
+        }
+        
+        # Add comprehensive data structures if they exist
+        if self.info_data:
+            data["info"] = self.info_data
+        if self.ownership_data:
+            data["ownership"] = self.ownership_data
+        if self.relationships_data:
+            data["relationships"] = self.relationships_data
+        if self.run_events_data:
+            data["runEvents"] = self.run_events_data
+        if self.tags_data:
+            data["tags"] = self.tags_data
+        if self.monitor_data:
+            data["monitor"] = self.monitor_data
+            
+        return data
+
+    @property
+    def can_deploy(self):
+        """Check if this assertion can be deployed to DataHub"""
+        return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+    
+    @property 
+    def display_type(self):
+        """Get user-friendly display type"""
+        return self.assertion_type.replace("_", " ").title() if self.assertion_type else "Unknown"
+    
+    @property
+    def display_entity(self):
+        """Get user-friendly entity display"""
+        if self.entity_urn:
+            # Extract readable part from URN
+            parts = self.entity_urn.split(":")
+            if len(parts) >= 3:
+                return parts[-1]  # Get the last part which is usually the table/dataset name
+        return "Unknown Entity"
 
 
 class AssertionResult(models.Model):
@@ -372,3 +456,117 @@ class StructuredProperty(BaseMetadataModel):
     def can_deploy(self):
         """Check if this property can be deployed to DataHub"""
         return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+
+class DataProduct(BaseMetadataModel):
+    """Represents a DataHub data product"""
+
+    # Data product specific fields
+    external_url = models.URLField(blank=True, null=True)
+    
+    # Entity relationships - for data products this would be assets/datasets
+    entity_urns = models.JSONField(default=list, blank=True, help_text="List of entity URNs that belong to this data product")
+    
+    # Domain information
+    domain_urn = models.CharField(max_length=500, blank=True, null=True)
+    
+    # Platform information
+    platform_name = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Status information
+    removed = models.BooleanField(default=False)
+    
+    # Store comprehensive data product data structure from DataHub
+    properties_data = models.JSONField(blank=True, null=True, help_text="Complete properties structure from DataHub")
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
+    owners_count = models.IntegerField(default=0)
+    
+    # Store relationships data
+    relationships_data = models.JSONField(blank=True, null=True)
+    relationships_count = models.IntegerField(default=0)
+    
+    # Store entities data
+    entities_data = models.JSONField(blank=True, null=True)
+    entities_count = models.IntegerField(default=0)
+    
+    # Store tags data
+    tags_data = models.JSONField(blank=True, null=True)
+    
+    # Store glossary terms data
+    glossary_terms_data = models.JSONField(blank=True, null=True)
+    
+    # Store structured properties data
+    structured_properties_data = models.JSONField(blank=True, null=True)
+    
+    # Store institutional memory data
+    institutional_memory_data = models.JSONField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Data Product"
+        verbose_name_plural = "Data Products"
+        ordering = ["name"]
+
+    def to_dict(self):
+        """Convert data product to dictionary for export/syncing purposes"""
+        base_dict = {
+            "id": str(self.id),  # Include the ID for frontend action buttons
+            "name": self.name,
+            "description": self.description,
+            "urn": self.deterministic_urn,
+            "original_urn": self.original_urn if self.original_urn else None,
+            "external_url": self.external_url,
+            "entity_urns": self.entity_urns,
+            "domain_urn": self.domain_urn,
+            "platform_name": self.platform_name,
+            "properties_data": self.properties_data,
+            "ownership_data": self.ownership_data,
+            "relationships_data": self.relationships_data,
+            "entities_data": self.entities_data,
+            "tags_data": self.tags_data,
+            "glossary_terms_data": self.glossary_terms_data,
+            "structured_properties_data": self.structured_properties_data,
+            "institutional_memory_data": self.institutional_memory_data,
+            "sync_status": self.sync_status,
+            "last_synced": self.last_synced.isoformat() if self.last_synced else None,
+        }
+        
+        return base_dict
+
+    @property
+    def can_deploy(self):
+        """Check if this data product can be deployed to DataHub"""
+        return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @property 
+    def display_domain(self):
+        """Get display name for domain"""
+        if self.domain_urn and self.properties_data:
+            # Try to extract domain name from stored data
+            return self.properties_data.get('domain', {}).get('domain', {}).get('properties', {}).get('name', self.domain_urn)
+        return self.domain_urn or "No Domain"
+
+    @property
+    def display_entities_count(self):
+        """Get formatted entities count"""
+        return self.entities_count if self.entities_count > 0 else 0
+
+
+class DataProductResult(models.Model):
+    """Represents a result of deploying/syncing a data product"""
+
+    data_product = models.ForeignKey(
+        DataProduct, on_delete=models.CASCADE, related_name="deployment_results"
+    )
+    deployed_at = models.DateTimeField(default=timezone.now)
+    status = models.CharField(max_length=20)
+    details = models.JSONField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.data_product.name} - {self.status} at {self.deployed_at}"
+
+    class Meta:
+        verbose_name = "Data Product Result"
+        verbose_name_plural = "Data Product Results"
+        ordering = ["-deployed_at"]

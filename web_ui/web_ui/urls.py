@@ -298,6 +298,11 @@ urlpatterns = [
         name="github_workflows_overview",
     ),
     path(
+        "github/load-branches/",
+        web_ui_views.github_load_branches,
+        name="github_load_branches",
+    ),
+    path(
         "github/revert-staged-file/",
         web_ui_views.github_revert_staged_file,
         name="github_revert_staged_file",
