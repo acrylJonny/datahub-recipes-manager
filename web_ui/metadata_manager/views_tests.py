@@ -22,6 +22,7 @@ from web_ui.models import (
     Environment,
     GitIntegration,
 )  # Import for GitHub integration and environment
+from metadata_manager.models import Test
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,11 @@ class TestListView(View):
     """View to list metadata tests"""
 
     def get(self, request):
+        """Display list of metadata tests or return JSON data for AJAX requests"""
+        # Check if this is an AJAX request for data
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return self._get_tests_data(request)
+        
         """Display list of metadata tests"""
         try:
             # Check connection to DataHub
@@ -98,6 +104,155 @@ class TestListView(View):
         # Redirect back to the list view
         return redirect("metadata_manager:tests_list")
 
+    def _get_tests_data(self, request):
+        """Return JSON data for AJAX requests"""
+        try:
+            # Get local tests from database
+            local_tests = Test.objects.all()
+            
+
+            
+            # Check connection to DataHub for remote tests
+            connected, client = test_datahub_connection()
+            remote_tests = []
+            
+            if connected and client:
+                try:
+                    tests_response = client.list_tests()
+                    if tests_response:
+                        remote_tests = tests_response
+                except Exception as e:
+                    logger.error(f"Error fetching remote tests: {str(e)}")
+
+
+
+            # Categorize tests using consistent pattern from tags/domains
+            synced_tests = []
+            local_only_tests = []
+            remote_only_tests = []
+            
+            # Create remote tests dict - consistent with tags/domains pattern
+            remote_tests_dict = {test.get('urn', '').strip(): test for test in remote_tests if test.get('urn', '').strip()}
+            
+            # Extract local test URNs - consistent with tags/domains pattern  
+            local_test_urns = set(test.deterministic_urn for test in local_tests if test.deterministic_urn)
+            
+
+            
+            # Process local tests and match with remote - consistent with tags/domains pattern
+            for local_test in local_tests:
+                test_urn = local_test.deterministic_urn
+                if not test_urn:  # Skip local tests without URNs
+                    continue
+                    
+                remote_match = remote_tests_dict.get(test_urn)
+                
+                # Create local test data
+                local_test_data = {
+                    'id': str(local_test.id),
+                    'urn': test_urn,
+                    'name': local_test.name,
+                    'description': local_test.description or '',
+                    'category': local_test.category or '',
+                    'type': local_test.category or 'Test',
+                    'environment': 'default',
+                    'definition_json': local_test.definition_json,
+                    'sync_status': local_test.sync_status,
+                    # Add empty results for local-only tests
+                    'results': {},
+                    'has_results': False,
+                    'is_failing': False,
+                    'passing_count': 0,
+                    'failing_count': 0,
+                    'last_run': None,
+                }
+                
+                if remote_match:
+                    # SYNCED: exists in both local and remote
+                    results = remote_match.get('results', {})
+                    has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
+                    is_failing = bool(results.get('failingCount', 0) > 0)
+                    
+                    # Update local test data with remote information
+                    local_test_data.update({
+                        'status': 'synced',
+                        'definition_json': local_test.definition_json or remote_match.get('definition_json', ''),
+                        'results': results,
+                        'has_results': has_results,
+                        'is_failing': is_failing,
+                        'passing_count': results.get('passingCount', 0),
+                        'failing_count': results.get('failingCount', 0),
+                        'last_run': results.get('lastRunTimestampMillis'),
+                    })
+                    
+                    synced_tests.append({
+                        'local': local_test_data,
+                        'remote': remote_match,
+                        'combined': local_test_data  # Enhanced data for display
+                    })
+                else:
+                    # LOCAL_ONLY: exists only locally
+                    local_test_data['status'] = 'local_only'
+                    local_only_tests.append(local_test_data)
+            
+            # Find remote-only tests - consistent with tags/domains pattern
+            for test_urn, remote_test in remote_tests_dict.items():
+                if test_urn not in local_test_urns:
+                    # REMOTE_ONLY: exists only on DataHub
+                    test_name = remote_test.get('name', '').strip()
+                    results = remote_test.get('results', {})
+                    has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
+                    is_failing = bool(results.get('failingCount', 0) > 0)
+                    
+                    remote_test_enhanced = {
+                        'id': test_urn,  # Use URN as ID for remote-only tests
+                        'urn': test_urn,
+                        'name': test_name,
+                        'description': remote_test.get('description', ''),
+                        'category': remote_test.get('category', ''),
+                        'type': remote_test.get('category', 'Test'),
+                        'environment': 'default',
+                        'status': 'remote_only',
+                        'definition_json': remote_test.get('definition_json', ''),
+                        'results': results,
+                        'has_results': has_results,
+                        'is_failing': is_failing,
+                        'passing_count': results.get('passingCount', 0),
+                        'failing_count': results.get('failingCount', 0),
+                        'last_run': results.get('lastRunTimestampMillis'),
+                        'sync_status': 'REMOTE_ONLY',
+                    }
+                    remote_only_tests.append(remote_test_enhanced)
+
+            # Combine all tests for final output - consistent with tags/domains pattern
+            all_tests = []
+            
+            # Add synced tests (using combined data)
+            for synced_test in synced_tests:
+                all_tests.append(synced_test['combined'])
+            
+            # Add local-only tests
+            all_tests.extend(local_only_tests)
+            
+            # Add remote-only tests  
+            all_tests.extend(remote_only_tests)
+
+
+
+            return JsonResponse({
+                'success': True,
+                'tests': all_tests,
+                'total': len(all_tests)
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting tests data: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f"Error getting tests data: {str(e)}",
+                'tests': []
+            })
+
 
 class TestDetailView(View):
     """View to create or edit metadata tests"""
@@ -164,6 +319,9 @@ class TestDetailView(View):
     def post(self, request, test_urn=None):
         """Create or update a test"""
         try:
+            # Check if this is an AJAX request
+            is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            
             # Get form data
             name = request.POST.get("name", "")
             category = request.POST.get("category", "")
@@ -174,40 +332,53 @@ class TestDetailView(View):
 
             # Validate required fields
             if not name:
-                messages.error(request, "Name is required.")
+                error_msg = "Name is required."
+                if is_ajax:
+                    return JsonResponse({'success': False, 'error': error_msg})
+                messages.error(request, error_msg)
                 return redirect(request.path)
 
             if not yaml_definition:
-                messages.error(request, "YAML definition is required.")
+                error_msg = "YAML definition is required."
+                if is_ajax:
+                    return JsonResponse({'success': False, 'error': error_msg})
+                messages.error(request, error_msg)
                 return redirect(request.path)
 
             # Handle local storage or server storage based on source
             if source == "local":
                 # This is for when the form was specifically submitted to save locally
                 # But this is now handled via JavaScript, so we may not need this code path
-                messages.success(request, f"Test '{name}' saved locally.")
+                success_msg = f"Test '{name}' saved locally."
+                if is_ajax:
+                    return JsonResponse({'success': True, 'message': success_msg})
+                messages.success(request, success_msg)
                 return redirect("metadata_manager:tests_list")
 
             # For server storage, we need to connect to DataHub
             connected, client = test_datahub_connection()
 
             if not connected or not client:
-                messages.error(
-                    request,
-                    "Not connected to DataHub. Please check your connection settings.",
-                )
+                error_msg = "Not connected to DataHub. Please check your connection settings."
+                if is_ajax:
+                    return JsonResponse({'success': False, 'error': error_msg})
+                messages.error(request, error_msg)
                 return redirect(request.path)
 
             # Try to parse YAML to ensure it's valid
             try:
                 test_definition = yaml.safe_load(yaml_definition)
                 if not isinstance(test_definition, dict):
-                    messages.error(
-                        request, "Invalid YAML: must be a dictionary/object."
-                    )
+                    error_msg = "Invalid YAML: must be a dictionary/object."
+                    if is_ajax:
+                        return JsonResponse({'success': False, 'error': error_msg})
+                    messages.error(request, error_msg)
                     return redirect(request.path)
             except Exception as e:
-                messages.error(request, f"Invalid YAML: {str(e)}")
+                error_msg = f"Invalid YAML: {str(e)}"
+                if is_ajax:
+                    return JsonResponse({'success': False, 'error': error_msg})
+                messages.error(request, error_msg)
                 return redirect(request.path)
 
             # Create or update test on DataHub
@@ -222,22 +393,29 @@ class TestDetailView(View):
                     )
 
                     if updated_test:
-                        messages.success(
-                            request, f"Test '{name}' updated successfully."
-                        )
-
+                        success_msg = f"Test '{name}' updated successfully."
+                        
                         # If this was a push from local storage, handle removing from local storage
                         if local_index != "-1" and int(local_index) >= 0:
                             # We don't actually need to do anything server-side for this
                             # The client-side JavaScript handles this
                             pass
 
+                        if is_ajax:
+                            return JsonResponse({'success': True, 'message': success_msg})
+                        messages.success(request, success_msg)
                         return redirect("metadata_manager:tests_list")
                     else:
-                        messages.error(request, f"Failed to update test '{name}'.")
+                        error_msg = f"Failed to update test '{name}'."
+                        if is_ajax:
+                            return JsonResponse({'success': False, 'error': error_msg})
+                        messages.error(request, error_msg)
                 except Exception as e:
                     logger.error(f"Error updating test: {str(e)}")
-                    messages.error(request, f"Error updating test: {str(e)}")
+                    error_msg = f"Error updating test: {str(e)}"
+                    if is_ajax:
+                        return JsonResponse({'success': False, 'error': error_msg})
+                    messages.error(request, error_msg)
             else:  # Create new test
                 try:
                     created_test = client.create_test(
@@ -248,9 +426,7 @@ class TestDetailView(View):
                     )
 
                     if created_test:
-                        messages.success(
-                            request, f"Test '{name}' created successfully."
-                        )
+                        success_msg = f"Test '{name}' created successfully."
 
                         # If this was a push from local storage, handle removing from local storage
                         if local_index != "-1" and int(local_index) >= 0:
@@ -258,18 +434,32 @@ class TestDetailView(View):
                             # The client-side JavaScript handles this
                             pass
 
+                        if is_ajax:
+                            return JsonResponse({'success': True, 'message': success_msg})
+                        messages.success(request, success_msg)
                         return redirect("metadata_manager:tests_list")
                     else:
-                        messages.error(request, f"Failed to create test '{name}'.")
+                        error_msg = f"Failed to create test '{name}'."
+                        if is_ajax:
+                            return JsonResponse({'success': False, 'error': error_msg})
+                        messages.error(request, error_msg)
                 except Exception as e:
                     logger.error(f"Error creating test: {str(e)}")
-                    messages.error(request, f"Error creating test: {str(e)}")
+                    error_msg = f"Error creating test: {str(e)}"
+                    if is_ajax:
+                        return JsonResponse({'success': False, 'error': error_msg})
+                    messages.error(request, error_msg)
 
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': 'Unknown error occurred'})
             return redirect(request.path)
 
         except Exception as e:
             logger.error(f"Error in test form submission: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
+            error_msg = f"An error occurred: {str(e)}"
+            if is_ajax:
+                return JsonResponse({'success': False, 'error': error_msg})
+            messages.error(request, error_msg)
             return redirect(request.path)
 
 
@@ -280,10 +470,102 @@ class TestDeleteView(View):
     def dispatch(self, *args, **kwargs):
         return super().dispatch(*args, **kwargs)
 
-    def post(self, request, test_urn):
-        """Delete a test"""
+    def post(self, request, test_id):
+        """Delete a test (AJAX endpoint)"""
         try:
-            # Check connection to DataHub
+            # For AJAX requests, return JSON response
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+               request.content_type == 'application/json':
+                
+                # Parse request body to get delete type
+                delete_type = 'both'  # default
+                if request.content_type == 'application/json':
+                    import json
+                    try:
+                        body = json.loads(request.body)
+                        delete_type = body.get('delete_type', 'both')
+                    except:
+                        pass
+                
+                success_message = 'Test deleted successfully.'
+                
+                # Handle different delete types
+                if delete_type == 'local_only':
+                    # For local_only, delete from local database only
+                    try:
+                        # Try to find local test by ID first, then by URN
+                        local_test = None
+                        try:
+                            local_test = Test.objects.get(id=test_id)
+                        except Test.DoesNotExist:
+                            try:
+                                local_test = Test.objects.get(deterministic_urn=test_id)
+                            except Test.DoesNotExist:
+                                pass
+                        
+                        if local_test:
+                            test_name = local_test.name
+                            local_test.delete()
+                            success_message = f'Test "{test_name}" removed from local database (still exists on DataHub).'
+                        else:
+                            success_message = 'Test removed from local view (still exists on DataHub).'
+                        
+                        return JsonResponse({
+                            'success': True,
+                            'message': success_message
+                        })
+                    except Exception as e:
+                        logger.error(f"Error deleting local test: {str(e)}")
+                        return JsonResponse({
+                            'success': False,
+                            'error': f'Error deleting local test: {str(e)}'
+                        })
+                
+                elif delete_type == 'remote_only':
+                    # Delete only from DataHub
+                    connected, client = test_datahub_connection()
+                    if not connected or not client:
+                        return JsonResponse({
+                            'success': False,
+                            'error': 'Not connected to DataHub. Please check your connection settings.'
+                        })
+                    
+                    success = client.delete_test(test_id)
+                    if success:
+                        success_message = 'Test deleted from DataHub successfully.'
+                        return JsonResponse({
+                            'success': True,
+                            'message': success_message
+                        })
+                    else:
+                        return JsonResponse({
+                            'success': False,
+                            'error': 'Failed to delete test from DataHub.'
+                        })
+                
+                else:  # delete_type == 'both' or default
+                    # Delete from DataHub (original behavior)
+                    connected, client = test_datahub_connection()
+                    if not connected or not client:
+                        return JsonResponse({
+                            'success': False,
+                            'error': 'Not connected to DataHub. Please check your connection settings.'
+                        })
+                    
+                    success = client.delete_test(test_id)
+                    if success:
+                        return JsonResponse({
+                            'success': True,
+                            'message': success_message
+                        })
+                    else:
+                        return JsonResponse({
+                            'success': False,
+                            'error': 'Failed to delete test.'
+                        })
+            
+            # For regular form submissions, handle as before
+            test_urn = test_id
             connected, client = test_datahub_connection()
 
             if connected and client:
@@ -298,11 +580,21 @@ class TestDeleteView(View):
                     request,
                     "Not connected to DataHub. Please check your connection settings.",
                 )
+                
         except Exception as e:
             logger.error(f"Error deleting test: {str(e)}")
-            messages.error(request, f"Error deleting test: {str(e)}")
+            
+            # Return JSON for AJAX, messages for regular requests
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+               request.content_type == 'application/json':
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Error deleting test: {str(e)}'
+                })
+            else:
+                messages.error(request, f"Error deleting test: {str(e)}")
 
-        # Redirect back to the list view
+        # Redirect back to the list view for regular requests
         return redirect("metadata_manager:tests_list")
 
 

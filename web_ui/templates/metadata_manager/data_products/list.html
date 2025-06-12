@@ -109,7 +109,7 @@
         border-radius: 0.25rem;
         font-size: 0.8rem;
     }
-
+    
     .table th {
         background-color: #f8f9fa;
         border-top: none;
@@ -345,8 +345,8 @@
                     <!-- Enhanced Create Data Product Dropdown -->
                     <div class="dropdown create-data-product-dropdown">
                         <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-plus me-1"></i> Create Data Product
-                        </button>
+                        <i class="fas fa-plus me-1"></i> Create Data Product
+                    </button>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#createDataProductModal" data-location="local">
                                 <i class="fas fa-laptop me-2"></i> Create Locally
@@ -402,38 +402,38 @@
                             <div class="row g-0 filter-row">
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Overview</strong>
-                                </div>
+                            </div>
                                 <div class="col-md-2-5">
                                     <div class="filter-stat text-center clickable-stat" data-filter="total" data-category="overview">
                                         <div class="h5 mb-0" id="total-items">0</div>
                                         <div class="text-muted">Total</div>
-                                    </div>
-                                </div>
+                        </div>
+                    </div>
                                 <div class="col-md-2-5">
                                     <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
                                         <div class="h5 mb-0" id="synced-count">0</div>
                                         <div class="text-muted">Synced</div>
-                                    </div>
-                                </div>
+                            </div>
+                        </div>
                                 <div class="col-md-2-5">
                                     <div class="filter-stat text-center clickable-stat" data-filter="local" data-category="overview">
                                         <div class="h5 mb-0" id="local-count">0</div>
                                         <div class="text-muted">Local Only</div>
-                                    </div>
-                                </div>
+                    </div>
+                            </div>
                                 <div class="col-md-2-5">
                                     <div class="filter-stat text-center clickable-stat" data-filter="remote" data-category="overview">
                                         <div class="h5 mb-0" id="remote-count">0</div>
                                         <div class="text-muted">Remote Only</div>
-                                    </div>
-                                </div>
+                        </div>
+                    </div>
                             </div>
                             
                             <!-- Row 2: Content Filters -->
                             <div class="row g-0 filter-row border-top">
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Filters</strong>
-                                </div>
+                        </div>
                                 <div class="col-md-2-5">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-entities" data-category="content">
                                         <div class="h6 mb-0" id="products-with-entities">0</div>
@@ -516,7 +516,7 @@
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <div class="d-flex align-items-center">
                                     <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllSynced">
-                                    <h5 class="card-title mb-0">Synced Products</h5>
+                                <h5 class="card-title mb-0">Synced Products</h5>
                                 </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
@@ -538,7 +538,7 @@
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <div class="d-flex align-items-center">
                                     <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllLocal">
-                                    <h5 class="card-title mb-0">Local Only Products</h5>
+                                <h5 class="card-title mb-0">Local Only Products</h5>
                                 </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
@@ -560,7 +560,7 @@
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <div class="d-flex align-items-center">
                                     <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllRemote">
-                                    <h5 class="card-title mb-0">Remote Only Products</h5>
+                                <h5 class="card-title mb-0">Remote Only Products</h5>
                                 </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
@@ -745,22 +745,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const clearButton = document.getElementById(`${tab}-clear`);
         
         if (searchInput) {
-            searchInput.addEventListener('input', function() {
+        searchInput.addEventListener('input', function() {
                 // Reset pagination when searching
                 currentPagination[tab].page = 1;
-                currentSearch[tab] = this.value.toLowerCase();
-                displayTabContent(tab);
-            });
+            currentSearch[tab] = this.value.toLowerCase();
+            displayTabContent(tab);
+        });
         }
         
         if (clearButton) {
-            clearButton.addEventListener('click', function() {
+        clearButton.addEventListener('click', function() {
                 // Reset pagination when clearing search
                 currentPagination[tab].page = 1;
-                searchInput.value = '';
-                currentSearch[tab] = '';
-                displayTabContent(tab);
-            });
+            searchInput.value = '';
+            currentSearch[tab] = '';
+            displayTabContent(tab);
+        });
         }
     });
     
@@ -1388,17 +1388,17 @@ function showProductDetails(product) {
     
     if (entityCount > 0 && product.entity_urns && product.entity_urns.length > 0) {
         entitiesList.innerHTML = product.entity_urns.map(entityUrn => `
-            <div class="border rounded p-2 mb-2">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
                         <strong>Entity</strong>
                         <span class="badge bg-primary ms-2">Asset</span>
+                        </div>
                     </div>
-                </div>
-                <div class="mt-1">
+                    <div class="mt-1">
                     <code class="small">${escapeHtml(entityUrn)}</code>
-                </div>
-            </div>
+                    </div>
+                        </div>
         `).join('');
     } else {
         entitiesList.innerHTML = '<p class="text-muted">No entities assigned</p>';
@@ -1416,17 +1416,17 @@ function showProductDetails(product) {
             const ownerUrn = ownerInfo?.urn || 'No URN';
             
             return `
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
+            <div class="border rounded p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
                             <strong>${escapeHtml(displayName)}</strong>
                             <span class="badge bg-info ms-2">${ownerType}</span>
-                        </div>
-                    </div>
-                    <div class="mt-1">
-                        <code class="small">${escapeHtml(ownerUrn)}</code>
                     </div>
                 </div>
+                <div class="mt-1">
+                        <code class="small">${escapeHtml(ownerUrn)}</code>
+                </div>
+            </div>
             `;
         }).join('');
     } else {
@@ -1490,8 +1490,8 @@ function showProductDetails(product) {
         }
         
         if (propertiesHTML) {
-            propertiesDiv.innerHTML = propertiesHTML;
-        } else {
+        propertiesDiv.innerHTML = propertiesHTML;
+    } else {
             propertiesDiv.innerHTML = '<p class="text-muted">No additional properties</p>';
         }
     } else {
@@ -2339,4 +2339,4 @@ function updateTabCounts() {
     }
 }
 </script>
-{% endblock %}
+{% endblock %} 

@@ -902,6 +902,10 @@ class GitService:
             "recipes/instances",
             "policies",
             "params/environments",
+            "domains",
+            "data_products",
+            "assertions",
+            "metadata_tests",
         ]
 
         staged_files = []

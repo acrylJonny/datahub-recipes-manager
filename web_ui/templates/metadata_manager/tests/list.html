@@ -23,6 +23,16 @@
         max-height: 4.2em;
     }
     
+    .related-items-cell {
+        max-width: 250px;
+    }
+    
+    .relationship-badge {
+        font-size: 0.7rem;
+        margin: 0.1rem;
+        padding: 0.2rem 0.4rem;
+    }
+    
     .status-badge {
         font-size: 0.75rem;
         padding: 0.3rem 0.6rem;
@@ -43,14 +53,337 @@
         100% { transform: rotate(360deg); }
     }
     
+    .tab-loading {
+        text-align: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+    
     .table-responsive {
         border-radius: 0.375rem;
         border: 1px solid #dee2e6;
     }
     
+    .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 350px;
+    }
+    
+    /* Modal enhancements */
+    .modal-body dl {
+        margin-bottom: 0;
+    }
+    
+    .modal-body dt {
+        font-weight: 600;
+        color: #495057;
+        margin-top: 1rem;
+    }
+    
+    .modal-body dt:first-child {
+        margin-top: 0;
+    }
+    
+    .modal-body dd {
+        margin-bottom: 0.5rem;
+        color: #6c757d;
+    }
+    
+    .relationship-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.25rem;
+        padding: 0.25rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+    }
+    
+    .owner-item {
+        display: inline-block;
+        margin: 0.1rem;
+        padding: 0.2rem 0.5rem;
+        background-color: #e9ecef;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+    }
+
     .table th {
         background-color: #f8f9fa;
         border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    /* Bulk actions */
+    .bulk-actions {
+        background-color: #e3f2fd;
+        border: 1px solid #2196f3;
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        border-radius: 0.375rem;
+        display: none;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+    
+    /* Action buttons styling - consistent with data products */
+    .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Status badges */
+    .badge.bg-success { background-color: #198754 !important; }
+    .badge.bg-secondary { background-color: #6c757d !important; }
+    .badge.bg-info { background-color: #0dcaf0 !important; }
+    .badge.bg-warning { background-color: #ffc107 !important; }
+    .badge.bg-danger { background-color: #dc3545 !important; }
+
+    /* Interactive hierarchy styles */
+    .hierarchy-container {
+        display: flex;
+        align-items: center;
+        position: relative;
+        min-height: 20px;
+    }
+    
+    .tree-connector {
+        position: relative;
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        margin-right: 2px;
+    }
+    
+    .tree-connector::before {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 0;
+        width: 1px;
+        height: 100%;
+        background-color: #dee2e6;
+    }
+    
+    .tree-connector::after {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: 10px;
+        height: 1px;
+        background-color: #dee2e6;
+    }
+    
+    /* Hide vertical line for last items in a group */
+    .tree-connector.last-child::before {
+        height: 10px;
+    }
+    
+    /* Hide connectors for root level */
+    tr[data-level="0"] .tree-connector {
+        display: none;
+    }
+    
+    .expand-button-container {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-right: 4px;
+    }
+    
+    /* Expand/collapse button styling */
+    .expand-button {
+        border: none !important;
+        background: none !important;
+        padding: 2px !important;
+        margin: 0 !important;
+        color: #6c757d;
+        cursor: pointer;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+    }
+    
+    .expand-button:hover {
+        color: #007bff !important;
+        background-color: #f8f9fa !important;
+    }
+    
+    .expand-icon {
+        font-size: 12px;
+        transition: transform 0.2s ease;
+    }
+    
+    .expand-button:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Item name styling */
+    .item-name {
+        font-weight: 500;
+        margin-left: 2px;
+        flex-grow: 1;
+    }
+    
+    /* Smooth transitions for expand/collapse */
+    tbody tr {
+        transition: opacity 0.15s ease;
+    }
+    
+    /* Better visual spacing */
+    .table td {
+        vertical-align: middle;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    /* Ensure consistent alignment */
+    .name-cell {
+        position: relative;
+    }
+
+    /* Simple hierarchy visual styles */
+    tr[data-level="0"] {
+        background-color: #ffffff;
+    }
+
+    tr[data-level="1"] {
+        background-color: #f8f9fa;
+    }
+
+    tr[data-level="2"] {
+        background-color: #f1f3f4;
+    }
+
+    tr[data-level="1"]:hover,
+    tr[data-level="2"]:hover {
+        background-color: #e3f2fd !important;
+    }
+
+    /* Domain icon styling */
+    .domain-icon {
+        width: 20px;
+        height: 20px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        margin-right: 8px;
+        font-size: 12px;
+    }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 0 0 20%;
+        max-width: 20%;
+    }
+    
+    /* Clickable statistics styling */
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
     }
 </style>
 {% endblock %}
@@ -69,86 +402,110 @@
     
     <div class="row">
         <div class="col-md-12">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>DataHub Metadata Tests</h1>
                 <div class="d-flex gap-2">
-            <a href="{% url 'metadata_manager:test_create' %}" class="btn btn-primary">
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTestModal">
                         <i class="fas fa-plus me-1"></i> Create Test
+                    </button>
+                    <a href="{% url 'metadata_manager:test_import' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-file-import me-1"></i> Import/Export
                     </a>
-                    <button type="button" class="btn btn-outline-secondary" id="refreshTests">
+                    <button type="button" class="btn btn-outline-info" id="refreshTests">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
-            </button>
-        </div>
-    </div>
-
-    {% if not has_datahub_connection %}
+                    </button>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
                 <div class="alert alert-warning" role="alert">
                     <i class="fas fa-exclamation-triangle me-2"></i>
                     Not connected to DataHub. Please check your connection settings.
                     <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
                         <i class="fas fa-cog"></i> Settings
                     </a>
-    </div>
-    {% endif %}
-    
-    {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        {% endfor %}
-    {% endif %}
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
 
             <!-- Loading indicator -->
             <div id="loading-indicator" class="text-center py-5">
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
-                <p class="mt-2">Loading metadata tests data...</p>
+                <p class="mt-2">Loading tests data...</p>
             </div>
 
             <!-- Tests content -->
             <div id="tests-content" style="display: none;">
-                <!-- Statistics -->
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="total-items">0</div>
-                                <small class="text-muted">Total Tests</small>
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Overview -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="synced-count">0</div>
-                                <small class="text-muted">Synced</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="owned-tests">0</div>
-                                <small class="text-muted">Owned</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="tests-with-relationships">0</div>
-                                <small class="text-muted">With Relationships</small>
+                            
+                            <!-- Row 2: Content Filters -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Filters</strong>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-results" data-category="content">
+                                        <div class="h6 mb-0" id="tests-with-results">0</div>
+                                        <div class="text-muted">With Results</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="failing" data-category="content">
+                                        <div class="h6 mb-0" id="failing-tests">0</div>
+                                        <div class="text-muted">Failing Tests</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             
                 <!-- Tests Tabs -->
-    <ul class="nav nav-tabs mb-4" id="testTabs" role="tablist">
-        <li class="nav-item" role="presentation">
+                <ul class="nav nav-tabs mb-4" id="testTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
                                type="button" role="tab" aria-controls="synced-items" aria-selected="true">
                             <i class="fas fa-sync-alt me-1"></i> Synced Tests
@@ -160,72 +517,141 @@
                                type="button" role="tab" aria-controls="local-items" aria-selected="false">
                             <i class="fas fa-laptop me-1"></i> Local Only Tests
                             <span class="badge bg-secondary ms-1" id="local-badge">0</span>
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
                                type="button" role="tab" aria-controls="remote-items" aria-selected="false">
                             <i class="fas fa-server me-1"></i> Remote Only Tests
                             <span class="badge bg-info ms-1" id="remote-badge">0</span>
-            </button>
-        </li>
-    </ul>
-    
-    <div class="tab-content" id="testTabsContent">
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="testTabsContent">
                     <!-- Synced Tests Tab -->
                     <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
-            <div class="card mb-4">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Synced Tests</h5>
-                                <div class="input-group" style="width: 300px;">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                    <input type="text" id="synced-search" class="form-control" placeholder="Search synced tests...">
-                                    <button type="button" class="btn btn-outline-secondary" id="synced-clear">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="synced-search" class="form-control" placeholder="Search synced tests...">
+                                        <button type="button" class="btn btn-outline-secondary" id="synced-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> test(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTests('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Remove Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Local Tests Tab -->
+                    <!-- Local Only Tests Tab -->
                     <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Local Only Tests</h5>
-                                <div class="input-group" style="width: 300px;">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                    <input type="text" id="local-search" class="form-control" placeholder="Search local tests...">
-                                    <button type="button" class="btn btn-outline-secondary" id="local-clear">
-                                        <i class="fas fa-times"></i>
-                                                    </button>
-                                                </div>
-                        </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="local-search" class="form-control" placeholder="Search local tests...">
+                                        <button type="button" class="btn btn-outline-secondary" id="local-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> test(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTests('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
-                </div>
-            </div>
-        </div>
-        
-                    <!-- Remote Tests Tab -->
-                    <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
-            <div class="card mb-4">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <h5 class="card-title mb-0">Remote Only Tests</h5>
-                                <div class="input-group" style="width: 300px;">
-                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                    <input type="text" id="remote-search" class="form-control" placeholder="Search remote tests...">
-                                    <button type="button" class="btn btn-outline-secondary" id="remote-clear">
-                                <i class="fas fa-times"></i>
-                            </button>
+                            </div>
                         </div>
                     </div>
+                    
+                    <!-- Remote Only Tests Tab -->
+                    <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Remote Only Tests</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="remote-search" class="form-control" placeholder="Search remote tests...">
+                                        <button type="button" class="btn btn-outline-secondary" id="remote-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> test(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemote('remote')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete from DataHub
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
-                    </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -234,7 +660,70 @@
     </div>
 </div>
 
-<!-- Enhanced Test View Modal -->
+<!-- Create Test Modal -->
+<div class="modal fade" id="createTestModal" tabindex="-1" aria-labelledby="createTestModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createTestModalLabel">Create New Test</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="createTestForm" method="post" action="{% url 'metadata_manager:test_create' %}">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="testName" class="form-label">Test Name *</label>
+                            <input type="text" class="form-control" id="testName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="testCategory" class="form-label">Category *</label>
+                            <select class="form-control" id="testCategory" name="category" required>
+                                <option value="">Select Category</option>
+                                <option value="ENTITY_LIFECYCLE">Entity Lifecycle</option>
+                                <option value="METADATA_QUALITY">Metadata Quality</option>
+                                <option value="METADATA_VALIDATION">Metadata Validation</option>
+                                <option value="DATA_QUALITY">Data Quality</option>
+                                <option value="DATA_RELIABILITY">Data Reliability</option>
+                                <option value="GLOSSARY_COMPLIANCE">Glossary Compliance</option>
+                                <option value="ACCESS_CONTROL">Access Control</option>
+                                <option value="CUSTOM">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="testDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="testDescription" name="description" rows="3" 
+                                  placeholder="Describe the purpose and scope of this test..."></textarea>
+                    </div>
+                    
+                    <!-- Test Definition -->
+                    <div class="mb-4">
+                        <h6 class="text-primary"><i class="fas fa-code me-2"></i>Test Definition</h6>
+                        <label for="testDefinition" class="form-label">YAML Definition *</label>
+                        <textarea class="form-control" id="testDefinition" name="yaml_definition" rows="8" 
+                                  placeholder="Enter your test definition in YAML format..." required></textarea>
+                        <small class="form-text text-muted">Define your test logic in YAML format</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Create Test
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Test View Modal -->
 <div class="modal fade" id="testViewModal" tabindex="-1" aria-labelledby="testViewModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
@@ -249,103 +738,60 @@
                         <div class="card h-100">
                             <div class="card-header">
                                 <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
-            </div>
+                            </div>
                             <div class="card-body">
                                 <dl class="row">
                                     <dt class="col-sm-4">Name:</dt>
                                     <dd class="col-sm-8" id="modal-test-name">-</dd>
                                     
-                                    <dt class="col-sm-4">Type:</dt>
-                                    <dd class="col-sm-8">
-                                        <i class="fas fa-vial text-info me-1"></i>Metadata Test
-                                    </dd>
-                                    
                                     <dt class="col-sm-4">Category:</dt>
                                     <dd class="col-sm-8" id="modal-test-category">-</dd>
                                     
+                                    <dt class="col-sm-4">URN:</dt>
+                                    <dd class="col-sm-8"><code id="modal-test-urn">-</code></dd>
+                                    
                                     <dt class="col-sm-4">Description:</dt>
                                     <dd class="col-sm-8" id="modal-test-description">-</dd>
-                                    
-                                    <dt class="col-sm-4">Status:</dt>
-                                    <dd class="col-sm-8">
-                                        <span id="modal-test-status" class="badge">-</span>
-                                    </dd>
-                                    
-                                    <dt class="col-sm-4">URN:</dt>
-                                    <dd class="col-sm-8">
-                                        <code id="modal-test-urn" class="small">-</code>
-                                    </dd>
                                 </dl>
-                                
-                                <div class="mt-3">
-                                    <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
-                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
-                                    </a>
-            </div>
-        </div>
-    </div>
-</div>
-
-                    <!-- Ownership Information -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Test Results -->
                     <div class="col-md-6">
                         <div class="card h-100">
                             <div class="card-header">
-                                <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
+                                <h6 class="card-title mb-0"><i class="fas fa-chart-bar me-2"></i>Test Results</h6>
                             </div>
                             <div class="card-body">
-                                <div id="modal-owners-list">
-                                    <p class="text-muted">No ownership information available</p>
-            </div>
-                                
-                                <div id="modal-last-modified" class="mt-3">
-                                    <!-- Last modified info will be shown here -->
-            </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-                <!-- Relationships -->
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
-            </div>
-                            <div class="card-body">
-                                <div id="modal-relationships-list">
-                                    <p class="text-muted">No relationships available</p>
-            </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-                <!-- Test Properties -->
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h6 class="card-title mb-0"><i class="fas fa-cog me-2"></i>Test Properties</h6>
-                            </div>
-                            <div class="card-body">
-                                <div id="modal-test-properties">
-                                    <p class="text-muted">No additional properties available</p>
-                                </div>
+                                <dl class="row">
+                                    <dt class="col-sm-4">Passing:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-success" id="modal-test-passing">0</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Failing:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-danger" id="modal-test-failing">0</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Last Run:</dt>
+                                    <dd class="col-sm-8" id="modal-test-last-run">-</dd>
+                                </dl>
                             </div>
                         </div>
-            </div>
+                    </div>
                 </div>
                 
-                <!-- Raw JSON Data -->
+                <!-- Test Definition -->
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header">
-                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
+                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Test Definition</h6>
                             </div>
                             <div class="card-body">
-                                <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
+                                <pre id="modal-test-definition" class="language-json"><code>Loading...</code></pre>
                             </div>
                         </div>
                     </div>
@@ -358,541 +804,74 @@
     </div>
 </div>
 
-{% endblock %}
 
-{% block scripts %}
-<script>
-// Global variables
-let testsData = {
-    synced_items: [],
-    local_only_items: [],
-    remote_only_items: [],
-    datahub_url: ''
-};
-let currentSearch = {
-    synced: '',
-    local: '',
-    remote: ''
-};
 
-    document.addEventListener('DOMContentLoaded', function() {
-    loadTestsData();
-    
-    // Search functionality for each tab
-    ['synced', 'local', 'remote'].forEach(tab => {
-        const searchInput = document.getElementById(`${tab}-search`);
-        const clearButton = document.getElementById(`${tab}-clear`);
-        
-        searchInput.addEventListener('input', function() {
-            currentSearch[tab] = this.value.toLowerCase();
-            displayTabContent(tab);
-        });
-        
-        clearButton.addEventListener('click', function() {
-            searchInput.value = '';
-            currentSearch[tab] = '';
-            displayTabContent(tab);
-        });
-    });
-    
-    // Refresh button
-    document.getElementById('refreshTests').addEventListener('click', function() {
-        loadTestsData();
-            });
-        });
-
-function loadTestsData() {
-    console.log('Loading tests data...');
-    showLoading(true);
-    
-    fetch('/metadata/tests/data/')
-        .then(response => {
-            console.log('Received response:', response.status);
-            return response.json();
-        })
-        .then(data => {
-            console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
-            if (data.success) {
-                testsData = data.data;
-                updateStatistics(data.data.statistics);
-                updateTabBadges();
-                displayAllTabs();
-            } else {
-                console.error('Data loading failed:', data.error);
-                showError('Failed to load tests: ' + (data.error || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error loading tests:', error);
-            showError('Failed to load tests data: ' + error.message);
-        })
-        .finally(() => {
-            showLoading(false);
-        });
-}
-
-function showLoading(show) {
-    document.getElementById('loading-indicator').style.display = show ? 'block' : 'none';
-    document.getElementById('tests-content').style.display = show ? 'none' : 'block';
-}
-
-function updateStatistics(stats) {
-    document.getElementById('total-items').textContent = stats.total_items || 0;
-    document.getElementById('synced-count').textContent = stats.synced_count || 0;
-    document.getElementById('owned-tests').textContent = stats.owned_items || 0;
-    document.getElementById('tests-with-relationships').textContent = stats.items_with_relationships || 0;
-}
-
-function updateTabBadges() {
-    document.getElementById('synced-badge').textContent = testsData.synced_items.length;
-    document.getElementById('local-badge').textContent = testsData.local_only_items.length;
-    document.getElementById('remote-badge').textContent = testsData.remote_only_items.length;
-}
-
-function displayAllTabs() {
-    displayTabContent('synced');
-    displayTabContent('local');
-    displayTabContent('remote');
-}
-
-function displayTabContent(tabType) {
-    console.log('Displaying tab content for:', tabType);
-    
-    let items, contentId;
-    
-    try {
-        switch(tabType) {
-            case 'synced':
-                items = testsData.synced_items.map(item => item.combined);
-                contentId = 'synced-content';
-                break;
-            case 'local':
-                items = testsData.local_only_items;
-                contentId = 'local-content';
-                break;
-            case 'remote':
-                items = testsData.remote_only_items;
-                contentId = 'remote-content';
-                break;
-        }
-        
-        console.log(`Tab ${tabType}: ${items?.length || 0} items`);
-        
-        // Sort items alphabetically by name (A-Z)
-        if (items && items.length > 0) {
-            items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
-        }
-        
-        // Filter items based on search
-        const searchTerm = currentSearch[tabType];
-        if (searchTerm) {
-            items = items.filter(item => 
-                (item.name || '').toLowerCase().includes(searchTerm) ||
-                (item.description || '').toLowerCase().includes(searchTerm) ||
-                (item.category || '').toLowerCase().includes(searchTerm) ||
-                (item.urn || '').toLowerCase().includes(searchTerm)
-            );
-        }
-        
-        const content = document.getElementById(contentId);
-        if (!content) {
-            console.error('Content element not found:', contentId);
-            return;
-        }
-        
-        if (items.length === 0) {
-            console.log(`No items for ${tabType}, showing empty state`);
-            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
-            return;
-        }
-        
-        console.log(`Generating table for ${tabType} with ${items.length} items`);
-        const tableHTML = generateTableHTML(items, tabType);
-        content.innerHTML = tableHTML;
-        
-        // Attach click handlers for view buttons
-        content.querySelectorAll('.view-item').forEach(button => {
-            button.addEventListener('click', function() {
-                const row = this.closest('tr');
-                const itemData = JSON.parse(row.dataset.item);
-                showTestDetails(itemData);
-            });
-        });
-
-        console.log(`Successfully rendered ${tabType} tab`);
-        
-    } catch (error) {
-        console.error(`Error displaying ${tabType} tab:`, error);
-        const content = document.getElementById(contentId);
-        if (content) {
-            content.innerHTML = `<div class="alert alert-danger">Error loading ${tabType} tests: ${error.message}</div>`;
-        }
-    }
-}
-
-function generateTableHTML(items, tabType) {
-    return `
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Category</th>
-                        <th>Description</th>
-                        <th>URN</th>
-                        <th>Status</th>
-                        <th>Owners</th>
-                        <th>Relationships</th>
-                        <th width="15%">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${items.map(item => renderTestRow(item, tabType)).join('')}
-                </tbody>
-            </table>
-        </div>
-    `;
-}
-
-function renderTestRow(test, tabType) {
-    const statusClass = getStatusBadgeClass(test.sync_status);
-    const typeIcon = 'fas fa-vial text-info';
-    
-    return `
-        <tr data-item='${JSON.stringify(test)}'>
-            <td>
-                <div class="d-flex align-items-center">
-                    <i class="${typeIcon} me-2"></i>
-                    <strong>${escapeHtml(test.name || 'Unnamed')}</strong>
+<!-- Edit Test Modal -->
+<div class="modal fade" id="editTestModal" tabindex="-1" aria-labelledby="editTestModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editTestModalLabel">Edit Test</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editTestForm" method="post">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <input type="hidden" id="editTestUrn" name="test_urn">
+                    
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editTestName" class="form-label">Test Name *</label>
+                            <input type="text" class="form-control" id="editTestName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editTestCategory" class="form-label">Category *</label>
+                            <select class="form-control" id="editTestCategory" name="category" required>
+                                <option value="">Select Category</option>
+                                <option value="ENTITY_LIFECYCLE">Entity Lifecycle</option>
+                                <option value="METADATA_QUALITY">Metadata Quality</option>
+                                <option value="METADATA_VALIDATION">Metadata Validation</option>
+                                <option value="DATA_QUALITY">Data Quality</option>
+                                <option value="DATA_RELIABILITY">Data Reliability</option>
+                                <option value="GLOSSARY_COMPLIANCE">Glossary Compliance</option>
+                                <option value="ACCESS_CONTROL">Access Control</option>
+                                <option value="CUSTOM">Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="editTestDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editTestDescription" name="description" rows="3" 
+                                  placeholder="Describe the purpose and scope of this test..."></textarea>
+                    </div>
+                    
+                    <!-- Test Definition -->
+                    <div class="mb-4">
+                        <h6 class="text-primary"><i class="fas fa-code me-2"></i>Test Definition</h6>
+                        <label for="editTestDefinition" class="form-label">YAML Definition *</label>
+                        <textarea class="form-control" id="editTestDefinition" name="yaml_definition" rows="8" 
+                                  placeholder="Enter your test definition in YAML format..." required></textarea>
+                        <small class="form-text text-muted">Define your test logic in YAML format</small>
+                    </div>
                 </div>
-            </td>
-            <td>
-                <span class="badge bg-info">${escapeHtml(test.category || 'Uncategorized')}</span>
-            </td>
-            <td>
-                <span title="${escapeHtml(test.description || '')}">${escapeHtml(truncateText(test.description || '', 50))}</span>
-            </td>
-            <td>
-                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(test.urn || '')}">${escapeHtml(truncateUrn(test.urn || '', 30))}</code>
-            </td>
-            <td>
-                <span class="badge ${statusClass}">${test.sync_status_display || test.sync_status}</span>
-            </td>
-            <td>
-                ${test.owners_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-users me-1"></i>
-                        <span class="badge bg-info">${test.owners_count}</span>
-                        ${test.owner_names && test.owner_names.length > 0 ? `
-                            <small class="ms-2 text-muted">${test.owner_names.slice(0, 2).join(', ')}${test.owner_names.length > 2 ? '...' : ''}</small>
-                        ` : ''}
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                ${test.relationships_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-project-diagram me-1"></i>
-                        <span class="badge bg-secondary">${test.relationships_count}</span>
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-primary view-item" 
-                            title="View Details">
-                        <i class="fas fa-eye"></i>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Save Changes
                     </button>
-                    ${test.urn && !test.urn.includes('local:') ? `
-                        <a href="${getDataHubUrl(test.urn, 'test')}" 
-                           class="btn btn-sm btn-outline-info" 
-                           target="_blank" title="View in DataHub">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    ` : ''}
-                    ${getActionButtons(test, tabType)}
                 </div>
-            </td>
-        </tr>
-    `;
-}
-
-function getActionButtons(item, tabType) {
-    // Implementation depends on backend endpoints
-    return '';
-}
-
-function getEmptyStateHTML(tabType, hasSearch) {
-    if (hasSearch) {
-        return `
-            <div class="py-5 text-center">
-                <div class="mb-3">
-                    <i class="fas fa-search fa-4x text-muted"></i>
-                </div>
-                <h4>No tests found</h4>
-                <p class="text-muted">No tests match your search criteria.</p>
-            </div>
-        `;
-    }
-    
-    const emptyStates = {
-        synced: {
-            icon: 'fas fa-sync-alt',
-            title: 'No synced tests',
-            description: 'Tests that exist both locally and in DataHub will appear here.'
-        },
-        local: {
-            icon: 'fas fa-laptop',
-            title: 'No local-only tests',
-            description: 'Tests that exist only in this application will appear here.',
-            action: `<div class="mt-2">
-                        <a href="{% url 'metadata_manager:test_create' %}" class="btn btn-primary">
-                            <i class="fas fa-plus me-1"></i> Create Test
-                        </a>
-                     </div>`
-        },
-        remote: {
-            icon: 'fas fa-server',
-            title: 'No remote-only tests',
-            description: 'Tests that exist only in DataHub will appear here.'
-        }
-    };
-    
-    const state = emptyStates[tabType];
-    return `
-        <div class="py-5 text-center">
-            <div class="mb-3">
-                <i class="${state.icon} fa-4x text-muted"></i>
-            </div>
-            <h4>${state.title}</h4>
-            <p class="text-muted">${state.description}</p>
-            ${state.action || ''}
+            </form>
         </div>
-    `;
-}
+    </div>
+</div>
 
-function showTestDetails(test) {
-    // Basic information
-    document.getElementById('modal-test-name').textContent = test.name || 'Unnamed';
-    document.getElementById('modal-test-category').textContent = test.category || 'Uncategorized';
-    document.getElementById('modal-test-description').textContent = test.description || 'No description available';
-    document.getElementById('modal-test-urn').textContent = test.urn || 'No URN available';
-    
-    // Status
-    const statusBadge = document.getElementById('modal-test-status');
-    statusBadge.textContent = test.sync_status_display || test.sync_status;
-    statusBadge.className = `badge ${getStatusBadgeClass(test.sync_status)}`;
-    
-    // DataHub link
-    const datahubLink = document.getElementById('modal-datahub-link');
-    if (test.urn && !test.urn.includes('local:') && testsData.datahub_url) {
-        datahubLink.href = getDataHubUrl(test.urn, 'test');
-        datahubLink.style.display = 'inline-block';
-    } else {
-        datahubLink.style.display = 'none';
-    }
-    
-    // Ownership information
-    const ownersList = document.getElementById('modal-owners-list');
-    if (test.ownership && test.ownership.owners && test.ownership.owners.length > 0) {
-        ownersList.innerHTML = test.ownership.owners.map(ownerInfo => {
-            const owner = ownerInfo.owner || {};
-            const ownershipType = ownerInfo.ownershipType || {};
-            const source = ownerInfo.source || {};
-            
-            const displayName = owner.properties ? 
-                (owner.properties.displayName || owner.properties.fullName || owner.username || owner.name) :
-                (owner.username || owner.name || 'Unknown');
-                
-            return `
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <strong>${escapeHtml(displayName)}</strong>
-                            <br>
-                            <small class="text-muted">${escapeHtml(ownershipType.info ? ownershipType.info.name : 'Owner')}</small>
-                        </div>
-                        <div class="text-end">
-                            ${source.type ? `<span class="badge bg-light text-dark">${source.type}</span>` : ''}
-                        </div>
-                    </div>
-                    <div class="mt-1">
-                        <code class="small">${escapeHtml(owner.urn || '')}</code>
-                    </div>
-                    ${owner.properties && (owner.properties.email || owner.properties.title) ? `
-                        <div class="mt-2">
-                            ${owner.properties.email ? `<small class="text-muted d-block"><i class="fas fa-envelope me-1"></i>${escapeHtml(owner.properties.email)}</small>` : ''}
-                            ${owner.properties.title ? `<small class="text-muted d-block"><i class="fas fa-briefcase me-1"></i>${escapeHtml(owner.properties.title)}</small>` : ''}
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }).join('');
-    } else {
-        ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
-    }
-    
-    // Last modified information
-    const lastModifiedDiv = document.getElementById('modal-last-modified');
-    if (test.ownership && test.ownership.lastModified) {
-        lastModifiedDiv.innerHTML = `
-            <div class="border rounded p-2">
-                <strong>Last Modified:</strong><br>
-                <small class="text-muted">
-                    ${formatDate(test.ownership.lastModified.time)}
-                    ${test.ownership.lastModified.actor ? ` by ${test.ownership.lastModified.actor}` : ''}
-                </small>
-            </div>
-        `;
-    } else if (test.last_updated) {
-        lastModifiedDiv.innerHTML = `
-            <div class="border rounded p-2">
-                <strong>Last Updated:</strong><br>
-                <small class="text-muted">${formatDate(test.last_updated)}</small>
-            </div>
-        `;
-    } else {
-        lastModifiedDiv.innerHTML = '';
-    }
-    
-    // Relationships
-    const relationshipsList = document.getElementById('modal-relationships-list');
-    if (test.relationships && test.relationships.relationships && test.relationships.relationships.length > 0) {
-        relationshipsList.innerHTML = test.relationships.relationships.map(rel => `
-            <div class="border rounded p-2 mb-2">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <strong>${escapeHtml(rel.type || 'Unknown')}</strong>
-                        <span class="badge bg-${rel.direction === 'INCOMING' ? 'success' : 'primary'} ms-2">
-                            ${rel.direction || 'UNKNOWN'}
-                        </span>
-                    </div>
-                    <div class="text-end">
-                        ${rel.created ? `<small class="text-muted">${formatDate(rel.created.time)}</small>` : ''}
-                    </div>
-                </div>
-                <div class="mt-1">
-                    <code class="small">${escapeHtml(rel.entity ? rel.entity.urn : 'No entity URN')}</code>
-                </div>
-                ${rel.entity && rel.entity.properties ? `
-                    <div class="mt-1">
-                        <small class="text-muted">${escapeHtml(rel.entity.properties.name || 'Unknown Entity')}</small>
-                    </div>
-                ` : ''}
-            </div>
-        `).join('');
-                } else {
-        relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
-    }
-    
-    // Test Properties
-    const propertiesDiv = document.getElementById('modal-test-properties');
-    if (test.properties || test.definition || test.yaml_definition) {
-        let propertiesHTML = '';
-        
-        if (test.definition || test.yaml_definition) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Test Definition:</strong>
-                    <pre class="mt-2 mb-0"><code>${escapeHtml(test.yaml_definition || test.definition || '')}</code></pre>
-                </div>
-            `;
-        }
-        
-        if (test.properties && test.properties.customProperties) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Custom Properties:</strong>
-                    <pre class="mt-2 mb-0"><code>${escapeHtml(JSON.stringify(test.properties.customProperties, null, 2))}</code></pre>
-                </div>
-            `;
-        }
-        
-        propertiesDiv.innerHTML = propertiesHTML;
-                } else {
-        propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
-    }
-    
-    // Raw JSON - Show comprehensive GraphQL data
-    const rawData = test.raw_data || test;
-    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
-    
-    // Show modal
-    new bootstrap.Modal(document.getElementById('testViewModal')).show();
-}
+<!-- Include the tests JavaScript -->
+{% load static %}
+<script src="{% static 'metadata_manager/tests/tests_enhanced.js' %}"></script>
 
-// Utility functions
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function truncateText(text, maxLength) {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-}
-
-function truncateUrn(urn, maxLength) {
-    if (!urn || urn.length <= maxLength) return urn;
-    return urn.substring(0, maxLength - 3) + '...';
-}
-
-function formatDate(timestamp) {
-    try {
-        const date = new Date(parseInt(timestamp));
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    } catch (e) {
-        return timestamp;
-    }
-}
-
-function getDataHubUrl(urn, type) {
-    if (testsData.datahub_url) {
-        return `${testsData.datahub_url}/test/${encodeURIComponent(urn)}`;
-    }
-    return '#';
-}
-
-function getStatusBadgeClass(status) {
-    switch(status) {
-        case 'SYNCED': return 'bg-success';
-        case 'MODIFIED': return 'bg-warning';
-        case 'LOCAL_ONLY': return 'bg-secondary';
-        case 'REMOTE_ONLY': return 'bg-info';
-        default: return 'bg-primary';
-    }
-}
-
-function getCsrfToken() {
-    const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
-    return csrfElement ? csrfElement.value : '';
-}
-
-function showError(message) {
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
-}
-</script>
-
-<style>
-#modal-raw-json {
-    max-height: 300px;
-    overflow-y: auto;
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    padding: 1rem;
-}
-
-.table th {
-    background-color: #f8f9fa;
-    border-top: none;
-}
-</style>
 {% endblock %} 

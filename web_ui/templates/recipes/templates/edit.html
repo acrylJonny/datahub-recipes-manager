@@ -9,8 +9,8 @@
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
                 <li class="breadcrumb-item"><a href="{% url 'recipes' %}">Recipes</a></li>
-                <li class="breadcrumb-item"><a href="{% url 'recipe_templates' %}">Templates</a></li>
-                <li class="breadcrumb-item"><a href="{% url 'recipe_template_detail' template_id=template.id %}">{{ template.name }}</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'template_manager:recipe_templates' %}">Templates</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'template_manager:recipe_template_detail' template_id=template.id %}">{{ template.name }}</a></li>
                 <li class="breadcrumb-item active" aria-current="page">Edit</li>
             </ol>
         </nav>
@@ -28,7 +28,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">Edit Recipe Template</h1>
         <div class="d-flex gap-2">
-            <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-outline-secondary">
+            <a href="{% url 'template_manager:recipe_template_detail' template_id=template.id %}" class="btn btn-outline-secondary">
                 <i class="fas fa-arrow-left me-1"></i> Back to Template
             </a>
         </div>
@@ -128,7 +128,7 @@
                 
                 <div class="d-flex justify-content-end">
                     <div>
-                        <a href="{% url 'recipe_template_detail' template_id=template.id %}" class="btn btn-outline-secondary me-2">Cancel</a>
+                        <a href="{% url 'template_manager:recipe_template_detail' template_id=template.id %}" class="btn btn-outline-secondary me-2">Cancel</a>
                         <button type="button" class="btn btn-outline-secondary me-2" onclick="addToGitPR()">
                             <i class="fab fa-github me-1"></i> Add to Git PR
                         </button>

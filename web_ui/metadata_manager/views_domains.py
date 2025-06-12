@@ -22,6 +22,14 @@ from utils.token_utils import get_token_from_env
 from .models import Domain
 from web_ui.models import GitSettings
 
+# Import git integration
+try:
+    from web_ui.models import GitIntegration
+    GIT_INTEGRATION_AVAILABLE = True
+except ImportError:
+    GitIntegration = None
+    GIT_INTEGRATION_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -376,36 +384,54 @@ class DomainGitPushView(View):
     def post(self, request, domain_id):
         """Push a domain to a GitHub PR"""
         try:
-            from web_ui.views import add_entity_to_git_push
+            if not GIT_INTEGRATION_AVAILABLE:
+                return JsonResponse(
+                    {"success": False, "error": "Git integration not available"}
+                )
             
             domain = get_object_or_404(Domain, id=domain_id)
             
-            # Add domain to Git staging
-            try:
-                result = add_entity_to_git_push(domain)
+            # Get current branch and environment info
+            settings = GitSettings.get_instance()
+            current_branch = settings.current_branch if settings else "main"
+            
+            # Get environment name
+            environment_name = "default"  # Default environment for domains
+            
+            commit_message = f"Add/update domain: {domain.name}"
+            
+            # Use GitIntegration to push to git (pass the domain object directly)
+            logger.info(f"Staging domain {domain.id} to Git branch {current_branch}")
+            git_integration = GitIntegration()
+            result = git_integration.push_to_git(domain, commit_message)
+            
+            if result and result.get("success"):
+                logger.info(f"Successfully staged domain {domain.id} to Git branch {current_branch}")
                 
-                if result.get("success", False):
-                    domain.staged_for_git = True
-                    domain.save(update_fields=["staged_for_git"])
-
-                    return JsonResponse(
-                        {
-                            "success": True,
-                            "message": f"Domain '{domain.name}' added to GitHub PR",
-                        }
-                    )
-                else:
-                    return JsonResponse(
-                        {
-                            "success": False,
-                            "error": result.get("error", "Unknown error"),
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Error pushing domain to GitHub: {str(e)}")
-                return JsonResponse({"success": False, "error": str(e)})
+                response_data = {
+                    "success": True,
+                    "message": f'Domain "{domain.name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
+                    "environment": environment_name,
+                    "branch": current_branch,
+                    "redirect_url": "/github/repo/"
+                }
+                
+                # Add file path info if available
+                if "file_path" in result:
+                    response_data["file_path"] = result["file_path"]
+                
+                return JsonResponse(response_data)
+            else:
+                # Failed to stage changes
+                error_message = f'Failed to stage domain "{domain.name}"'
+                if isinstance(result, dict) and "error" in result:
+                    error_message += f": {result['error']}"
+                
+                logger.error(f"Failed to stage domain: {error_message}")
+                return JsonResponse({"success": False, "error": error_message})
+                
         except Exception as e:
-            logger.error(f"Error in domain GitHub push view: {str(e)}")
+            logger.error(f"Error adding domain to PR: {str(e)}")
             return JsonResponse({"success": False, "error": str(e)})
 
 
@@ -588,6 +614,15 @@ class DomainPullView(View):
                             relationships = domain_data.get("relationships", {})
                             existing_domain.relationships_count = len(relationships.get("relationships", [])) if relationships else 0
                             
+                            # Update entities count
+                            try:
+                                entities_result = client.find_entities_with_domain(domain_urn, count=1)
+                                if entities_result:
+                                    existing_domain.entities_count = entities_result.get("total", 0)
+                            except Exception as e:
+                                logger.warning(f"Error getting entities count for domain {domain_urn}: {str(e)}")
+                                existing_domain.entities_count = 0
+                            
                             # Store raw GraphQL data
                             existing_domain.raw_data = domain_data
                             
@@ -724,6 +759,15 @@ class DomainPullView(View):
                                 relationships = domain_data.get("relationships", {})
                                 existing_domain.relationships_count = len(relationships.get("relationships", [])) if relationships else 0
                                 
+                                # Update entities count
+                                try:
+                                    entities_result = client.find_entities_with_domain(domain_urn, count=1)
+                                    if entities_result:
+                                        existing_domain.entities_count = entities_result.get("total", 0)
+                                except Exception as e:
+                                    logger.warning(f"Error getting entities count for domain {domain_urn}: {str(e)}")
+                                    existing_domain.entities_count = 0
+                                
                                 # Store raw GraphQL data
                                 existing_domain.raw_data = domain_data
                                 
@@ -756,6 +800,15 @@ class DomainPullView(View):
                                 relationships = domain_data.get("relationships", {})
                                 relationships_count = len(relationships.get("relationships", [])) if relationships else 0
                                 
+                                # Get entities count
+                                entities_count = 0
+                                try:
+                                    entities_result = client.find_entities_with_domain(domain_urn, count=1)
+                                    if entities_result:
+                                        entities_count = entities_result.get("total", 0)
+                                except Exception as e:
+                                    logger.warning(f"Error getting entities count for domain {domain_urn}: {str(e)}")
+                                
                                 Domain.objects.create(
                                     name=domain_data.get("name"),
                                     description=domain_data.get("description") or "",
@@ -771,6 +824,7 @@ class DomainPullView(View):
                                     icon_library=icon_data.get("iconLibrary", "font-awesome"),
                                     owners_count=owners_count,
                                     relationships_count=relationships_count,
+                                    entities_count=entities_count,
                                     raw_data=domain_data,
                                 )
                                 
@@ -861,21 +915,69 @@ def get_remote_domains_data(request):
 
             # Get all remote domains from DataHub with enhanced data
             remote_domains = client.list_domains(count=1000)
-            logger.debug(f"Fetched {len(remote_domains) if remote_domains else 0} remote domains")
+            remote_domains_count = len(remote_domains) if remote_domains else 0
+            logger.debug(f"Fetched {remote_domains_count} remote domains")
+            
+            if remote_domains_count == 0:
+                logger.warning("No remote domains returned from DataHub")
+            elif remote_domains is None:
+                logger.warning("Remote domains returned None from DataHub")
 
             # Enhance remote domains with ownership and relationship data
             enhanced_remote_domains = {}
-            for domain in remote_domains:
-                domain_urn = domain.get("urn")
-                if domain_urn:
+            for domain in remote_domains or []:
+                if not domain:  # Skip None domains
+                    continue
+                try:
+                    domain_urn = domain.get("urn")
+                    if not domain_urn:
+                        continue
                     # Extract basic properties
-                    properties = domain.get("properties", {})
+                    properties = domain.get("properties") or {}
                     
-                    # Extract parent domain information
+                    # Extract parent domain information from multiple sources
                     parent_urn = None
+                    
+                    # Try parentDomain first
                     parent_domain = domain.get("parentDomain")
                     if parent_domain:
-                        parent_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+                        if isinstance(parent_domain, dict):
+                            parent_urn = parent_domain.get("urn") if parent_domain else None
+                        else:
+                            parent_urn = parent_domain
+                    
+                    # If not found, try parentDomains structure
+                    if not parent_urn:
+                        parent_domains = domain.get("parentDomains")
+                        if parent_domains and isinstance(parent_domains, dict) and parent_domains.get("domains"):
+                            domains_list = parent_domains["domains"]
+                            if domains_list and len(domains_list) > 0:
+                                parent_domain = domains_list[0]
+                                if isinstance(parent_domain, dict):
+                                    parent_urn = parent_domain.get("urn") if parent_domain else None
+                                else:
+                                    parent_urn = parent_domain
+                    
+                    # If still not found, try incoming parent relationships
+                    if not parent_urn:
+                        parent_relationships = domain.get("parentRelationships", {})
+                        if parent_relationships and parent_relationships.get("relationships"):
+                            relationships_list = parent_relationships["relationships"]
+                            for rel in relationships_list:
+                                if rel and rel.get("type") in ["ParentOf", "Contains"] and rel.get("entity"):
+                                    parent_entity = rel["entity"]
+                                    if parent_entity.get("type") == "DOMAIN":
+                                        parent_urn = parent_entity.get("urn")
+                                        break
+                    
+                    # Debug logging for troubleshooting
+                    if not parent_urn:
+                        logger.debug(f"No parent URN found for domain {domain_urn}")
+                        logger.debug(f"parentDomain: {domain.get('parentDomain')}")
+                        logger.debug(f"parentDomains: {domain.get('parentDomains')}")
+                        logger.debug(f"parentRelationships: {domain.get('parentRelationships')}")
+                    else:
+                        logger.debug(f"Found parent URN {parent_urn} for domain {domain_urn}")
                     
                     enhanced_domain = {
                         "urn": domain_urn,
@@ -904,16 +1006,19 @@ def get_remote_domains_data(request):
                     
                     # Process ownership information
                     if enhanced_domain["ownership"] and enhanced_domain["ownership"].get("owners"):
-                        owners = enhanced_domain["ownership"]["owners"]
+                        owners = enhanced_domain["ownership"]["owners"] or []
                         enhanced_domain["owners_count"] = len(owners)
                         
                         # Extract owner names for display
                         owner_names = []
-                        for owner_info in owners:
-                            owner = owner_info.get("owner", {})
-                            if owner.get("properties"):
+                        for owner_info in owners or []:
+                            if not owner_info:
+                                continue
+                            owner = owner_info.get("owner") or {}
+                            owner_props = owner.get("properties") or {}
+                            if owner_props:
                                 name = (
-                                    owner["properties"].get("displayName") or
+                                    owner_props.get("displayName") or
                                     owner.get("username") or
                                     owner.get("name") or
                                     "Unknown"
@@ -925,9 +1030,27 @@ def get_remote_domains_data(request):
                     
                     # Process relationships information
                     if enhanced_domain["relationships"] and enhanced_domain["relationships"].get("relationships"):
-                        enhanced_domain["relationships_count"] = len(enhanced_domain["relationships"]["relationships"])
+                        relationships_list = enhanced_domain["relationships"]["relationships"] or []
+                        enhanced_domain["relationships_count"] = len(relationships_list)
+                    
+                    # Get entities count from cached GraphQL response
+                    enhanced_domain["entities_count"] = domain.get("entities_count", 0)
+                    
+                    # Extract display properties
+                    display_props = domain.get("displayProperties") or {}
+                    enhanced_domain["color_hex"] = display_props.get("colorHex") if display_props else None
+                    icon_data = display_props.get("icon") or {} if display_props else {}
+                    enhanced_domain["icon_name"] = icon_data.get("name") if icon_data else None
+                    enhanced_domain["icon_style"] = icon_data.get("style", "solid") if icon_data else "solid"
+                    enhanced_domain["icon_library"] = icon_data.get("iconLibrary", "font-awesome") if icon_data else "font-awesome"
                     
                     enhanced_remote_domains[domain_urn] = enhanced_domain
+                
+                except Exception as e:
+                    import traceback
+                    logger.error(f"Error processing domain {domain_urn if 'domain_urn' in locals() else 'unknown'}: {str(e)}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    continue
 
             # Extract domain URNs that exist locally
             local_domain_urns = set(local_domains.values_list("deterministic_urn", flat=True))
@@ -947,18 +1070,25 @@ def get_remote_domains_data(request):
                     "sync_status": domain.sync_status,
                     "sync_status_display": domain.get_sync_status_display(),
                     
-                    # Initialize parent information (local domains don't store parent currently)
-                    "parent_urn": None,
-                    "parentDomain": None,
+                    # Add parent domain information from local database
+                    "parent_urn": domain.parent_domain_urn,
+                    "parentDomain": domain.parent_domain_urn,
                     
-                    # Initialize ownership data (not stored locally for domains)
+                    # Add stored ownership and relationship data from local database
                     "ownership": None,
-                    "owners_count": 0,
+                    "owners_count": domain.owners_count,
                     "owner_names": [],
                     
-                    # Initialize relationships data (not stored locally for domains)
+                    # Add stored relationships data from local database
                     "relationships": None,
-                    "relationships_count": 0,
+                    "relationships_count": domain.relationships_count,
+                    "entities_count": domain.entities_count,
+                    
+                    # Add display properties from local database
+                    "color_hex": domain.color_hex,
+                    "icon_name": domain.icon_name,
+                    "icon_style": domain.icon_style,
+                    "icon_library": domain.icon_library,
                     
                     # Add local metadata
                     "created_at": domain.created_at.isoformat() if domain.created_at else None,
@@ -995,9 +1125,15 @@ def get_remote_domains_data(request):
                         "owner_names": remote_match.get("owner_names", []),
                         "relationships": remote_match.get("relationships"),
                         "relationships_count": remote_match.get("relationships_count", 0),
+                        "entities_count": remote_match.get("entities_count", 0),
                         # Add parent domain information from remote
                         "parent_urn": remote_match.get("parent_urn"),
                         "parentDomain": remote_match.get("parentDomain"),
+                        # Add display properties from remote
+                        "color_hex": remote_match.get("color_hex"),
+                        "icon_name": remote_match.get("icon_name"),
+                        "icon_style": remote_match.get("icon_style"),
+                        "icon_library": remote_match.get("icon_library"),
                     })
 
                     synced_items.append({
@@ -1030,12 +1166,15 @@ def get_remote_domains_data(request):
                             if (item.get("combined", item) if "combined" in item else item).get("owners_count", 0) > 0)
             items_with_relationships = sum(1 for item in synced_items + local_only_items + remote_only_items 
                                          if (item.get("combined", item) if "combined" in item else item).get("relationships_count", 0) > 0)
+            items_with_entities = sum(1 for item in synced_items + local_only_items + remote_only_items 
+                                    if (item.get("combined", item) if "combined" in item else item).get("entities_count", 0) > 0)
 
             statistics = {
                 "total_items": total_items,
                 "synced_count": synced_count,
                 "owned_items": owned_items,
                 "items_with_relationships": items_with_relationships,
+                "items_with_entities": items_with_entities,
             }
 
             logger.debug(
@@ -1062,4 +1201,384 @@ def get_remote_domains_data(request):
 
     except Exception as e:
         logger.error(f"Error in get_remote_domains_data: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_POST
+def sync_domain_to_local(request, domain_id=None):
+    """AJAX endpoint to sync a domain from DataHub to local storage"""
+    try:
+        logger.info(f"Syncing domain to local - domain_id: {domain_id}")
+        
+        # Get the domain URN from the request
+        if domain_id:
+            # From detail view - get original_urn from database
+            try:
+                domain = get_object_or_404(Domain, id=domain_id)
+                original_urn = domain.original_urn or domain.deterministic_urn
+            except Domain.DoesNotExist:
+                return JsonResponse({"success": False, "error": "Domain not found"})
+        else:
+            # From list view - get domain_urn from POST body
+            domain_urn = request.POST.get("domain_urn")
+            if not domain_urn:
+                return JsonResponse({"success": False, "error": "Domain URN required"})
+            original_urn = domain_urn
+
+        # Test DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+
+        # Fetch domain from DataHub
+        logger.debug(f"Fetching domain from DataHub: {original_urn}")
+        remote_domain = client.get_domain(original_urn)
+        if not remote_domain:
+            return JsonResponse({"success": False, "error": "Domain not found in DataHub"})
+
+        # Extract domain properties
+        properties = remote_domain.get("properties", {})
+        domain_name = properties.get("name", "")
+        domain_description = properties.get("description", "")
+        
+        if not domain_name:
+            return JsonResponse({"success": False, "error": "Domain name not found in DataHub"})
+
+        # Generate deterministic URN for local storage
+        from utils.urn_utils import get_full_urn_from_name
+        deterministic_urn = get_full_urn_from_name("domain", domain_name)
+
+        # Create or update local domain
+        domain, created = Domain.objects.update_or_create(
+            deterministic_urn=deterministic_urn,
+            defaults={
+                "name": domain_name,
+                "description": domain_description,
+                "original_urn": original_urn,
+                "sync_status": "SYNCED",
+                "last_synced": timezone.now(),
+                "raw_data": remote_domain,
+            },
+        )
+
+        # Extract and store additional domain properties
+        parent_domain = remote_domain.get("parentDomain")
+        if parent_domain:
+            domain.parent_domain_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+
+        # Store display properties if available
+        display_props = remote_domain.get("displayProperties", {})
+        if display_props:
+            domain.color_hex = display_props.get("colorHex")
+            icon = display_props.get("icon", {})
+            if icon:
+                domain.icon_name = icon.get("name")
+                domain.icon_style = icon.get("style", "solid")
+                domain.icon_library = icon.get("iconLibrary", "font-awesome")
+
+        # Store ownership count
+        ownership = remote_domain.get("ownership", {})
+        if ownership and ownership.get("owners"):
+            domain.owners_count = len(ownership["owners"])
+
+        # Store relationships count
+        relationships = remote_domain.get("relationships", {})
+        if relationships and relationships.get("relationships"):
+            domain.relationships_count = len(relationships["relationships"])
+
+        # Store entities count from remote domain data if available
+        entities_info = remote_domain.get("entities", {})
+        domain.entities_count = entities_info.get("total", 0) if entities_info else 0
+
+        domain.save()
+
+        logger.info(f"Successfully synced domain '{domain_name}' to local storage")
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"Domain '{domain_name}' synced successfully",
+            "domain_id": str(domain.id),
+            "domain_name": domain_name,
+        })
+
+    except Exception as e:
+        logger.error(f"Error syncing domain to local: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_POST
+def resync_domain(request, domain_id):
+    """AJAX endpoint to resync a domain with DataHub"""
+    try:
+        logger.info(f"Resyncing domain: {domain_id}")
+        
+        # Get the domain
+        domain = get_object_or_404(Domain, id=domain_id)
+        
+        # Test DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+
+        # Use original URN if available, otherwise use deterministic URN
+        domain_urn = domain.original_urn or domain.deterministic_urn
+        
+        # Fetch domain from DataHub
+        logger.debug(f"Fetching domain from DataHub: {domain_urn}")
+        remote_domain = client.get_domain(domain_urn)
+        if not remote_domain:
+            return JsonResponse({"success": False, "error": "Domain not found in DataHub"})
+
+        # Extract domain properties
+        properties = remote_domain.get("properties", {})
+        domain_name = properties.get("name", "")
+        domain_description = properties.get("description", "")
+
+        # Update domain with latest data from DataHub
+        domain.name = domain_name or domain.name
+        domain.description = domain_description
+        domain.sync_status = "SYNCED"
+        domain.last_synced = timezone.now()
+        domain.raw_data = remote_domain
+
+        # Update additional properties
+        parent_domain = remote_domain.get("parentDomain")
+        if parent_domain:
+            domain.parent_domain_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+
+        # Update display properties
+        display_props = remote_domain.get("displayProperties", {})
+        if display_props:
+            domain.color_hex = display_props.get("colorHex")
+            icon = display_props.get("icon", {})
+            if icon:
+                domain.icon_name = icon.get("name")
+                domain.icon_style = icon.get("style", "solid")
+                domain.icon_library = icon.get("iconLibrary", "font-awesome")
+
+        # Update ownership count
+        ownership = remote_domain.get("ownership", {})
+        if ownership and ownership.get("owners"):
+            domain.owners_count = len(ownership["owners"])
+
+        # Update relationships count
+        relationships = remote_domain.get("relationships", {})
+        if relationships and relationships.get("relationships"):
+            domain.relationships_count = len(relationships["relationships"])
+
+        # Update entities count from remote domain data if available
+        entities_info = remote_domain.get("entities", {})
+        domain.entities_count = entities_info.get("total", 0) if entities_info else 0
+
+        domain.save()
+
+        logger.info(f"Successfully resynced domain '{domain.name}'")
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"Domain '{domain.name}' resynced successfully",
+        })
+
+    except Exception as e:
+        logger.error(f"Error resyncing domain: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_POST
+def push_domain_to_datahub(request, domain_id):
+    """AJAX endpoint to push a domain to DataHub"""
+    try:
+        logger.info(f"Pushing domain to DataHub: {domain_id}")
+        
+        # Get the domain
+        domain = get_object_or_404(Domain, id=domain_id)
+        
+        # Test DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+
+        # Create domain in DataHub
+        domain_data = domain.to_dict()
+        
+        try:
+            logger.debug(f"Pushing domain to DataHub: {domain.name}")
+            result = client.create_domain(
+                domain_name=domain.name,
+                domain_data=domain_data,
+                domain_urn=domain.deterministic_urn,
+            )
+            
+            if result.get("success"):
+                # Update domain status
+                domain.sync_status = "SYNCED"
+                domain.last_synced = timezone.now()
+                domain.save(update_fields=["sync_status", "last_synced"])
+                
+                logger.info(f"Successfully pushed domain '{domain.name}' to DataHub")
+                
+                return JsonResponse({
+                    "success": True,
+                    "message": f"Domain '{domain.name}' pushed to DataHub successfully",
+                })
+            else:
+                error_msg = result.get("message", "Unknown error")
+                logger.error(f"Failed to push domain to DataHub: {error_msg}")
+                return JsonResponse({"success": False, "error": error_msg})
+                
+        except Exception as e:
+            logger.error(f"Error pushing domain to DataHub: {str(e)}")
+            return JsonResponse({"success": False, "error": str(e)})
+
+    except Exception as e:
+        logger.error(f"Error in push_domain_to_datahub: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_POST
+def delete_remote_domain(request, domain_id):
+    """AJAX endpoint to delete a domain from DataHub"""
+    try:
+        logger.info(f"Deleting remote domain: {domain_id}")
+        
+        # Get the domain URN from the request
+        domain_urn = request.POST.get("domain_urn")
+        if not domain_urn:
+            return JsonResponse({"success": False, "error": "Domain URN required"})
+        
+        # Test DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+
+        try:
+            # Delete domain from DataHub
+            logger.debug(f"Deleting domain from DataHub: {domain_urn}")
+            result = client.delete_domain(domain_urn)
+            
+            if result.get("success"):
+                logger.info(f"Successfully deleted domain from DataHub: {domain_urn}")
+                
+                return JsonResponse({
+                    "success": True,
+                    "message": "Domain deleted from DataHub successfully",
+                })
+            else:
+                error_msg = result.get("message", "Unknown error")
+                logger.error(f"Failed to delete domain from DataHub: {error_msg}")
+                return JsonResponse({"success": False, "error": error_msg})
+                
+        except Exception as e:
+            logger.error(f"Error deleting domain from DataHub: {str(e)}")
+            return JsonResponse({"success": False, "error": str(e)})
+
+    except Exception as e:
+        logger.error(f"Error in delete_remote_domain: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_POST
+def add_remote_domain_to_pr(request):
+    """AJAX endpoint to add a remote domain to a pull request"""
+    try:
+        logger.info("Adding remote domain to PR")
+        
+        # Get the domain URN from the request
+        domain_urn = request.POST.get("domain_urn")
+        if not domain_urn:
+            return JsonResponse({"success": False, "error": "Domain URN required"})
+        
+        # Test DataHub connection
+        connected, client = test_datahub_connection()
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+
+        # Fetch domain from DataHub
+        logger.debug(f"Fetching domain from DataHub: {domain_urn}")
+        remote_domain = client.get_domain(domain_urn)
+        if not remote_domain:
+            return JsonResponse({"success": False, "error": "Domain not found in DataHub"})
+
+        # Extract domain properties
+        properties = remote_domain.get("properties", {})
+        domain_name = properties.get("name", "")
+        
+        if not domain_name:
+            return JsonResponse({"success": False, "error": "Domain name not found in DataHub"})
+
+        # Create domain file content
+        domain_data = {
+            "name": domain_name,
+            "description": properties.get("description", ""),
+            "urn": domain_urn,
+        }
+        
+        # Add parent domain if exists
+        parent_domain = remote_domain.get("parentDomain")
+        if parent_domain:
+            parent_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+            domain_data["parentDomains"] = {"domains": [{"urn": parent_urn}]}
+        
+        # Add display properties if they exist
+        display_props = remote_domain.get("displayProperties", {})
+        if display_props:
+            domain_data["displayProperties"] = display_props
+
+        # First, sync the domain to local if it doesn't exist
+        local_domain = Domain.objects.filter(deterministic_urn=domain_urn).first()
+        
+        if not local_domain:
+            # Create local domain from remote data
+            local_domain = Domain.objects.create(
+                name=domain_name,
+                description=domain_data.get("description", ""),
+                deterministic_urn=domain_urn,
+                original_urn=domain_urn,
+                sync_status="SYNCED",
+                last_synced=timezone.now(),
+                raw_data=remote_domain,
+            )
+            logger.info(f"Created local copy of remote domain: {domain_name}")
+        
+        # Now use GitIntegration to add to PR
+        if not GIT_INTEGRATION_AVAILABLE:
+            return JsonResponse(
+                {"success": False, "error": "Git integration not available"}
+            )
+        
+        try:
+            # Get current branch and environment info
+            settings = GitSettings.get_instance()
+            current_branch = settings.current_branch if settings else "main"
+            
+            commit_message = f"Add/update domain: {domain_name}"
+            
+            # Use GitIntegration to push to git
+            logger.info(f"Staging domain {local_domain.id} to Git branch {current_branch}")
+            git_integration = GitIntegration()
+            result = git_integration.push_to_git(local_domain, commit_message)
+            
+            if result and result.get("success"):
+                logger.info(f"Successfully staged domain {local_domain.id} to Git branch {current_branch}")
+                
+                return JsonResponse({
+                    "success": True,
+                    "message": f'Domain "{domain_name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
+                    "branch": current_branch,
+                    "redirect_url": "/github/repo/"
+                })
+            else:
+                error_message = f'Failed to stage domain "{domain_name}"'
+                if isinstance(result, dict) and "error" in result:
+                    error_message += f": {result['error']}"
+                
+                logger.error(f"Failed to stage domain: {error_message}")
+                return JsonResponse({"success": False, "error": error_message})
+                
+        except Exception as git_error:
+            logger.error(f"Error staging domain to git: {str(git_error)}")
+            return JsonResponse({"success": False, "error": f"Git staging failed: {str(git_error)}"})
+
+    except Exception as e:
+        logger.error(f"Error adding remote domain to PR: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})

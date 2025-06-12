@@ -186,7 +186,7 @@ class DataHubRestClient:
 
     def test_connection(self) -> bool:
         """
-        Test connection to DataHub
+        Test basic connection to DataHub (lightweight test)
 
         Returns:
             True if connection successful, False otherwise
@@ -200,7 +200,25 @@ class DataHubRestClient:
                 )
                 return False
 
-            # Try to list recipes to check permissions
+            return True
+        except Exception as e:
+            logger.error(f"Error testing connection: {str(e)}")
+            return False
+
+    def test_connection_with_permissions(self) -> bool:
+        """
+        Test connection to DataHub with comprehensive permission testing
+        (includes fetching policies and recipes)
+
+        Returns:
+            True if connection successful with full permissions, False otherwise
+        """
+        try:
+            # First test basic connection
+            if not self.test_connection():
+                return False
+
+            # Try to list recipes to check permissions  
             try:
                 sources = self.list_ingestion_sources()
                 if not isinstance(sources, list):
@@ -224,7 +242,7 @@ class DataHubRestClient:
 
             return True
         except Exception as e:
-            logger.error(f"Error testing connection: {str(e)}")
+            logger.error(f"Error testing connection with permissions: {str(e)}")
             return False
 
     def create_ingestion_source(
@@ -4392,6 +4410,20 @@ class DataHubRestClient:
             )
             return {"entities": [], "total": 0}
 
+    def find_entities_with_domain(self, domain_urn: str, start: int = 0, count: int = 50) -> Dict[str, Any]:
+        """
+        Find entities that belong to a specific domain.
+
+        Args:
+            domain_urn (str): URN of the domain to search for
+            start (int): Pagination start index
+            count (int): Number of entities to return
+
+        Returns:
+            Dict containing search results with entities that belong to the domain
+        """
+        return self.find_entities_with_metadata("domains", domain_urn, start, count)
+
     def list_glossary_nodes(self, query=None, count=100, start=0):
         """
         List glossary nodes from DataHub with optional filtering.
@@ -6157,6 +6189,29 @@ class DataHubRestClient:
                       }
                     }
                   }
+                  parentRelationships: relationships(input: { types: ["ParentOf", "Contains"], direction: INCOMING, start: 0, count: 10 }) {
+                    start
+                    count
+                    total
+                    relationships {
+                      type
+                      direction
+                      entity {
+                        urn
+                        type
+                        ... on Domain {
+                          urn
+                          properties {
+                            name
+                          }
+                        }
+                      }
+                      created {
+                        time
+                        actor
+                      }
+                    }
+                  }
                   displayProperties {
                     colorHex
                     icon {
@@ -6164,6 +6219,9 @@ class DataHubRestClient:
                       name
                       style
                     }
+                  }
+                  entities(input: { start: 0, count: 1, query: "*" }) {
+                    total
                   }
                 }
               }
@@ -6194,14 +6252,32 @@ class DataHubRestClient:
                         entity = item["entity"]
                         properties = entity.get("properties", {})
                         
-                        # Extract parent domain URN from parentDomains structure
+                        # Extract parent domain URN from multiple sources
                         parent_urn = None
+                        
+                        # First try parentDomains structure
                         parent_domains = entity.get("parentDomains")
                         if parent_domains and parent_domains.get("domains"):
                             domains_list = parent_domains["domains"]
                             if domains_list and len(domains_list) > 0:
                                 parent_urn = domains_list[0].get("urn")
                         
+                        # If not found, try incoming relationships (parentRelationships)
+                        if not parent_urn:
+                            parent_relationships = entity.get("parentRelationships", {})
+                            if parent_relationships and parent_relationships.get("relationships"):
+                                relationships_list = parent_relationships["relationships"]
+                                for rel in relationships_list:
+                                    if rel and rel.get("type") in ["ParentOf", "Contains"] and rel.get("entity"):
+                                        parent_entity = rel["entity"]
+                                        if parent_entity.get("type") == "DOMAIN":
+                                            parent_urn = parent_entity.get("urn")
+                                            break
+                        
+                        # Extract entities count from GraphQL response
+                        entities_info = entity.get("entities", {})
+                        entities_count = entities_info.get("total", 0) if entities_info else 0
+
                         domain = {
                             "urn": entity.get("urn"),
                             "id": entity.get("id"),
@@ -6210,10 +6286,12 @@ class DataHubRestClient:
                             "properties": properties,
                             "parentDomain": parent_urn,  # For backward compatibility
                             "parentDomains": entity.get("parentDomains"),
+                            "parentRelationships": entity.get("parentRelationships"),  # Add parent relationships
                             "ownership": entity.get("ownership"),
                             "relationships": entity.get("relationships"),
                             "institutionalMemory": entity.get("institutionalMemory"),
                             "displayProperties": entity.get("displayProperties"),
+                            "entities_count": entities_count,  # Add entities count from GraphQL
                         }
                         
                         domains.append(domain)
@@ -6233,9 +6311,229 @@ class DataHubRestClient:
             self.logger.error(f"Error listing domains: {str(e)}")
             return []
 
+    def get_domain(self, domain_urn: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific domain by URN.
+        
+        Args:
+            domain_urn (str): Domain URN to fetch
+            
+        Returns:
+            dict: Domain data or None if not found
+        """
+        self.logger.info(f"Getting domain: {domain_urn}")
+        
+        graphql_query = """
+        query getDomain($urn: String!) {
+          domain(urn: $urn) {
+            urn
+            id
+            properties {
+              name
+              description
+            }
+            parentDomains {
+              domains {
+                urn
+              }
+            }
+            ownership {
+              owners {
+                owner {
+                  ... on CorpUser {
+                    urn
+                    username
+                    properties {
+                      displayName
+                      fullName
+                    }
+                  }
+                  ... on CorpGroup {
+                    urn
+                    name
+                    properties {
+                      displayName
+                    }
+                  }
+                }
+                ownershipType {
+                  urn
+                  info {
+                    name
+                    description
+                  }
+                }
+                source {
+                  type
+                  url
+                }
+              }
+              lastModified {
+                time
+                actor
+              }
+            }
+            institutionalMemory {
+              elements {
+                url
+                label
+                actor {
+                  ... on CorpUser {
+                    urn
+                    username
+                    properties {
+                      displayName
+                      fullName
+                    }
+                  }
+                  ... on CorpGroup {
+                    urn
+                    name
+                    properties {
+                      displayName
+                    }
+                  }
+                }
+                created {
+                  time
+                  actor
+                }
+                updated {
+                  time
+                  actor
+                }
+                settings {
+                  showInAssetPreview
+                }
+              }
+            }
+            relationships(input: { types: ["ParentOf", "Contains"], direction: OUTGOING, start: 0, count: 100 }) {
+              start
+              count
+              total
+              relationships {
+                type
+                direction
+                entity {
+                  urn
+                  type
+                }
+                created {
+                  time
+                  actor
+                }
+              }
+            }
+            parentRelationships: relationships(input: { types: ["ParentOf", "Contains"], direction: INCOMING, start: 0, count: 10 }) {
+              start
+              count
+              total
+              relationships {
+                type
+                direction
+                entity {
+                  urn
+                  type
+                  ... on Domain {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+                created {
+                  time
+                  actor
+                }
+              }
+            }
+            displayProperties {
+              colorHex
+              icon {
+                iconLibrary
+                name
+                style
+              }
+            }
+            entities(input: { start: 0, count: 1, query: "*" }) {
+              total
+            }
+          }
+        }
+        """
+        
+        variables = {"urn": domain_urn}
+        
+        try:
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result and "data" in result and "domain" in result["data"]:
+                domain_data = result["data"]["domain"]
+                if not domain_data:
+                    return None
+                
+                properties = domain_data.get("properties", {})
+                
+                # Extract parent domain URN from multiple sources
+                parent_urn = None
+                
+                # First try parentDomains structure
+                parent_domains = domain_data.get("parentDomains")
+                if parent_domains and parent_domains.get("domains"):
+                    domains_list = parent_domains["domains"]
+                    if domains_list and len(domains_list) > 0:
+                        parent_urn = domains_list[0].get("urn")
+                
+                # If not found, try incoming relationships (parentRelationships)
+                if not parent_urn:
+                    parent_relationships = domain_data.get("parentRelationships", {})
+                    if parent_relationships and parent_relationships.get("relationships"):
+                        relationships_list = parent_relationships["relationships"]
+                        for rel in relationships_list:
+                            if rel and rel.get("type") in ["ParentOf", "Contains"] and rel.get("entity"):
+                                parent_entity = rel["entity"]
+                                if parent_entity.get("type") == "DOMAIN":
+                                    parent_urn = parent_entity.get("urn")
+                                    break
+                
+                # Extract entities count from GraphQL response
+                entities_info = domain_data.get("entities", {})
+                entities_count = entities_info.get("total", 0) if entities_info else 0
+
+                domain = {
+                    "urn": domain_data.get("urn"),
+                    "id": domain_data.get("id"),
+                    "name": properties.get("name"),
+                    "description": properties.get("description"),
+                    "properties": properties,
+                    "parentDomain": parent_urn,  # For backward compatibility
+                    "parentDomains": domain_data.get("parentDomains"),
+                    "parentRelationships": domain_data.get("parentRelationships"),  # Add parent relationships
+                    "ownership": domain_data.get("ownership"),
+                    "relationships": domain_data.get("relationships"),
+                    "institutionalMemory": domain_data.get("institutionalMemory"),
+                    "displayProperties": domain_data.get("displayProperties"),
+                    "entities_count": entities_count,  # Add entities count from GraphQL
+                }
+                
+                return domain
+            
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.warning(
+                    f"GraphQL errors when getting domain {domain_urn}: {', '.join(error_messages)}"
+                )
+            
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting domain {domain_urn}: {str(e)}")
+            return None
+
     def list_tests(self, query="*", start=0, count=100):
         """
-        List tests in DataHub.
+        List tests in DataHub using the dedicated listTests query.
         
         Args:
             query (str): Search query to filter tests
@@ -6249,54 +6547,27 @@ class DataHubRestClient:
             f"Listing tests with query: {query}, start: {start}, count: {count}"
         )
         
-        # First, try to check if TEST type is supported
         try:
-            # Simple test query to check if TEST type exists
-            test_query = """
-            query testTestSupport($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                total
-              }
-            }
-            """
-            
-            test_variables = {
-                "input": {
-                    "types": ["TEST"],
-                    "query": "*",
-                    "start": 0,
-                    "count": 1
-                }
-            }
-            
-            test_result = self.execute_graphql(test_query, test_variables)
-            
-            # Check if the test query failed due to unknown type
-            if test_result and "errors" in test_result:
-                for error in test_result["errors"]:
-                    if "Unknown type" in error.get("message", "") or "UnknownType" in error.get("message", ""):
-                        self.logger.warning("TEST entity type not supported in this DataHub version")
-                        return []
-            
-            # If test passed, proceed with full query
+            # Use the dedicated listTests query
             graphql_query = """
-            query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
+            query listTests($input: ListTestsInput!) {
+              listTests(input: $input) {
                 start
                 count
                 total
-                searchResults {
-                  entity {
+                tests {
+                  ... on Test {
                     urn
-                    type
-                    ... on Test {
-                      urn
-                      type
-                      properties {
-                        name
-                        description
-                        category
-                      }
+                    name
+                    category
+                    description
+                    definition {
+                      json
+                    }
+                    results {
+                      passingCount
+                      failingCount
+                      lastRunTimestampMillis
                     }
                   }
                 }
@@ -6306,7 +6577,6 @@ class DataHubRestClient:
             
             variables = {
                 "input": {
-                    "types": ["TEST"],
                     "query": query,
                     "start": start,
                     "count": count
@@ -6319,43 +6589,52 @@ class DataHubRestClient:
                 # Check for specific GraphQL validation errors
                 errors = self._get_graphql_errors(result)
                 for error in errors:
-                    if "FieldUndefined" in error or "Unknown type" in error:
-                        self.logger.warning("TEST entity type or fields not supported in this DataHub version")
+                    if "FieldUndefined" in error or "Unknown type" in error or "listTests" in error:
+                        self.logger.warning("listTests query not supported in this DataHub version")
                         return []
                     else:
                         self.logger.error(f"GraphQL error listing tests: {error}")
                 return []
             
-            if result and "data" in result and "searchAcrossEntities" in result["data"]:
-                search_results = result["data"]["searchAcrossEntities"].get("searchResults", [])
+            if result and "data" in result and "listTests" in result["data"]:
+                list_tests_data = result["data"]["listTests"]
+                tests = list_tests_data.get("tests", [])
                 
                 # Process the results
                 processed_tests = []
-                for search_result in search_results:
-                    entity = search_result.get("entity", {})
-                    if entity.get("type") == "TEST":
-                        # Extract test information
+                for test in tests:
+                    if test:
+                        # Extract test information including definition and results
+                        definition_json = ""
+                        if test.get("definition") and test["definition"].get("json"):
+                            definition_json = test["definition"]["json"]
+                        
+                        results = test.get("results", {})
+                        
                         test_data = {
-                            "urn": entity.get("urn"),
-                            "type": entity.get("type"),
-                            "name": entity.get("properties", {}).get("name", ""),
-                            "description": entity.get("properties", {}).get("description", ""),
-                            "category": entity.get("properties", {}).get("category", ""),
+                            "urn": test.get("urn"),
+                            "type": "TEST",  # All items from listTests are tests
+                            "name": test.get("name", ""),
+                            "description": test.get("description", ""),
+                            "category": test.get("category", ""),
+                            "definition_json": definition_json,
+                            "results": {
+                                "passingCount": results.get("passingCount", 0),
+                                "failingCount": results.get("failingCount", 0), 
+                                "lastRunTimestampMillis": results.get("lastRunTimestampMillis"),
+                            }
                         }
                         processed_tests.append(test_data)
                 
+                self.logger.info(f"Successfully retrieved {len(processed_tests)} tests")
                 return processed_tests
             
             return []
             
         except Exception as e:
-            # Check if it's a type validation error
             error_str = str(e)
-            if "argument of type 'NoneType' is not iterable" in error_str:
-                self.logger.warning("TEST entity type not supported in this DataHub version")
-                return []
-            elif "Unknown type" in error_str or "FieldUndefined" in error_str:
-                self.logger.warning("TEST entity type not supported in this DataHub version")
+            if "listTests" in error_str or "ListTestsInput" in error_str:
+                self.logger.warning("listTests query not supported in this DataHub version")
                 return []
             else:
                 self.logger.error(f"Error listing tests: {error_str}")
@@ -6720,10 +6999,16 @@ class DataHubRestClient:
                 ... on Test {
                   urn
                   type
-                  properties {
-                    name
-                    description
-                    category
+                  name
+                  description
+                  category
+                  definition {
+                    json
+                  }
+                  results {
+                    passingCount
+                    failingCount
+                    lastRunTimestampMillis
                   }
                 }
               }
@@ -6746,12 +7031,26 @@ class DataHubRestClient:
             if result and 'data' in result and 'entity' in result['data']:
                 entity = result['data']['entity']
                 if entity and entity.get('type') == 'TEST':
+                    # Extract definition JSON
+                    definition_json = ""
+                    if entity.get("definition") and entity["definition"].get("json"):
+                        definition_json = entity["definition"]["json"]
+                    
+                    # Extract results
+                    results = entity.get("results", {})
+                    
                     return {
                         'urn': entity.get('urn'),
                         'type': entity.get('type'),
-                        'name': entity.get('properties', {}).get('name', ''),
-                        'description': entity.get('properties', {}).get('description', ''),
-                        'category': entity.get('properties', {}).get('category', ''),
+                        'name': entity.get('name', ''),
+                        'description': entity.get('description', ''),
+                        'category': entity.get('category', ''),
+                        'definition_json': definition_json,
+                        'results': {
+                            'passingCount': results.get('passingCount', 0),
+                            'failingCount': results.get('failingCount', 0),
+                            'lastRunTimestampMillis': results.get('lastRunTimestampMillis'),
+                        }
                     }
             
             return None

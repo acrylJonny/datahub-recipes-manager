@@ -435,19 +435,23 @@
             });
         }
         
-        // Auto-refresh functionality
+        // Auto-refresh functionality with cache refresh
         function setupAutoRefresh() {
-            const refreshRate = "{{ refresh_rate|default:60 }}";
-            const refreshRateNum = parseInt(refreshRate, 10);
-            if (refreshRateNum > 0) {
-                setTimeout(function() {
-                    window.location.reload();
-                }, refreshRateNum * 1000);
-            }
+            // Auto-refresh every 60 seconds (1 minute) with cache refresh
+            const refreshIntervalMs = 60 * 1000; // 1 minute
+            
+            setTimeout(function() {
+                // Add refresh parameter to force cache refresh
+                const currentUrl = new URL(window.location);
+                currentUrl.searchParams.set('refresh', 'true');
+                window.location.href = currentUrl.toString();
+            }, refreshIntervalMs);
         }
         
-        // Initialize auto-refresh
-        setupAutoRefresh();
+        // Initialize auto-refresh only on policies page
+        if (window.location.pathname.includes('/policies/')) {
+            setupAutoRefresh();
+        }
         
         // Client-side filtering functionality
         const serverSearchInput = document.getElementById('server-policy-search');

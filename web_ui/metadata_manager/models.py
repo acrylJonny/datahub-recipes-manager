@@ -209,6 +209,7 @@ class Domain(BaseMetadataModel):
     # Ownership and relationship counts for quick access
     owners_count = models.IntegerField(default=0)
     relationships_count = models.IntegerField(default=0)
+    entities_count = models.IntegerField(default=0)
     
     # Store raw GraphQL data for comprehensive details
     raw_data = models.JSONField(blank=True, null=True)
@@ -220,6 +221,7 @@ class Domain(BaseMetadataModel):
     def to_dict(self):
         """Convert domain to dictionary for export/syncing purposes"""
         data = {
+            "id": str(self.id),  # Include the ID for frontend action buttons
             "name": self.name,
             "description": self.description,
             "urn": self.deterministic_urn,
@@ -570,3 +572,71 @@ class DataProductResult(models.Model):
         verbose_name = "Data Product Result"
         verbose_name_plural = "Data Product Results"
         ordering = ["-deployed_at"]
+
+
+class Test(BaseMetadataModel):
+    """Represents a DataHub metadata test"""
+
+    # Test specific fields
+    category = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Test definition
+    definition_json = models.JSONField(blank=True, null=True, help_text="Test definition in JSON format")
+    yaml_definition = models.TextField(blank=True, null=True, help_text="Test definition in YAML format")
+    
+    # Test results data
+    results_data = models.JSONField(blank=True, null=True, help_text="Test execution results")
+    passing_count = models.IntegerField(default=0)
+    failing_count = models.IntegerField(default=0)
+    last_run_timestamp = models.BigIntegerField(blank=True, null=True, help_text="Last run timestamp in milliseconds")
+    
+    # Status information
+    removed = models.BooleanField(default=False)
+    
+    class Meta:
+        verbose_name = "Test"
+        verbose_name_plural = "Tests"
+        ordering = ["name"]
+
+    def to_dict(self):
+        """Convert test to dictionary for export/syncing purposes"""
+        return {
+            "id": str(self.id),  # Include the ID for frontend action buttons
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "urn": self.deterministic_urn,
+            "original_urn": self.original_urn if self.original_urn else None,
+            "definition_json": self.definition_json,
+            "yaml_definition": self.yaml_definition,
+            "results": {
+                "passingCount": self.passing_count,
+                "failingCount": self.failing_count,
+                "lastRunTimestampMillis": self.last_run_timestamp,
+            } if self.passing_count > 0 or self.failing_count > 0 else None,
+            "sync_status": self.sync_status,
+            "last_synced": self.last_synced.isoformat() if self.last_synced else None,
+        }
+
+    @property
+    def can_deploy(self):
+        """Check if this test can be deployed to DataHub"""
+        return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+    
+    @property
+    def has_results(self):
+        """Check if this test has execution results"""
+        return self.passing_count > 0 or self.failing_count > 0
+    
+    @property
+    def is_failing(self):
+        """Check if this test has any failing results"""
+        return self.failing_count > 0
+    
+    @property
+    def last_run(self):
+        """Get last run time as datetime if available"""
+        if self.last_run_timestamp:
+            from datetime import datetime
+            return datetime.fromtimestamp(self.last_run_timestamp / 1000)
+        return None

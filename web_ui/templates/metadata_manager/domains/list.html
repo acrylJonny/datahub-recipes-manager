@@ -20,7 +20,7 @@
         overflow: hidden;
         text-overflow: ellipsis;
         line-height: 1.4;
-        max-height: 4.2em; /* 3 lines * 1.4 line-height */
+        max-height: 4.2em;
     }
     
     .related-items-cell {
@@ -34,11 +34,6 @@
     }
     
     .status-badge {
-        font-size: 0.75rem;
-        padding: 0.3rem 0.6rem;
-    }
-    
-    .type-badge {
         font-size: 0.75rem;
         padding: 0.3rem 0.6rem;
     }
@@ -114,6 +109,110 @@
         border-radius: 0.25rem;
         font-size: 0.8rem;
     }
+
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    /* Bulk actions */
+    .bulk-actions {
+        background-color: #e3f2fd;
+        border: 1px solid #2196f3;
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        border-radius: 0.375rem;
+        display: none;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+    
+    /* Action buttons styling - consistent with data products */
+    .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Status badges */
+    .badge.bg-success { background-color: #198754 !important; }
+    .badge.bg-secondary { background-color: #6c757d !important; }
+    .badge.bg-info { background-color: #0dcaf0 !important; }
+    .badge.bg-warning { background-color: #ffc107 !important; }
+    .badge.bg-danger { background-color: #dc3545 !important; }
 
     /* Interactive hierarchy styles */
     .hierarchy-container {
@@ -225,11 +324,6 @@
         position: relative;
     }
 
-    .table th {
-        background-color: #f8f9fa;
-        border-top: none;
-    }
-
     /* Simple hierarchy visual styles */
     tr[data-level="0"] {
         background-color: #ffffff;
@@ -246,6 +340,24 @@
     tr[data-level="1"]:hover,
     tr[data-level="2"]:hover {
         background-color: #e3f2fd !important;
+    }
+
+    /* Domain icon styling */
+    .domain-icon {
+        width: 20px;
+        height: 20px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        margin-right: 8px;
+        font-size: 12px;
+    }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 0 0 20%;
+        max-width: 20%;
     }
 </style>
 {% endblock %}
@@ -308,73 +420,94 @@
 
             <!-- Domains content -->
             <div id="domains-content" style="display: none;">
-                <!-- Statistics -->
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="total-items">0</div>
-                                <small class="text-muted">Total Domains</small>
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Overview -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="synced-count">0</div>
-                                <small class="text-muted">Synced</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="owned-domains">0</div>
-                                <small class="text-muted">Owned</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="domains-with-relationships">0</div>
-                                <small class="text-muted">With Relationships</small>
+                            
+                            <!-- Row 2: Content Filters -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Filters</strong>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="owned" data-category="content">
+                                        <div class="h6 mb-0" id="owned-domains">0</div>
+                                        <div class="text-muted">With Owners</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-entities" data-category="content">
+                                        <div class="h6 mb-0" id="domains-with-entities">0</div>
+                                        <div class="text-muted">With Entities</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             
-            <!-- Domains Tabs -->
-            <ul class="nav nav-tabs mb-4" id="domainTabs" role="tablist">
-                <li class="nav-item" role="presentation">
+                <!-- Domains Tabs -->
+                <ul class="nav nav-tabs mb-4" id="domainTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
                                type="button" role="tab" aria-controls="synced-items" aria-selected="true">
-                        <i class="fas fa-sync-alt me-1"></i> Synced Domains
+                            <i class="fas fa-sync-alt me-1"></i> Synced Domains
                             <span class="badge bg-success ms-1" id="synced-badge">0</span>
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-items" 
                                type="button" role="tab" aria-controls="local-items" aria-selected="false">
-                        <i class="fas fa-laptop me-1"></i> Local Only Domains
+                            <i class="fas fa-laptop me-1"></i> Local Only Domains
                             <span class="badge bg-secondary ms-1" id="local-badge">0</span>
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
                                type="button" role="tab" aria-controls="remote-items" aria-selected="false">
-                        <i class="fas fa-server me-1"></i> Remote Only Domains
+                            <i class="fas fa-server me-1"></i> Remote Only Domains
                             <span class="badge bg-info ms-1" id="remote-badge">0</span>
-                    </button>
-                </li>
-            </ul>
-            
-            <div class="tab-content" id="domainTabsContent">
-                <!-- Synced Domains Tab -->
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="domainTabsContent">
+                    <!-- Synced Domains Tab -->
                     <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
-                    <div class="card mb-4">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">Synced Domains</h5>
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Synced Domains</h5>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button type="button" class="btn btn-outline-secondary" onclick="expandAllDomains()" title="Expand All">
@@ -388,18 +521,42 @@
                                         <span class="input-group-text"><i class="fas fa-search"></i></span>
                                         <input type="text" id="synced-search" class="form-control" placeholder="Search synced domains...">
                                         <button type="button" class="btn btn-outline-secondary" id="synced-clear">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> domain(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncDomains('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushDomains('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
-                        </div>
+                            </div>
                         </div>
                     </div>
                     
-                    <!-- Local Domains Tab -->
+                    <!-- Local Only Domains Tab -->
                     <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
@@ -408,30 +565,51 @@
                                     <div class="btn-group btn-group-sm" role="group">
                                         <button type="button" class="btn btn-outline-secondary" onclick="expandAllDomains()" title="Expand All">
                                             <i class="fas fa-expand-arrows-alt"></i>
-                                                                </button>
+                                        </button>
                                         <button type="button" class="btn btn-outline-secondary" onclick="collapseAllDomains()" title="Collapse All">
                                             <i class="fas fa-compress-arrows-alt"></i>
-                                                            </button>
+                                        </button>
                                     </div>
                                     <div class="input-group" style="width: 300px;">
                                         <span class="input-group-text"><i class="fas fa-search"></i></span>
                                         <input type="text" id="local-search" class="form-control" placeholder="Search local domains...">
                                         <button type="button" class="btn btn-outline-secondary" id="local-clear">
                                             <i class="fas fa-times"></i>
-                                                            </button>
-                                                        </div>
-                                </div>
+                                        </button>
                                     </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> domain(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushDomains('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
+                            </div>
                         </div>
                     </div>
-                </div>
-                
-                    <!-- Remote Domains Tab -->
+                    
+                    <!-- Remote Only Domains Tab -->
                     <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
-                    <div class="card mb-4">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Remote Only Domains</h5>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="btn-group btn-group-sm" role="group">
@@ -446,18 +624,68 @@
                                         <span class="input-group-text"><i class="fas fa-search"></i></span>
                                         <input type="text" id="remote-search" class="form-control" placeholder="Search remote domains...">
                                         <button type="button" class="btn btn-outline-secondary" id="remote-clear">
-                                        <i class="fas fa-times"></i>
-                                    </button>
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> domain(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemote('remote')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete Remote
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
-                                                        </div>
-                                </div>
-                                    </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Domain Modal -->
+<div class="modal fade" id="createDomainModal" tabindex="-1" aria-labelledby="createDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createDomainModalLabel">Create New Domain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="createDomainForm" method="post">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="domainName" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="domainName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="domainDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="domainDescription" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Domain</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -485,16 +713,14 @@
                                     
                                     <dt class="col-sm-4">Type:</dt>
                                     <dd class="col-sm-8">
-                                        <i class="fas fa-layer-group text-primary me-1"></i>Domain
+                                        <i class="fas fa-folder text-primary me-1"></i>Domain
                                     </dd>
+                                    
+                                    <dt class="col-sm-4">Parent Domain:</dt>
+                                    <dd class="col-sm-8" id="modal-domain-parent">-</dd>
                                     
                                     <dt class="col-sm-4">Description:</dt>
                                     <dd class="col-sm-8" id="modal-domain-description">-</dd>
-                                    
-                                    <dt class="col-sm-4" id="modal-parent-label">Parent:</dt>
-                                    <dd class="col-sm-8" id="modal-parent-value">
-                                        <span id="modal-domain-parent">-</span>
-                                    </dd>
                                     
                                     <dt class="col-sm-4">Status:</dt>
                                     <dd class="col-sm-8">
@@ -512,40 +738,38 @@
                                         <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                                     </a>
                                 </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-                
-                    <!-- Ownership Information -->
+                    
+                    <!-- Ownership & Metrics -->
                     <div class="col-md-6">
                         <div class="card h-100">
                             <div class="card-header">
-                                <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
-                                </div>
-                            <div class="card-body">
-                                <div id="modal-owners-list">
-                                    <p class="text-muted">No ownership information available</p>
+                                <h6 class="card-title mb-0"><i class="fas fa-chart-bar me-2"></i>Metrics & Ownership</h6>
                             </div>
-                                
-                                <div id="modal-last-modified" class="mt-3">
-                                    <!-- Last modified info will be shown here -->
-                        </div>
-                                                        </div>
-                                </div>
-                                    </div>
-                                </div>
-                
-                <!-- Relationships -->
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
-                        </div>
                             <div class="card-body">
-                                <div id="modal-relationships-list">
-                                    <p class="text-muted">No relationships available</p>
-                    </div>
+                                <dl class="row">
+                                    <dt class="col-sm-4">Owners:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-secondary" id="modal-domain-owners">0</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Entities:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-primary" id="modal-domain-entities">0</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Sub-domains:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-info" id="modal-domain-children">0</span>
+                                    </dd>
+                                </dl>
+                                
+                                <div id="modal-domain-owners-list" class="mt-3">
+                                    <h6 class="text-muted">Domain Owners</h6>
+                                    <p class="text-muted">No ownership information available</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -560,870 +784,158 @@
                             </div>
                             <div class="card-body">
                                 <div id="modal-domain-properties">
-                                    <p class="text-muted">No additional properties available</p>
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <strong>Icon:</strong>
+                                            <div id="modal-domain-icon" class="mt-1">
+                                                <i class="fas fa-folder"></i> Default
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <strong>Color:</strong>
+                                            <div id="modal-domain-color" class="mt-1">
+                                                <span class="badge" style="background-color: #6c757d;">#6c757d</span>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Created:</strong>
+                                            <div id="modal-domain-created" class="mt-1 text-muted">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
-
+                
                 <!-- Raw JSON Data -->
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header">
                                 <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
-                </div>
+                            </div>
                             <div class="card-body">
                                 <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
-                    </div>
+                            </div>
                         </div>
                     </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Edit Domain Modal -->
+<div class="modal fade" id="editDomainModal" tabindex="-1" aria-labelledby="editDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editDomainModalLabel">Edit Domain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editDomainForm" method="post">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainName" class="form-label">Domain Name *</label>
+                            <input type="text" class="form-control" id="editDomainName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainParent" class="form-label">Parent Domain</label>
+                            <select class="form-control" id="editDomainParent" name="parent_domain">
+                                <option value="">No parent (root domain)</option>
+                                <!-- Will be populated dynamically -->
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="editDomainDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editDomainDescription" name="description" rows="3" 
+                                  placeholder="Describe the purpose and scope of this domain..."></textarea>
+                    </div>
+                    
+                    <!-- Appearance -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-palette me-2"></i>Appearance</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainIcon" class="form-label">Icon</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i id="editDomainIconPreview" class="fas fa-folder"></i></span>
+                                <input type="text" class="form-control" id="editDomainIcon" name="icon_name" 
+                                       placeholder="folder" value="folder">
+                            </div>
+                            <small class="form-text text-muted">FontAwesome icon name (without 'fa-' prefix)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainColor" class="form-label">Color</label>
+                            <div class="input-group">
+                                <input type="color" class="form-control form-control-color" id="editDomainColor" 
+                                       name="color_hex" value="#6c757d">
+                                <input type="text" class="form-control" id="editDomainColorText" 
+                                       placeholder="#6c757d" pattern="^#[0-9A-Fa-f]{6}$">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership -->
+                    <div class="mb-4">
+                        <h6 class="text-primary"><i class="fas fa-users me-2"></i>Ownership</h6>
+                        <label for="editDomainOwners" class="form-label">Domain Owners</label>
+                        <textarea class="form-control" id="editDomainOwners" name="owners" rows="2" 
+                                  placeholder="Enter email addresses separated by commas (e.g., user1@company.com, user2@company.com)"></textarea>
+                        <small class="form-text text-muted">Comma-separated list of email addresses</small>
                     </div>
                 </div>
                 <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Save Changes
+                    </button>
                 </div>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- Create Domain Modal (keeping existing functionality) -->
-<div class="modal fade" id="createDomainModal" tabindex="-1" aria-labelledby="createDomainModalLabel" aria-hidden="true">
+<!-- Edit Remote Domain Modal -->
+<div class="modal fade" id="editRemoteDomainModal" tabindex="-1" aria-labelledby="editRemoteDomainModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="createDomainModalLabel">Create New Domain</h5>
+                <h5 class="modal-title" id="editRemoteDomainModalLabel">Edit Remote Domain</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="post">
-                {% csrf_token %}
             <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="domainName" class="form-label">Domain Name</label>
-                        <input type="text" class="form-control" id="domainName" name="name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="domainDescription" class="form-label">Description</label>
-                        <textarea class="form-control" id="domainDescription" name="description" rows="3"></textarea>
-                    </div>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Remote domains cannot be edited directly. You can sync the domain locally first to make changes.
+                </div>
+                <dl id="remoteDomaindDetails">
+                    <!-- Details will be loaded here -->
+                </dl>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Domain</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
-            </form>
         </div>
     </div>
 </div>
 
-{% endblock %}
+<!-- Include the domains JavaScript -->
+{% load static %}
+<script src="{% static 'metadata_manager/domains/domains_enhanced.js' %}"></script>
 
-{% block scripts %}
-<script>
-// Global variables
-let domainsData = {
-    synced_items: [],
-    local_only_items: [],
-    remote_only_items: [],
-    datahub_url: ''
-};
-let currentSearch = {
-    synced: '',
-    local: '',
-    remote: ''
-};
-
-    document.addEventListener('DOMContentLoaded', function() {
-    loadDomainsData();
-    
-    // Search functionality for each tab
-    ['synced', 'local', 'remote'].forEach(tab => {
-        const searchInput = document.getElementById(`${tab}-search`);
-        const clearButton = document.getElementById(`${tab}-clear`);
-        
-        searchInput.addEventListener('input', function() {
-            currentSearch[tab] = this.value.toLowerCase();
-            displayTabContent(tab);
-        });
-        
-        clearButton.addEventListener('click', function() {
-            searchInput.value = '';
-            currentSearch[tab] = '';
-            displayTabContent(tab);
-        });
-    });
-    
-    // Refresh button
-    document.getElementById('refreshDomains').addEventListener('click', function() {
-        loadDomainsData();
-    });
-});
-
-function loadDomainsData() {
-    console.log('Loading domains data...');
-    showLoading(true);
-    
-    fetch('/metadata/domains/data/')
-        .then(response => {
-            console.log('Received response:', response.status);
-            return response.json();
-        })
-                    .then(data => {
-            console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
-                        if (data.success) {
-                domainsData = data.data;
-                updateStatistics(data.data.statistics);
-                updateTabBadges();
-                displayAllTabs();
-            } else {
-                console.error('Data loading failed:', data.error);
-                showError('Failed to load domains: ' + (data.error || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error loading domains:', error);
-            showError('Failed to load domains data: ' + error.message);
-        })
-        .finally(() => {
-            showLoading(false);
-        });
-}
-
-function showLoading(show) {
-    document.getElementById('loading-indicator').style.display = show ? 'block' : 'none';
-    document.getElementById('domains-content').style.display = show ? 'none' : 'block';
-}
-
-function updateStatistics(stats) {
-    document.getElementById('total-items').textContent = stats.total_items || 0;
-    document.getElementById('synced-count').textContent = stats.synced_count || 0;
-    document.getElementById('owned-domains').textContent = stats.owned_items || 0;
-    document.getElementById('domains-with-relationships').textContent = stats.items_with_relationships || 0;
-}
-
-function updateTabBadges() {
-    document.getElementById('synced-badge').textContent = domainsData.synced_items.length;
-    document.getElementById('local-badge').textContent = domainsData.local_only_items.length;
-    document.getElementById('remote-badge').textContent = domainsData.remote_only_items.length;
-}
-
-function displayAllTabs() {
-    displayTabContent('synced');
-    displayTabContent('local');
-    displayTabContent('remote');
-}
-
-function displayTabContent(tabType) {
-    console.log('Displaying tab content for:', tabType);
-    
-    let items, contentId;
-    
-    try {
-        switch(tabType) {
-            case 'synced':
-                items = domainsData.synced_items.map(item => item.combined);
-                contentId = 'synced-content';
-                break;
-            case 'local':
-                items = domainsData.local_only_items;
-                contentId = 'local-content';
-                break;
-            case 'remote':
-                items = domainsData.remote_only_items;
-                contentId = 'remote-content';
-                break;
-        }
-        
-        console.log(`Tab ${tabType}: ${items?.length || 0} items`);
-        
-        // Sort items alphabetically by name (A-Z)
-        if (items && items.length > 0) {
-            items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
-        }
-        
-        // Filter items based on search
-        const searchTerm = currentSearch[tabType];
-        if (searchTerm) {
-            items = items.filter(item => 
-                (item.name || '').toLowerCase().includes(searchTerm) ||
-                (item.description || '').toLowerCase().includes(searchTerm) ||
-                (item.urn || '').toLowerCase().includes(searchTerm) ||
-                (item.parent_name || '').toLowerCase().includes(searchTerm)
-            );
-        }
-        
-        const content = document.getElementById(contentId);
-        if (!content) {
-            console.error('Content element not found:', contentId);
-            return;
-        }
-        
-        if (items.length === 0) {
-            console.log(`No items for ${tabType}, showing empty state`);
-            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
-            return;
-        }
-        
-        console.log(`Generating table for ${tabType} with ${items.length} items`);
-        const tableHTML = generateTableHTML(items, tabType);
-        content.innerHTML = tableHTML;
-        
-        // Attach click handlers for view buttons
-        content.querySelectorAll('.view-item').forEach(button => {
-            button.addEventListener('click', function() {
-                const row = this.closest('tr');
-                const itemData = JSON.parse(row.dataset.item);
-                showDomainDetails(itemData);
-            });
-        });
-        
-        // Attach click handlers for expand/collapse buttons
-        content.querySelectorAll('.expand-button').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const icon = this.querySelector('.expand-icon');
-                const domainUrn = icon.id.replace('icon-', '');
-                toggleDomainChildren(domainUrn);
-            });
-        });
-        
-        console.log(`Successfully rendered ${tabType} tab`);
-        
-    } catch (error) {
-        console.error(`Error displaying ${tabType} tab:`, error);
-        const content = document.getElementById(contentId);
-        if (content) {
-            content.innerHTML = `<div class="alert alert-danger">Error loading ${tabType} domains: ${error.message}</div>`;
-        }
-    }
-}
-
-function generateTableHTML(items, tabType) {
-    // Organize items into a hierarchy
-    const hierarchy = organizeDomainHierarchy(items);
-    
-    return `
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Parent Domain</th>
-                        <th>Description</th>
-                        <th>URN</th>
-                        <th>Status</th>
-                        <th>Owners</th>
-                        <th>Relationships</th>
-                        <th width="15%">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${renderHierarchicalDomains(hierarchy, tabType, 0)}
-                </tbody>
-            </table>
-                                </div>
-                            `;
-}
-
-function organizeDomainHierarchy(items) {
-    // Create a map for quick lookup
-    const itemMap = new Map();
-    const rootItems = [];
-    
-    // First pass: create map of all items
-    items.forEach(item => {
-        itemMap.set(item.urn, { ...item, children: [] });
-    });
-    
-    // Second pass: organize into hierarchy
-    items.forEach(item => {
-        if (item.parent_urn && itemMap.has(item.parent_urn)) {
-            // Add to parent's children
-            itemMap.get(item.parent_urn).children.push(itemMap.get(item.urn));
-                        } else {
-            // Root level item
-            rootItems.push(itemMap.get(item.urn));
-        }
-    });
-    
-    return rootItems;
-}
-
-function renderHierarchicalDomains(items, tabType, level) {
-    return items.map(item => {
-        const hasChildren = item.children && item.children.length > 0;
-        let html = renderDomainRow(item, tabType, level, hasChildren);
-        
-        if (hasChildren) {
-            // Add children rows (initially visible)
-            html += renderHierarchicalDomains(item.children, tabType, level + 1);
-        }
-        
-        return html;
-    }).join('');
-}
-
-function renderDomainRow(domain, tabType, level = 0, hasChildren = false) {
-    const statusClass = getStatusBadgeClass(domain.sync_status);
-    
-    // Get domain icon and color from GraphQL data
-    let domainIcon = 'fas fa-sitemap text-primary';
-    let domainColor = '';
-    
-    // Check if domain has display properties from GraphQL
-    if (domain.raw_data && domain.raw_data.displayProperties) {
-        const displayProps = domain.raw_data.displayProperties;
-        
-        // Use custom color if available
-        if (displayProps.colorHex) {
-            domainColor = `style="color: ${displayProps.colorHex};"`;
-        }
-        
-        // Use custom icon if available
-        if (displayProps.icon && displayProps.icon.name) {
-            const iconLibrary = displayProps.icon.iconLibrary === 'font-awesome' ? 'fas' : 'fas';
-            const iconStyle = displayProps.icon.style === 'solid' ? 'fas' : 'far';
-            domainIcon = `${iconStyle} fa-${displayProps.icon.name}`;
-            if (!domainColor) {
-                domainIcon += ' text-primary';
-            }
-        }
-    }
-    
-    // Create indentation for hierarchy
-    const indent = level * 20;
-    
-    return `
-        <tr data-item='${JSON.stringify(domain)}' data-level="${level}" data-domain-urn="${domain.urn}" ${domain.parent_urn ? `data-parent-domain="${domain.parent_urn}"` : ''}>
-            <td>
-                <div class="hierarchy-container" style="margin-left: ${indent}px;">
-                    ${level > 0 ? '<div class="tree-connector"></div>' : ''}
-                    <div class="expand-button-container">
-                        ${hasChildren ? `
-                            <button class="expand-button" type="button" title="Expand/Collapse">
-                                <i class="fas fa-chevron-down expand-icon" id="icon-${domain.urn}"></i>
-                            </button>
-                        ` : ''}
-                    </div>
-                    <i class="${domainIcon} me-2" ${domainColor}></i>
-                    <span class="item-name">${escapeHtml(domain.name || 'Unnamed')}</span>
-                    ${domain.raw_data && domain.raw_data.displayProperties && domain.raw_data.displayProperties.colorHex ? `
-                        <span class="badge ms-2" style="background-color: ${domain.raw_data.displayProperties.colorHex}; color: white; font-size: 0.7em;">●</span>
-                    ` : ''}
-                </div>
-            </td>
-            <td>
-                ${domain.parent_name ? `
-                    <span class="text-muted">${escapeHtml(domain.parent_name)}</span>
-                ` : `<span class="text-muted">Root Domain</span>`}
-            </td>
-            <td>
-                <span title="${escapeHtml(domain.description || '')}">${escapeHtml(truncateText(domain.description || '', 50))}</span>
-            </td>
-            <td>
-                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(domain.urn || '')}">${escapeHtml(truncateUrnFromEnd(domain.urn || '', 30))}</code>
-            </td>
-            <td>
-                <span class="badge ${statusClass}">${domain.sync_status_display || domain.sync_status}</span>
-            </td>
-            <td>
-                ${domain.owners_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-users me-1"></i>
-                        <span class="badge bg-info">${domain.owners_count}</span>
-                        ${domain.owner_names && domain.owner_names.length > 0 ? `
-                            <small class="ms-2 text-muted">${domain.owner_names.slice(0, 2).join(', ')}${domain.owner_names.length > 2 ? '...' : ''}</small>
-                        ` : ''}
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                ${domain.relationships_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-project-diagram me-1"></i>
-                        <span class="badge bg-secondary">${domain.relationships_count}</span>
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-primary view-item" 
-                            title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    ${domain.urn && !domain.urn.includes('local:') ? `
-                        <a href="${getDataHubUrl(domain.urn, 'domain')}" 
-                           class="btn btn-sm btn-outline-info" 
-                           target="_blank" title="View in DataHub">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    ` : ''}
-                    ${getActionButtons(domain, tabType)}
-                </div>
-            </td>
-        </tr>
-    `;
-}
-
-function truncateUrnFromEnd(urn, maxLength) {
-    if (!urn || urn.length <= maxLength) return urn;
-    
-    // Keep the beginning of the URN and truncate from the end
-    return urn.substring(0, maxLength - 3) + '...';
-}
-
-function getActionButtons(item, tabType) {
-    const hasDataHubConnection = true; // This should come from the template context
-    let buttons = '';
-    
-    if (tabType === 'synced' && item.sync_status === 'MODIFIED' && hasDataHubConnection) {
-        const deployUrl = `/metadata/domains/${item.id}/deploy/`;
-        buttons += `
-            <form action="${deployUrl}" method="post" class="d-inline">
-                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
-                <button type="submit" class="btn btn-sm btn-outline-warning" title="Update in DataHub">
-                    <i class="fas fa-sync-alt"></i>
-                </button>
-            </form>
-        `;
-    }
-    
-    if (tabType === 'local' && hasDataHubConnection) {
-        const deployUrl = `/metadata/domains/${item.id}/deploy/`;
-        buttons += `
-            <form action="${deployUrl}" method="post" class="d-inline">
-                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
-                <button type="submit" class="btn btn-sm btn-outline-success" title="Deploy to DataHub">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                </button>
-            </form>
-        `;
-    }
-    
-    if (tabType === 'remote') {
-        buttons += `
-            <form action="/metadata/domains/pull/" method="post" class="d-inline">
-                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
-                <input type="hidden" name="domain_urns" value="${item.urn}">
-                <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
-                    <i class="fas fa-download"></i>
-                </button>
-            </form>
-        `;
-    }
-    
-    return buttons;
-}
-
-function getEmptyStateHTML(tabType, hasSearch) {
-    if (hasSearch) {
-        return `
-            <div class="py-5 text-center">
-                <div class="mb-3">
-                    <i class="fas fa-search fa-4x text-muted"></i>
-                </div>
-                <h4>No domains found</h4>
-                <p class="text-muted">No domains match your search criteria.</p>
-            </div>
-        `;
-    }
-    
-    const emptyStates = {
-        synced: {
-            icon: 'fas fa-sync-alt',
-            title: 'No synced domains',
-            description: 'Domains that exist both locally and in DataHub will appear here.'
-        },
-        local: {
-            icon: 'fas fa-laptop',
-            title: 'No local-only domains',
-            description: 'Domains that exist only in this application will appear here.',
-            action: `<div class="mt-2">
-                        <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createDomainModal">
-                            <i class="fas fa-plus me-1"></i> Create Domain
-                        </a>
-                     </div>`
-        },
-        remote: {
-            icon: 'fas fa-server',
-            title: 'No remote-only domains',
-            description: 'Domains that exist only in DataHub will appear here.'
-        }
-    };
-    
-    const state = emptyStates[tabType];
-    return `
-        <div class="py-5 text-center">
-            <div class="mb-3">
-                <i class="${state.icon} fa-4x text-muted"></i>
-            </div>
-            <h4>${state.title}</h4>
-            <p class="text-muted">${state.description}</p>
-            ${state.action || ''}
-        </div>
-    `;
-}
-
-function truncateText(text, maxLength) {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-}
-
-function showDomainDetails(domain) {
-    // Basic information with display properties
-    const nameElement = document.getElementById('modal-domain-name');
-    let nameHTML = escapeHtml(domain.name || 'Unnamed');
-    
-    // Add icon and color if available from GraphQL data
-    if (domain.raw_data && domain.raw_data.displayProperties) {
-        const displayProps = domain.raw_data.displayProperties;
-        
-        // Add icon if available
-        if (displayProps.icon && displayProps.icon.name) {
-            const iconLibrary = displayProps.icon.iconLibrary === 'font-awesome' ? 'fas' : 'fas';
-            const iconStyle = displayProps.icon.style === 'solid' ? 'fas' : 'far';
-            const iconClass = `${iconStyle} fa-${displayProps.icon.name}`;
-            const iconColor = displayProps.colorHex ? `style="color: ${displayProps.colorHex};"` : '';
-            nameHTML = `<i class="${iconClass} me-2" ${iconColor}></i>${nameHTML}`;
-        }
-        
-        // Add color indicator if available
-        if (displayProps.colorHex) {
-            nameHTML += ` <span class="badge ms-2" style="background-color: ${displayProps.colorHex}; color: white; font-size: 0.8em;">●</span>`;
-        }
-    }
-    
-    nameElement.innerHTML = nameHTML;
-    document.getElementById('modal-domain-description').textContent = domain.description || 'No description available';
-    document.getElementById('modal-domain-urn').textContent = domain.urn || 'No URN available';
-    
-    // Status
-    const statusBadge = document.getElementById('modal-domain-status');
-    statusBadge.textContent = domain.sync_status_display || domain.sync_status;
-    statusBadge.className = `badge ${getStatusBadgeClass(domain.sync_status)}`;
-    
-    // Parent Domain
-    const parentLabel = document.getElementById('modal-parent-label');
-    const parentValue = document.getElementById('modal-parent-value');
-    if (domain.parent_urn || domain.parent_name) {
-        parentLabel.style.display = 'block';
-        parentValue.style.display = 'block';
-        document.getElementById('modal-domain-parent').innerHTML = `
-            ${domain.parent_name ? `<strong>${escapeHtml(domain.parent_name)}</strong><br>` : ''}
-            ${domain.parent_urn ? `<code class="small">${escapeHtml(domain.parent_urn)}</code>` : ''}
-        `;
-    } else {
-        parentLabel.style.display = 'block';
-        parentValue.style.display = 'block';
-        document.getElementById('modal-domain-parent').innerHTML = '<span class="text-muted">Root Domain</span>';
-    }
-    
-    // DataHub link
-    const datahubLink = document.getElementById('modal-datahub-link');
-    if (domain.urn && !domain.urn.includes('local:') && domainsData.datahub_url) {
-        datahubLink.href = getDataHubUrl(domain.urn, 'domain');
-        datahubLink.style.display = 'inline-block';
-    } else {
-        datahubLink.style.display = 'none';
-    }
-    
-    // Ownership information
-    const ownersList = document.getElementById('modal-owners-list');
-    if (domain.ownership && domain.ownership.owners && domain.ownership.owners.length > 0) {
-        ownersList.innerHTML = domain.ownership.owners.map(ownerInfo => {
-            const owner = ownerInfo.owner || {};
-            const ownershipType = ownerInfo.ownershipType || {};
-            const source = ownerInfo.source || {};
-            
-            const displayName = owner.properties ? 
-                (owner.properties.displayName || owner.properties.fullName || owner.username || owner.name) :
-                (owner.username || owner.name || 'Unknown');
-                
-            return `
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <strong>${escapeHtml(displayName)}</strong>
-                            <br>
-                            <small class="text-muted">${escapeHtml(ownershipType.info ? ownershipType.info.name : 'Owner')}</small>
-                                </div>
-                        <div class="text-end">
-                            ${source.type ? `<span class="badge bg-light text-dark">${source.type}</span>` : ''}
-                        </div>
-                    </div>
-                    <div class="mt-1">
-                        <code class="small">${escapeHtml(owner.urn || '')}</code>
-                    </div>
-                    ${owner.properties && (owner.properties.email || owner.properties.title) ? `
-                        <div class="mt-2">
-                            ${owner.properties.email ? `<small class="text-muted d-block"><i class="fas fa-envelope me-1"></i>${escapeHtml(owner.properties.email)}</small>` : ''}
-                            ${owner.properties.title ? `<small class="text-muted d-block"><i class="fas fa-briefcase me-1"></i>${escapeHtml(owner.properties.title)}</small>` : ''}
-                        </div>
-                    ` : ''}
-                            </div>
-                        `;
-        }).join('');
-    } else {
-        ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
-    }
-    
-    // Last modified information
-    const lastModifiedDiv = document.getElementById('modal-last-modified');
-    if (domain.ownership && domain.ownership.lastModified) {
-        lastModifiedDiv.innerHTML = `
-            <div class="border rounded p-2">
-                <strong>Last Modified:</strong><br>
-                <small class="text-muted">
-                    ${formatDate(domain.ownership.lastModified.time)}
-                    ${domain.ownership.lastModified.actor ? ` by ${domain.ownership.lastModified.actor}` : ''}
-                </small>
-            </div>
-        `;
-    } else if (domain.lastModified) {
-        lastModifiedDiv.innerHTML = `
-            <div class="border rounded p-2">
-                <strong>Last Modified:</strong><br>
-                <small class="text-muted">${formatDate(domain.lastModified.time)}</small>
-            </div>
-        `;
-    } else {
-        lastModifiedDiv.innerHTML = '';
-    }
-    
-    // Relationships
-    const relationshipsList = document.getElementById('modal-relationships-list');
-    if (domain.relationships && domain.relationships.relationships && domain.relationships.relationships.length > 0) {
-        relationshipsList.innerHTML = domain.relationships.relationships.map(rel => `
-            <div class="border rounded p-2 mb-2">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <strong>${escapeHtml(rel.type || 'Unknown')}</strong>
-                        <span class="badge bg-${rel.direction === 'INCOMING' ? 'success' : 'primary'} ms-2">
-                            ${rel.direction || 'UNKNOWN'}
-                        </span>
-                    </div>
-                    <div class="text-end">
-                        ${rel.created ? `<small class="text-muted">${formatDate(rel.created.time)}</small>` : ''}
-                    </div>
-                </div>
-                <div class="mt-1">
-                    <code class="small">${escapeHtml(rel.entity ? rel.entity.urn : 'No entity URN')}</code>
-                </div>
-                ${rel.entity && rel.entity.properties ? `
-                    <div class="mt-1">
-                        <small class="text-muted">${escapeHtml(rel.entity.properties.name || 'Unknown Entity')}</small>
-                    </div>
-                ` : ''}
-            </div>
-        `).join('');
-                    } else {
-        relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
-    }
-    
-    // Domain Properties (additional DataHub fields)
-    const propertiesDiv = document.getElementById('modal-domain-properties');
-    if (domain.properties || domain.institutionalMemory || domain.displayProperties) {
-        let propertiesHTML = '';
-        
-        if (domain.properties) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Domain Properties:</strong>
-                    <pre class="mt-2 mb-0"><code>${escapeHtml(JSON.stringify(domain.properties, null, 2))}</code></pre>
-                </div>
-            `;
-        }
-        
-        if (domain.institutionalMemory && domain.institutionalMemory.elements && domain.institutionalMemory.elements.length > 0) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Institutional Memory:</strong>
-                    ${domain.institutionalMemory.elements.map(elem => `
-                        <div class="mt-2">
-                            <a href="${escapeHtml(elem.url)}" target="_blank" class="text-decoration-none">
-                                <i class="fas fa-external-link-alt me-1"></i>
-                                ${escapeHtml(elem.description || elem.url)}
-                            </a>
-                            ${elem.createStamp ? `<br><small class="text-muted">Added: ${formatDate(elem.createStamp.time)}</small>` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-        }
-        
-        if (domain.displayProperties) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Display Properties:</strong>
-                    <pre class="mt-2 mb-0"><code>${escapeHtml(JSON.stringify(domain.displayProperties, null, 2))}</code></pre>
-                </div>
-            `;
-        }
-        
-        propertiesDiv.innerHTML = propertiesHTML;
-    } else {
-        propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
-    }
-    
-    // Raw JSON - Show comprehensive GraphQL data
-    const rawData = domain.raw_data || domain;
-    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
-    
-    // Show modal
-    new bootstrap.Modal(document.getElementById('domainViewModal')).show();
-}
-
-// Utility functions
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function formatDate(timestamp) {
-    try {
-        const date = new Date(parseInt(timestamp));
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    } catch (e) {
-        return timestamp;
-    }
-}
-
-function getDataHubUrl(urn, type) {
-    if (domainsData.datahub_url) {
-        return `${domainsData.datahub_url}/domain/${encodeURIComponent(urn)}`;
-    }
-    return '#';
-}
-
-function getStatusBadgeClass(status) {
-    switch(status) {
-        case 'SYNCED': return 'bg-success';
-        case 'MODIFIED': return 'bg-warning';
-        case 'LOCAL_ONLY': return 'bg-secondary';
-        case 'REMOTE_ONLY': return 'bg-info';
-        default: return 'bg-primary';
-    }
-}
-
-function getCsrfToken() {
-    const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
-    return csrfElement ? csrfElement.value : '';
-}
-
-function showError(message) {
-    // Create and show error alert
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
-}
-
-// Expand/collapse functionality for domains
-function toggleDomainChildren(domainUrn) {
-    console.log('Toggling children for domain:', domainUrn);
-    
-    const expandIcon = document.getElementById(`icon-${domainUrn}`);
-    const childRows = document.querySelectorAll(`[data-parent-domain="${domainUrn}"]`);
-    
-    if (!expandIcon) {
-        console.error('Expand icon not found for domain:', domainUrn);
-        return;
-    }
-    
-    const isCollapsed = expandIcon.classList.contains('fa-chevron-right');
-    
-    if (isCollapsed) {
-        // Expand: show direct children only
-        expandIcon.classList.remove('fa-chevron-right');
-        expandIcon.classList.add('fa-chevron-down');
-        childRows.forEach(row => {
-            row.style.display = 'table-row';
-        });
-    } else {
-        // Collapse: hide all descendants recursively
-        expandIcon.classList.remove('fa-chevron-down');
-        expandIcon.classList.add('fa-chevron-right');
-        
-        // Recursively collapse all descendants
-        collapseAllDomainDescendants(domainUrn);
-    }
-}
-
-function collapseAllDomainDescendants(parentUrn) {
-    // Find all direct children
-    const childRows = document.querySelectorAll(`[data-parent-domain="${parentUrn}"]`);
-    
-    childRows.forEach(row => {
-        // Hide the row
-        row.style.display = 'none';
-        
-        // Get the URN of this child
-        const childUrn = row.dataset.domainUrn;
-        
-        // Collapse the expand icon if it has one
-        const childExpandIcon = document.getElementById(`icon-${childUrn}`);
-        if (childExpandIcon) {
-            childExpandIcon.classList.remove('fa-chevron-down');
-            childExpandIcon.classList.add('fa-chevron-right');
-        }
-        
-        // Recursively collapse this child's descendants
-        if (childUrn) {
-            collapseAllDomainDescendants(childUrn);
-        }
-    });
-}
-
-// Expand all domains
-function expandAllDomains() {
-    const allExpandIcons = document.querySelectorAll('.expand-icon');
-    allExpandIcons.forEach(icon => {
-        if (icon.classList.contains('fa-chevron-right')) {
-            const domainUrn = icon.id.replace('icon-', '');
-            // Only expand, don't toggle
-            icon.classList.remove('fa-chevron-right');
-            icon.classList.add('fa-chevron-down');
-            const childRows = document.querySelectorAll(`[data-parent-domain="${domainUrn}"]`);
-            childRows.forEach(row => {
-                row.style.display = 'table-row';
-                });
-            }
-        });
-}
-
-// Collapse all domains
-function collapseAllDomains() {
-    const allExpandIcons = document.querySelectorAll('.expand-icon');
-    allExpandIcons.forEach(icon => {
-        if (icon.classList.contains('fa-chevron-down')) {
-            const domainUrn = icon.id.replace('icon-', '');
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-right');
-            // Use the recursive collapse function
-            collapseAllDomainDescendants(domainUrn);
-        }
-    });
-}
-</script>
-
-<style>
-#modal-raw-json {
-    max-height: 300px;
-    overflow-y: auto;
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    padding: 1rem;
-}
-
-.table th {
-    background-color: #f8f9fa;
-    border-top: none;
-}
-</style>
 {% endblock %} 

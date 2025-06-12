@@ -44,6 +44,9 @@ urlpatterns = [
         "properties/", views_properties.PropertyListView.as_view(), name="property_list"
     ),
     path(
+        "properties/data/", views_properties.PropertyListView.as_view(), name="properties_data"
+    ),
+    path(
         "properties/<uuid:property_id>/",
         views_properties.PropertyDetailView.as_view(),
         name="property_detail",
@@ -67,6 +70,32 @@ urlpatterns = [
         "properties/values/",
         views_properties.PropertyValuesView.as_view(),
         name="property_values",
+    ),
+    # Additional property action endpoints  
+    path(
+        "properties/<uuid:property_id>/add-to-pr/",
+        views_properties.add_property_to_pr,
+        name="property_add_to_pr",
+    ),
+    path(
+        "properties/<uuid:property_id>/resync/",
+        views_properties.resync_property,
+        name="property_resync",
+    ),
+    path(
+        "properties/sync/",
+        views_properties.sync_property_to_local,
+        name="property_sync_to_local",
+    ),
+    path(
+        "properties/add-remote-to-pr/",
+        views_properties.add_remote_property_to_pr,
+        name="property_add_remote_to_pr",
+    ),
+    path(
+        "properties/delete-remote/",
+        views_properties.delete_remote_property,
+        name="property_delete_remote",
     ),
     # Tags
     path("tags/", views_tags.TagListView.as_view(), name="tag_list"),
@@ -221,6 +250,37 @@ urlpatterns = [
         name="domain_import_export",
     ),
     path("domains/pull/", views_domains.DomainPullView.as_view(), name="domain_pull"),
+    # Additional domain action endpoints
+    path(
+        "domains/sync/",
+        views_domains.sync_domain_to_local,
+        name="domain_sync_to_local",
+    ),
+    path(
+        "domains/<uuid:domain_id>/sync/",
+        views_domains.sync_domain_to_local,
+        name="domain_sync",
+    ),
+    path(
+        "domains/<uuid:domain_id>/resync/",
+        views_domains.resync_domain,
+        name="domain_resync",
+    ),
+    path(
+        "domains/<uuid:domain_id>/push/",
+        views_domains.push_domain_to_datahub,
+        name="domain_push_to_datahub",
+    ),
+    path(
+        "domains/<uuid:domain_id>/delete-remote/",
+        views_domains.delete_remote_domain,
+        name="domain_delete_remote",
+    ),
+    path(
+        "domains/add-to-pr/",
+        views_domains.add_remote_domain_to_pr,
+        name="domain_add_remote_to_pr",
+    ),
     # Data Contracts
     path(
         "data-contracts/",
@@ -378,6 +438,7 @@ urlpatterns = [
     ),
     # Metadata Tests
     path("tests/", views_tests.TestListView.as_view(), name="tests_list"),
+    path("tests/data/", views_tests.TestListView.as_view(), name="tests_data"),
     path("tests/create/", views_tests.TestDetailView.as_view(), name="test_create"),
     path(
         "tests/<str:test_urn>/",
@@ -385,7 +446,7 @@ urlpatterns = [
         name="test_detail",
     ),
     path(
-        "tests/<str:test_urn>/delete/",
+        "tests/<str:test_id>/delete/",
         views_tests.TestDeleteView.as_view(),
         name="test_delete",
     ),

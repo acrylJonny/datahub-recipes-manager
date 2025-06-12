@@ -149,9 +149,11 @@ def dashboard_data(request):
                 except Exception as e:
                     logger.error(f"Error fetching recipes for dashboard: {str(e)}")
 
-                # Get policies
+                # Get policies using cached data (only for dashboard)
                 try:
-                    all_policies = client.list_policies(limit=100)
+                    from utils.datahub_utils import get_cached_policies
+                    
+                    all_policies = get_cached_policies()
                     if all_policies:
                         # Process policies to extract IDs from URNs if needed
                         valid_policies = []
@@ -197,11 +199,16 @@ def recipes(request):
     client = get_datahub_client()
     recipes_list = []
     connected = False
+    
+    # Check if we should force refresh the cache
+    force_refresh = request.GET.get('refresh', '').lower() == 'true'
 
     if client and client.test_connection():
         connected = True
         try:
-            recipes_list = client.list_ingestion_sources()
+            from utils.datahub_utils import get_cached_recipes
+            
+            recipes_list = get_cached_recipes(force_refresh=force_refresh)
 
             # Process each recipe to format schedule and status
             for recipe in recipes_list:
@@ -298,6 +305,10 @@ def recipe_create(request):
                     )
 
                     if result:
+                        # Invalidate recipes cache
+                        from utils.datahub_utils import invalidate_recipes_cache
+                        invalidate_recipes_cache()
+                        
                         messages.success(request, "Recipe created successfully")
                         return redirect("recipes")
                     else:
@@ -524,6 +535,10 @@ def recipe_delete(request, recipe_id):
     try:
         result = client.delete_ingestion_source(recipe_id)
         if result:
+            # Invalidate recipes cache
+            from utils.datahub_utils import invalidate_recipes_cache
+            invalidate_recipes_cache()
+            
             if is_ajax:
                 return JsonResponse({"success": True, "redirect": "/recipes/"})
             messages.success(request, "Recipe deleted successfully")
@@ -742,10 +757,15 @@ def policies(request):
     connected = client and client.test_connection()
 
     try:
-        # Get policies from DataHub
+        # Check if we should force refresh the cache
+        force_refresh = request.GET.get('refresh', '').lower() == 'true'
+        
+        # Get policies from cached data
         server_policies = []
         if connected:
-            server_policies = client.list_policies()
+            from utils.datahub_utils import get_cached_policies
+            
+            server_policies = get_cached_policies(force_refresh=force_refresh)
 
             # Format policy data for display
             for policy in server_policies:
@@ -890,6 +910,10 @@ def policy_create(request):
                 try:
                     result = client.create_policy(policy_data)
                     if result:
+                        # Invalidate policies cache
+                        from utils.datahub_utils import invalidate_policies_cache
+                        invalidate_policies_cache()
+                        
                         messages.success(
                             request,
                             f"Policy '{policy_data['name']}' created successfully",
@@ -1153,6 +1177,10 @@ def policy_delete(request, policy_id):
     try:
         result = client.delete_policy(policy_id)
         if result:
+            # Invalidate policies cache
+            from utils.datahub_utils import invalidate_policies_cache
+            invalidate_policies_cache()
+            
             messages.success(request, f"Policy '{policy_id}' deleted successfully")
             return redirect("policies")
         else:
@@ -2772,8 +2800,8 @@ def recipe_instance_edit(request, instance_id):
             initial={
                 "name": instance.name,
                 "description": instance.description,
-                "template": instance.template,
-                "env_vars_instance": instance.env_vars_instance,
+                "template": instance.template.id if instance.template else None,
+                "env_vars_instance": instance.env_vars_instance.id if instance.env_vars_instance else None,
             }
         )
 
@@ -5469,7 +5497,7 @@ def env_vars_instance_edit(request, instance_id):
             initial={
                 "name": instance.name,
                 "description": instance.description,
-                "template": instance.template,
+                "template": instance.template.id if instance.template else None,
                 "recipe_type": instance.recipe_type,
                 "variables": json.dumps(
                     variables_dict

@@ -52,6 +52,145 @@
         background-color: #f8f9fa;
         border-top: none;
     }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 0 0 20%;
+        max-width: 20%;
+    }
+    
+    /* Filter row styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    /* Clickable statistics styling */
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Multi-select filter styling */
+    .clickable-stat.multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.multi-select.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 350px;
+    }
+    
+    #modal-raw-json {
+        max-height: 300px;
+        overflow-y: auto;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 1rem;
+    }
+    
+    /* Bulk Actions Styling - matching domains */
+    .bulk-actions {
+        background-color: #e3f2fd;
+        border: 1px solid #2196f3;
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        border-radius: 0.375rem;
+        display: none;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+    
+    /* Sortable table headers - matching assertions */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
 </style>
 {% endblock %}
 
@@ -110,37 +249,59 @@
 
             <!-- Properties content -->
             <div id="properties-content" style="display: none;">
-                <!-- Statistics -->
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="total-items">0</div>
-                                <small class="text-muted">Total Properties</small>
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Overview -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="synced-count">0</div>
-                                <small class="text-muted">Synced</small>
+                            
+                            <!-- Row 2: Value Types -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Value Types</strong>
+                                </div>
+                                <div id="value-type-filters" class="col-md-10 d-flex">
+                                    <!-- Value type filters will be populated here -->
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="owned-properties">0</div>
-                                <small class="text-muted">Owned</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="properties-with-relationships">0</div>
-                                <small class="text-muted">With Relationships</small>
+                            
+                            <!-- Row 3: Entity Types -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Entity Types</strong>
+                                </div>
+                                <div id="entity-type-filters" class="col-md-10 d-flex">
+                                    <!-- Entity type filters will be populated here -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -185,6 +346,30 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> property(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncProperties('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushProperties('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocalProperties('synced')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -204,6 +389,27 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> property(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushProperties('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocalProperties('local')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -223,6 +429,27 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> property(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemoteProperties('remote')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete Remote
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -361,6 +588,142 @@
     </div>
 </div>
 
+<!-- Edit Property Modal -->
+<div class="modal fade" id="editPropertyModal" tabindex="-1" aria-labelledby="editPropertyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editPropertyModalLabel">Edit Property</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editPropertyForm" method="post">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <input type="hidden" id="editPropertyId" name="property_id">
+                    
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editPropertyName" class="form-label">Property Name *</label>
+                            <input type="text" class="form-control" id="editPropertyName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editPropertyQualifiedName" class="form-label">Qualified Name</label>
+                            <input type="text" class="form-control" id="editPropertyQualifiedName" name="qualified_name">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="editPropertyDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editPropertyDescription" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <!-- Property Configuration -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-cog me-2"></i>Configuration</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editPropertyValueType" class="form-label">Value Type *</label>
+                            <select class="form-control" id="editPropertyValueType" name="value_type" required>
+                                <option value="STRING">String</option>
+                                <option value="NUMBER">Number</option>
+                                <option value="BOOLEAN">Boolean</option>
+                                <option value="DATE">Date</option>
+                                <option value="URN">URN</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editPropertyCardinality" class="form-label">Cardinality *</label>
+                            <select class="form-control" id="editPropertyCardinality" name="cardinality" required>
+                                <option value="SINGLE">Single</option>
+                                <option value="MULTIPLE">Multiple</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Entity Types -->
+                    <div class="mb-4">
+                        <label class="form-label">Entity Types *</label>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DATASET" id="editEntityDataset">
+                                    <label class="form-check-label" for="editEntityDataset">Dataset</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DASHBOARD" id="editEntityDashboard">
+                                    <label class="form-check-label" for="editEntityDashboard">Dashboard</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="CHART" id="editEntityChart">
+                                    <label class="form-check-label" for="editEntityChart">Chart</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DATA_FLOW" id="editEntityDataFlow">
+                                    <label class="form-check-label" for="editEntityDataFlow">Data Flow</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DATA_JOB" id="editEntityDataJob">
+                                    <label class="form-check-label" for="editEntityDataJob">Data Job</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Display Settings -->
+                    <div class="mb-4">
+                        <h6 class="text-primary"><i class="fas fa-display me-2"></i>Display Settings</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="editShowInSearchFilters" name="show_in_search_filters">
+                                    <label class="form-check-label" for="editShowInSearchFilters">Show in Search Filters</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="editShowAsAssetBadge" name="show_as_asset_badge">
+                                    <label class="form-check-label" for="editShowAsAssetBadge">Show as Asset Badge</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="editShowInAssetSummary" name="show_in_asset_summary">
+                                    <label class="form-check-label" for="editShowInAssetSummary">Show in Asset Summary</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="editShowInColumnsTable" name="show_in_columns_table">
+                                    <label class="form-check-label" for="editShowInColumnsTable">Show in Columns Table</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="editIsHidden" name="is_hidden">
+                                    <label class="form-check-label" for="editIsHidden">Hidden</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="editImmutable" name="immutable">
+                                    <label class="form-check-label" for="editImmutable">Immutable</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Create Property Modal (keeping existing functionality) -->
 <div class="modal fade" id="createPropertyModal" tabindex="-1" aria-labelledby="createPropertyModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -407,551 +770,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-// Global variables
-let propertiesData = {
-    synced_items: [],
-    local_only_items: [],
-    remote_only_items: [],
-    datahub_url: ''
-};
-let currentSearch = {
-    synced: '',
-    local: '',
-    remote: ''
-};
-
-document.addEventListener('DOMContentLoaded', function() {
-    loadPropertiesData();
-    
-    // Search functionality for each tab
-    ['synced', 'local', 'remote'].forEach(tab => {
-        const searchInput = document.getElementById(`${tab}-search`);
-        const clearButton = document.getElementById(`${tab}-clear`);
-        
-        searchInput.addEventListener('input', function() {
-            currentSearch[tab] = this.value.toLowerCase();
-            displayTabContent(tab);
-        });
-        
-        clearButton.addEventListener('click', function() {
-            searchInput.value = '';
-            currentSearch[tab] = '';
-            displayTabContent(tab);
-        });
-    });
-    
-    // Refresh button
-    document.getElementById('refreshProperties').addEventListener('click', function() {
-        loadPropertiesData();
-    });
-});
-
-function loadPropertiesData() {
-    console.log('Loading properties data...');
-    showLoading(true);
-    
-    fetch('/metadata/properties/data/')
-        .then(response => {
-            console.log('Received response:', response.status);
-            return response.json();
-        })
-        .then(data => {
-            console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
-            if (data.success) {
-                propertiesData = data.data;
-                updateStatistics(data.data.statistics);
-                updateTabBadges();
-                displayAllTabs();
-            } else {
-                console.error('Data loading failed:', data.error);
-                showError('Failed to load properties: ' + (data.error || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error loading properties:', error);
-            showError('Failed to load properties data: ' + error.message);
-        })
-        .finally(() => {
-            showLoading(false);
-        });
-}
-
-function showLoading(show) {
-    document.getElementById('loading-indicator').style.display = show ? 'block' : 'none';
-    document.getElementById('properties-content').style.display = show ? 'none' : 'block';
-}
-
-function updateStatistics(stats) {
-    document.getElementById('total-items').textContent = stats.total_items || 0;
-    document.getElementById('synced-count').textContent = stats.synced_count || 0;
-    document.getElementById('owned-properties').textContent = stats.owned_items || 0;
-    document.getElementById('properties-with-relationships').textContent = stats.items_with_relationships || 0;
-}
-
-function updateTabBadges() {
-    document.getElementById('synced-badge').textContent = propertiesData.synced_items.length;
-    document.getElementById('local-badge').textContent = propertiesData.local_only_items.length;
-    document.getElementById('remote-badge').textContent = propertiesData.remote_only_items.length;
-}
-
-function displayAllTabs() {
-    displayTabContent('synced');
-    displayTabContent('local');
-    displayTabContent('remote');
-}
-
-function displayTabContent(tabType) {
-    console.log('Displaying tab content for:', tabType);
-    
-    let items, contentId;
-    
-    try {
-        switch(tabType) {
-            case 'synced':
-                items = propertiesData.synced_items.map(item => item.combined);
-                contentId = 'synced-content';
-                break;
-            case 'local':
-                items = propertiesData.local_only_items;
-                contentId = 'local-content';
-                break;
-            case 'remote':
-                items = propertiesData.remote_only_items;
-                contentId = 'remote-content';
-                break;
-        }
-        
-        console.log(`Tab ${tabType}: ${items?.length || 0} items`);
-        
-        // Sort items alphabetically by name (A-Z)
-        if (items && items.length > 0) {
-            items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
-        }
-        
-        // Filter items based on search
-        const searchTerm = currentSearch[tabType];
-        if (searchTerm) {
-            items = items.filter(item => 
-                (item.name || '').toLowerCase().includes(searchTerm) ||
-                (item.description || '').toLowerCase().includes(searchTerm) ||
-                (item.qualified_name || '').toLowerCase().includes(searchTerm) ||
-                (item.value_type || '').toLowerCase().includes(searchTerm) ||
-                (item.urn || '').toLowerCase().includes(searchTerm)
-            );
-        }
-        
-        const content = document.getElementById(contentId);
-        if (!content) {
-            console.error('Content element not found:', contentId);
-            return;
-        }
-        
-        if (items.length === 0) {
-            console.log(`No items for ${tabType}, showing empty state`);
-            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
-            return;
-        }
-        
-        console.log(`Generating table for ${tabType} with ${items.length} items`);
-        const tableHTML = generateTableHTML(items, tabType);
-        content.innerHTML = tableHTML;
-        
-        // Attach click handlers for view buttons
-        content.querySelectorAll('.view-item').forEach(button => {
-            button.addEventListener('click', function() {
-                const row = this.closest('tr');
-                const itemData = JSON.parse(row.dataset.item);
-                showPropertyDetails(itemData);
-            });
-        });
-        
-        console.log(`Successfully rendered ${tabType} tab`);
-        
-    } catch (error) {
-        console.error(`Error displaying ${tabType} tab:`, error);
-        const content = document.getElementById(contentId);
-        if (content) {
-            content.innerHTML = `<div class="alert alert-danger">Error loading ${tabType} properties: ${error.message}</div>`;
-        }
-    }
-}
-
-function generateTableHTML(items, tabType) {
-    return `
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Value Type</th>
-                        <th>Qualified Name</th>
-                        <th>URN</th>
-                        <th>Status</th>
-                        <th>Owners</th>
-                        <th>Relationships</th>
-                        <th width="15%">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${items.map(item => renderPropertyRow(item, tabType)).join('')}
-                </tbody>
-            </table>
-        </div>
-    `;
-}
-
-function renderPropertyRow(property, tabType) {
-    const statusClass = getStatusBadgeClass(property.sync_status);
-    const typeIcon = 'fas fa-cubes text-secondary';
-    
-    return `
-        <tr data-item='${JSON.stringify(property)}'>
-            <td>
-                <div class="d-flex align-items-center">
-                    <i class="${typeIcon} me-2"></i>
-                    <strong>${escapeHtml(property.name || 'Unnamed')}</strong>
-                </div>
-            </td>
-            <td>
-                <span class="badge bg-info">${escapeHtml(property.value_type || 'Unknown')}</span>
-            </td>
-            <td>
-                <code class="small">${escapeHtml(property.qualified_name || '')}</code>
-            </td>
-            <td>
-                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(property.urn || '')}">${escapeHtml(truncateUrn(property.urn || '', 30))}</code>
-            </td>
-            <td>
-                <span class="badge ${statusClass}">${property.sync_status_display || property.sync_status}</span>
-            </td>
-            <td>
-                ${property.owners_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-users me-1"></i>
-                        <span class="badge bg-info">${property.owners_count}</span>
-                        ${property.owner_names && property.owner_names.length > 0 ? `
-                            <small class="ms-2 text-muted">${property.owner_names.slice(0, 2).join(', ')}${property.owner_names.length > 2 ? '...' : ''}</small>
-                        ` : ''}
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                ${property.relationships_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-project-diagram me-1"></i>
-                        <span class="badge bg-secondary">${property.relationships_count}</span>
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-primary view-item" 
-                            title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    ${property.urn && !property.urn.includes('local:') ? `
-                        <a href="${getDataHubUrl(property.urn, 'property')}" 
-                           class="btn btn-sm btn-outline-info" 
-                           target="_blank" title="View in DataHub">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    ` : ''}
-                    ${getActionButtons(property, tabType)}
-                </div>
-            </td>
-        </tr>
-    `;
-}
-
-function getActionButtons(item, tabType) {
-    // Implementation depends on backend endpoints
-    return '';
-}
-
-function getEmptyStateHTML(tabType, hasSearch) {
-    if (hasSearch) {
-        return `
-            <div class="py-5 text-center">
-                <div class="mb-3">
-                    <i class="fas fa-search fa-4x text-muted"></i>
-                </div>
-                <h4>No properties found</h4>
-                <p class="text-muted">No properties match your search criteria.</p>
-            </div>
-        `;
-    }
-    
-    const emptyStates = {
-        synced: {
-            icon: 'fas fa-sync-alt',
-            title: 'No synced properties',
-            description: 'Properties that exist both locally and in DataHub will appear here.'
-        },
-        local: {
-            icon: 'fas fa-laptop',
-            title: 'No local-only properties',
-            description: 'Properties that exist only in this application will appear here.',
-            action: `<div class="mt-2">
-                        <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createPropertyModal">
-                            <i class="fas fa-plus me-1"></i> Create Property
-                        </a>
-                     </div>`
-        },
-        remote: {
-            icon: 'fas fa-server',
-            title: 'No remote-only properties',
-            description: 'Properties that exist only in DataHub will appear here.'
-        }
-    };
-    
-    const state = emptyStates[tabType];
-    return `
-        <div class="py-5 text-center">
-            <div class="mb-3">
-                <i class="${state.icon} fa-4x text-muted"></i>
-            </div>
-            <h4>${state.title}</h4>
-            <p class="text-muted">${state.description}</p>
-            ${state.action || ''}
-        </div>
-    `;
-}
-
-function showPropertyDetails(property) {
-    // Basic information
-    document.getElementById('modal-property-name').textContent = property.name || 'Unnamed';
-    document.getElementById('modal-property-valuetype').innerHTML = `<span class="badge bg-info">${property.value_type || 'Unknown'}</span>`;
-    document.getElementById('modal-property-qualifiedname').textContent = property.qualified_name || 'No qualified name';
-    document.getElementById('modal-property-description').textContent = property.description || 'No description available';
-    document.getElementById('modal-property-urn').textContent = property.urn || 'No URN available';
-    
-    // Status
-    const statusBadge = document.getElementById('modal-property-status');
-    statusBadge.textContent = property.sync_status_display || property.sync_status;
-    statusBadge.className = `badge ${getStatusBadgeClass(property.sync_status)}`;
-    
-    // DataHub link
-    const datahubLink = document.getElementById('modal-datahub-link');
-    if (property.urn && !property.urn.includes('local:') && propertiesData.datahub_url) {
-        datahubLink.href = getDataHubUrl(property.urn, 'property');
-        datahubLink.style.display = 'inline-block';
-    } else {
-        datahubLink.style.display = 'none';
-    }
-    
-    // Ownership information
-    const ownersList = document.getElementById('modal-owners-list');
-    if (property.ownership && property.ownership.owners && property.ownership.owners.length > 0) {
-        ownersList.innerHTML = property.ownership.owners.map(ownerInfo => {
-            const owner = ownerInfo.owner || {};
-            const ownershipType = ownerInfo.ownershipType || {};
-            const source = ownerInfo.source || {};
-            
-            const displayName = owner.properties ? 
-                (owner.properties.displayName || owner.properties.fullName || owner.username || owner.name) :
-                (owner.username || owner.name || 'Unknown');
-                
-            return `
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <strong>${escapeHtml(displayName)}</strong>
-                            <br>
-                            <small class="text-muted">${escapeHtml(ownershipType.info ? ownershipType.info.name : 'Owner')}</small>
-                        </div>
-                        <div class="text-end">
-                            ${source.type ? `<span class="badge bg-light text-dark">${source.type}</span>` : ''}
-                        </div>
-                    </div>
-                    <div class="mt-1">
-                        <code class="small">${escapeHtml(owner.urn || '')}</code>
-                    </div>
-                    ${owner.properties && (owner.properties.email || owner.properties.title) ? `
-                        <div class="mt-2">
-                            ${owner.properties.email ? `<small class="text-muted d-block"><i class="fas fa-envelope me-1"></i>${escapeHtml(owner.properties.email)}</small>` : ''}
-                            ${owner.properties.title ? `<small class="text-muted d-block"><i class="fas fa-briefcase me-1"></i>${escapeHtml(owner.properties.title)}</small>` : ''}
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }).join('');
-    } else {
-        ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
-    }
-    
-    // Last modified information
-    const lastModifiedDiv = document.getElementById('modal-last-modified');
-    if (property.ownership && property.ownership.lastModified) {
-        lastModifiedDiv.innerHTML = `
-            <div class="border rounded p-2">
-                <strong>Last Modified:</strong><br>
-                <small class="text-muted">
-                    ${formatDate(property.ownership.lastModified.time)}
-                    ${property.ownership.lastModified.actor ? ` by ${property.ownership.lastModified.actor}` : ''}
-                </small>
-            </div>
-        `;
-    } else if (property.last_updated) {
-        lastModifiedDiv.innerHTML = `
-            <div class="border rounded p-2">
-                <strong>Last Updated:</strong><br>
-                <small class="text-muted">${formatDate(property.last_updated)}</small>
-            </div>
-        `;
-    } else {
-        lastModifiedDiv.innerHTML = '';
-    }
-    
-    // Relationships
-    const relationshipsList = document.getElementById('modal-relationships-list');
-    if (property.relationships && property.relationships.relationships && property.relationships.relationships.length > 0) {
-        relationshipsList.innerHTML = property.relationships.relationships.map(rel => `
-            <div class="border rounded p-2 mb-2">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <strong>${escapeHtml(rel.type || 'Unknown')}</strong>
-                        <span class="badge bg-${rel.direction === 'INCOMING' ? 'success' : 'primary'} ms-2">
-                            ${rel.direction || 'UNKNOWN'}
-                        </span>
-                    </div>
-                    <div class="text-end">
-                        ${rel.created ? `<small class="text-muted">${formatDate(rel.created.time)}</small>` : ''}
-                    </div>
-                </div>
-                <div class="mt-1">
-                    <code class="small">${escapeHtml(rel.entity ? rel.entity.urn : 'No entity URN')}</code>
-                </div>
-                ${rel.entity && rel.entity.properties ? `
-                    <div class="mt-1">
-                        <small class="text-muted">${escapeHtml(rel.entity.properties.name || 'Unknown Entity')}</small>
-                    </div>
-                ` : ''}
-            </div>
-        `).join('');
-    } else {
-        relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
-    }
-    
-    // Property Details
-    const propertiesDiv = document.getElementById('modal-property-properties');
-    if (property.properties || property.definition || property.allowedValues) {
-        let propertiesHTML = '';
-        
-        if (property.allowedValues && property.allowedValues.length > 0) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Allowed Values:</strong>
-                    <div class="mt-2">
-                        ${property.allowedValues.map(value => `<span class="badge bg-light text-dark me-1">${escapeHtml(value)}</span>`).join('')}
-                    </div>
-                </div>
-            `;
-        }
-        
-        if (property.cardinality) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Cardinality:</strong>
-                    <span class="badge bg-secondary ms-2">${escapeHtml(property.cardinality)}</span>
-                </div>
-            `;
-        }
-        
-        if (property.properties && property.properties.customProperties) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Custom Properties:</strong>
-                    <pre class="mt-2 mb-0"><code>${escapeHtml(JSON.stringify(property.properties.customProperties, null, 2))}</code></pre>
-                </div>
-            `;
-        }
-        
-        propertiesDiv.innerHTML = propertiesHTML;
-    } else {
-        propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
-    }
-    
-    // Raw JSON - Show comprehensive GraphQL data
-    const rawData = property.raw_data || property;
-    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
-    
-    // Show modal
-    new bootstrap.Modal(document.getElementById('propertyViewModal')).show();
-}
-
-// Utility functions
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function truncateText(text, maxLength) {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-}
-
-function truncateUrn(urn, maxLength) {
-    if (!urn || urn.length <= maxLength) return urn;
-    return urn.substring(0, maxLength - 3) + '...';
-}
-
-function formatDate(timestamp) {
-    try {
-        const date = new Date(parseInt(timestamp));
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    } catch (e) {
-        return timestamp;
-    }
-}
-
-function getDataHubUrl(urn, type) {
-    if (propertiesData.datahub_url) {
-        return `${propertiesData.datahub_url}/structuredProperty/${encodeURIComponent(urn)}`;
-    }
-    return '#';
-}
-
-function getStatusBadgeClass(status) {
-    switch(status) {
-        case 'SYNCED': return 'bg-success';
-        case 'MODIFIED': return 'bg-warning';
-        case 'LOCAL_ONLY': return 'bg-secondary';
-        case 'REMOTE_ONLY': return 'bg-info';
-        default: return 'bg-primary';
-    }
-}
-
-function getCsrfToken() {
-    const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
-    return csrfElement ? csrfElement.value : '';
-}
-
-function showError(message) {
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
-}
-</script>
-
-<style>
-#modal-raw-json {
-    max-height: 300px;
-    overflow-y: auto;
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    padding: 1rem;
-}
-
-.table th {
-    background-color: #f8f9fa;
-    border-top: none;
-}
-</style>
+<!-- Include the enhanced properties JavaScript -->
+<script src="{% static 'metadata_manager/properties/properties_enhanced.js' %}"></script>
 {% endblock %} 

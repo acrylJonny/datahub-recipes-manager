@@ -17,6 +17,15 @@
                     </form>
                     {% endif %}
                     
+                    {% if has_datahub_connection %}
+                    <form method="post" action="{% url 'metadata_manager:domain_sync' domain.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-primary" onclick="return confirm('Sync this domain from DataHub?')">
+                            <i class="fas fa-sync-alt me-1"></i> Sync from DataHub
+                        </button>
+                    </form>
+                    {% endif %}
+                    
                     {% if domain.is_local and has_git_integration %}
                     <button type="button" class="btn btn-outline-primary add-domain-to-git-pr" data-domain-id="{{ domain.id }}">
                         <i class="fab fa-github me-1"></i> Add to Git PR
