@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load metadata_manager_filters %}
 
 {% block content %}
 <div class="container-fluid">
@@ -153,7 +154,7 @@
                             </div>
                             
                             {% if datahub_url %}
-                            <a href="{{ datahub_url }}/tag/{{ remote_tag.urn|urlencode:''}}" target="_blank" class="btn btn-outline-primary">
+                            <a href="{{ datahub_url|datahub_url:remote_tag.urn }}" target="_blank" class="btn btn-outline-primary">
                                 <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                             </a>
                             {% endif %}
@@ -212,11 +213,11 @@
                                                         <td>{{ entity.type }}</td>
                                                         <td><code>{{ entity.urn }}</code></td>
                                                         <td>
-                                                            {% if datahub_url %}
-                                                            <a href="{{ datahub_url }}/{{ entity.type|lower }}/{{ entity.urn|urlencode:'' }}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                                                <i class="fas fa-external-link-alt"></i> View
-                                                            </a>
-                                                            {% endif %}
+                                                                                                        {% if datahub_url %}
+                                            <a href="{{ datahub_url|datahub_entity_url:entity }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-external-link-alt"></i> View
+                                            </a>
+                                            {% endif %}
                                                         </td>
                                                     </tr>
                                                 {% endfor %}
@@ -228,7 +229,7 @@
                                         <div class="py-3 text-center">
                                             <p class="text-muted">Showing {{ related_entities|length }} of {{ total_related }} related entities.</p>
                                             {% if datahub_url %}
-                                            <a href="{{ datahub_url }}/search/tag/{{ tag.deterministic_urn|urlencode:'' }}" target="_blank" class="btn btn-outline-primary">
+                                            <a href="{{ datahub_url|datahub_url:tag.deterministic_urn }}" target="_blank" class="btn btn-outline-primary">
                                                 <i class="fas fa-external-link-alt me-1"></i> View All in DataHub
                                             </a>
                                             {% endif %}

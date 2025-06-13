@@ -528,6 +528,35 @@ function generateTableHTML(items, tabType) {
     `;
 }
 
+// Universal function to sanitize data for HTML attributes to prevent URI length issues
+function sanitizeDataForAttribute(item, maxDescriptionLength = 500) {
+    if (!item || typeof item !== 'object') {
+        return item;
+    }
+    
+    const sanitized = { ...item };
+    
+    // Truncate description if it's too long
+    if (sanitized.description && typeof sanitized.description === 'string' && sanitized.description.length > maxDescriptionLength) {
+        sanitized.description = sanitized.description.substring(0, maxDescriptionLength) + '...[truncated]';
+    }
+    
+    // Truncate properties.description if it exists
+    if (sanitized.properties && sanitized.properties.description && 
+        typeof sanitized.properties.description === 'string' && 
+        sanitized.properties.description.length > maxDescriptionLength) {
+        sanitized.properties = {
+            ...sanitized.properties,
+            description: sanitized.properties.description.substring(0, maxDescriptionLength) + '...[truncated]'
+        };
+    }
+    
+    // Remove potentially large raw data objects
+    sanitized.raw_data = undefined;
+    
+    return sanitized;
+}
+
 function renderContractRow(contract, tabType) {
     const statusClass = getStatusBadgeClass(contract.sync_status);
     const typeIcon = 'fas fa-file-contract text-warning';
@@ -545,8 +574,11 @@ function renderContractRow(contract, tabType) {
     if (properties.schema && properties.schema.assertion) assertionCount++;
     if (properties.dataQuality && properties.dataQuality.assertion) assertionCount++;
     
+    // Sanitize contract data for the data-item attribute to prevent URI length issues
+    const sanitizedContract = sanitizeDataForAttribute(contract);
+    
     return `
-        <tr data-item='${JSON.stringify(contract)}'>
+        <tr data-item='${JSON.stringify(sanitizedContract)}'>
             <td>
                 <div class="d-flex align-items-center">
                     <i class="${typeIcon} me-2"></i>
@@ -566,39 +598,13 @@ function renderContractRow(contract, tabType) {
                 <span class="badge ${statusClass}">${contract.sync_status_display || contract.sync_status}</span>
             </td>
             <td>
-                ${contract.owners_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-users me-1"></i>
-                        <span class="badge bg-info">${contract.owners_count}</span>
-                        ${contract.owner_names && contract.owner_names.length > 0 ? `
-                            <small class="ms-2 text-muted">${contract.owner_names.slice(0, 2).join(', ')}${contract.owner_names.length > 2 ? '...' : ''}</small>
-                        ` : ''}
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                ${contract.relationships_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-project-diagram me-1"></i>
-                        <span class="badge bg-secondary">${contract.relationships_count}</span>
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
-            </td>
-            <td>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-primary view-item" 
-                            title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    ${contract.urn && !contract.urn.includes('local:') ? `
-                        <a href="${getDataHubUrl(contract.urn, 'contract')}" 
-                           class="btn btn-sm btn-outline-info" 
-                           target="_blank" title="View in DataHub">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    ` : ''}
-                    ${getActionButtons(contract, tabType)}
-                </div>
+                ${contractsData.datahub_url && urn ? `
+                    <a href="${contractsData.datahub_url}/dataContract/${encodeURIComponent(urn)}" 
+                       class="btn btn-sm btn-outline-info" 
+                       target="_blank" title="View in DataHub">
+                        <i class="fas fa-external-link-alt"></i>
+                    </a>
+                ` : `<span class="text-muted">-</span>`}
             </td>
         </tr>
     `;

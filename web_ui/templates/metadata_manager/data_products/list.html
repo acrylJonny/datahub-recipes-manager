@@ -1704,6 +1704,35 @@ function attachPaginationHandlers(content, tabType) {
     }
 }
 
+// Universal function to sanitize data for HTML attributes to prevent URI length issues
+function sanitizeDataForAttribute(item, maxDescriptionLength = 500) {
+    if (!item || typeof item !== 'object') {
+        return item;
+    }
+    
+    const sanitized = { ...item };
+    
+    // Truncate description if it's too long
+    if (sanitized.description && typeof sanitized.description === 'string' && sanitized.description.length > maxDescriptionLength) {
+        sanitized.description = sanitized.description.substring(0, maxDescriptionLength) + '...[truncated]';
+    }
+    
+    // Truncate properties.description if it exists
+    if (sanitized.properties && sanitized.properties.description && 
+        typeof sanitized.properties.description === 'string' && 
+        sanitized.properties.description.length > maxDescriptionLength) {
+        sanitized.properties = {
+            ...sanitized.properties,
+            description: sanitized.properties.description.substring(0, maxDescriptionLength) + '...[truncated]'
+        };
+    }
+    
+    // Remove potentially large raw data objects
+    sanitized.raw_data = undefined;
+    
+    return sanitized;
+}
+
 function renderProductRow(product, tabType) {
     const statusClass = getStatusBadgeClass(product.sync_status);
     const typeIcon = 'fas fa-cube text-primary';
@@ -1730,7 +1759,7 @@ function renderProductRow(product, tabType) {
     }
     
     return `
-        <tr data-item='${JSON.stringify(product)}' data-product-id="${productId}" data-product-urn="${urn}">
+        <tr data-item='${JSON.stringify(sanitizeDataForAttribute(product))}' data-product-id="${productId}" data-product-urn="${urn}">
             <td class="checkbox-column">
                 <input type="checkbox" class="form-check-input product-checkbox" data-tab="${tabType}" data-product-id="${productId}">
             </td>

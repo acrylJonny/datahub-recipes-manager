@@ -68,6 +68,10 @@ class Tag(BaseMetadataModel):
     """Model representing a DataHub tag"""
 
     color = models.CharField(max_length=20, default="#0d6efd", null=True, blank=True)
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
+    owners_count = models.IntegerField(default=0)
 
     class Meta:
         ordering = ["name"]
@@ -76,13 +80,20 @@ class Tag(BaseMetadataModel):
 
     def to_dict(self):
         """Convert tag to dictionary for export/syncing purposes"""
-        return {
+        data = {
             "name": self.name,
             "description": self.description,
             "color": self.color,
             "urn": self.deterministic_urn,
             "original_urn": self.original_urn if self.original_urn else None,
         }
+        
+        # Add ownership information if available
+        if self.ownership_data:
+            data["ownership_data"] = self.ownership_data
+            data["owners_count"] = self.owners_count
+        
+        return data
 
 
 class Environment(models.Model):
@@ -572,6 +583,66 @@ class DataProductResult(models.Model):
         verbose_name = "Data Product Result"
         verbose_name_plural = "Data Product Results"
         ordering = ["-deployed_at"]
+
+
+class DataHubUser(models.Model):
+    """Cached DataHub user information for owner selection"""
+    
+    urn = models.CharField(max_length=500, unique=True)
+    username = models.CharField(max_length=255)
+    display_name = models.CharField(max_length=255, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    
+    # Cache metadata
+    last_updated = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "DataHub User"
+        verbose_name_plural = "DataHub Users"
+        ordering = ["username"]
+    
+    def __str__(self):
+        return self.display_name or self.username
+
+
+class DataHubGroup(models.Model):
+    """Cached DataHub group information for owner selection"""
+    
+    urn = models.CharField(max_length=500, unique=True)
+    display_name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    
+    # Cache metadata
+    last_updated = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "DataHub Group"
+        verbose_name_plural = "DataHub Groups"
+        ordering = ["display_name"]
+    
+    def __str__(self):
+        return self.display_name
+
+
+class DataHubOwnershipType(models.Model):
+    """Cached DataHub ownership type information"""
+    
+    urn = models.CharField(max_length=500, unique=True)
+    name = models.CharField(max_length=255)
+    
+    # Cache metadata
+    last_updated = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "DataHub Ownership Type"
+        verbose_name_plural = "DataHub Ownership Types"
+        ordering = ["name"]
+    
+    def __str__(self):
+        return self.name
 
 
 class Test(BaseMetadataModel):

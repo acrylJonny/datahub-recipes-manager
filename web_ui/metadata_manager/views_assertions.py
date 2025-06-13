@@ -21,7 +21,7 @@ sys.path.append(project_root)
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import test_datahub_connection
+from utils.datahub_utils import test_datahub_connection, get_datahub_client
 from utils.datahub_rest_client import DataHubRestClient
 from .models import Assertion, AssertionResult, Domain, Environment
 from web_ui.models import Environment as DjangoEnvironment
@@ -750,32 +750,6 @@ class AssertionGitPushView(View):
             return JsonResponse({"success": False, "message": f"Error: {str(e)}"})
 
 
-def get_client_from_session(request):
-    """
-    Get a DataHub client from the session or create a new one.
-
-    Args:
-        request (HttpRequest): The request object
-
-    Returns:
-        DataHubRestClient: The client instance or None if not connected
-    """
-    try:
-        # Get active environment
-        environment = DjangoEnvironment.objects.filter(is_default=True).first()
-        if not environment:
-            logger.error("No active environment configured")
-            return None
-
-        # Initialize and return a client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-        return client
-    except Exception as e:
-        logger.error(f"Error creating DataHub client: {str(e)}")
-        return None
-
-
-@require_http_methods(["GET"])
 def get_datahub_assertions(request):
     """
     Get assertions from DataHub and return them as JSON.
@@ -799,8 +773,8 @@ def get_datahub_assertions(request):
             f"Getting Assertions: query='{query}', start={start}, count={count}"
         )
 
-        # Get client from session
-        client = get_client_from_session(request)
+        # Get client using standard configuration
+        client = get_datahub_client()
         if not client:
             return JsonResponse(
                 {"success": False, "error": "Not connected to DataHub"}, status=400

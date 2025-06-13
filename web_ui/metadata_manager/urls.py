@@ -100,6 +100,7 @@ urlpatterns = [
     # Tags
     path("tags/", views_tags.TagListView.as_view(), name="tag_list"),
     path("tags/remote-data/", views_tags.get_remote_tags_data, name="get_remote_tags_data"),
+    path("tags/users-groups/", views_tags.get_users_and_groups, name="get_users_and_groups"),
     path("tags/<uuid:tag_id>/", views_tags.TagDetailView.as_view(), name="tag_detail"),
     path(
         "tags/<uuid:tag_id>/edit/", views_tags.TagDetailView.as_view(), name="tag_edit"
@@ -136,6 +137,11 @@ urlpatterns = [
         "glossary/data/",
         views_glossary.get_remote_glossary_data,
         name="get_remote_glossary_data",
+    ),
+    path(
+        "glossary/csv-upload/",
+        views_glossary.glossary_csv_upload,
+        name="glossary_csv_upload",
     ),
     path(
         "glossary/pull/",

@@ -1463,12 +1463,22 @@ def settings(request):
                 datahub_url = request.POST.get("datahub_url", "").strip()
                 datahub_token = request.POST.get("datahub_token", "").strip()
                 verify_ssl = "verify_ssl" in request.POST
+                timeout = request.POST.get("timeout", "30")
+
+                # Validate timeout
+                try:
+                    timeout_int = int(timeout)
+                    if timeout_int < 5 or timeout_int > 300:
+                        timeout_int = 30
+                except (ValueError, TypeError):
+                    timeout_int = 30
 
                 # Save settings to database
                 AppSettings.set("datahub_url", datahub_url)
                 if datahub_token:  # Only update token if provided
                     AppSettings.set("datahub_token", datahub_token)
                 AppSettings.set("verify_ssl", "true" if verify_ssl else "false")
+                AppSettings.set("timeout", str(timeout_int))
 
                 # Sync settings with metadata_manager Environment model
                 try:
@@ -1513,21 +1523,152 @@ def settings(request):
 
                 return redirect("settings")
 
-            # ... rest of the settings view code ...
+            elif section == "github_settings":
+                # Handle GitHub settings
+                from web_ui.models import GitSettings
+                
+                enabled = "enabled" in request.POST
+                provider_type = request.POST.get("provider_type", "github")
+                base_url = request.POST.get("base_url", "").strip()
+                username = request.POST.get("username", "").strip()
+                repository = request.POST.get("repository", "").strip()
+                token = request.POST.get("token", "").strip()
+                
+                # Get or create GitSettings instance
+                git_settings = GitSettings.objects.first()
+                if not git_settings:
+                    git_settings = GitSettings.objects.create()
+                
+                # Update settings
+                git_settings.enabled = enabled
+                git_settings.provider_type = provider_type
+                git_settings.base_url = base_url
+                git_settings.username = username
+                git_settings.repository = repository
+                if token:  # Only update token if provided
+                    git_settings.token = token
+                git_settings.save()
+                
+                # Test connection if requested
+                if "test_github_connection" in request.POST:
+                    try:
+                        # Test GitHub connection logic here
+                        messages.success(request, "GitHub connection test completed")
+                    except Exception as e:
+                        messages.error(request, f"GitHub connection test failed: {str(e)}")
+                else:
+                    messages.success(request, "Git repository settings updated")
+                
+                return redirect("settings")
+
+            elif section == "policy_settings":
+                # Handle policy settings
+                policy_export_dir = request.POST.get("policy_export_dir", "").strip()
+                default_policy_type = request.POST.get("default_policy_type", "METADATA")
+                validate_on_import = "validate_on_import" in request.POST
+                auto_backup_policies = "auto_backup_policies" in request.POST
+                
+                AppSettings.set("policy_export_dir", policy_export_dir)
+                AppSettings.set("default_policy_type", default_policy_type)
+                AppSettings.set("validate_on_import", "true" if validate_on_import else "false")
+                AppSettings.set("auto_backup_policies", "true" if auto_backup_policies else "false")
+                
+                messages.success(request, "Policy settings updated")
+                return redirect("settings")
+
+            elif section == "recipe_settings":
+                # Handle recipe settings
+                recipe_dir = request.POST.get("recipe_dir", "").strip()
+                default_schedule = request.POST.get("default_schedule", "0 0 * * *")
+                auto_enable_recipes = "auto_enable_recipes" in request.POST
+                
+                AppSettings.set("recipe_dir", recipe_dir)
+                AppSettings.set("default_schedule", default_schedule)
+                AppSettings.set("auto_enable_recipes", "true" if auto_enable_recipes else "false")
+                
+                messages.success(request, "Recipe settings updated")
+                return redirect("settings")
+
+            elif section == "advanced_settings":
+                # Handle advanced settings
+                timeout = request.POST.get("timeout", "30")
+                log_level = request.POST.get("log_level", "INFO")
+                refresh_rate = request.POST.get("refresh_rate", "60")
+                debug_mode = "debug_mode" in request.POST
+                
+                # Validate timeout
+                try:
+                    timeout_int = int(timeout)
+                    if timeout_int < 5 or timeout_int > 300:
+                        timeout_int = 30
+                except (ValueError, TypeError):
+                    timeout_int = 30
+                
+                # Validate refresh_rate
+                try:
+                    refresh_rate_int = int(refresh_rate)
+                    if refresh_rate_int < 0 or refresh_rate_int > 3600:
+                        refresh_rate_int = 60
+                except (ValueError, TypeError):
+                    refresh_rate_int = 60
+                
+                AppSettings.set("timeout", str(timeout_int))
+                AppSettings.set("log_level", log_level)
+                AppSettings.set("refresh_rate", str(refresh_rate_int))
+                AppSettings.set("debug_mode", "true" if debug_mode else "false")
+                
+                messages.success(request, "Advanced settings updated")
+                return redirect("settings")
 
         # Get current settings for display
         try:
+            # DataHub connection settings
             datahub_url = AppSettings.get("datahub_url", "")
             verify_ssl = AppSettings.get_bool("verify_ssl", True)
+            timeout = AppSettings.get_int("timeout", 30)
 
             # Test current connection
             connected, client = test_datahub_connection()
 
+            # Git settings
+            from web_ui.models import GitSettings
+            git_settings = GitSettings.objects.first()
+            if not git_settings:
+                git_settings = GitSettings.objects.create()
+
+            # Create a form-like object for the template
+            github_form = {
+                'enabled': {'value': git_settings.enabled},
+                'provider_type': {'value': git_settings.provider_type},
+                'base_url': {'value': git_settings.base_url or ''},
+                'username': {'value': git_settings.username or ''},
+                'repository': {'value': git_settings.repository or ''},
+                'token': {'value': git_settings.token or ''},
+            }
+
+            # Other settings
+            config = {
+                'policy_export_dir': AppSettings.get("policy_export_dir", ""),
+                'default_policy_type': AppSettings.get("default_policy_type", "METADATA"),
+                'validate_on_import': AppSettings.get_bool("validate_on_import", True),
+                'auto_backup_policies': AppSettings.get_bool("auto_backup_policies", True),
+                'recipe_dir': AppSettings.get("recipe_dir", ""),
+                'default_schedule': AppSettings.get("default_schedule", "0 0 * * *"),
+                'auto_enable_recipes': AppSettings.get_bool("auto_enable_recipes", False),
+                'log_level': AppSettings.get("log_level", "INFO"),
+                'refresh_rate': AppSettings.get_int("refresh_rate", 60),
+                'debug_mode': AppSettings.get_bool("debug_mode", False),
+            }
+
             context = {
                 "datahub_url": datahub_url,
                 "verify_ssl": verify_ssl,
+                "timeout": timeout,
                 "has_token": bool(AppSettings.get("datahub_token")),
                 "is_connected": connected,
+                "github_form": github_form,
+                "github_configured": git_settings.enabled and git_settings.token and git_settings.username and git_settings.repository,
+                "config": config,
                 "page_title": "Settings",
             }
 

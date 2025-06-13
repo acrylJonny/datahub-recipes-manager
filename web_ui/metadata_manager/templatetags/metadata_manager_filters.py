@@ -266,3 +266,66 @@ def term_to_json(term):
         logger = logging.getLogger(__name__)
         logger.error(f"Error converting term to JSON: {str(e)}")
         return json.dumps({})
+
+
+@register.filter
+def datahub_url(base_url, urn):
+    """Create a proper DataHub URL without double slashes and without encoding URN colons"""
+    if not base_url or not urn:
+        return "#"
+    
+    # Remove trailing slashes from base URL
+    clean_base_url = base_url.rstrip('/')
+    
+    # Don't encode the URN - DataHub expects colons to remain as colons
+    return f"{clean_base_url}/tag/{urn}"
+
+
+@register.filter  
+def datahub_entity_url(base_url, entity_info):
+    """Create a proper DataHub URL for entities without double slashes and without encoding URN colons"""
+    if not base_url or not entity_info:
+        return "#"
+    
+    # Handle both dictionary and object formats
+    if isinstance(entity_info, dict):
+        entity_type = entity_info.get('type', '').lower()
+        entity_urn = entity_info.get('urn', '')
+    else:
+        entity_type = getattr(entity_info, 'type', '').lower()
+        entity_urn = getattr(entity_info, 'urn', '')
+    
+    if not entity_type or not entity_urn:
+        return "#"
+    
+    # Remove trailing slashes from base URL
+    clean_base_url = base_url.rstrip('/')
+    
+    # Don't encode the URN - DataHub expects colons to remain as colons
+    return f"{clean_base_url}/{entity_type}/{entity_urn}"
+
+
+@register.filter
+def datahub_domain_url(base_url, urn):
+    """Create a proper DataHub URL for domains without double slashes and without encoding URN colons"""
+    if not base_url or not urn:
+        return "#"
+    
+    # Remove trailing slashes from base URL
+    clean_base_url = base_url.rstrip('/')
+    
+    # Don't encode the URN - DataHub expects colons to remain as colons
+    return f"{clean_base_url}/domain/{urn}"
+
+
+@register.filter
+def datahub_glossary_term_url(base_url, urn):
+    """Create a proper DataHub URL for glossary terms without double slashes and without encoding URN colons"""
+    if not base_url or not urn:
+        return "#"
+    
+    # Remove trailing slashes from base URL
+    clean_base_url = base_url.rstrip('/')
+    
+    # Don't encode the URN - DataHub expects colons to remain as colons
+    return f"{clean_base_url}/glossaryTerm/{urn}"

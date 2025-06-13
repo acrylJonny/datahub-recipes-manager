@@ -4,10 +4,13 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.utils.decorators import method_decorator
+from django.db import models
 import json
 import logging
 import os
 import sys
+import csv
+import io
 
 # Add project root to sys.path
 sys.path.append(
@@ -16,7 +19,8 @@ sys.path.append(
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name, get_parent_path
-from utils.datahub_utils import test_datahub_connection
+from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import Environment as DjangoEnvironment
 from web_ui.models import GitSettings, GitIntegration
 from .models import GlossaryNode, GlossaryTerm, Environment
@@ -1422,48 +1426,95 @@ class GlossaryNodeGitPushView(View):
             return JsonResponse({"success": False, "error": str(e)})
 
 
+def _safe_process_ownership_and_relationships(ownership_data, relationships_data, properties):
+    """Helper function to safely process ownership, relationships, and custom properties"""
+    # Process ownership
+    owners = ownership_data.get("owners", []) if ownership_data else []
+    if not isinstance(owners, list):
+        owners = []
+    owner_names = []
+    for owner_info in owners:
+        if not owner_info or not isinstance(owner_info, dict):
+            continue
+        owner = owner_info.get("owner", {})
+        if not isinstance(owner, dict):
+            continue
+        if owner.get("username"):  # CorpUser
+            owner_names.append(owner["username"])
+        elif owner.get("name"):  # CorpGroup
+            owner_names.append(owner["name"])
+    
+    # Process relationships
+    relationships = relationships_data.get("relationships", []) if relationships_data else []
+    if not isinstance(relationships, list):
+        relationships = []
+    
+    # Process custom properties
+    custom_properties = properties.get("customProperties", []) if properties else []
+    if not isinstance(custom_properties, list):
+        custom_properties = []
+        
+    return {
+        "owners": owners,
+        "owner_names": owner_names,
+        "relationships": relationships,
+        "custom_properties": custom_properties,
+        "owners_count": len(owners),
+        "relationships_count": len(relationships),
+        "custom_properties_count": len(custom_properties)
+    }
+
+
 def get_remote_glossary_data(request):
-    """Get comprehensive glossary data with local/remote/synced categorization and enhanced information."""
+    """AJAX endpoint to get enhanced remote glossary data with ownership and relationships"""
     try:
-        logger.info("Loading comprehensive glossary data via AJAX")
+        logger.info("Loading enhanced remote glossary data via AJAX")
+
+        # Get DataHub connection using standard configuration
+        client = get_datahub_client()
+        connected = client and client.test_connection()
         
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
-            return JsonResponse({
-                "success": False,
-                "error": "No active environment configured"
-            })
-        
-        # Get parameters
-        query = request.GET.get("query", "*")
-        start = int(request.GET.get("start", 0))
-        count = int(request.GET.get("count", 100))
-        
-        # Initialize DataHub client  
-        from utils.datahub_rest_client import DataHubRestClient
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-        
-        # Test connection
-        if not client.test_connection():
-            return JsonResponse({
-                "success": False,
-                "error": "Cannot connect to DataHub"
-            })
-        
+        if not connected or not client:
+            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+
         # Get all local nodes and terms
         local_nodes = GlossaryNode.objects.all().order_by("name")
         local_terms = GlossaryTerm.objects.all().order_by("name")
-        logger.debug(f"Found {local_nodes.count()} local nodes and {local_terms.count()} local terms")
+
+        # Initialize data structures
+        synced_nodes = []
+        local_only_nodes = []
+        remote_only_nodes = []
+        synced_terms = []
+        local_only_terms = []
+        remote_only_terms = []
         
-        # Get remote nodes and terms with enhanced data
-        remote_nodes = client.list_glossary_nodes(query=query, count=1000) or []
-        remote_terms = client.list_glossary_terms(query=query, count=1000) or []
+        # Get DataHub URL and token for proper link generation and API calls
+        from web_ui.models import AppSettings
+        import os
+        datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", "")).rstrip('/')
+        datahub_token = AppSettings.get("datahub_token", os.environ.get("DATAHUB_TOKEN", ""))
+
+        # Get comprehensive remote data with all metadata including structured properties and ownership
+        try:
+            comprehensive_data = client.get_comprehensive_glossary_data(query="*", count=10000)
+            remote_nodes = comprehensive_data.get("nodes", [])
+            remote_terms = comprehensive_data.get("terms", [])
+            
+            if remote_nodes is None:
+                remote_nodes = []
+            if remote_terms is None:
+                remote_terms = []
+        except Exception as e:
+            logger.warning(f"Failed to fetch comprehensive glossary data: {e}")
+            remote_nodes = []
+            remote_terms = []
+            
         logger.debug(f"Found {len(remote_nodes)} remote nodes and {len(remote_terms)} remote terms")
         
         # Create URN mappings for quick lookup
-        remote_nodes_dict = {node.get("urn"): node for node in remote_nodes}
-        remote_terms_dict = {term.get("urn"): term for term in remote_terms}
+        remote_nodes_dict = {node.get("urn"): node for node in remote_nodes if node and node.get("urn")}
+        remote_terms_dict = {term.get("urn"): term for term in remote_terms if term and term.get("urn")}
         
         # Categorize items
         synced_items = []
@@ -1493,6 +1544,8 @@ def get_remote_glossary_data(request):
                 "owners_count": 0,
                 "owner_names": [],
                 "relationships_count": 0,
+                "custom_properties_count": 0,
+                "structured_properties_count": 0,
                 "ownership": None,
                 "relationships": None,
             }
@@ -1514,32 +1567,37 @@ def get_remote_glossary_data(request):
                         local_node.save(update_fields=["sync_status"])
                         logger.debug(f"Updated node {local_node.name} status to SYNCED")
                 
-                # Extract enhanced data from remote
-                ownership_data = remote_match.get("ownership", {})
-                relationships_data = remote_match.get("relationships", {})
+                # Extract comprehensive data from remote (now includes structured properties)
+                ownership_data = remote_match.get("owners", []) or []  # New format has processed owners
+                relationships_data = remote_match.get("relationships", []) or []  # New format has processed relationships
+                structured_properties = remote_match.get("structuredProperties", []) or []
+                custom_properties = remote_match.get("customProperties", []) or []
+                properties = remote_match.get("properties", {}) or {}
                 
-                # Process ownership
-                owners = ownership_data.get("owners", []) if ownership_data else []
-                owner_names = []
-                for owner_info in owners:
-                    owner = owner_info.get("owner", {})
-                    if owner.get("username"):  # CorpUser
-                        owner_names.append(owner["username"])
-                    elif owner.get("name"):  # CorpGroup
-                        owner_names.append(owner["name"])
+                # Process the comprehensive data
+                processed_data = {
+                    "owners_count": len(ownership_data),
+                    "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
+                    "relationships_count": len(relationships_data),
+                    "custom_properties_count": len(custom_properties),
+                    "structured_properties_count": len(structured_properties),
+                    "custom_properties": custom_properties,
+                    "structured_properties": structured_properties
+                }
                 
-                # Process relationships
-                relationships = relationships_data.get("relationships", []) if relationships_data else []
-                
-                # Update local item data with remote information
+                # Update local item data with comprehensive remote information
                 local_item_data.update({
                     "sync_status": local_node.sync_status,
                     "sync_status_display": local_node.get_sync_status_display(),
-                    "owners_count": len(owners),
-                    "owner_names": owner_names,
-                    "relationships_count": len(relationships),
+                    "owners_count": processed_data["owners_count"],
+                    "owner_names": processed_data["owner_names"],
+                    "relationships_count": processed_data["relationships_count"],
+                    "custom_properties_count": processed_data["custom_properties_count"],
+                    "structured_properties_count": processed_data["structured_properties_count"],
                     "ownership": ownership_data,
                     "relationships": relationships_data,
+                    "structured_properties": structured_properties,
+                    "custom_properties": custom_properties,
                 })
                 
                 synced_items.append({
@@ -1577,6 +1635,8 @@ def get_remote_glossary_data(request):
                 "owners_count": 0,
                 "owner_names": [],
                 "relationships_count": 0,
+                "custom_properties_count": 0,
+                "structured_properties_count": 0,
                 "ownership": None,
                 "relationships": None,
             }
@@ -1598,32 +1658,37 @@ def get_remote_glossary_data(request):
                         local_term.save(update_fields=["sync_status"])
                         logger.debug(f"Updated term {local_term.name} status to SYNCED")
                 
-                # Extract enhanced data from remote
-                ownership_data = remote_match.get("ownership", {})
-                relationships_data = remote_match.get("relationships", {})
+                # Extract comprehensive data from remote (now includes structured properties)
+                ownership_data = remote_match.get("owners", []) or []  # New format has processed owners
+                relationships_data = remote_match.get("relationships", []) or []  # New format has processed relationships
+                structured_properties = remote_match.get("structuredProperties", []) or []
+                custom_properties = remote_match.get("customProperties", []) or []
+                properties = remote_match.get("properties", {}) or {}
                 
-                # Process ownership
-                owners = ownership_data.get("owners", []) if ownership_data else []
-                owner_names = []
-                for owner_info in owners:
-                    owner = owner_info.get("owner", {})
-                    if owner.get("username"):  # CorpUser
-                        owner_names.append(owner["username"])
-                    elif owner.get("name"):  # CorpGroup
-                        owner_names.append(owner["name"])
+                # Process the comprehensive data
+                processed_data = {
+                    "owners_count": len(ownership_data),
+                    "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
+                    "relationships_count": len(relationships_data),
+                    "custom_properties_count": len(custom_properties),
+                    "structured_properties_count": len(structured_properties),
+                    "custom_properties": custom_properties,
+                    "structured_properties": structured_properties
+                }
                 
-                # Process relationships
-                relationships = relationships_data.get("relationships", []) if relationships_data else []
-                
-                # Update local item data with remote information
+                # Update local item data with comprehensive remote information
                 local_item_data.update({
                     "sync_status": local_term.sync_status,
                     "sync_status_display": local_term.get_sync_status_display(),
-                    "owners_count": len(owners),
-                    "owner_names": owner_names,
-                    "relationships_count": len(relationships),
+                    "owners_count": processed_data["owners_count"],
+                    "owner_names": processed_data["owner_names"],
+                    "relationships_count": processed_data["relationships_count"],
+                    "custom_properties_count": processed_data["custom_properties_count"],
+                    "structured_properties_count": processed_data["structured_properties_count"],
                     "ownership": ownership_data,
                     "relationships": relationships_data,
+                    "structured_properties": structured_properties,
+                    "custom_properties": custom_properties,
                 })
                 
                 synced_items.append({
@@ -1645,22 +1710,22 @@ def get_remote_glossary_data(request):
         # Find remote-only nodes
         for node_urn, remote_node in remote_nodes_dict.items():
             if node_urn not in local_node_urns:
-                properties = remote_node.get("properties", {})
-                ownership_data = remote_node.get("ownership", {})
-                relationships_data = remote_node.get("relationships", {})
+                properties = remote_node.get("properties", {}) or {}
+                ownership_data = remote_node.get("owners", []) or []
+                relationships_data = remote_node.get("relationships", []) or []
+                structured_properties = remote_node.get("structuredProperties", []) or []
+                custom_properties = remote_node.get("customProperties", []) or []
                 
-                # Process ownership
-                owners = ownership_data.get("owners", []) if ownership_data else []
-                owner_names = []
-                for owner_info in owners:
-                    owner = owner_info.get("owner", {})
-                    if owner.get("username"):  # CorpUser
-                        owner_names.append(owner["username"])
-                    elif owner.get("name"):  # CorpGroup
-                        owner_names.append(owner["name"])
-                
-                # Process relationships
-                relationships = relationships_data.get("relationships", []) if relationships_data else []
+                # Process comprehensive data
+                processed_data = {
+                    "owners_count": len(ownership_data),
+                    "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
+                    "relationships_count": len(relationships_data),
+                    "custom_properties_count": len(custom_properties),
+                    "structured_properties_count": len(structured_properties),
+                    "custom_properties": custom_properties,
+                    "structured_properties": structured_properties
+                }
                 
                 remote_only_items.append({
                     "name": properties.get("name", "Unknown"),
@@ -1669,40 +1734,42 @@ def get_remote_glossary_data(request):
                     "type": "node",
                     "sync_status": "REMOTE_ONLY",
                     "sync_status_display": "Remote Only",
-                    "parent_urn": remote_node.get("parent_urn"),
+                    "parent_urn": remote_node.get("parentNodes", [{}])[0].get("urn") if remote_node.get("parentNodes") else None,
                     "has_children": False,  # Simplified for remote-only
-                    "owners_count": len(owners),
-                    "owner_names": owner_names,
-                    "relationships_count": len(relationships),
+                    "owners_count": processed_data["owners_count"],
+                    "owner_names": processed_data["owner_names"],
+                    "relationships_count": processed_data["relationships_count"],
+                    "custom_properties_count": processed_data["custom_properties_count"],
+                    "structured_properties_count": processed_data["structured_properties_count"],
                     "ownership": ownership_data,
                     "relationships": relationships_data,
-                    "custom_properties": properties.get("customProperties", []),
+                    "structured_properties": structured_properties,
+                    "custom_properties": custom_properties,
                 })
         
         # Find remote-only terms
         for term_urn, remote_term in remote_terms_dict.items():
             if term_urn not in local_term_urns:
-                properties = remote_term.get("properties", {})
-                glossary_term_info = remote_term.get("glossaryTermInfo", {})
-                ownership_data = remote_term.get("ownership", {})
-                relationships_data = remote_term.get("relationships", {})
+                properties = remote_term.get("properties", {}) or {}
+                ownership_data = remote_term.get("owners", []) or []
+                relationships_data = remote_term.get("relationships", []) or []
+                structured_properties = remote_term.get("structuredProperties", []) or []
+                custom_properties = remote_term.get("customProperties", []) or []
                 
-                # Get name and description, preferring glossaryTermInfo
-                name = glossary_term_info.get("name") or properties.get("name", "Unknown")
-                description = glossary_term_info.get("description") or properties.get("description", "")
+                # Get name and description from properties
+                name = properties.get("name", "Unknown")
+                description = properties.get("description", "")
                 
-                # Process ownership
-                owners = ownership_data.get("owners", []) if ownership_data else []
-                owner_names = []
-                for owner_info in owners:
-                    owner = owner_info.get("owner", {})
-                    if owner.get("username"):  # CorpUser
-                        owner_names.append(owner["username"])
-                    elif owner.get("name"):  # CorpGroup
-                        owner_names.append(owner["name"])
-                
-                # Process relationships
-                relationships = relationships_data.get("relationships", []) if relationships_data else []
+                # Process comprehensive data
+                processed_data = {
+                    "owners_count": len(ownership_data),
+                    "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
+                    "relationships_count": len(relationships_data),
+                    "custom_properties_count": len(custom_properties),
+                    "structured_properties_count": len(structured_properties),
+                    "custom_properties": custom_properties,
+                    "structured_properties": structured_properties
+                }
                 
                 remote_only_items.append({
                     "name": name,
@@ -1711,54 +1778,292 @@ def get_remote_glossary_data(request):
                     "type": "term",
                     "sync_status": "REMOTE_ONLY",
                     "sync_status_display": "Remote Only",
-                    "parent_node_urn": remote_term.get("parent_node_urn"),
-                    "term_source": glossary_term_info.get("termSource", ""),
-                    "owners_count": len(owners),
-                    "owner_names": owner_names,
-                    "relationships_count": len(relationships),
+                    "parent_node_urn": remote_term.get("parentNodes", [{}])[0].get("urn") if remote_term.get("parentNodes") else None,
+                    "term_source": remote_term.get("termSource", "INTERNAL"),
+                    "owners_count": processed_data["owners_count"],
+                    "owner_names": processed_data["owner_names"],
+                    "relationships_count": processed_data["relationships_count"],
+                    "custom_properties_count": processed_data["custom_properties_count"],
+                    "structured_properties_count": processed_data["structured_properties_count"],
                     "ownership": ownership_data,
                     "relationships": relationships_data,
+                    "structured_properties": structured_properties,
+                    "custom_properties": custom_properties,
                 })
         
-        # Calculate statistics
+        # Calculate statistics with proper counting
         total_items = len(synced_items) + len(local_only_items) + len(remote_only_items)
-        owned_items = sum(1 for item_list in [synced_items, local_only_items, remote_only_items] 
-                         for item in item_list 
-                         if (item.get("combined", item) if "combined" in item else item).get("owners_count", 0) > 0)
-        items_with_relationships = sum(1 for item_list in [synced_items, local_only_items, remote_only_items]
-                                     for item in item_list
-                                     if (item.get("combined", item) if "combined" in item else item).get("relationships_count", 0) > 0)
         
-        # Get DataHub URL for external links
-        datahub_url = environment.datahub_url
-        if datahub_url.endswith("/api/gms"):
-            datahub_url = datahub_url[:-8]
+        # Count items with owners
+        owned_items = 0
+        for item_list in [synced_items, local_only_items, remote_only_items]:
+            for item in item_list:
+                # Get the actual item data (handle both combined and direct formats)
+                item_data = item.get("combined", item) if "combined" in item else item
+                if item_data.get("owners_count", 0) > 0:
+                    owned_items += 1
+        
+        # Count items with relationships
+        items_with_relationships = 0
+        for item_list in [synced_items, local_only_items, remote_only_items]:
+            for item in item_list:
+                # Get the actual item data (handle both combined and direct formats)
+                item_data = item.get("combined", item) if "combined" in item else item
+                if item_data.get("relationships_count", 0) > 0:
+                    items_with_relationships += 1
+        
+        # Count items with custom properties
+        items_with_custom_properties = 0
+        for item_list in [synced_items, local_only_items, remote_only_items]:
+            for item in item_list:
+                # Get the actual item data (handle both combined and direct formats)
+                item_data = item.get("combined", item) if "combined" in item else item
+                if item_data.get("custom_properties_count", 0) > 0:
+                    items_with_custom_properties += 1
+        
+        # Count items with structured properties
+        items_with_structured_properties = 0
+        for item_list in [synced_items, local_only_items, remote_only_items]:
+            for item in item_list:
+                # Get the actual item data (handle both combined and direct formats)
+                item_data = item.get("combined", item) if "combined" in item else item
+                if item_data.get("structured_properties_count", 0) > 0:
+                    items_with_structured_properties += 1
         
         logger.debug(
             f"Categorized glossary items: {len(synced_items)} synced, {len(local_only_items)} local-only, {len(remote_only_items)} remote-only"
         )
+        logger.debug(f"Statistics: {owned_items} owned, {items_with_relationships} with relationships, {items_with_custom_properties} with custom properties, {items_with_structured_properties} with structured properties")
+        
+        # Prepare response data
+        response_data = {
+            "synced_items": synced_items,
+            "local_only_items": local_only_items,
+            "remote_only_items": remote_only_items,
+            "datahub_url": datahub_url,
+            "datahub_token": datahub_token,
+            "statistics": {
+                "total_items": total_items,
+                "synced_count": len(synced_items),
+                "local_count": len(local_only_items),
+                "remote_count": len(remote_only_items),
+                "owned_items": owned_items,
+                "items_with_relationships": items_with_relationships,
+                "items_with_custom_properties": items_with_custom_properties,
+                "items_with_structured_properties": items_with_structured_properties,
+                "percentage_owned": round((owned_items / total_items * 100) if total_items else 0, 1),
+            }
+        }
+        
+        # Apply global sanitization to prevent issues with long descriptions and malformed data
+        sanitized_data = sanitize_api_response(response_data)
         
         return JsonResponse({
             "success": True,
-            "data": {
-                "synced_items": synced_items,
-                "local_only_items": local_only_items,
-                "remote_only_items": remote_only_items,
-                "datahub_url": datahub_url,
-                "statistics": {
-                    "total_items": total_items,
-                    "synced_count": len(synced_items),
-                    "local_count": len(local_only_items),
-                    "remote_count": len(remote_only_items),
-                    "owned_items": owned_items,
-                    "items_with_relationships": items_with_relationships,
-                    "percentage_owned": round((owned_items / total_items * 100) if total_items else 0, 1),
-                }
-            }
+            "data": sanitized_data
         })
         
     except Exception as e:
-        logger.error(f"Error getting comprehensive glossary data: {str(e)}")
+        logger.error(f"Error getting enhanced remote glossary data: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
+
+
+@require_POST
+def glossary_csv_upload(request):
+    """Handle CSV upload for glossary items"""
+    try:
+        # Check if file was uploaded
+        if 'csv_file' not in request.FILES:
+            return JsonResponse({
+                "success": False,
+                "error": "No CSV file uploaded"
+            })
+        
+        csv_file = request.FILES['csv_file']
+        update_existing = request.POST.get('update_existing', 'false').lower() == 'true'
+        dry_run = request.POST.get('dry_run', 'true').lower() == 'true'
+        
+        # Validate file size (10MB limit)
+        if csv_file.size > 10 * 1024 * 1024:
+            return JsonResponse({
+                "success": False,
+                "error": "File size must be less than 10MB"
+            })
+        
+        # Validate file type
+        if not csv_file.name.lower().endswith('.csv'):
+            return JsonResponse({
+                "success": False,
+                "error": "File must be a CSV file"
+            })
+        
+        # Read and parse CSV
+        try:
+            # Decode the file content
+            file_content = csv_file.read().decode('utf-8')
+            csv_reader = csv.DictReader(io.StringIO(file_content))
+            
+            # Validate required columns
+            required_columns = ['name', 'type', 'description']
+            optional_columns = ['parent', 'owner_email', 'owner_group', 'relationships', 'custom_properties']
+            
+            if not all(col in csv_reader.fieldnames for col in required_columns):
+                missing_cols = [col for col in required_columns if col not in csv_reader.fieldnames]
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Missing required columns: {', '.join(missing_cols)}"
+                })
+            
+            # Process CSV rows
+            processed_count = 0
+            created_count = 0
+            updated_count = 0
+            skipped_count = 0
+            errors = []
+            
+            for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 because row 1 is headers
+                try:
+                    # Validate required fields
+                    name = row.get('name', '').strip()
+                    item_type = row.get('type', '').strip().lower()
+                    description = row.get('description', '').strip()
+                    
+                    if not name:
+                        errors.append(f"Row {row_num}: Name is required")
+                        skipped_count += 1
+                        continue
+                    
+                    if item_type not in ['term', 'node']:
+                        errors.append(f"Row {row_num}: Type must be 'term' or 'node', got '{item_type}'")
+                        skipped_count += 1
+                        continue
+                    
+                    # Parse optional fields
+                    parent = row.get('parent', '').strip()
+                    owner_email = row.get('owner_email', '').strip()
+                    owner_group = row.get('owner_group', '').strip()
+                    
+                    # Parse JSON fields
+                    relationships = []
+                    custom_properties = {}
+                    
+                    try:
+                        if row.get('relationships'):
+                            relationships = json.loads(row['relationships'])
+                    except json.JSONDecodeError:
+                        errors.append(f"Row {row_num}: Invalid JSON in relationships field")
+                    
+                    try:
+                        if row.get('custom_properties'):
+                            custom_properties = json.loads(row['custom_properties'])
+                    except json.JSONDecodeError:
+                        errors.append(f"Row {row_num}: Invalid JSON in custom_properties field")
+                    
+                    if not dry_run:
+                        # Create or update the item
+                        if item_type == 'node':
+                            # Handle glossary node
+                            parent_node = None
+                            if parent:
+                                # Try to find parent by name or URN
+                                try:
+                                    parent_node = GlossaryNode.objects.filter(
+                                        models.Q(name=parent) | models.Q(urn=parent)
+                                    ).first()
+                                except:
+                                    pass
+                            
+                            # Check if node already exists
+                            existing_node = GlossaryNode.objects.filter(name=name).first()
+                            
+                            if existing_node:
+                                if update_existing:
+                                    existing_node.description = description
+                                    existing_node.parent = parent_node
+                                    existing_node.save()
+                                    updated_count += 1
+                                else:
+                                    skipped_count += 1
+                                    errors.append(f"Row {row_num}: Node '{name}' already exists (use update_existing to overwrite)")
+                            else:
+                                # Create new node
+                                new_node = GlossaryNode.objects.create(
+                                    name=name,
+                                    description=description,
+                                    parent=parent_node,
+                                    sync_status='LOCAL_ONLY'
+                                )
+                                created_count += 1
+                        
+                        else:  # item_type == 'term'
+                            # Handle glossary term
+                            parent_node = None
+                            if parent:
+                                # Try to find parent by name or URN
+                                try:
+                                    parent_node = GlossaryNode.objects.filter(
+                                        models.Q(name=parent) | models.Q(urn=parent)
+                                    ).first()
+                                except:
+                                    pass
+                            
+                            # Check if term already exists
+                            existing_term = GlossaryTerm.objects.filter(name=name).first()
+                            
+                            if existing_term:
+                                if update_existing:
+                                    existing_term.description = description
+                                    existing_term.parent_node = parent_node
+                                    existing_term.save()
+                                    updated_count += 1
+                                else:
+                                    skipped_count += 1
+                                    errors.append(f"Row {row_num}: Term '{name}' already exists (use update_existing to overwrite)")
+                            else:
+                                # Create new term
+                                new_term = GlossaryTerm.objects.create(
+                                    name=name,
+                                    description=description,
+                                    parent_node=parent_node,
+                                    sync_status='LOCAL_ONLY'
+                                )
+                                created_count += 1
+                    
+                    processed_count += 1
+                    
+                except Exception as e:
+                    errors.append(f"Row {row_num}: Error processing row - {str(e)}")
+                    skipped_count += 1
+            
+            # Prepare response
+            response_data = {
+                "processed_count": processed_count,
+                "created_count": created_count,
+                "updated_count": updated_count,
+                "skipped_count": skipped_count,
+                "errors": errors[:50]  # Limit errors to prevent huge responses
+            }
+            
+            if len(errors) > 50:
+                response_data["errors"].append(f"... and {len(errors) - 50} more errors")
+            
+            return JsonResponse({
+                "success": True,
+                "data": response_data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error parsing CSV file: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"Error parsing CSV file: {str(e)}"
+            })
+    
+    except Exception as e:
+        logger.error(f"Error in CSV upload: {str(e)}")
         return JsonResponse({
             "success": False,
             "error": str(e)

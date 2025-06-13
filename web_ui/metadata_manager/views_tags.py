@@ -19,8 +19,9 @@ sys.path.append(
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name
 from utils.datahub_utils import get_datahub_client, test_datahub_connection
-from web_ui.models import GitSettings
-from .models import Tag, Environment
+from utils.data_sanitizer import sanitize_api_response
+from web_ui.models import GitSettings, Environment
+from .models import Tag
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,8 @@ class TagListView(View):
             name = request.POST.get("name")
             description = request.POST.get("description", "")
             color = request.POST.get("color", "#0d6efd")
+            owners = request.POST.getlist("owners")  # Get list of selected owners
+            ownership_types = request.POST.getlist("ownership_types")  # Get list of ownership types
 
             # If color is empty, set to default color rather than None
             if not color or color.strip() == "":
@@ -103,7 +106,7 @@ class TagListView(View):
                 return redirect("metadata_manager:tag_list")
 
             # Create the tag
-            Tag.objects.create(
+            tag = Tag.objects.create(
                 name=name,
                 description=description,
                 color=color,
@@ -111,7 +114,28 @@ class TagListView(View):
                 sync_status="LOCAL_ONLY",
             )
 
-            messages.success(request, f"Tag '{name}' created successfully")
+            # Store owners information if provided
+            if owners and ownership_types:
+                # Filter out empty values and pair owners with ownership types
+                valid_owners = []
+                for i, owner in enumerate(owners):
+                    if owner.strip() and i < len(ownership_types) and ownership_types[i].strip():
+                        valid_owners.append({
+                            'owner_urn': owner.strip(),
+                            'ownership_type_urn': ownership_types[i].strip()
+                        })
+                
+                if valid_owners:
+                    # Store owners with ownership types as JSON data
+                    tag.ownership_data = {
+                        'owners': valid_owners,
+                        'owners_count': len(valid_owners)
+                    }
+                    tag.owners_count = len(valid_owners)
+                    tag.save(update_fields=['ownership_data', 'owners_count'])
+
+            messages.success(request, f"Tag '{name}' created successfully" + 
+                           (f" with {len(valid_owners)} owner(s)" if 'valid_owners' in locals() and valid_owners else ""))
             return redirect("metadata_manager:tag_list")
         except Exception as e:
             logger.error(f"Error creating tag: {str(e)}")
@@ -805,17 +829,244 @@ class TagEntityView(View):
             )
 
 
+def get_users_and_groups(request):
+    """Get users and groups from DataHub for owner selection with database caching."""
+    try:
+        if request.method != 'POST':
+            return JsonResponse({
+                "success": False,
+                "error": "Only POST method allowed"
+            })
+        
+        data = json.loads(request.body)
+        request_type = data.get('type', 'all')  # Support 'users', 'groups', 'ownership_types', or 'all'
+        force_refresh = data.get('force_refresh', False)
+        
+        from .models import DataHubUser, DataHubGroup, DataHubOwnershipType
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Check cache age (refresh if older than 5 minutes)
+        cache_expiry = timezone.now() - timedelta(minutes=5)
+        
+        if request_type in ['users', 'all']:
+            users_need_refresh = force_refresh or not DataHubUser.objects.filter(last_updated__gte=cache_expiry).exists()
+        else:
+            users_need_refresh = False
+            
+        if request_type in ['groups', 'all']:
+            groups_need_refresh = force_refresh or not DataHubGroup.objects.filter(last_updated__gte=cache_expiry).exists()
+        else:
+            groups_need_refresh = False
+            
+        if request_type in ['ownership_types', 'all']:
+            ownership_types_need_refresh = force_refresh or not DataHubOwnershipType.objects.filter(last_updated__gte=cache_expiry).exists()
+        else:
+            ownership_types_need_refresh = False
+        
+        # If cache is fresh, return cached data
+        if not users_need_refresh and not groups_need_refresh and not ownership_types_need_refresh:
+            logger.info("Using cached users, groups, and ownership types data")
+            
+            result_data = {}
+            if request_type in ['users', 'all']:
+                users = DataHubUser.objects.all().values('urn', 'username', 'display_name', 'email')
+                result_data['users'] = list(users)
+            
+            if request_type in ['groups', 'all']:
+                groups = DataHubGroup.objects.all().values('urn', 'display_name', 'description')
+                result_data['groups'] = list(groups)
+                
+            if request_type in ['ownership_types', 'all']:
+                ownership_types = DataHubOwnershipType.objects.all().values('urn', 'name')
+                result_data['ownership_types'] = list(ownership_types)
+            
+            return JsonResponse({
+                "success": True,
+                "data": result_data if request_type == 'all' else result_data.get(request_type, []),
+                "cached": True
+            })
+        
+        # Need to refresh from DataHub
+        logger.info("Refreshing users and groups from DataHub")
+        
+        # Get DataHub configuration from AppSettings
+        from web_ui.models import AppSettings
+        import os
+        
+        datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", ""))
+        datahub_token = AppSettings.get("datahub_token", os.environ.get("DATAHUB_TOKEN", ""))
+        
+        if not datahub_url:
+            return JsonResponse({
+                "success": False,
+                "error": "DataHub URL is not configured. Please configure it in the Configuration tab."
+            })
+        
+        # Initialize DataHub client  
+        from utils.datahub_rest_client import DataHubRestClient
+        client = DataHubRestClient(datahub_url, datahub_token)
+        
+        # Test connection
+        if not client.test_connection():
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot connect to DataHub"
+            })
+        
+        result_data = {}
+        
+        # Fetch users if needed
+        if users_need_refresh and request_type in ['users', 'all']:
+            users_result = client.list_users(start=0, count=200)
+            
+            if users_result and "users" in users_result:
+                users_data = users_result["users"]
+                
+                # Update database cache
+                DataHubUser.objects.all().delete()  # Clear old cache
+                
+                users_to_create = []
+                for user in users_data:
+                    properties = user.get('properties') or {}
+                    users_to_create.append(DataHubUser(
+                        urn=user['urn'],
+                        username=user.get('username', ''),
+                        display_name=properties.get('displayName', ''),
+                        email=properties.get('email', '')
+                    ))
+                
+                DataHubUser.objects.bulk_create(users_to_create, ignore_conflicts=True)
+                
+                result_data['users'] = [
+                    {
+                        'urn': user['urn'],
+                        'username': user.get('username', ''),
+                        'display_name': user.get('properties', {}).get('displayName', ''),
+                        'email': user.get('properties', {}).get('email', '')
+                    }
+                    for user in users_data
+                ]
+                
+                logger.info(f"Cached {len(users_data)} users")
+            else:
+                logger.error("Failed to fetch users from DataHub")
+                if request_type == 'users':
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Failed to fetch users from DataHub"
+                    })
+        
+        # Fetch groups if needed
+        if groups_need_refresh and request_type in ['groups', 'all']:
+            groups_result = client.list_groups(start=0, count=200)
+            
+            if groups_result and "groups" in groups_result:
+                groups_data = groups_result["groups"]
+                
+                # Update database cache
+                DataHubGroup.objects.all().delete()  # Clear old cache
+                
+                groups_to_create = []
+                for group in groups_data:
+                    properties = group.get('properties') or {}
+                    groups_to_create.append(DataHubGroup(
+                        urn=group['urn'],
+                        display_name=properties.get('displayName', ''),
+                        description=properties.get('description', '')
+                    ))
+                
+                DataHubGroup.objects.bulk_create(groups_to_create, ignore_conflicts=True)
+                
+                result_data['groups'] = [
+                    {
+                        'urn': group['urn'],
+                        'display_name': group.get('properties', {}).get('displayName', ''),
+                        'description': group.get('properties', {}).get('description', '')
+                    }
+                    for group in groups_data
+                ]
+                
+                logger.info(f"Cached {len(groups_data)} groups")
+            else:
+                logger.error("Failed to fetch groups from DataHub")
+                if request_type == 'groups':
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Failed to fetch groups from DataHub"
+                    })
+        
+        # Fetch ownership types if needed
+        if ownership_types_need_refresh and request_type in ['ownership_types', 'all']:
+            ownership_types_result = client.list_ownership_types(start=0, count=100)
+            
+            if ownership_types_result and "ownershipTypes" in ownership_types_result:
+                ownership_types_data = ownership_types_result["ownershipTypes"]
+                
+                # Update database cache
+                DataHubOwnershipType.objects.all().delete()  # Clear old cache
+                
+                ownership_types_to_create = []
+                for ownership_type in ownership_types_data:
+                    info = ownership_type.get('info') or {}
+                    ownership_types_to_create.append(DataHubOwnershipType(
+                        urn=ownership_type['urn'],
+                        name=info.get('name', '')
+                    ))
+                
+                DataHubOwnershipType.objects.bulk_create(ownership_types_to_create, ignore_conflicts=True)
+                
+                result_data['ownership_types'] = [
+                    {
+                        'urn': ownership_type['urn'],
+                        'name': ownership_type.get('info', {}).get('name', '')
+                    }
+                    for ownership_type in ownership_types_data
+                ]
+                
+                logger.info(f"Cached {len(ownership_types_data)} ownership types")
+            else:
+                logger.error("Failed to fetch ownership types from DataHub")
+                if request_type == 'ownership_types':
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Failed to fetch ownership types from DataHub"
+                    })
+        
+        # Apply sanitization to prevent issues with long descriptions and malformed data
+        sanitized_result = sanitize_api_response(result_data if request_type == 'all' else result_data.get(request_type, []))
+        
+        # Return fresh data
+        return JsonResponse({
+            "success": True,
+            "data": sanitized_result,
+            "cached": False
+        })
+            
+    except Exception as e:
+        logger.error(f"Error getting users and groups: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
+
+
 def get_remote_tags_data(request):
     """Get comprehensive tags data with local/remote/synced categorization and enhanced information."""
     try:
         logger.info("Loading comprehensive tags data via AJAX")
         
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
+        # Get DataHub configuration from AppSettings (same as main views)
+        from web_ui.models import AppSettings
+        import os
+        
+        datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", ""))
+        datahub_token = AppSettings.get("datahub_token", os.environ.get("DATAHUB_TOKEN", ""))
+        
+        if not datahub_url:
             return JsonResponse({
                 "success": False,
-                "error": "No active environment configured"
+                "error": "DataHub URL is not configured. Please configure it in the Configuration tab."
             })
         
         # Get parameters
@@ -825,7 +1076,7 @@ def get_remote_tags_data(request):
         
         # Initialize DataHub client  
         from utils.datahub_rest_client import DataHubRestClient
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        client = DataHubRestClient(datahub_url, datahub_token)
         
         # Test connection
         if not client.test_connection():
@@ -944,12 +1195,12 @@ def get_remote_tags_data(request):
         owned_tags = sum(1 for tag_list in [synced_tags, local_only_tags, remote_only_tags] 
                         for tag in tag_list 
                         if (tag.get("combined", tag) if "combined" in tag else tag).get("owners_count", 0) > 0)
-        tags_with_relationships = sum(1 for tag_list in [synced_tags, local_only_tags, remote_only_tags]
-                                    for tag in tag_list
-                                    if (tag.get("combined", tag) if "combined" in tag else tag).get("relationships_count", 0) > 0)
+        deprecated_tags = sum(1 for tag_list in [synced_tags, local_only_tags, remote_only_tags]
+                            for tag in tag_list
+                            if (tag.get("combined", tag) if "combined" in tag else tag).get("deprecated", False) or 
+                               (tag.get("combined", tag) if "combined" in tag else tag).get("properties", {}).get("deprecated", False))
         
         # Get DataHub URL for external links
-        datahub_url = environment.datahub_url
         if datahub_url.endswith("/api/gms"):
             datahub_url = datahub_url[:-8]
         
@@ -957,23 +1208,29 @@ def get_remote_tags_data(request):
             f"Categorized tags: {len(synced_tags)} synced, {len(local_only_tags)} local-only, {len(remote_only_tags)} remote-only"
         )
         
+        # Prepare response data
+        response_data = {
+            "synced_tags": synced_tags,
+            "local_only_tags": local_only_tags,
+            "remote_only_tags": remote_only_tags,
+            "datahub_url": datahub_url,
+            "statistics": {
+                "total_tags": total_tags,
+                "synced_count": len(synced_tags),
+                "local_count": len(local_only_tags),
+                "remote_count": len(remote_only_tags),
+                "owned_tags": owned_tags,
+                "deprecated_tags": deprecated_tags,
+                "percentage_owned": round((owned_tags / total_tags * 100) if total_tags else 0, 1),
+            }
+        }
+        
+        # Apply global sanitization to prevent issues with long descriptions and malformed data
+        sanitized_data = sanitize_api_response(response_data)
+        
         return JsonResponse({
             "success": True,
-            "data": {
-                "synced_tags": synced_tags,
-                "local_only_tags": local_only_tags,
-                "remote_only_tags": remote_only_tags,
-                "datahub_url": datahub_url,
-                "statistics": {
-                    "total_tags": total_tags,
-                    "synced_count": len(synced_tags),
-                    "local_count": len(local_only_tags),
-                    "remote_count": len(remote_only_tags),
-                    "owned_tags": owned_tags,
-                    "tags_with_relationships": tags_with_relationships,
-                    "percentage_owned": round((owned_tags / total_tags * 100) if total_tags else 0, 1),
-                }
-            }
+            "data": sanitized_data
         })
         
     except Exception as e:

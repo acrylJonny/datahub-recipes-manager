@@ -287,9 +287,15 @@ function updateStatistics(statistics) {
 }
 
 function updateFilterRows() {
+    console.log('=== UPDATING FILTER ROWS ===');
+    console.log('propertiesData.filters:', propertiesData.filters);
+    
     // Update value type filters
     const valueTypeContainer = document.getElementById('value-type-filters');
+    console.log('valueTypeContainer found:', !!valueTypeContainer);
+    
     if (valueTypeContainer && propertiesData.filters && propertiesData.filters.value_types) {
+        console.log('Creating value type filters:', propertiesData.filters.value_types);
         valueTypeContainer.innerHTML = '';
         
         Object.entries(propertiesData.filters.value_types).forEach(([valueType, count]) => {
@@ -315,7 +321,10 @@ function updateFilterRows() {
     
     // Update entity type filters
     const entityTypeContainer = document.getElementById('entity-type-filters');
+    console.log('entityTypeContainer found:', !!entityTypeContainer);
+    
     if (entityTypeContainer && propertiesData.filters && propertiesData.filters.entity_types) {
+        console.log('Creating entity type filters:', propertiesData.filters.entity_types);
         entityTypeContainer.innerHTML = '';
         
         Object.entries(propertiesData.filters.entity_types).forEach(([entityType, count]) => {
@@ -347,6 +356,38 @@ function toggleFilter(filterType, value) {
     } else {
         currentFilters.add(filterKey);
     }
+}
+
+function applyFilters(items) {
+    if (currentFilters.size === 0) {
+        return items;
+    }
+    
+    return items.filter(property => {
+        // Check value type filters
+        const valueTypeFilters = Array.from(currentFilters).filter(f => f.startsWith('valueType:'));
+        if (valueTypeFilters.length > 0) {
+            const valueTypeMatch = valueTypeFilters.some(filter => {
+                const filterValue = filter.split(':')[1];
+                return property.value_type && property.value_type === filterValue;
+            });
+            if (!valueTypeMatch) return false;
+        }
+        
+        // Check entity type filters
+        const entityTypeFilters = Array.from(currentFilters).filter(f => f.startsWith('entityType:'));
+        if (entityTypeFilters.length > 0) {
+            const entityTypeMatch = entityTypeFilters.some(filter => {
+                const filterValue = filter.split(':')[1];
+                return property.entity_types && property.entity_types.some(type => 
+                    type === filterValue
+                );
+            });
+            if (!entityTypeMatch) return false;
+        }
+        
+        return true;
+    });
 }
 
 function determineDefaultTab() {
@@ -403,7 +444,8 @@ function refreshCurrentTab() {
     const activeTab = document.querySelector('.nav-link.active');
     if (activeTab) {
         const tabType = activeTab.id.replace('-tab', '');
-        loadTabContent(tabType);
+        console.log('Refreshing current tab:', tabType);
+        renderTab(`${tabType}-items`);
     }
 }
 
@@ -461,20 +503,24 @@ function renderTab(tabId) {
         console.log(`After search filter: ${items.length} items`);
     }
     
+    // Apply filters
+    items = applyFilters(items);
+    console.log(`After applying filters: ${items.length} items`);
+    
     // Render table directly like domains does
     let html = `
         <div class="table-responsive">
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}"></th>
+                        <th width="40px"><input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}"></th>
                         <th class="sortable-header" data-sort="name">Name</th>
-                        <th class="sortable-header" data-sort="urn">URN</th>
-                        <th class="sortable-header" data-sort="value_type">Type</th>
+                        <th width="200px" class="sortable-header" data-sort="urn">URN</th>
+                        <th class="sortable-header" data-sort="value_type">Value Type</th>
                         <th class="sortable-header" data-sort="cardinality">Cardinality</th>
                         <th class="sortable-header" data-sort="entity_types">Entity Types</th>
                         <th>Description</th>
-                        <th>Actions</th>
+                        <th width="200px">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -538,12 +584,16 @@ function renderPropertiesTable(properties, tabType, container) {
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
+                        <th width="40px">
+                            <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
+                        </th>
                         <th>Name</th>
-                        <th>Type</th>
+                        <th width="200px">URN</th>
+                        <th>Value Type</th>
                         <th>Cardinality</th>
                         <th>Entity Types</th>
                         <th>Description</th>
-                        <th>Actions</th>
+                        <th width="200px">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -563,15 +613,18 @@ function renderPropertiesTable(properties, tabType, container) {
 
 function renderPropertyRow(property, tabType) {
     // Debug logging
-    console.log('renderPropertyRow called with:', property);
-    console.log('Property name:', property.name);
-    console.log('Property status:', property.status);
+    console.log('renderPropertyRow called with:', property.name, property.urn);
+    console.log('Entity types:', property.entity_types);
+    console.log('Value type:', property.value_type);
     
     const statusBadge = getStatusBadge(property.status);
     const actionButtons = getActionButtons(property, tabType);
     
     // Handle missing name gracefully
     const propertyName = property.name || property.qualified_name || 'Unnamed Property';
+    const propertyUrn = property.urn || '';
+    
+    console.log('URN for truncation:', propertyUrn, 'truncated:', truncateUrn(propertyUrn, 40));
     
     return `
         <tr>
@@ -585,8 +638,8 @@ function renderPropertyRow(property, tabType) {
                 </div>
                 <small class="text-muted">${escapeHtml(property.qualified_name || '')}</small>
             </td>
-            <td>
-                <code class="text-muted small">${escapeHtml(property.urn || '-')}</code>
+            <td class="urn-cell">
+                <code class="text-muted small urn-truncate" title="${escapeHtml(propertyUrn)}">${escapeHtml(truncateUrn(propertyUrn, 40))}</code>
             </td>
             <td>
                 <span class="badge bg-info">${escapeHtml(property.value_type || 'STRING')}</span>
@@ -1225,16 +1278,11 @@ function escapeHtml(text) {
 }
 
 function renderEntityTypes(entityTypes, valueType) {
-    // Only show entity types if the property value type is URN
-    if (!valueType || valueType.toUpperCase() !== 'URN') {
-        return '<span class="text-muted">-</span>';
-    }
-    
     if (!entityTypes || entityTypes.length === 0) {
         return '<span class="text-muted">-</span>';
     }
     
-    // For URN value types, show all entity types
+    // Show entity types for all properties with relative font size
     const validTypes = entityTypes.filter(type => {
         return typeof type === 'string' && type.trim() !== '';
     });
@@ -1244,8 +1292,15 @@ function renderEntityTypes(entityTypes, valueType) {
     }
     
     return validTypes.map(type => 
-        `<span class="badge bg-light text-dark me-1">${escapeHtml(type)}</span>`
+        `<span class="badge bg-light text-dark entity-type-badge">${escapeHtml(type)}</span>`
     ).join('');
+}
+
+function truncateUrn(urn, maxLength) {
+    if (!urn || urn.length <= maxLength) return urn;
+    
+    // Keep the beginning of the URN and truncate from the end
+    return urn.substring(0, maxLength - 3) + '...';
 }
 
 function updateBulkActionsVisibility() {
@@ -1345,4 +1400,4 @@ function bulkAddToPR(tabType) {
             }
         });
     }
-} 
+}

@@ -1075,6 +1075,35 @@ let currentPagination = {
     remote: { page: 1, perPage: 25 }
 };
 
+// Universal function to sanitize data for HTML attributes to prevent URI length issues
+function sanitizeDataForAttribute(item, maxDescriptionLength = 500) {
+    if (!item || typeof item !== 'object') {
+        return item;
+    }
+    
+    const sanitized = { ...item };
+    
+    // Truncate description if it's too long
+    if (sanitized.description && typeof sanitized.description === 'string' && sanitized.description.length > maxDescriptionLength) {
+        sanitized.description = sanitized.description.substring(0, maxDescriptionLength) + '...[truncated]';
+    }
+    
+    // Truncate properties.description if it exists
+    if (sanitized.properties && sanitized.properties.description && 
+        typeof sanitized.properties.description === 'string' && 
+        sanitized.properties.description.length > maxDescriptionLength) {
+        sanitized.properties = {
+            ...sanitized.properties,
+            description: sanitized.properties.description.substring(0, maxDescriptionLength) + '...[truncated]'
+        };
+    }
+    
+    // Remove potentially large raw data objects
+    sanitized.raw_data = undefined;
+    
+    return sanitized;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     loadAssertionsData();
     
@@ -1623,7 +1652,7 @@ function renderAssertionRow(assertion, tabType) {
     const checkboxId = `assertion-${assertion.id || assertion.urn?.replace(/[^a-zA-Z0-9]/g, '_')}`;
     
     return `
-        <tr data-item='${JSON.stringify(assertion)}' data-assertion-id="${assertion.id || ''}" data-assertion-urn="${escapeHtml(assertion.urn || '')}">
+        <tr data-item='${JSON.stringify(sanitizeDataForAttribute(assertion))}' data-assertion-id="${assertion.id || ''}" data-assertion-urn="${escapeHtml(assertion.urn || '')}">
             <td class="checkbox-column">
                 <input type="checkbox" class="form-check-input assertion-checkbox" id="${checkboxId}" data-tab="${tabType}">
             </td>
@@ -2857,6 +2886,10 @@ function getScheduleInfo(assertion, info) {
 function generateDataHubUrl(asserteeUrn) {
     if (!asserteeUrn) return '';
     
+    // Use the dynamic DataHub URL from the loaded data
+    const baseUrl = assertionsData.datahub_url;
+    if (!baseUrl) return '';
+    
     // Extract entity type from URN
     const urnParts = asserteeUrn.split(':');
     if (urnParts.length < 3) return '';
@@ -2866,13 +2899,13 @@ function generateDataHubUrl(asserteeUrn) {
     // Generate URL based on entity type
     switch (entityType) {
         case 'dataset':
-            return `https://dev04.acryl.io/dataset/${encodeURIComponent(asserteeUrn)}/Quality/List?separate_siblings=false`;
+            return `${baseUrl}/dataset/${encodeURIComponent(asserteeUrn)}/Quality/List?separate_siblings=false`;
         case 'chart':
-            return `https://dev04.acryl.io/chart/${encodeURIComponent(asserteeUrn)}`;
+            return `${baseUrl}/chart/${encodeURIComponent(asserteeUrn)}`;
         case 'dashboard':
-            return `https://dev04.acryl.io/dashboard/${encodeURIComponent(asserteeUrn)}`;
+            return `${baseUrl}/dashboard/${encodeURIComponent(asserteeUrn)}`;
         default:
-            return `https://dev04.acryl.io/entity/${encodeURIComponent(asserteeUrn)}`;
+            return `${baseUrl}/entity/${encodeURIComponent(asserteeUrn)}`;
     }
 }
 

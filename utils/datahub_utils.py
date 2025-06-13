@@ -39,11 +39,18 @@ def get_datahub_client():
             # Log the URL being used (without token)
             logger.debug(f"Using DataHub URL from settings: {datahub_url}")
 
-            # If we have both URL and token from AppSettings, use them
-            if datahub_url and datahub_token:
+            # If we have URL from AppSettings, use it (token is optional)
+            if datahub_url:
                 logger.info("Creating DataHub client with settings from AppSettings")
+                
+                # Get timeout setting
+                timeout = AppSettings.get_int("timeout", 30)  # Default 30 seconds
+                
                 client = DataHubRestClient(
-                    server_url=datahub_url, token=datahub_token, verify_ssl=verify_ssl
+                    server_url=datahub_url, 
+                    token=datahub_token if datahub_token else None, 
+                    verify_ssl=verify_ssl,
+                    timeout=timeout
                 )
                 return client
 

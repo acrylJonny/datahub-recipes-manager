@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load metadata_manager_filters %}
 
 {% block content %}
 <div class="container-fluid mt-4">
@@ -211,7 +212,7 @@
                             </div>
                             
                             {% if has_datahub_connection and datahub_url and term.domain_urn %}
-                            <a href="{{ datahub_url }}/domain/{{ term.domain_urn|urlencode:'' }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                                            <a href="{{ datahub_url|datahub_domain_url:term.domain_urn }}" target="_blank" class="btn btn-outline-primary btn-sm">
                                 <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                             </a>
                             {% endif %}
@@ -320,7 +321,7 @@
                                                 <td><code>{{ entity.urn }}</code></td>
                                                 <td>
                                                     {% if datahub_url %}
-                                                    <a href="{{ datahub_url }}/{{ entity.type|lower }}/{{ entity.urn|urlencode:'' }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                    <a href="{{ datahub_url|datahub_entity_url:entity }}" target="_blank" class="btn btn-sm btn-outline-primary">
                                                         <i class="fas fa-external-link-alt"></i> View
                                                     </a>
                                                     {% endif %}
@@ -335,7 +336,7 @@
                                 <div class="py-3 text-center">
                                     <p class="text-muted">Showing {{ related_entities|length }} of {{ total_related }} related entities.</p>
                                     {% if datahub_url %}
-                                    <a href="{{ datahub_url }}/glossaryTerm/{{ term.deterministic_urn|urlencode:'' }}" target="_blank" class="btn btn-outline-primary">
+                                                                                <a href="{{ datahub_url|datahub_glossary_term_url:term.deterministic_urn }}" target="_blank" class="btn btn-outline-primary">
                                         <i class="fas fa-external-link-alt me-1"></i> View All in DataHub
                                     </a>
                                     {% endif %}
@@ -372,7 +373,7 @@
                             </div>
                             
                             {% if datahub_url %}
-                            <a href="{{ datahub_url }}/glossaryTerm/{{ remote_term.urn|urlencode:''}}" target="_blank" class="btn btn-outline-primary">
+                            <a href="{{ datahub_url|datahub_glossary_term_url:remote_term.urn }}" target="_blank" class="btn btn-outline-primary">
                                 <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                             </a>
                             {% endif %}

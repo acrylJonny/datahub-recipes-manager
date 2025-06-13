@@ -9,6 +9,7 @@ from django.views import View
 from django.http import JsonResponse
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.utils.decorators import method_decorator
 from django.utils import timezone
 from django.db import models
@@ -18,7 +19,7 @@ import sys
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from utils.datahub_utils import test_datahub_connection
+from utils.datahub_utils import test_datahub_connection, get_datahub_client
 from utils.urn_utils import get_full_urn_from_name
 from .models import DataProduct, Environment
 
@@ -1418,4 +1419,70 @@ def create_local_data_product_comprehensive(request):
         return JsonResponse({
             "success": False,
             "error": str(e)
-        }) 
+        })
+
+
+@require_http_methods(["GET"])
+def get_data_products(request):
+    """
+    Get data products from DataHub.
+    
+    Args:
+        request: The HTTP request
+        
+    Returns:
+        JsonResponse: The data products in JSON format
+    """
+    try:
+        # Get query parameters
+        query = request.GET.get("query", "*")
+        start = int(request.GET.get("start", 0))
+        count = int(request.GET.get("count", 20))
+        
+        logger.info(f"Getting Data Products: query='{query}', start={start}, count={count}")
+        
+        # Get client using standard configuration
+        client = get_datahub_client()
+        if not client:
+            return JsonResponse({
+                "success": False,
+                "error": "Not connected to DataHub"
+            }, status=400)
+            
+        # Get data products from DataHub
+        result = client.get_data_products(
+            start=start,
+            count=count,
+            query=query
+        )
+        
+        if not result.get("success", False):
+            logger.error(f"Error getting data products from DataHub: {result.get('error', 'Unknown error')}")
+            return JsonResponse({
+                "success": False,
+                "error": result.get("error", "Failed to get data products from DataHub")
+            }, status=500)
+            
+        # Structure the response  
+        response_data = {
+            "start": result["data"].get("start", 0),
+            "count": result["data"].get("count", 0),
+            "total": result["data"].get("total", 0),
+            "searchResults": result["data"].get("searchResults", [])
+        }
+        
+        # Wrap in the expected structure for the frontend
+        response = {
+            "success": True,
+            "data": response_data
+        }
+        
+        logger.info(f"Found {len(response_data['searchResults'])} data products")
+        
+        return JsonResponse(response)
+    except Exception as e:
+        logger.error(f"Error in get_data_products: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500) 
