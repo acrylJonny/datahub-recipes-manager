@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Mutation - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Delete Mutation</h1>
+            <p class="text-muted">Confirm deletion of metadata mutation</p>
+        </div>
+        <div>
+            <a href="{% url 'environments' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Environments
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-exclamation-triangle me-2"></i>Confirm Deletion
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Warning:</strong> This action cannot be undone. The mutation will be permanently deleted.
+            </div>
+
+            <h6>Mutation Details</h6>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <strong>Name:</strong> {{ mutation.name }}
+                </div>
+                <div class="col-md-6">
+                    <strong>Platform Instance:</strong> <code>{{ mutation.platform_instance }}</code>
+                </div>
+            </div>
+            
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <strong>Environment:</strong> <code>{{ mutation.env }}</code>
+                </div>
+                <div class="col-md-6">
+                    <strong>Created:</strong> {{ mutation.created_at|date:"Y-m-d H:i" }}
+                </div>
+            </div>
+
+            {% if mutation.description %}
+            <div class="mb-3">
+                <strong>Description:</strong> {{ mutation.description }}
+            </div>
+            {% endif %}
+
+            {% if mutation.custom_properties %}
+            <div class="mb-3">
+                <strong>Custom Properties:</strong>
+                <pre class="bg-light p-2 rounded"><code>{{ mutation.custom_properties|safe }}</code></pre>
+            </div>
+            {% endif %}
+
+            {% if env_count > 0 %}
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    <strong>Cannot delete this mutation!</strong> 
+                    It is currently being used by {{ env_count }} environment{{ env_count|pluralize }}.
+                    Please remove the mutation from all environments before deleting it.
+                </div>
+            {% else %}
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle me-2"></i>
+                    This mutation is not currently in use and can be safely deleted.
+                </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-end">
+                <a href="{% url 'environments' %}" class="btn btn-secondary me-2">Cancel</a>
+                {% if env_count == 0 %}
+                    <form method="post" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash me-1"></i> Delete Mutation
+                        </button>
+                    </form>
+                {% else %}
+                    <button type="button" class="btn btn-danger" disabled>
+                        <i class="fas fa-trash me-1"></i> Cannot Delete
+                    </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

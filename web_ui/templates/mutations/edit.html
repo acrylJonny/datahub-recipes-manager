@@ -1,0 +1,248 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Mutation - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2">Edit Mutation</h1>
+            <p class="text-muted">Modify metadata mutation configuration</p>
+        </div>
+        <div>
+            <a href="{% url 'environments' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Environments
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Mutation Details</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" id="mutationForm">
+                {% csrf_token %}
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="name" name="name" 
+                                   value="{{ form_data.name|default:mutation.name }}" required>
+                            <div class="form-text">Unique identifier for this mutation</div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="platform_instance" class="form-label">Platform Instance <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="platform_instance" name="platform_instance" 
+                                   value="{{ form_data.platform_instance|default:mutation.platform_instance }}" required>
+                            <div class="form-text">Platform instance identifier (e.g., prod-snowflake, dev-postgres)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="env" class="form-label">Environment <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="env" name="env" 
+                                   value="{{ form_data.env|default:mutation.env }}" required>
+                            <div class="form-text">Environment identifier (e.g., PROD, DEV, STAGING)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="description" class="form-label">Description</label>
+                    <textarea class="form-control" id="description" name="description" rows="3">{{ form_data.description|default:mutation.description }}</textarea>
+                    <div class="form-text">Optional description of what this mutation does</div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Custom Properties</label>
+                    <div class="form-text mb-2">
+                        Add key-value pairs for custom properties that will be applied during metadata transformation.
+                        <a href="#" data-bs-toggle="modal" data-bs-target="#customPropertiesHelp">View examples</a>
+                    </div>
+                    
+                    <div id="customPropertiesContainer">
+                        <!-- Properties will be populated by JavaScript -->
+                    </div>
+                    
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="addProperty">
+                        <i class="fas fa-plus me-1"></i> Add Property
+                    </button>
+                    
+                    <!-- Hidden field to store JSON -->
+                    <input type="hidden" id="custom_properties" name="custom_properties" value="{{ mutation.custom_properties|default:'{}'|safe }}">
+                </div>
+
+                <div class="d-flex justify-content-end">
+                    <a href="{% url 'environments' %}" class="btn btn-secondary me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Update Mutation
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Custom Properties Help Modal -->
+<div class="modal fade" id="customPropertiesHelp" tabindex="-1" aria-labelledby="customPropertiesHelpLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="customPropertiesHelpLabel">Custom Properties Examples</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Custom properties allow you to define additional metadata transformations. Here are some examples:</p>
+                
+                <h6>Basic Properties</h6>
+                <ul>
+                    <li><strong>owner:</strong> data-team</li>
+                    <li><strong>criticality:</strong> high</li>
+                    <li><strong>data_classification:</strong> sensitive</li>
+                </ul>
+
+                <h6>Transformation Rules</h6>
+                <ul>
+                    <li><strong>tag_prefix:</strong> prod_</li>
+                    <li><strong>default_domain:</strong> finance_domain</li>
+                    <li><strong>retention_days:</strong> 365</li>
+                </ul>
+
+                <h6>Environment-specific Settings</h6>
+                <ul>
+                    <li><strong>backup_enabled:</strong> true</li>
+                    <li><strong>monitoring_level:</strong> detailed</li>
+                    <li><strong>alert_threshold:</strong> 0.95</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const container = document.getElementById('customPropertiesContainer');
+    const addButton = document.getElementById('addProperty');
+    const hiddenInput = document.getElementById('custom_properties');
+    const form = document.getElementById('mutationForm');
+
+    // Load existing properties
+    function loadExistingProperties() {
+        const existingProperties = JSON.parse(hiddenInput.value || '{}');
+        
+        // Clear container
+        container.innerHTML = '';
+        
+        // Add existing properties
+        Object.entries(existingProperties).forEach(([key, value]) => {
+            addPropertyRow(key, value);
+        });
+        
+        // Add empty row if no properties exist
+        if (Object.keys(existingProperties).length === 0) {
+            addPropertyRow('', '');
+        }
+        
+        updateRemoveButtons();
+    }
+
+    // Add property row
+    function addPropertyRow(key = '', value = '') {
+        const newRow = document.createElement('div');
+        newRow.className = 'custom-property-row mb-2';
+        newRow.innerHTML = `
+            <div class="row g-2">
+                <div class="col-md-5">
+                    <input type="text" class="form-control property-key" placeholder="Property key" name="property_keys[]" value="${key}">
+                </div>
+                <div class="col-md-5">
+                    <input type="text" class="form-control property-value" placeholder="Property value" name="property_values[]" value="${value}">
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-outline-danger btn-sm remove-property" title="Remove property">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(newRow);
+    }
+
+    // Add new property row
+    addButton.addEventListener('click', function() {
+        addPropertyRow('', '');
+        updateRemoveButtons();
+    });
+
+    // Remove property row
+    container.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-property')) {
+            const row = e.target.closest('.custom-property-row');
+            row.remove();
+            updateRemoveButtons();
+            updateHiddenInput();
+        }
+    });
+
+    // Update remove buttons visibility
+    function updateRemoveButtons() {
+        const rows = container.querySelectorAll('.custom-property-row');
+        rows.forEach((row, index) => {
+            const removeBtn = row.querySelector('.remove-property');
+            // Always show remove button if there's more than one row
+            removeBtn.style.display = rows.length > 1 ? 'inline-block' : 'none';
+        });
+    }
+
+    // Update hidden input with JSON
+    function updateHiddenInput() {
+        const properties = {};
+        const keys = container.querySelectorAll('.property-key');
+        const values = container.querySelectorAll('.property-value');
+        
+        keys.forEach((keyInput, index) => {
+            const key = keyInput.value.trim();
+            const value = values[index].value.trim();
+            if (key && value) {
+                properties[key] = value;
+            }
+        });
+        
+        hiddenInput.value = JSON.stringify(properties);
+    }
+
+    // Update hidden input when inputs change
+    container.addEventListener('input', updateHiddenInput);
+
+    // Update on form submit
+    form.addEventListener('submit', function() {
+        updateHiddenInput();
+    });
+
+    // Initialize
+    loadExistingProperties();
+});
+</script>
+{% endblock %} 

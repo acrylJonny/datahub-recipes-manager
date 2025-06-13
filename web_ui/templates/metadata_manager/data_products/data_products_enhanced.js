@@ -8,6 +8,22 @@ let currentSyncedPage = 1;
 let currentLocalPage = 1;
 let currentRemotePage = 1;
 
+// Sorting variables
+let currentSort = {
+    column: null,
+    direction: 'asc',
+    tabType: null
+};
+
+// User, group, and ownership type cache
+let usersAndGroupsCache = {
+    users: [],
+    groups: [],
+    ownership_types: [],
+    lastFetched: null,
+    cacheExpiry: 5 * 60 * 1000 // 5 minutes
+};
+
 // DOM ready
 document.addEventListener('DOMContentLoaded', function() {
     loadDataProductsData();
@@ -305,6 +321,11 @@ function renderTab(tabId) {
         });
     }
     
+    // Apply sorting
+    if (currentSort.column && currentSort.tabType === tabType) {
+        products = sortProducts(products, currentSort.column, currentSort.direction);
+    }
+    
     // Get current page for this tab
     let currentPage;
     switch (tabType) {
@@ -341,14 +362,21 @@ function renderTab(tabId) {
                         <th class="checkbox-column">
                             <input type="checkbox" class="form-check-input" onclick="toggleAllInTab('${tabType}')">
                         </th>
-                        <th>Name</th>
-                        <th>Domain</th>
+                        <th class="sortable" data-column="name" data-tab="${tabType}" style="cursor: pointer;">
+                            Name ${getSortIcon('name', tabType)}
+                        </th>
+                        <th class="sortable" data-column="domain" data-tab="${tabType}" style="cursor: pointer;">
+                            Domain ${getSortIcon('domain', tabType)}
+                        </th>
                         <th>Description</th>
-                        <th>Entities</th>
-                        <th>URN</th>
-                        <th>Status</th>
-                        <th>Owners</th>
+                        <th class="sortable" data-column="entities" data-tab="${tabType}" style="cursor: pointer;">
+                            Entities ${getSortIcon('entities', tabType)}
+                        </th>
+                        <th class="sortable" data-column="owners" data-tab="${tabType}" style="cursor: pointer;">
+                            Owners ${getSortIcon('owners', tabType)}
+                        </th>
                         <th>Relationships</th>
+                        <th>URN</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -361,6 +389,9 @@ function renderTab(tabId) {
     `;
     
     contentDiv.innerHTML = tableHTML;
+    
+    // Attach sorting handlers
+    attachSortingHandlers(contentDiv, tabType);
 }
 
 function renderProductRow(product, tabType) {
@@ -397,12 +428,6 @@ function renderProductRow(product, tabType) {
                 <span class="badge bg-primary">${entityCount}</span>
             </td>
             <td>
-                <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(urn)}">${escapeHtml(truncateUrn(urn, 30))}</code>
-            </td>
-            <td>
-                <span class="badge ${statusClass}">${product.sync_status_display || product.sync_status}</span>
-            </td>
-            <td>
                 ${product.owners_count ? `
                     <div class="d-flex align-items-center">
                         <i class="fas fa-users me-1"></i>
@@ -420,6 +445,9 @@ function renderProductRow(product, tabType) {
                         <span class="badge bg-secondary">${product.relationships_count}</span>
                     </div>
                 ` : `<span class="text-muted">None</span>`}
+            </td>
+            <td>
+                <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(urn)}">${escapeHtml(truncateUrn(urn, 30))}</code>
             </td>
             <td>
                 <div class="btn-group" role="group">
@@ -664,11 +692,129 @@ function showError(message) {
     document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
 }
 
+// Load users and groups for ownership lookup
+async function loadUsersAndGroups() {
+    const now = Date.now();
+    
+    // Check if cache is still valid
+    if (usersAndGroupsCache.lastFetched && 
+        (now - usersAndGroupsCache.lastFetched) < usersAndGroupsCache.cacheExpiry &&
+        usersAndGroupsCache.users.length > 0) {
+        return usersAndGroupsCache;
+    }
+    
+    try {
+        const response = await fetch('/metadata/api/users-and-groups/', {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        usersAndGroupsCache = {
+            users: data.users || [],
+            groups: data.groups || [],
+            ownership_types: data.ownership_types || [],
+            lastFetched: now,
+            cacheExpiry: 5 * 60 * 1000
+        };
+        
+        return usersAndGroupsCache;
+    } catch (error) {
+        console.error('Error loading users and groups:', error);
+        return usersAndGroupsCache;
+    }
+}
+
+// Sorting functions
+function getSortIcon(column, tabType) {
+    if (currentSort.column !== column || currentSort.tabType !== tabType) {
+        return '<i class="fas fa-sort text-muted ms-1"></i>';
+    }
+    
+    if (currentSort.direction === 'asc') {
+        return '<i class="fas fa-sort-up text-primary ms-1"></i>';
+    } else {
+        return '<i class="fas fa-sort-down text-primary ms-1"></i>';
+    }
+}
+
+function attachSortingHandlers(contentDiv, tabType) {
+    const sortableHeaders = contentDiv.querySelectorAll('.sortable');
+    
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const column = this.getAttribute('data-column');
+            const tab = this.getAttribute('data-tab');
+            
+            // Toggle direction if same column, otherwise default to asc
+            if (currentSort.column === column && currentSort.tabType === tab) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+                currentSort.tabType = tab;
+            }
+            
+            // Re-render the tab with new sorting
+            renderTab(`${tabType}-items`);
+        });
+    });
+}
+
+function sortProducts(products, column, direction) {
+    return products.sort((a, b) => {
+        let aValue = getSortValue(a, column);
+        let bValue = getSortValue(b, column);
+        
+        // Handle null/undefined values
+        if (aValue === null || aValue === undefined) aValue = '';
+        if (bValue === null || bValue === undefined) bValue = '';
+        
+        // Convert to strings for comparison if needed
+        if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+        if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+        
+        let comparison = 0;
+        if (aValue < bValue) comparison = -1;
+        if (aValue > bValue) comparison = 1;
+        
+        return direction === 'desc' ? -comparison : comparison;
+    });
+}
+
+function getSortValue(product, column) {
+    switch (column) {
+        case 'name':
+            return product.properties?.name || product.name || '';
+        case 'domain':
+            return product.domain?.domain?.properties?.name || '';
+        case 'entities':
+            return product.entities_count || 0;
+        case 'owners':
+            return product.owners_count || 0;
+        default:
+            return '';
+    }
+}
+
 function showProductDetails(product) {
+    // Load users/groups cache if needed
+    if (usersAndGroupsCache.users.length === 0) {
+        loadUsersAndGroups();
+    }
+    
     // Basic information
     const name = product.properties?.name || product.name || 'Unnamed';
     const description = product.properties?.description || product.description || 'No description available';
     const domain = product.domain?.domain?.properties?.name || 'No domain assigned';
+    const entityCount = product.entities_count || 0;
     
     document.getElementById('modal-product-name').textContent = name;
     document.getElementById('modal-product-domain').innerHTML = domain !== 'No domain assigned' ? 
@@ -676,10 +822,113 @@ function showProductDetails(product) {
     document.getElementById('modal-product-description').textContent = description;
     document.getElementById('modal-product-urn').textContent = product.urn || 'No URN available';
     
+    // Update entity count in basic info
+    const entityCountElement = document.getElementById('modal-product-entities');
+    if (entityCountElement) {
+        entityCountElement.innerHTML = `<span class="badge bg-primary">${entityCount}</span>`;
+    }
+    
     // Status
     const statusBadge = document.getElementById('modal-product-status');
     statusBadge.textContent = product.sync_status_display || product.sync_status;
     statusBadge.className = `badge ${getStatusBadgeClass(product.sync_status)}`;
+    
+    // Update owners information
+    const ownersListElement = document.getElementById('modal-owners-list');
+    const ownershipData = product.ownership || product.ownership_data;
+    
+    if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
+        // Group owners by ownership type
+        const ownersByType = {};
+        
+        ownershipData.owners.forEach(ownerInfo => {
+            let ownerUrn, ownershipTypeUrn, ownershipTypeName;
+            
+            // Handle different data structures
+            if (ownerInfo.owner_urn && ownerInfo.ownership_type_urn) {
+                // Local storage format
+                ownerUrn = ownerInfo.owner_urn;
+                ownershipTypeUrn = ownerInfo.ownership_type_urn;
+                
+                // Find the ownership type name from cache
+                ownershipTypeName = 'Unknown Type';
+                const ownershipType = usersAndGroupsCache.ownership_types.find(ot => ot.urn === ownershipTypeUrn);
+                if (ownershipType) {
+                    ownershipTypeName = ownershipType.name;
+                }
+            } else if (ownerInfo.owner && ownerInfo.ownershipType) {
+                // GraphQL format
+                ownerUrn = ownerInfo.owner.urn;
+                ownershipTypeUrn = ownerInfo.ownershipType.urn;
+                ownershipTypeName = ownerInfo.ownershipType.info?.name || 'Unknown Type';
+            } else {
+                return; // Skip invalid entries
+            }
+            
+            // Find the owner name
+            let ownerName = ownerUrn;
+            let isUser = false;
+            
+            if (ownerInfo.owner && (ownerInfo.owner.username || ownerInfo.owner.name)) {
+                // GraphQL format - owner data is already included
+                if (ownerInfo.owner.username) {
+                    // CorpUser
+                    isUser = true;
+                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.username;
+                } else if (ownerInfo.owner.name) {
+                    // CorpGroup
+                    isUser = false;
+                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.name;
+                }
+            } else {
+                // Local storage format - need to look up in cache
+                const user = usersAndGroupsCache.users.find(u => u.urn === ownerUrn);
+                const group = usersAndGroupsCache.groups.find(g => g.urn === ownerUrn);
+                
+                if (user) {
+                    isUser = true;
+                    ownerName = user.display_name || user.username || ownerUrn;
+                } else if (group) {
+                    isUser = false;
+                    ownerName = group.display_name || ownerUrn;
+                }
+            }
+            
+            if (!ownersByType[ownershipTypeName]) {
+                ownersByType[ownershipTypeName] = [];
+            }
+            ownersByType[ownershipTypeName].push({
+                name: ownerName,
+                urn: ownerUrn,
+                isUser: isUser
+            });
+        });
+        
+        // Generate HTML for owners grouped by type
+        let ownersHTML = '';
+        Object.keys(ownersByType).forEach(ownershipType => {
+            const owners = ownersByType[ownershipType];
+            ownersHTML += `
+                <div class="mb-3">
+                    <h6 class="text-primary mb-2">
+                        <i class="fas fa-crown me-1"></i>${escapeHtml(ownershipType)}
+                    </h6>
+                    <div class="ms-3">
+                        ${owners.map(owner => `
+                            <div class="d-flex align-items-center mb-1">
+                                <i class="fas fa-${owner.isUser ? 'user' : 'users'} text-muted me-2"></i>
+                                <span>${escapeHtml(owner.name)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        ownersListElement.innerHTML = ownersHTML;
+    } else {
+        ownersListElement.innerHTML = '<p class="text-muted">No ownership information available</p>';
+    }
     
     // DataHub link
     const datahubLink = document.getElementById('modal-datahub-link');
@@ -688,6 +937,12 @@ function showProductDetails(product) {
         datahubLink.style.display = 'inline-block';
     } else {
         datahubLink.style.display = 'none';
+    }
+    
+    // Update raw JSON data
+    const rawJsonElement = document.getElementById('modal-raw-json');
+    if (rawJsonElement) {
+        rawJsonElement.innerHTML = `<code>${escapeHtml(JSON.stringify(product, null, 2))}</code>`;
     }
     
     // Show modal

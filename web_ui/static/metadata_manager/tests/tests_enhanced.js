@@ -20,6 +20,13 @@ let currentFilters = {
     content: []
 };
 
+// Sorting variables
+let currentSort = {
+    column: null,
+    direction: 'asc',
+    tabType: null
+};
+
 function setupEventListeners() {
     // Refresh button
     document.getElementById('refreshTests').addEventListener('click', function() {
@@ -361,6 +368,11 @@ function renderTestsTable(tests, tabType, container) {
         return;
     }
     
+    // Apply sorting
+    if (currentSort.column && currentSort.tabType === tabType) {
+        tests = sortTests(tests, currentSort.column, currentSort.direction);
+    }
+    
     const tableHTML = `
         <div class="table-responsive">
             <table class="table table-hover mb-0">
@@ -369,12 +381,20 @@ function renderTestsTable(tests, tabType, container) {
                         <th width="50">
                             <input type="checkbox" class="form-check-input" id="${tabType}-select-all">
                         </th>
-                        <th>Test Name</th>
-                        <th>Category</th>
+                        <th class="sortable" data-column="name" data-tab="${tabType}" style="cursor: pointer;">
+                            Test Name ${getSortIcon('name', tabType)}
+                        </th>
+                        <th>Description</th>
+                        <th class="sortable" data-column="category" data-tab="${tabType}" style="cursor: pointer;">
+                            Category ${getSortIcon('category', tabType)}
+                        </th>
+                        <th class="sortable" data-column="results" data-tab="${tabType}" style="cursor: pointer;">
+                            Results ${getSortIcon('results', tabType)}
+                        </th>
+                        <th class="sortable" data-column="last_run" data-tab="${tabType}" style="cursor: pointer;">
+                            Last Run ${getSortIcon('last_run', tabType)}
+                        </th>
                         <th>URN</th>
-                        <th>Results</th>
-                        <th>Last Run</th>
-                        <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -389,10 +409,12 @@ function renderTestsTable(tests, tabType, container) {
     
     // Set up bulk selection
     setupBulkSelection(tabType);
+    
+    // Attach sorting handlers
+    attachSortingHandlers(container, tabType);
 }
 
 function renderTestRow(test, tabType) {
-    const statusBadge = getStatusBadge(test.status);
     const actions = getActionButtons(test, tabType);
     
     // Format test results
@@ -419,36 +441,97 @@ function renderTestRow(test, tabType) {
             <td>
                 <div class="d-flex align-items-center">
                     <i class="fas fa-flask me-2 text-primary"></i>
-                    <div>
-                        <div class="fw-bold">${test.name}</div>
-                        ${test.description ? `<small class="text-muted">${test.description}</small>` : ''}
-                    </div>
+                    <div class="fw-bold">${test.name}</div>
                 </div>
+            </td>
+            <td>
+                <div class="text-muted">${test.description || 'No description'}</div>
             </td>
             <td>
                 <span class="badge bg-secondary">${test.category || 'UNCATEGORIZED'}</span>
             </td>
-            <td>
-                <code class="small">${test.urn || 'N/A'}</code>
-            </td>
             <td>${resultsDisplay}</td>
             <td>${lastRunDisplay}</td>
-            <td>${statusBadge}</td>
+            <td>
+                <code class="small text-muted" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">${test.urn || 'N/A'}</code>
+            </td>
             <td>${actions}</td>
         </tr>
     `;
 }
 
-function getStatusBadge(status) {
-    switch(status) {
-        case 'synced':
-            return '<span class="badge bg-success">Synced</span>';
-        case 'local_only':
-            return '<span class="badge bg-secondary">Local Only</span>';
-        case 'remote_only':
-            return '<span class="badge bg-info">Remote Only</span>';
+// Sorting functions
+function getSortIcon(column, tabType) {
+    if (currentSort.column !== column || currentSort.tabType !== tabType) {
+        return '<i class="fas fa-sort text-muted ms-1"></i>';
+    }
+    
+    if (currentSort.direction === 'asc') {
+        return '<i class="fas fa-sort-up text-primary ms-1"></i>';
+    } else {
+        return '<i class="fas fa-sort-down text-primary ms-1"></i>';
+    }
+}
+
+function attachSortingHandlers(container, tabType) {
+    const sortableHeaders = container.querySelectorAll('.sortable');
+    
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const column = this.getAttribute('data-column');
+            const tab = this.getAttribute('data-tab');
+            
+            // Toggle direction if same column, otherwise default to asc
+            if (currentSort.column === column && currentSort.tabType === tab) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+                currentSort.tabType = tab;
+            }
+            
+            // Re-render the tab with new sorting
+            loadTabContent(tabType);
+        });
+    });
+}
+
+function sortTests(tests, column, direction) {
+    return tests.sort((a, b) => {
+        let aValue = getTestSortValue(a, column);
+        let bValue = getTestSortValue(b, column);
+        
+        // Handle null/undefined values
+        if (aValue === null || aValue === undefined) aValue = '';
+        if (bValue === null || bValue === undefined) bValue = '';
+        
+        // Convert to strings for comparison if needed
+        if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+        if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+        
+        let comparison = 0;
+        if (aValue < bValue) comparison = -1;
+        if (aValue > bValue) comparison = 1;
+        
+        return direction === 'desc' ? -comparison : comparison;
+    });
+}
+
+function getTestSortValue(test, column) {
+    switch (column) {
+        case 'name':
+            return test.name || '';
+        case 'category':
+            return test.category || '';
+        case 'results':
+            // Sort by total results count (pass + fail)
+            const passCount = test.passing_count || 0;
+            const failCount = test.failing_count || 0;
+            return passCount + failCount;
+        case 'last_run':
+            return test.last_run ? new Date(test.last_run).getTime() : 0;
         default:
-            return '<span class="badge bg-warning">Unknown</span>';
+            return '';
     }
 }
 

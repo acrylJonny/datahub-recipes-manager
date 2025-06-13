@@ -8,6 +8,13 @@ let currentSyncedPage = 1;
 let currentLocalPage = 1;
 let currentRemotePage = 1;
 
+// Sorting variables
+let currentSort = {
+    column: null,
+    direction: 'asc',
+    tabType: null
+};
+
 // DOM ready
 document.addEventListener('DOMContentLoaded', function() {
     loadDomainsData();
@@ -461,6 +468,11 @@ function renderTab(tabId) {
         });
     }
     
+    // Apply sorting
+    if (currentSort.column && currentSort.tabType === tabType) {
+        items = sortDomains(items, currentSort.column, currentSort.direction);
+    }
+    
     // Pagination based on root nodes
     const currentPage = tabType === 'synced' ? currentSyncedPage : 
                        tabType === 'local' ? currentLocalPage : currentRemotePage;
@@ -520,10 +532,16 @@ function renderTab(tabId) {
                         <th width="40">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th>Name</th>
+                        <th class="sortable" data-column="name" data-tab="${tabType}" style="cursor: pointer;">
+                            Name ${getSortIcon('name', tabType)}
+                        </th>
                         <th>Description</th>
-                        <th>Owners</th>
-                        <th>Entities</th>
+                        <th class="sortable" data-column="owners" data-tab="${tabType}" style="cursor: pointer;">
+                            Owners ${getSortIcon('owners', tabType)}
+                        </th>
+                        <th class="sortable" data-column="entities" data-tab="${tabType}" style="cursor: pointer;">
+                            Entities ${getSortIcon('entities', tabType)}
+                        </th>
                         <th>URN</th>
                         <th>Actions</th>
                     </tr>
@@ -560,6 +578,9 @@ function renderTab(tabId) {
     contentElement.innerHTML = html;
     attachActionButtonHandlers();
     reattachSelectAllHandlers();
+    
+    // Attach sorting handlers
+    attachSortingHandlers(contentElement, tabType);
     
     // Apply current expansion state to the rendered rows
     applyCurrentExpansionState();
@@ -867,6 +888,78 @@ function selectAllHandler(e) {
 }
 
 // Domain action functions
+// Sorting functions
+function getSortIcon(column, tabType) {
+    if (currentSort.column !== column || currentSort.tabType !== tabType) {
+        return '<i class="fas fa-sort text-muted ms-1"></i>';
+    }
+    
+    if (currentSort.direction === 'asc') {
+        return '<i class="fas fa-sort-up text-primary ms-1"></i>';
+    } else {
+        return '<i class="fas fa-sort-down text-primary ms-1"></i>';
+    }
+}
+
+function attachSortingHandlers(contentDiv, tabType) {
+    const sortableHeaders = contentDiv.querySelectorAll('.sortable');
+    
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const column = this.getAttribute('data-column');
+            const tab = this.getAttribute('data-tab');
+            
+            // Toggle direction if same column, otherwise default to asc
+            if (currentSort.column === column && currentSort.tabType === tab) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+                currentSort.tabType = tab;
+            }
+            
+            // Re-render the tab with new sorting
+            renderTab(`${tabType}-items`);
+        });
+    });
+}
+
+function sortDomains(domains, column, direction) {
+    return domains.sort((a, b) => {
+        let aValue = getDomainSortValue(a, column);
+        let bValue = getDomainSortValue(b, column);
+        
+        // Handle null/undefined values
+        if (aValue === null || aValue === undefined) aValue = '';
+        if (bValue === null || bValue === undefined) bValue = '';
+        
+        // Convert to strings for comparison if needed
+        if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+        if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+        
+        let comparison = 0;
+        if (aValue < bValue) comparison = -1;
+        if (aValue > bValue) comparison = 1;
+        
+        return direction === 'desc' ? -comparison : comparison;
+    });
+}
+
+function getDomainSortValue(domain, column) {
+    const domainData = domain.combined || domain;
+    
+    switch (column) {
+        case 'name':
+            return domainData.name || '';
+        case 'owners':
+            return domainData.owners_count || 0;
+        case 'entities':
+            return domainData.entities_count || 0;
+        default:
+            return '';
+    }
+}
+
 function showDomainDetails(domain) {
     console.log('Showing domain details for:', domain.name);
     

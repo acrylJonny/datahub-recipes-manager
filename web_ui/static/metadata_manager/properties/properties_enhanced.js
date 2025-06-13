@@ -6,6 +6,12 @@ let filterData = {
 };
 let currentFilters = new Set();
 
+// Pagination settings
+const ITEMS_PER_PAGE = 25;
+let currentSyncedPage = 1;
+let currentLocalPage = 1;
+let currentRemotePage = 1;
+
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
@@ -304,9 +310,13 @@ function updateFilterRows() {
             filterDiv.setAttribute('data-filter', valueType);
             filterDiv.setAttribute('data-category', 'value-type');
             filterDiv.style.flex = '1';
+            
+            // Convert to title case
+            const displayValueType = valueType.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            
             filterDiv.innerHTML = `
                 <div class="h5 mb-0">${count}</div>
-                <div class="text-muted">${valueType}</div>
+                <div class="text-muted">${displayValueType}</div>
             `;
             
             filterDiv.addEventListener('click', function() {
@@ -333,9 +343,13 @@ function updateFilterRows() {
             filterDiv.setAttribute('data-filter', entityType);
             filterDiv.setAttribute('data-category', 'entity-type');
             filterDiv.style.flex = '1';
+            
+            // Convert to title case and replace underscores with spaces
+            const displayEntityType = entityType.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            
             filterDiv.innerHTML = `
                 <div class="h5 mb-0">${count}</div>
-                <div class="text-muted">${entityType}</div>
+                <div class="text-muted">${displayEntityType}</div>
             `;
             
             filterDiv.addEventListener('click', function() {
@@ -567,7 +581,22 @@ function renderPropertiesTable(properties, tabType, container) {
     console.log('Properties data:', properties);
     console.log('Container:', container);
     
-    if (properties.length === 0) {
+    // Get current page for this tab
+    let currentPage;
+    switch (tabType) {
+        case 'synced': currentPage = currentSyncedPage; break;
+        case 'local': currentPage = currentLocalPage; break;
+        case 'remote': currentPage = currentRemotePage; break;
+    }
+    
+    // Calculate pagination
+    const totalItems = properties.length;
+    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
+    const paginatedProperties = properties.slice(startIndex, endIndex);
+    
+    if (totalItems === 0) {
         console.log('No properties to render');
         container.innerHTML = `
             <div class="text-center py-5">
@@ -598,10 +627,11 @@ function renderPropertiesTable(properties, tabType, container) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${properties.map(property => renderPropertyRow(property, tabType)).join('')}
+                    ${paginatedProperties.map(property => renderPropertyRow(property, tabType)).join('')}
                 </tbody>
             </table>
         </div>
+        ${renderPagination(currentPage, totalPages, totalItems, startIndex + 1, endIndex, tabType)}
     `;
     
     console.log('Setting innerHTML...');
@@ -610,6 +640,67 @@ function renderPropertiesTable(properties, tabType, container) {
     
     // Setup bulk selection
     setupBulkSelection(tabType);
+}
+
+function renderPagination(currentPage, totalPages, totalItems, startItem, endItem, tabType) {
+    if (totalPages <= 1) return '';
+    
+    const prevDisabled = currentPage <= 1 ? 'disabled' : '';
+    const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+    
+    let paginationHTML = `
+        <div class="pagination-container mt-3">
+            <div class="pagination-info">
+                Showing ${startItem}-${endItem} of ${totalItems} properties
+            </div>
+            <nav aria-label="Properties pagination">
+                <ul class="pagination mb-0">
+                    <li class="page-item ${prevDisabled}">
+                        <a class="page-link" href="#" onclick="changePage('${tabType}', ${currentPage - 1})">
+                            <i class="fas fa-chevron-left"></i>
+                        </a>
+                    </li>
+    `;
+    
+    // Page numbers
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    
+    if (endPage - startPage < maxVisiblePages - 1) {
+        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const activeClass = i === currentPage ? 'active' : '';
+        paginationHTML += `
+            <li class="page-item ${activeClass}">
+                <a class="page-link" href="#" onclick="changePage('${tabType}', ${i})">${i}</a>
+            </li>
+        `;
+    }
+    
+    paginationHTML += `
+                    <li class="page-item ${nextDisabled}">
+                        <a class="page-link" href="#" onclick="changePage('${tabType}', ${currentPage + 1})">
+                            <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    `;
+    
+    return paginationHTML;
+}
+
+function changePage(tabType, page) {
+    switch (tabType) {
+        case 'synced': currentSyncedPage = page; break;
+        case 'local': currentLocalPage = page; break;
+        case 'remote': currentRemotePage = page; break;
+    }
+    renderTab(`${tabType}-items`);
 }
 
 function renderPropertyRow(property, tabType) {
@@ -645,13 +736,13 @@ function renderPropertyRow(property, tabType) {
                 </div>
             </td>
             <td>
-                <span class="badge bg-info">${escapeHtml(property.value_type || 'STRING')}</span>
+                <span class="badge bg-info">${escapeHtml((property.value_type || 'STRING').toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</span>
             </td>
             <td>
                 <span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>
             </td>
             <td class="urn-cell">
-                <code class="text-muted small urn-truncate" title="${escapeHtml(propertyUrn)}">${escapeHtml(truncateUrn(propertyUrn, 40))}</code>
+                <code class="small text-muted" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;" title="${escapeHtml(propertyUrn)}">${escapeHtml(truncateUrn(propertyUrn, 40))}</code>
             </td>
             <td>
                 <div class="btn-group" role="group">
@@ -1302,9 +1393,11 @@ function renderEntityTypes(entityTypes, valueType) {
         return '<span class="text-muted">-</span>';
     }
     
-    return validTypes.map(type => 
-        `<span class="badge bg-light text-dark entity-type-badge">${escapeHtml(type)}</span>`
-    ).join('');
+    return validTypes.map(type => {
+        // Convert to title case and replace underscores with spaces
+        const displayType = type.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        return `<span class="badge bg-light text-dark entity-type-badge">${escapeHtml(displayType)}</span>`;
+    }).join('');
 }
 
 function truncateUrn(urn, maxLength) {

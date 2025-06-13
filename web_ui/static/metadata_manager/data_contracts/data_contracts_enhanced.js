@@ -262,8 +262,6 @@ function calculateStatistics() {
     return stats;
 }
 
-
-
 function updateTabBadges() {
     document.getElementById('synced-badge').textContent = contractsData.synced_items.length;
     document.getElementById('local-badge').textContent = contractsData.local_only_items.length;
@@ -330,7 +328,24 @@ function displayTabContent(tabType) {
         
         if (items.length === 0) {
             console.log(`No items for ${tabType}, showing empty state`);
-            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
+            content.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th class="sortable-header" data-sort="urn">URN</th>
+                                <th class="sortable-header" data-sort="entityUrn">Entity URN</th>
+                                <th class="sortable-header" data-sort="state">State</th>
+                                <th class="sortable-header" data-sort="assertions">Assertions</th>
+                                <th width="15%">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${getEmptyStateHTML(tabType, searchTerm)}
+                        </tbody>
+                    </table>
+                </div>
+            `;
             return;
         }
         
@@ -566,8 +581,6 @@ function renderContractRow(contract, tabType) {
         </tr>
     `;
 }
-
-
 
 function generatePaginationHTML(totalItems, tabType) {
     const pagination = currentPagination[tabType];

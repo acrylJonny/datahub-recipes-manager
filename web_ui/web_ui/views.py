@@ -29,6 +29,7 @@ import time
 from random import randint
 import uuid
 from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from .datahub_utils import get_datahub_client_info, refresh_all_client_info, test_datahub_connection as test_env_connection
 from web_ui.models import AppSettings, GitSettings
 
 # Import custom forms
@@ -61,9 +62,10 @@ from .models import (
     EnvVarsInstance,
     RecipeInstance,
     GitHubPR,
-    GitIntegration,
     Policy,
     Environment,
+    Mutation,
+    DataHubClientInfo,
 )
 from .services.github_service import GitHubService
 from .services.git_service import GitService
@@ -1793,8 +1795,17 @@ def logs(request):
     page_number = request.GET.get("page", 1)
     logs_page = paginator.get_page(page_number)
 
-    # Get unique sources for the filter dropdown
-    sources = LogEntry.objects.values_list("source", flat=True).distinct()
+    # Get unique sources for the filter dropdown (exclude empty/null sources)
+    sources = LogEntry.objects.exclude(
+        source__isnull=True
+    ).exclude(
+        source__exact=""
+    ).exclude(
+        source__regex=r'^\s*$'  # Exclude whitespace-only sources
+    ).values_list("source", flat=True).distinct().order_by("source")
+    
+    # Convert to list and ensure no duplicates (extra safety)
+    sources = sorted(set(sources))
 
     # Create some test data for debugging the expand/collapse functionality
 
@@ -3983,13 +3994,14 @@ def env_vars_template_push_github(request, template_id):
 
 @login_required
 def environments(request):
-    """List all environments."""
-    envs = Environment.objects.all().order_by("name")
+    """List all environments with mutations."""
+    envs = Environment.objects.all().prefetch_related('mutations').order_by("name")
+    mutations = Mutation.objects.all().order_by("name")
 
     return render(
         request,
         "environments/list.html",
-        {"title": "Environments", "environments": envs},
+        {"title": "Environments", "environments": envs, "mutations": mutations},
     )
 
 
@@ -4000,10 +4012,18 @@ def environment_create(request):
         name = request.POST.get("name")
         description = request.POST.get("description")
         is_default = request.POST.get("is_default") == "on"
+        mutations_id = request.POST.get("mutations")
+        
+        mutations = None
+        if mutations_id:
+            try:
+                mutations = Mutation.objects.get(id=mutations_id)
+            except Mutation.DoesNotExist:
+                pass
 
         # Create the environment
         Environment.objects.create(
-            name=name, description=description, is_default=is_default
+            name=name, description=description, is_default=is_default, mutations=mutations
         )
 
         messages.success(request, f'Environment "{name}" created successfully.')
@@ -4037,9 +4057,15 @@ def environment_create(request):
                         )
                     else:
                         logger.error(f"GitHub environment sync failed: {result.stderr}")
+                        # Extract meaningful error message
+                        error_msg = result.stderr.strip()
+                        if "No module named" in error_msg:
+                            error_msg = "Django configuration issue - please check server logs"
+                        elif "Missing GitHub credentials" in error_msg:
+                            error_msg = "GitHub credentials not configured - please set up GitHub integration"
                         messages.warning(
                             request,
-                            f'Failed to synchronize environment "{name}" with GitHub: {result.stderr}',
+                            f'Environment "{name}" created but GitHub sync failed: {error_msg}',
                         )
                 else:
                     logger.warning(
@@ -4053,7 +4079,12 @@ def environment_create(request):
 
         return redirect("environments")
 
-    return render(request, "environments/create.html", {"title": "Create Environment"})
+    mutations = Mutation.objects.all().order_by("name")
+    return render(request, "environments/form.html", {
+        "title": "Create Environment", 
+        "is_new": True,
+        "mutations": mutations
+    })
 
 
 @login_required
@@ -4066,6 +4097,16 @@ def environment_edit(request, env_id):
         environment.name = request.POST.get("name")
         environment.description = request.POST.get("description")
         environment.is_default = request.POST.get("is_default") == "on"
+        
+        mutations_id = request.POST.get("mutations")
+        if mutations_id:
+            try:
+                environment.mutations = Mutation.objects.get(id=mutations_id)
+            except Mutation.DoesNotExist:
+                environment.mutations = None
+        else:
+            environment.mutations = None
+            
         environment.save()
 
         messages.success(
@@ -4102,9 +4143,15 @@ def environment_edit(request, env_id):
                         )
                     else:
                         logger.error(f"GitHub environment sync failed: {result.stderr}")
+                        # Extract meaningful error message
+                        error_msg = result.stderr.strip()
+                        if "No module named" in error_msg:
+                            error_msg = "Django configuration issue - please check server logs"
+                        elif "Missing GitHub credentials" in error_msg:
+                            error_msg = "GitHub credentials not configured - please set up GitHub integration"
                         messages.warning(
                             request,
-                            f'Failed to synchronize environment "{environment.name}" with GitHub: {result.stderr}',
+                            f'Environment "{environment.name}" updated but GitHub sync failed: {error_msg}',
                         )
                 else:
                     logger.warning(
@@ -4118,10 +4165,16 @@ def environment_edit(request, env_id):
 
         return redirect("environments")
 
+    mutations = Mutation.objects.all().order_by("name")
     return render(
         request,
-        "environments/edit.html",
-        {"title": "Edit Environment", "environment": environment},
+        "environments/form.html",
+        {
+            "title": "Edit Environment", 
+            "environment": environment, 
+            "is_new": False,
+            "mutations": mutations
+        },
     )
 
 
@@ -6015,3 +6068,137 @@ def github_load_branches(request):
     except Exception as e:
         logger.error(f"Error loading branches: {str(e)}")
         return JsonResponse({"success": False, "error": f"Error: {str(e)}"})
+
+
+@login_required
+def mutations(request):
+    """List all mutations."""
+    mutations = Mutation.objects.all().order_by("name")
+    return render(
+        request,
+        "mutations/list.html",
+        {"title": "Mutations", "mutations": mutations},
+    )
+
+
+@login_required
+def mutation_create(request):
+    """Create a new mutation."""
+    if request.method == "POST":
+        name = request.POST.get("name")
+        description = request.POST.get("description")
+        platform_instance = request.POST.get("platform_instance")
+        env = request.POST.get("env")
+        custom_properties = request.POST.get("custom_properties", "{}")
+        
+        try:
+            # Validate JSON
+            import json
+            custom_props = json.loads(custom_properties) if custom_properties else {}
+        except json.JSONDecodeError:
+            messages.error(request, "Invalid JSON format for custom properties")
+            return render(
+                request,
+                "mutations/create.html",
+                {
+                    "title": "Create Mutation",
+                    "form_data": request.POST,
+                },
+            )
+
+        # Create the mutation
+        Mutation.objects.create(
+            name=name,
+            description=description,
+            platform_instance=platform_instance,
+            env=env,
+            custom_properties=custom_props,
+        )
+
+        messages.success(request, f'Mutation "{name}" created successfully.')
+        return redirect("environments")
+
+    return render(request, "mutations/create.html", {"title": "Create Mutation"})
+
+
+@login_required
+def mutation_edit(request, mutation_id):
+    """Edit an existing mutation."""
+    mutation = get_object_or_404(Mutation, id=mutation_id)
+
+    if request.method == "POST":
+        mutation.name = request.POST.get("name")
+        mutation.description = request.POST.get("description")
+        mutation.platform_instance = request.POST.get("platform_instance")
+        mutation.env = request.POST.get("env")
+        custom_properties = request.POST.get("custom_properties", "{}")
+        
+        try:
+            # Validate JSON
+            import json
+            mutation.custom_properties = json.loads(custom_properties) if custom_properties else {}
+        except json.JSONDecodeError:
+            messages.error(request, "Invalid JSON format for custom properties")
+            return render(
+                request,
+                "mutations/edit.html",
+                {
+                    "title": "Edit Mutation",
+                    "mutation": mutation,
+                    "form_data": request.POST,
+                },
+            )
+
+        mutation.save()
+        messages.success(request, f'Mutation "{mutation.name}" updated successfully.')
+        return redirect("environments")
+
+    # Serialize custom_properties for display
+    import json
+    mutation_data = {
+        'name': mutation.name,
+        'description': mutation.description,
+        'platform_instance': mutation.platform_instance,
+        'env': mutation.env,
+        'custom_properties': json.dumps(mutation.custom_properties, indent=2) if mutation.custom_properties else '{}'
+    }
+    
+    return render(
+        request,
+        "mutations/edit.html",
+        {"title": "Edit Mutation", "mutation": mutation, "mutation_data": mutation_data},
+    )
+
+
+@login_required
+def mutation_delete(request, mutation_id):
+    """Delete a mutation."""
+    mutation = get_object_or_404(Mutation, id=mutation_id)
+
+    # Check if mutation is in use
+    env_count = Environment.objects.filter(mutations=mutation).count()
+
+    if request.method == "POST":
+        if env_count == 0:
+            name = mutation.name
+            mutation.delete()
+            messages.success(request, f"Mutation '{name}' deleted successfully")
+        else:
+            messages.error(
+                request,
+                f"Cannot delete mutation '{mutation.name}' - it is in use by {env_count} environments",
+            )
+        return redirect("environments")
+
+    return render(
+        request,
+        "mutations/delete.html",
+        {
+            "title": f"Delete Mutation: {mutation.name}",
+            "mutation": mutation,
+            "env_count": env_count,
+        },
+    )
+
+
+

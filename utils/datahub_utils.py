@@ -87,6 +87,7 @@ def get_datahub_client():
 def test_datahub_connection():
     """
     Test if the DataHub connection is working (lightweight test).
+    Automatically retrieves and stores client info on successful connection.
 
     Returns:
         tuple: (is_connected, client) - boolean indicating if connection works, and the client instance
@@ -104,6 +105,15 @@ def test_datahub_connection():
             logger.info(
                 f"DataHub connection test result: {'Success' if connected else 'Failed'}"
             )
+            
+            # If connection is successful, automatically retrieve client info for the default environment
+            if connected:
+                try:
+                    _auto_retrieve_client_info(client)
+                except Exception as e:
+                    logger.warning(f"Failed to auto-retrieve client info: {str(e)}")
+                    # Don't fail the connection test if client info retrieval fails
+            
             return connected, client
         except Exception as e:
             logger.error(f"Error testing DataHub connection: {str(e)}")
@@ -112,6 +122,38 @@ def test_datahub_connection():
     else:
         logger.warning("Could not create DataHub client, check configuration")
         return False, None
+
+
+def _auto_retrieve_client_info(client):
+    """
+    Automatically retrieve and store client info for the default environment.
+    This is called internally when a successful connection is established.
+    
+    Args:
+        client: DataHub client instance
+    """
+    try:
+        # Import here to avoid circular imports
+        from web_ui.web_ui.models import Environment
+        from web_ui.web_ui.datahub_utils import get_datahub_client_info
+        
+        # Get the default environment
+        default_env = Environment.objects.filter(is_default=True).first()
+        
+        if default_env:
+            logger.info(f"Auto-retrieving client info for default environment: {default_env.name}")
+            result = get_datahub_client_info(default_env)
+            
+            if result['success']:
+                logger.info(f"Successfully auto-retrieved client info: {result['client_id']}")
+            else:
+                logger.warning(f"Failed to auto-retrieve client info: {result['error']}")
+        else:
+            logger.debug("No default environment found for auto client info retrieval")
+            
+    except Exception as e:
+        logger.error(f"Error in auto client info retrieval: {str(e)}")
+        # Don't raise the exception - this is a background operation
 
 
 def test_datahub_connection_with_permissions():

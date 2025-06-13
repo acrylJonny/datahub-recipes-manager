@@ -82,6 +82,13 @@ class Environment(models.Model):
     name = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True, null=True)
     is_default = models.BooleanField(default=False)
+    mutations = models.ForeignKey(
+        'Mutation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='environments'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -125,6 +132,116 @@ class Environment(models.Model):
                 name="prod", description="Production Environment", is_default=True
             )
         return default
+
+
+class Mutation(models.Model):
+    """Model for storing metadata mutations that can be applied to environments."""
+    
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+    platform_instance = models.CharField(max_length=255, help_text="Platform instance identifier")
+    env = models.CharField(max_length=255, help_text="Environment identifier")
+    custom_properties = models.JSONField(default=dict, help_text="Custom properties as JSON")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name_plural = "Mutations"
+        ordering = ["name"]
+    
+    def __str__(self):
+        return self.name
+    
+    def get_custom_properties_display(self):
+        """Return a formatted string of custom properties."""
+        if not self.custom_properties:
+            return "No custom properties"
+        
+        result = []
+        for key, value in self.custom_properties.items():
+            result.append(f"{key}: {value}")
+        return ", ".join(result)
+
+
+class DataHubClientInfo(models.Model):
+    """Model for storing DataHub client information retrieved via SDK."""
+    
+    client_id = models.CharField(max_length=255, unique=True, help_text="DataHub client ID")
+    server_id = models.CharField(max_length=255, blank=True, null=True, help_text="DataHub server ID")
+    frontend_base_url = models.URLField(blank=True, null=True, help_text="DataHub frontend base URL")
+    server_config = models.JSONField(default=dict, help_text="Raw server configuration as JSON")
+    environment = models.ForeignKey(
+        Environment,
+        on_delete=models.CASCADE,
+        related_name='datahub_client_info',
+        help_text="Environment this client info belongs to"
+    )
+    last_updated = models.DateTimeField(auto_now=True)
+    last_connection_test = models.DateTimeField(null=True, blank=True)
+    connection_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('connected', 'Connected'),
+            ('failed', 'Failed'),
+            ('unknown', 'Unknown'),
+        ],
+        default='unknown'
+    )
+    error_message = models.TextField(blank=True, null=True, help_text="Last error message if connection failed")
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name_plural = "DataHub Client Info"
+        ordering = ["-last_updated"]
+        unique_together = ("client_id", "environment")
+    
+    def __str__(self):
+        return f"Client {self.client_id} ({self.environment.name})"
+    
+    @classmethod
+    def get_or_create_for_environment(cls, environment):
+        """Get or create client info for an environment."""
+        try:
+            return cls.objects.get(environment=environment)
+        except cls.DoesNotExist:
+            return cls.objects.create(
+                client_id=f"temp_{environment.name}_{timezone.now().timestamp()}",
+                environment=environment
+            )
+    
+    def update_from_datahub_client(self, datahub_client):
+        """Update client info from a DataHub client instance."""
+        from django.utils import timezone
+        
+        try:
+            # Test connection and get client info
+            datahub_client.test_connection()
+            
+            # Update client info
+            self.server_id = getattr(datahub_client, 'server_id', None)
+            self.client_id = getattr(datahub_client, 'server_id', self.client_id)
+            
+            # Get frontend base URL if available
+            try:
+                self.frontend_base_url = datahub_client.frontend_base_url
+            except (ValueError, AttributeError):
+                self.frontend_base_url = None
+            
+            # Store server config if available
+            if hasattr(datahub_client, 'server_config') and datahub_client.server_config:
+                self.server_config = datahub_client.server_config.raw_config
+            
+            self.connection_status = 'connected'
+            self.error_message = None
+            self.last_connection_test = timezone.now()
+            
+        except Exception as e:
+            self.connection_status = 'failed'
+            self.error_message = str(e)
+            self.last_connection_test = timezone.now()
+        
+        self.save()
+        return self.connection_status == 'connected'
 
 
 class LogEntry(models.Model):

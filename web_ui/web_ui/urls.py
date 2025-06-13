@@ -360,6 +360,7 @@ urlpatterns = [
     ),
     # Environment management
     path("environments/", web_ui_views.environments, name="environments"),
+    path("environments/list/", web_ui_views.environments, name="environments_list"),
     path(
         "environments/create/",
         web_ui_views.environment_create,
@@ -380,6 +381,24 @@ urlpatterns = [
         web_ui_views.set_default_environment,
         name="set_default_environment",
     ),
+    # Mutation management
+    path("mutations/", web_ui_views.mutations, name="mutations"),
+    path(
+        "mutations/create/",
+        web_ui_views.mutation_create,
+        name="mutation_create",
+    ),
+    path(
+        "mutations/<int:mutation_id>/edit/",
+        web_ui_views.mutation_edit,
+        name="mutation_edit",
+    ),
+    path(
+        "mutations/<int:mutation_id>/delete/",
+        web_ui_views.mutation_delete,
+        name="mutation_delete",
+    ),
+
 ]
 
 # Add media files URL

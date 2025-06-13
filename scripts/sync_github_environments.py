@@ -52,14 +52,21 @@ def get_github_settings():
             # Add the parent directory to the path so we can import Django settings
             sys.path.insert(0, str(Path(__file__).parent.parent))
 
-            # Set up Django environment
-            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.settings")
+            # Set up Django environment with minimal logging
+            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.web_ui.settings")
+            
+            # Disable Django logging to avoid database handler issues
+            import logging
+            logging.disable(logging.CRITICAL)
+            
             import django
-
             django.setup()
+            
+            # Re-enable logging for our script
+            logging.disable(logging.NOTSET)
 
             # Now import the model
-            from web_ui.models import GitSettings
+            from web_ui.web_ui.models import GitSettings
 
             # Get the settings
             settings = GitSettings.get_instance()
@@ -78,13 +85,20 @@ def get_environments_from_webapp():
         # Set up Django environment if not already set
         if "DJANGO_SETTINGS_MODULE" not in os.environ:
             sys.path.insert(0, str(Path(__file__).parent.parent))
-            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.settings")
+            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.web_ui.settings")
+            
+            # Disable Django logging to avoid database handler issues
+            import logging
+            logging.disable(logging.CRITICAL)
+            
             import django
-
             django.setup()
+            
+            # Re-enable logging for our script
+            logging.disable(logging.NOTSET)
 
         # Import the Environment model
-        from web_ui.models import Environment
+        from web_ui.web_ui.models import Environment
 
         # Get all environments
         environments = []
