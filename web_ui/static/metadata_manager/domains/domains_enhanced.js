@@ -521,11 +521,10 @@ function renderTab(tabId) {
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
                         <th>Name</th>
-                        <th>URN</th>
                         <th>Description</th>
-                        <th>Status</th>
                         <th>Owners</th>
                         <th>Entities</th>
+                        <th>URN</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -535,7 +534,7 @@ function renderTab(tabId) {
     if (pageItems.length === 0) {
         html += `
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">
+                        <td colspan="7" class="text-center py-4 text-muted">
                             <i class="fas fa-inbox fa-2x mb-2"></i><br>
                             No domains found
                         </td>
@@ -641,19 +640,16 @@ function renderDomainRow(domain, tabType) {
                 </div>
             </td>
             <td>
-                <code class="text-muted">${truncateUrn(urn, 60)}</code>
-            </td>
-            <td>
                 <div class="description-preview">${truncateText(description, 100)}</div>
-            </td>
-            <td>
-                <span class="badge ${statusBadgeClass}">${statusDisplay}</span>
             </td>
             <td>
                 <span class="badge bg-secondary">${ownersCount}</span>
             </td>
             <td>
                 <span class="badge bg-primary">${entitiesCount}</span>
+            </td>
+            <td>
+                <code class="small text-muted">${escapeHtml(urn)}</code>
             </td>
             <td>
                 <div class="btn-group" role="group">
@@ -877,11 +873,36 @@ function showDomainDetails(domain) {
     // Basic information - enhanced like data products and assertions
     const name = domain.properties?.name || domain.name || 'Unnamed Domain';
     const description = domain.properties?.description || domain.description || 'No description available';
-    const parentDomain = domain.parentDomains?.domains?.[0]?.properties?.name || 'No parent domain';
+    
+    // Check multiple possible parent URN fields
+    let parentDomain = 'No parent domain';
+    let parentUrn = null;
+    
+    if (domain.parentDomains?.domains?.[0]?.properties?.name) {
+        parentDomain = domain.parentDomains.domains[0].properties.name;
+        parentUrn = domain.parentDomains.domains[0].urn;
+    } else if (domain.parent_urn) {
+        parentUrn = domain.parent_urn;
+        // Try to find the parent domain name from the data
+        const allDomains = [...(domainsData.synced_items || []), ...(domainsData.local_only_items || []), ...(domainsData.remote_only_items || [])];
+        const parentDomainData = allDomains.find(item => {
+            const d = item.combined || item;
+            return d.urn === parentUrn;
+        });
+        if (parentDomainData) {
+            const pd = parentDomainData.combined || parentDomainData;
+            parentDomain = pd.properties?.name || pd.name || parentUrn;
+        } else {
+            parentDomain = parentUrn;
+        }
+    } else if (domain.parentDomain) {
+        parentDomain = domain.parentDomain.properties?.name || domain.parentDomain.name || domain.parentDomain;
+        parentUrn = domain.parentDomain.urn || domain.parentDomain;
+    }
     
     document.getElementById('modal-domain-name').textContent = name;
     document.getElementById('modal-domain-parent').innerHTML = parentDomain !== 'No parent domain' ? 
-        `<span class="badge bg-info">${escapeHtml(parentDomain)}</span>` : parentDomain;
+        `<span class="badge bg-info">${escapeHtml(parentDomain)}</span>${parentUrn ? `<br><small class="text-muted">${escapeHtml(parentUrn)}</small>` : ''}` : parentDomain;
     document.getElementById('modal-domain-description').textContent = description;
     document.getElementById('modal-domain-urn').textContent = domain.urn || 'No URN available';
     
@@ -898,16 +919,115 @@ function showDomainDetails(domain) {
     const subDomainsCount = calculateSubDomainsCount(domain.urn);
     document.getElementById('modal-domain-children').textContent = subDomainsCount;
     
-    // Owner details
+    // Owner details - format like tags and glossary
     const ownersListElement = document.getElementById('modal-domain-owners-list');
-    if (domain.owner_names && domain.owner_names.length > 0) {
-        let ownersHtml = '<h6 class="text-muted">Domain Owners</h6>';
-        domain.owner_names.forEach(owner => {
-            ownersHtml += `<span class="badge bg-light text-dark me-1 mb-1">${escapeHtml(owner)}</span>`;
+    
+    // Check for ownership data from GraphQL (remote domains) or local storage
+    const ownershipData = domain.ownership || domain.ownership_data;
+    
+    if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
+        // Group owners by ownership type
+        const ownersByType = {};
+        
+        ownershipData.owners.forEach(ownerInfo => {
+            let ownerUrn, ownershipTypeUrn, ownershipTypeName;
+            
+            // Handle different data structures
+            if (ownerInfo.owner_urn && ownerInfo.ownership_type_urn) {
+                // Local storage format
+                ownerUrn = ownerInfo.owner_urn;
+                ownershipTypeUrn = ownerInfo.ownership_type_urn;
+                
+                // Find the ownership type name from cache (if available)
+                ownershipTypeName = 'Unknown Type';
+                // Note: We'd need to load ownership types cache for domains too
+            } else if (ownerInfo.owner && ownerInfo.ownershipType) {
+                // GraphQL format
+                ownerUrn = ownerInfo.owner.urn;
+                ownershipTypeUrn = ownerInfo.ownershipType.urn;
+                ownershipTypeName = ownerInfo.ownershipType.info?.name || 'Unknown Type';
+            } else {
+                return; // Skip invalid entries
+            }
+            
+            // Find the owner name
+            let ownerName = ownerUrn;
+            let isUser = false;
+            
+            if (ownerInfo.owner && (ownerInfo.owner.username || ownerInfo.owner.name)) {
+                // GraphQL format - owner data is already included
+                if (ownerInfo.owner.username) {
+                    // CorpUser
+                    isUser = true;
+                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.username;
+                } else if (ownerInfo.owner.name) {
+                    // CorpGroup
+                    isUser = false;
+                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.name;
+                }
+            } else {
+                // Local storage format or simple name format
+                if (ownerUrn.includes('corpuser:')) {
+                    isUser = true;
+                    ownerName = ownerUrn.replace('urn:li:corpuser:', '');
+                } else if (ownerUrn.includes('corpGroup:')) {
+                    isUser = false;
+                    ownerName = ownerUrn.replace('urn:li:corpGroup:', '');
+                }
+            }
+            
+            if (!ownersByType[ownershipTypeName]) {
+                ownersByType[ownershipTypeName] = [];
+            }
+            ownersByType[ownershipTypeName].push({
+                name: ownerName,
+                urn: ownerUrn,
+                isUser: isUser
+            });
         });
-        ownersListElement.innerHTML = ownersHtml;
+        
+        // Generate HTML for owners grouped by type
+        let ownersHTML = '';
+        Object.keys(ownersByType).forEach(ownershipType => {
+            const owners = ownersByType[ownershipType];
+            ownersHTML += `
+                <div class="mb-3">
+                    <h6 class="text-primary mb-2">
+                        <i class="fas fa-crown me-1"></i>${escapeHtml(ownershipType)}
+                    </h6>
+                    <div class="ms-3">
+                        ${owners.map(owner => `
+                            <div class="d-flex align-items-center mb-1">
+                                <i class="fas fa-${owner.isUser ? 'user' : 'users'} text-muted me-2"></i>
+                                <span>${escapeHtml(owner.name)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        ownersListElement.innerHTML = ownersHTML;
+    } else if (domain.owner_names && domain.owner_names.length > 0) {
+        // Fallback to simple owner names format
+        let ownersHTML = `
+            <div class="mb-3">
+                <h6 class="text-primary mb-2">
+                    <i class="fas fa-crown me-1"></i>Domain Owners
+                </h6>
+                <div class="ms-3">
+                    ${domain.owner_names.map(owner => `
+                        <div class="d-flex align-items-center mb-1">
+                            <i class="fas fa-user text-muted me-2"></i>
+                            <span>${escapeHtml(owner)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        ownersListElement.innerHTML = ownersHTML;
     } else {
-        ownersListElement.innerHTML = '<h6 class="text-muted">Domain Owners</h6><p class="text-muted">No ownership information available</p>';
+        ownersListElement.innerHTML = '<p class="text-muted">No ownership information available</p>';
     }
     
     // Domain Properties

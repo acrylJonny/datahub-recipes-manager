@@ -515,11 +515,11 @@ function renderTab(tabId) {
                     <tr>
                         <th width="40px"><input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}"></th>
                         <th class="sortable-header" data-sort="name">Name</th>
-                        <th width="200px" class="sortable-header" data-sort="urn">URN</th>
+                        <th>Description</th>
+                        <th class="sortable-header" data-sort="entity_types">Entity Types</th>
                         <th class="sortable-header" data-sort="value_type">Value Type</th>
                         <th class="sortable-header" data-sort="cardinality">Cardinality</th>
-                        <th class="sortable-header" data-sort="entity_types">Entity Types</th>
-                        <th>Description</th>
+                        <th width="200px" class="sortable-header" data-sort="urn">URN</th>
                         <th width="200px">Actions</th>
                     </tr>
                 </thead>
@@ -557,6 +557,7 @@ function renderTab(tabId) {
     // Setup bulk selection and sorting after rendering
     setupBulkSelectionForTab(tabType);
     attachSortingHandlers(contentElement, tabType);
+    attachViewButtonHandlers(contentElement);
 }
 
 // Tab content is rendered by renderAllTabs(), no need for individual loading
@@ -588,11 +589,11 @@ function renderPropertiesTable(properties, tabType, container) {
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
                         <th>Name</th>
-                        <th width="200px">URN</th>
+                        <th>Description</th>
+                        <th>Entity Types</th>
                         <th>Value Type</th>
                         <th>Cardinality</th>
-                        <th>Entity Types</th>
-                        <th>Description</th>
+                        <th width="200px">URN</th>
                         <th width="200px">Actions</th>
                     </tr>
                 </thead>
@@ -617,7 +618,6 @@ function renderPropertyRow(property, tabType) {
     console.log('Entity types:', property.entity_types);
     console.log('Value type:', property.value_type);
     
-    const statusBadge = getStatusBadge(property.status);
     const actionButtons = getActionButtons(property, tabType);
     
     // Handle missing name gracefully
@@ -632,20 +632,12 @@ function renderPropertyRow(property, tabType) {
                 <input type="checkbox" class="form-check-input item-checkbox" value="${property.id || property.urn}">
             </td>
             <td>
-                <div class="d-flex align-items-center">
-                    <strong>${escapeHtml(propertyName)}</strong>
-                    ${statusBadge}
+                <strong>${escapeHtml(propertyName)}</strong>
+            </td>
+            <td>
+                <div class="description-preview">
+                    ${escapeHtml(property.description || 'No description')}
                 </div>
-                <small class="text-muted">${escapeHtml(property.qualified_name || '')}</small>
-            </td>
-            <td class="urn-cell">
-                <code class="text-muted small urn-truncate" title="${escapeHtml(propertyUrn)}">${escapeHtml(truncateUrn(propertyUrn, 40))}</code>
-            </td>
-            <td>
-                <span class="badge bg-info">${escapeHtml(property.value_type || 'STRING')}</span>
-            </td>
-            <td>
-                <span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>
             </td>
             <td>
                 <div class="entity-types">
@@ -653,9 +645,13 @@ function renderPropertyRow(property, tabType) {
                 </div>
             </td>
             <td>
-                <div class="description-preview">
-                    ${escapeHtml(property.description || 'No description')}
-                </div>
+                <span class="badge bg-info">${escapeHtml(property.value_type || 'STRING')}</span>
+            </td>
+            <td>
+                <span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>
+            </td>
+            <td class="urn-cell">
+                <code class="text-muted small urn-truncate" title="${escapeHtml(propertyUrn)}">${escapeHtml(truncateUrn(propertyUrn, 40))}</code>
             </td>
             <td>
                 <div class="btn-group" role="group">
@@ -664,19 +660,6 @@ function renderPropertyRow(property, tabType) {
             </td>
         </tr>
     `;
-}
-
-function getStatusBadge(status) {
-    switch (status) {
-        case 'synced':
-            return '<span class="badge bg-success ms-2">Synced</span>';
-        case 'local_only':
-            return '<span class="badge bg-secondary ms-2">Local</span>';
-        case 'remote_only':
-            return '<span class="badge bg-info ms-2">Remote</span>';
-        default:
-            return '';
-    }
 }
 
 function getActionButtons(property, tabType) {
@@ -688,7 +671,7 @@ function getActionButtons(property, tabType) {
     console.log(`Getting action buttons for property: ${property.name}, id: ${propertyId}, status: ${status}`);
     
     // View button - always available
-    buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary view-property" onclick="viewProperty('${propertyUrn || propertyId}')" title="View Details">
+    buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary view-property" data-property-urn="${propertyUrn || propertyId}" title="View Details">
         <i class="fas fa-eye"></i>
     </button>`);
     
@@ -864,6 +847,15 @@ function getSortValueFromRow(row, column) {
 
 
 
+function attachViewButtonHandlers(container) {
+    container.querySelectorAll('.view-property').forEach(button => {
+        button.addEventListener('click', function() {
+            const propertyUrn = this.dataset.propertyUrn;
+            viewProperty(propertyUrn);
+        });
+    });
+}
+
 // Individual Action Functions
 function viewProperty(propertyUrn) {
     // Find the property data across all categories
@@ -881,8 +873,27 @@ function viewProperty(propertyUrn) {
         return;
     }
     
-    // Populate modal with property data
-    populatePropertyViewModal(property);
+    // Show the property details modal
+    showPropertyDetails(property);
+}
+
+function showPropertyDetails(property) {
+    // Basic information
+    document.getElementById('modal-property-name').textContent = property.name || 'Unnamed Property';
+    document.getElementById('modal-property-id').textContent = property.id || property.qualified_name || 'No ID';
+    document.getElementById('modal-property-urn').textContent = property.urn || 'No URN available';
+    document.getElementById('modal-property-description').textContent = property.description || 'No description available';
+    
+    // Property details
+    document.getElementById('modal-property-entity-types').innerHTML = property.entity_types && property.entity_types.length > 0 
+        ? property.entity_types.map(type => `<span class="badge bg-light text-dark me-1">${escapeHtml(type)}</span>`).join('')
+        : '<span class="text-muted">None specified</span>';
+    
+    document.getElementById('modal-property-value-type').innerHTML = `<span class="badge bg-info">${escapeHtml(property.value_type || 'STRING')}</span>`;
+    document.getElementById('modal-property-cardinality').innerHTML = `<span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>`;
+    
+    // Raw JSON data
+    document.getElementById('modal-property-raw-json').innerHTML = `<pre><code>${escapeHtml(JSON.stringify(property, null, 2))}</code></pre>`;
     
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('propertyViewModal'));

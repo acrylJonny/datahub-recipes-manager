@@ -511,10 +511,10 @@ function generateTableHTMLWithPagination(rootItems, tabType, totalItems, current
             <table class="table table-hover table-striped mb-0">
                 <thead>
                     <tr>
-                        <th width="20%">Name</th>
+                        <th class="sortable-header" data-sort="name" width="20%">Name</th>
                         <th width="20%">Description</th>
                         <th class="sortable-header text-center" data-sort="owners_count" width="8%">Owners</th>
-                                                        <th class="sortable-header text-center" data-sort="relationships_count" width="8%">Relationships</th>
+                        <th class="sortable-header text-center" data-sort="relationships_count" width="8%">Relationships</th>
                         <th class="sortable-header text-center" data-sort="custom_properties_count" width="8%">Custom<br/>Properties</th>
                         <th class="sortable-header text-center" data-sort="structured_properties_count" width="8%">Structured<br/>Properties</th>
                         <th width="13%">URN</th>

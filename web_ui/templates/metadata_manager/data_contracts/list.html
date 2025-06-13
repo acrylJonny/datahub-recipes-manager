@@ -52,6 +52,93 @@
         background-color: #f8f9fa;
         border-top: none;
     }
+    
+    /* Filter styling */
+    .filter-row {
+        min-height: 80px;
+    }
+    
+    .filter-stat {
+        padding: 1rem;
+        transition: all 0.2s ease;
+        cursor: default;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+    }
+    
+    .clickable-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat.active {
+        background-color: #e3f2fd;
+        border-color: #2196f3;
+    }
+    
+    .col-md-2-5 {
+        flex: 0 0 20%;
+        max-width: 20%;
+    }
+    
+    /* Filter text styling - prevent wrapping */
+    .filter-stat .text-muted {
+        white-space: nowrap;
+        font-size: 0.8rem;
+        line-height: 1.2;
+    }
+    
+    /* Adjust filter column widths for longer text */
+    .filter-row .col-3 {
+        min-width: 0;
+        flex: 1;
+    }
+    
+    /* Ensure action buttons don't wrap */
+    .table td:nth-child(8) .btn-group {
+        white-space: nowrap;
+    }
+    
+    /* Sorting styles */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header.sorted {
+        background-color: #e3f2fd !important;
+    }
+    
+    .sort-indicator {
+        font-size: 0.8em;
+        margin-left: 5px;
+        color: #007bff;
+    }
+    
+    /* Pagination styles */
+    .pagination-container {
+        display: flex;
+        justify-content: between;
+        align-items: center;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+    }
+    
+    .pagination-info {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
 </style>
 {% endblock %}
 
@@ -110,38 +197,42 @@
 
             <!-- Contracts content -->
             <div id="contracts-content" style="display: none;">
-                <!-- Statistics -->
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="total-items">0</div>
-                                <small class="text-muted">Total Contracts</small>
+                <!-- Statistics and Filters -->
+                <div class="card mb-4">
+                    <div class="card-body p-0">
+                        <div class="container-fluid">
+                            <!-- Row 1: Overview Statistics -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-2 border-end">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-3 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-3 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-2">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="synced-count">0</div>
-                                <small class="text-muted">Synced</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="owned-contracts">0</div>
-                                <small class="text-muted">Owned</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card text-center">
-                            <div class="card-body">
-                                <div class="h4 mb-0" id="contracts-with-relationships">0</div>
-                                <small class="text-muted">With Relationships</small>
-                            </div>
+                            
+
                         </div>
                     </div>
                 </div>
@@ -336,511 +427,11 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-// Global variables
-let contractsData = {
-    synced_items: [],
-    local_only_items: [],
-    remote_only_items: [],
-    datahub_url: ''
-};
-let currentSearch = {
-    synced: '',
-    local: '',
-    remote: ''
-};
+<!-- Select2 JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-document.addEventListener('DOMContentLoaded', function() {
-    loadContractsData();
-    
-    // Search functionality for each tab
-    ['synced', 'local', 'remote'].forEach(tab => {
-        const searchInput = document.getElementById(`${tab}-search`);
-        const clearButton = document.getElementById(`${tab}-clear`);
-        
-        searchInput.addEventListener('input', function() {
-            currentSearch[tab] = this.value.toLowerCase();
-            displayTabContent(tab);
-        });
-        
-        clearButton.addEventListener('click', function() {
-            searchInput.value = '';
-            currentSearch[tab] = '';
-            displayTabContent(tab);
-        });
-    });
-    
-    // Refresh button
-    document.getElementById('refreshContracts').addEventListener('click', function() {
-        loadContractsData();
-    });
-});
-
-function loadContractsData() {
-    console.log('Loading contracts data...');
-    showLoading(true);
-    
-    fetch('/metadata/data-contracts/data/')
-        .then(response => {
-            console.log('Received response:', response.status);
-            return response.json();
-        })
-        .then(data => {
-            console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
-            if (data.success) {
-                contractsData = data.data;
-                updateStatistics(data.data.statistics);
-                updateTabBadges();
-                displayAllTabs();
-            } else {
-                console.error('Data loading failed:', data.error);
-                showError('Failed to load contracts: ' + (data.error || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error loading contracts:', error);
-            showError('Failed to load contracts data: ' + error.message);
-        })
-        .finally(() => {
-            showLoading(false);
-        });
-}
-
-function showLoading(show) {
-    document.getElementById('loading-indicator').style.display = show ? 'block' : 'none';
-    document.getElementById('contracts-content').style.display = show ? 'none' : 'block';
-}
-
-function updateStatistics(stats) {
-    document.getElementById('total-items').textContent = stats.total_items || 0;
-    document.getElementById('synced-count').textContent = stats.synced_count || 0;
-    document.getElementById('owned-contracts').textContent = stats.owned_items || 0;
-    document.getElementById('contracts-with-relationships').textContent = stats.items_with_relationships || 0;
-}
-
-function updateTabBadges() {
-    document.getElementById('synced-badge').textContent = contractsData.synced_items.length;
-    document.getElementById('local-badge').textContent = contractsData.local_only_items.length;
-    document.getElementById('remote-badge').textContent = contractsData.remote_only_items.length;
-}
-
-function displayAllTabs() {
-    displayTabContent('synced');
-    displayTabContent('local');
-    displayTabContent('remote');
-}
-
-function displayTabContent(tabType) {
-    console.log('Displaying tab content for:', tabType);
-    
-    let items, contentId;
-    
-    try {
-        switch(tabType) {
-            case 'synced':
-                items = contractsData.synced_items.map(item => item.combined);
-                contentId = 'synced-content';
-                break;
-            case 'local':
-                items = contractsData.local_only_items;
-                contentId = 'local-content';
-                break;
-            case 'remote':
-                items = contractsData.remote_only_items;
-                contentId = 'remote-content';
-                break;
-        }
-        
-        console.log(`Tab ${tabType}: ${items?.length || 0} items`);
-        
-        // Sort items alphabetically by URN (A-Z)
-        if (items && items.length > 0) {
-            items.sort((a, b) => (a.urn || '').toLowerCase().localeCompare((b.urn || '').toLowerCase()));
-        }
-        
-        // Filter items based on search
-        const searchTerm = currentSearch[tabType];
-        if (searchTerm) {
-            items = items.filter(item => 
-                (item.urn || '').toLowerCase().includes(searchTerm) ||
-                (item.properties?.entityUrn || '').toLowerCase().includes(searchTerm) ||
-                (item.status?.state || '').toLowerCase().includes(searchTerm)
-            );
-        }
-        
-        const content = document.getElementById(contentId);
-        if (!content) {
-            console.error('Content element not found:', contentId);
-            return;
-        }
-        
-        if (items.length === 0) {
-            console.log(`No items for ${tabType}, showing empty state`);
-            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
-            return;
-        }
-        
-        console.log(`Generating table for ${tabType} with ${items.length} items`);
-        const tableHTML = generateTableHTML(items, tabType);
-        content.innerHTML = tableHTML;
-        
-        // Attach click handlers for view buttons
-        content.querySelectorAll('.view-item').forEach(button => {
-            button.addEventListener('click', function() {
-                const row = this.closest('tr');
-                const itemData = JSON.parse(row.dataset.item);
-                showContractDetails(itemData);
-            });
-        });
-        
-        console.log(`Successfully rendered ${tabType} tab`);
-        
-    } catch (error) {
-        console.error(`Error displaying ${tabType} tab:`, error);
-        const content = document.getElementById(contentId);
-        if (content) {
-            content.innerHTML = `<div class="alert alert-danger">Error loading ${tabType} contracts: ${error.message}</div>`;
-        }
-    }
-}
-
-function generateTableHTML(items, tabType) {
-    return `
-        <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
-                <thead>
-                    <tr>
-                        <th>URN</th>
-                        <th>Entity URN</th>
-                        <th>State</th>
-                        <th>Assertions</th>
-                        <th>Status</th>
-                        <th>Owners</th>
-                        <th>Relationships</th>
-                        <th width="15%">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${items.map(item => renderContractRow(item, tabType)).join('')}
-                </tbody>
-            </table>
-        </div>
-    `;
-}
-
-// Universal function to sanitize data for HTML attributes to prevent URI length issues
-function sanitizeDataForAttribute(item, maxDescriptionLength = 500) {
-    if (!item || typeof item !== 'object') {
-        return item;
-    }
-    
-    const sanitized = { ...item };
-    
-    // Truncate description if it's too long
-    if (sanitized.description && typeof sanitized.description === 'string' && sanitized.description.length > maxDescriptionLength) {
-        sanitized.description = sanitized.description.substring(0, maxDescriptionLength) + '...[truncated]';
-    }
-    
-    // Truncate properties.description if it exists
-    if (sanitized.properties && sanitized.properties.description && 
-        typeof sanitized.properties.description === 'string' && 
-        sanitized.properties.description.length > maxDescriptionLength) {
-        sanitized.properties = {
-            ...sanitized.properties,
-            description: sanitized.properties.description.substring(0, maxDescriptionLength) + '...[truncated]'
-        };
-    }
-    
-    // Remove potentially large raw data objects
-    sanitized.raw_data = undefined;
-    
-    return sanitized;
-}
-
-function renderContractRow(contract, tabType) {
-    const statusClass = getStatusBadgeClass(contract.sync_status);
-    const typeIcon = 'fas fa-file-contract text-warning';
-    
-    // Extract contract data
-    const urn = contract.urn || '';
-    const properties = contract.properties || {};
-    const entityUrn = properties.entityUrn || '';
-    const status = contract.status || {};
-    const state = status.state || 'Unknown';
-    
-    // Count assertions
-    let assertionCount = 0;
-    if (properties.freshness && properties.freshness.assertion) assertionCount++;
-    if (properties.schema && properties.schema.assertion) assertionCount++;
-    if (properties.dataQuality && properties.dataQuality.assertion) assertionCount++;
-    
-    // Sanitize contract data for the data-item attribute to prevent URI length issues
-    const sanitizedContract = sanitizeDataForAttribute(contract);
-    
-    return `
-        <tr data-item='${JSON.stringify(sanitizedContract)}'>
-            <td>
-                <div class="d-flex align-items-center">
-                    <i class="${typeIcon} me-2"></i>
-                    <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(urn)}">${escapeHtml(truncateUrn(urn, 30))}</code>
-                </div>
-            </td>
-            <td>
-                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(entityUrn)}">${escapeHtml(truncateUrn(entityUrn, 30))}</code>
-            </td>
-            <td>
-                <span class="badge bg-secondary">${escapeHtml(state)}</span>
-            </td>
-            <td>
-                <span class="badge bg-info">${assertionCount}</span>
-            </td>
-            <td>
-                <span class="badge ${statusClass}">${contract.sync_status_display || contract.sync_status}</span>
-            </td>
-            <td>
-                ${contractsData.datahub_url && urn ? `
-                    <a href="${contractsData.datahub_url}/dataContract/${encodeURIComponent(urn)}" 
-                       class="btn btn-sm btn-outline-info" 
-                       target="_blank" title="View in DataHub">
-                        <i class="fas fa-external-link-alt"></i>
-                    </a>
-                ` : `<span class="text-muted">-</span>`}
-            </td>
-        </tr>
-    `;
-}
-
-function getActionButtons(item, tabType) {
-    // Implementation depends on backend endpoints
-    return '';
-}
-
-function getEmptyStateHTML(tabType, hasSearch) {
-    if (hasSearch) {
-        return `
-            <div class="py-5 text-center">
-                <div class="mb-3">
-                    <i class="fas fa-search fa-4x text-muted"></i>
-                </div>
-                <h4>No contracts found</h4>
-                <p class="text-muted">No contracts match your search criteria.</p>
-            </div>
-        `;
-    }
-    
-    const emptyStates = {
-        synced: {
-            icon: 'fas fa-sync-alt',
-            title: 'No synced contracts',
-            description: 'Contracts that exist both locally and in DataHub will appear here.'
-        },
-        local: {
-            icon: 'fas fa-laptop',
-            title: 'No local-only contracts',
-            description: 'Contracts that exist only in this application will appear here.',
-            action: `<div class="mt-2">
-                        <button type="button" class="btn btn-primary" title="Create Data Contract">
-                            <i class="fas fa-plus me-1"></i> Create Data Contract
-                        </button>
-                     </div>`
-        },
-        remote: {
-            icon: 'fas fa-server',
-            title: 'No remote-only contracts',
-            description: 'Contracts that exist only in DataHub will appear here.'
-        }
-    };
-    
-    const state = emptyStates[tabType];
-    return `
-        <div class="py-5 text-center">
-            <div class="mb-3">
-                <i class="${state.icon} fa-4x text-muted"></i>
-            </div>
-            <h4>${state.title}</h4>
-            <p class="text-muted">${state.description}</p>
-            ${state.action || ''}
-        </div>
-    `;
-}
-
-function showContractDetails(contract) {
-    // Basic information
-    document.getElementById('modal-contract-urn').textContent = contract.urn || 'No URN available';
-    document.getElementById('modal-contract-entityurn').textContent = contract.properties?.entityUrn || 'No entity URN available';
-    document.getElementById('modal-contract-state').textContent = contract.status?.state || 'Unknown';
-    
-    // Status
-    const statusBadge = document.getElementById('modal-contract-status');
-    statusBadge.textContent = contract.sync_status_display || contract.sync_status;
-    statusBadge.className = `badge ${getStatusBadgeClass(contract.sync_status)}`;
-    
-    // DataHub link
-    const datahubLink = document.getElementById('modal-datahub-link');
-    if (contract.urn && !contract.urn.includes('local:') && contractsData.datahub_url) {
-        datahubLink.href = getDataHubUrl(contract.urn, 'contract');
-        datahubLink.style.display = 'inline-block';
-    } else {
-        datahubLink.style.display = 'none';
-    }
-    
-    // Assertions information
-    const assertionsList = document.getElementById('modal-assertions-list');
-    const properties = contract.properties || {};
-    let assertionsHTML = '';
-    
-    if (properties.freshness && properties.freshness.assertion) {
-        assertionsHTML += `
-            <div class="border rounded p-2 mb-2">
-                <strong>Freshness Assertion:</strong>
-                <div class="mt-2">
-                    <code class="small">${escapeHtml(properties.freshness.assertion)}</code>
-                </div>
-            </div>
-        `;
-    }
-    
-    if (properties.schema && properties.schema.assertion) {
-        assertionsHTML += `
-            <div class="border rounded p-2 mb-2">
-                <strong>Schema Assertion:</strong>
-                <div class="mt-2">
-                    <code class="small">${escapeHtml(properties.schema.assertion)}</code>
-                </div>
-            </div>
-        `;
-    }
-    
-    if (properties.dataQuality && properties.dataQuality.assertion) {
-        assertionsHTML += `
-            <div class="border rounded p-2 mb-2">
-                <strong>Data Quality Assertion:</strong>
-                <div class="mt-2">
-                    <code class="small">${escapeHtml(properties.dataQuality.assertion)}</code>
-                </div>
-            </div>
-        `;
-    }
-    
-    if (assertionsHTML) {
-        assertionsList.innerHTML = assertionsHTML;
-    } else {
-        assertionsList.innerHTML = '<p class="text-muted">No assertions defined</p>';
-    }
-    
-    // Contract Properties
-    const propertiesDiv = document.getElementById('modal-contract-properties');
-    if (contract.properties || contract.structuredProperties) {
-        let propertiesHTML = '';
-        
-        if (contract.structuredProperties && contract.structuredProperties.properties) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Structured Properties:</strong>
-                    <div class="mt-2">
-                        ${contract.structuredProperties.properties.map(prop => `
-                            <div class="mb-2">
-                                <strong>${escapeHtml(prop.structuredPropertyKey || 'Unknown')}</strong>: 
-                                ${prop.value ? escapeHtml(JSON.stringify(prop.value)) : 'No value'}
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-        
-        if (contract.properties) {
-            const contractProps = { ...contract.properties };
-            // Remove assertions as they're shown separately
-            delete contractProps.freshness;
-            delete contractProps.schema;
-            delete contractProps.dataQuality;
-            
-            if (Object.keys(contractProps).length > 0) {
-                propertiesHTML += `
-                    <div class="border rounded p-2 mb-2">
-                        <strong>Contract Properties:</strong>
-                        <pre class="mt-2 mb-0"><code>${escapeHtml(JSON.stringify(contractProps, null, 2))}</code></pre>
-                    </div>
-                `;
-            }
-        }
-        
-        if (propertiesHTML) {
-            propertiesDiv.innerHTML = propertiesHTML;
-        } else {
-            propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
-        }
-    } else {
-        propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
-    }
-    
-    // Raw JSON - Show comprehensive GraphQL data
-    const rawData = contract.raw_data || contract;
-    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
-    
-    // Show modal
-    new bootstrap.Modal(document.getElementById('contractViewModal')).show();
-}
-
-// Utility functions
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function truncateText(text, maxLength) {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-}
-
-function truncateUrn(urn, maxLength) {
-    if (!urn || urn.length <= maxLength) return urn;
-    return urn.substring(0, maxLength - 3) + '...';
-}
-
-function formatDate(timestamp) {
-    try {
-        const date = new Date(parseInt(timestamp));
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    } catch (e) {
-        return timestamp;
-    }
-}
-
-function getDataHubUrl(urn, type) {
-    if (contractsData.datahub_url) {
-        return `${contractsData.datahub_url}/dataContract/${encodeURIComponent(urn)}`;
-    }
-    return '#';
-}
-
-function getStatusBadgeClass(status) {
-    switch(status) {
-        case 'SYNCED': return 'bg-success';
-        case 'MODIFIED': return 'bg-warning';
-        case 'LOCAL_ONLY': return 'bg-secondary';
-        case 'REMOTE_ONLY': return 'bg-info';
-        default: return 'bg-primary';
-    }
-}
-
-function getCsrfToken() {
-    const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
-    return csrfElement ? csrfElement.value : '';
-}
-
-function showError(message) {
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
-}
-</script>
+<!-- Data Contracts Enhanced JavaScript -->
+<script src="{% static 'metadata_manager/data_contracts/data_contracts_enhanced.js' %}"></script>
 
 <style>
 #modal-raw-json {

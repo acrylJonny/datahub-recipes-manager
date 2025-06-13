@@ -60,39 +60,81 @@ def get_remote_data_contracts_data(request):
         # Fetch remote data contracts
         remote_data_contracts = []
         datahub_url = None
+        datahub_token = None
 
         try:
             logger.debug("Fetching remote data contracts from DataHub")
 
-            # Get DataHub URL for direct links
+            # Get DataHub URL and token for direct links
             datahub_url = client.server_url
             if datahub_url.endswith("/api/gms"):
                 datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
+            
+            # Get token if available
+            if hasattr(client, 'token'):
+                datahub_token = client.token
 
             # Get data contracts from DataHub using the new method
             result = client.get_data_contracts(start=0, count=1000, query="*")
 
-            if result.get("success", False):
+            if result and result.get("success", False) and result.get("data"):
                 remote_data_contracts_data = result["data"].get("searchResults", [])
                 logger.debug(f"Fetched {len(remote_data_contracts_data)} remote data contracts")
 
                 # Process the data contracts
                 for contract_result in remote_data_contracts_data:
-                    contract_data = contract_result.get("entity", {})
-                    if contract_data:
-                        remote_data_contracts.append(contract_data)
+                    if contract_result and isinstance(contract_result, dict):
+                        contract_data = contract_result.get("entity", {})
+                        if contract_data:
+                            # Add sync status information
+                            contract_data['sync_status'] = 'REMOTE_ONLY'
+                            contract_data['sync_status_display'] = 'Remote Only'
+                            remote_data_contracts.append(contract_data)
 
             else:
-                logger.warning(
-                    f"Failed to fetch remote data contracts: {result.get('error', 'Unknown error')}"
-                )
+                error_msg = "Unknown error"
+                if result:
+                    error_msg = result.get('error', 'No data returned')
+                else:
+                    error_msg = "No result returned from DataHub"
+                logger.warning(f"Failed to fetch remote data contracts: {error_msg}")
+
+            # Calculate statistics
+            try:
+                statistics = {
+                    'total_items': len(remote_data_contracts),
+                    'synced_count': 0,  # No synced items for now
+                    'local_only_count': 0,  # No local items for now
+                    'remote_only_count': len(remote_data_contracts),
+                    'owned_items': sum(1 for contract in remote_data_contracts if contract and contract.get('ownership', {}) and contract.get('ownership', {}).get('owners')),
+                    'items_with_relationships': sum(1 for contract in remote_data_contracts if contract and has_contract_relationships(contract)),
+                    'items_with_custom_properties': sum(1 for contract in remote_data_contracts if contract and contract.get('customProperties')),
+                    'items_with_structured_properties': sum(1 for contract in remote_data_contracts if contract and contract.get('structuredProperties', {}) and contract.get('structuredProperties', {}).get('properties'))
+                }
+            except Exception as stats_error:
+                logger.warning(f"Error calculating statistics: {stats_error}")
+                statistics = {
+                    'total_items': len(remote_data_contracts),
+                    'synced_count': 0,
+                    'local_only_count': 0,
+                    'remote_only_count': len(remote_data_contracts),
+                    'owned_items': 0,
+                    'items_with_relationships': 0,
+                    'items_with_custom_properties': 0,
+                    'items_with_structured_properties': 0
+                }
 
             return JsonResponse(
                 {
                     "success": True,
                     "data": {
                         "remote_data_contracts": remote_data_contracts,
+                        "synced_items": [],  # Empty for now
+                        "local_only_items": [],  # Empty for now
+                        "remote_only_items": remote_data_contracts,
                         "datahub_url": datahub_url,
+                        "datahub_token": datahub_token,
+                        "statistics": statistics
                     },
                 }
             )
@@ -109,6 +151,23 @@ def get_remote_data_contracts_data(request):
     except Exception as e:
         logger.error(f"Error in get_remote_data_contracts_data: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
+
+
+def has_contract_relationships(contract):
+    """Check if a contract has relationships (assertions, etc.)"""
+    if not contract or not isinstance(contract, dict):
+        return False
+    
+    properties = contract.get('properties', {})
+    if not properties:
+        return False
+        
+    return bool(
+        properties.get('freshness') or
+        properties.get('schema') or
+        properties.get('dataQuality') or
+        contract.get('relationships')
+    )
 
 
 @require_http_methods(["GET"])
