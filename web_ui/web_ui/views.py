@@ -198,6 +198,31 @@ def dashboard_data(request):
 
 def recipes(request):
     """List all recipes."""
+    # Return basic page structure without expensive API calls
+    # Data will be loaded asynchronously via AJAX
+    
+    # Get refresh rate from settings
+    refresh_rate = AppSettings.get_int("refresh_rate", 60)
+    
+    # Quick connection test
+    client = get_datahub_client()
+    connected = client and client.test_connection() if client else False
+
+    return render(
+        request,
+        "recipes/list.html",
+        {
+            "title": "Recipes",
+            "recipes": [],  # Will be populated via AJAX
+            "refresh_rate": refresh_rate,
+            "connection": {"connected": connected},
+            "loading_async": True,  # Flag to show loading state
+        },
+    )
+
+
+def recipes_data(request):
+    """AJAX endpoint to load recipes data asynchronously."""
     client = get_datahub_client()
     recipes_list = []
     connected = False
@@ -244,26 +269,19 @@ def recipes(request):
             # Sort by name
             recipes_list.sort(key=lambda x: x.get("name", "").lower())
         except Exception as e:
-            messages.error(request, f"Error fetching recipes: {str(e)}")
-    else:
-        messages.warning(request, "Not connected to DataHub")
-
-    # Get refresh rate from settings
-    refresh_rate = AppSettings.get_int("refresh_rate", 60)
-
-    # Store connection status in session
-    request.session["datahub_connected"] = connected
-
-    return render(
-        request,
-        "recipes/list.html",
-        {
-            "title": "Recipes",
-            "recipes": recipes_list,
-            "refresh_rate": refresh_rate,
-            "connection": {"connected": connected},
-        },
-    )
+            logger.error(f"Error fetching recipes: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": str(e),
+                "connected": connected,
+                "recipes": []
+            })
+    
+    return JsonResponse({
+        "success": True,
+        "connected": connected,
+        "recipes": recipes_list
+    })
 
 
 def recipe_create(request):
@@ -755,8 +773,39 @@ def recipe_download(request, recipe_id):
 
 def policies(request):
     """List all policies from DataHub."""
+    # Return basic page structure without expensive API calls
+    # Data will be loaded asynchronously via AJAX
+    
+    # Quick connection test
     client = get_datahub_client()
-    connected = client and client.test_connection()
+    connected = client and client.test_connection() if client else False
+
+    # Get local policies from database (quick operation)
+    local_policies = Policy.objects.all().order_by("name")
+    local_policies_count = local_policies.count()
+
+    # Default active tab
+    active_tab = request.GET.get("tab", "server")
+
+    return render(
+        request,
+        "policies/list.html",
+        {
+            "title": "DataHub Policies",
+            "connected": connected,
+            "policies": [],  # Will be populated via AJAX
+            "local_policies": local_policies,
+            "local_policies_count": local_policies_count,
+            "active_tab": active_tab,
+            "loading_async": True,  # Flag to show loading state
+        },
+    )
+
+
+def policies_data(request):
+    """AJAX endpoint to load policies data asynchronously."""
+    client = get_datahub_client()
+    connected = client and client.test_connection() if client else False
 
     try:
         # Check if we should force refresh the cache
@@ -777,40 +826,20 @@ def policies(request):
                     if len(parts) >= 4:
                         policy["id"] = parts[3]
 
-        # Get local policies from database
-        local_policies = Policy.objects.all().order_by("name")
-        local_policies_count = local_policies.count()
-
-        # Default active tab
-        active_tab = request.GET.get("tab", "server")
-
-        return render(
-            request,
-            "policies/list.html",
-            {
-                "title": "DataHub Policies",
-                "connected": connected,
-                "policies": server_policies,
-                "local_policies": local_policies,
-                "local_policies_count": local_policies_count,
-                "active_tab": active_tab,
-            },
-        )
+        return JsonResponse({
+            "success": True,
+            "connected": connected,
+            "policies": server_policies
+        })
 
     except Exception as e:
-        messages.error(request, f"Error retrieving policies: {str(e)}")
         logger.error(f"Error retrieving policies: {str(e)}", exc_info=True)
-        return render(
-            request,
-            "policies/list.html",
-            {
-                "title": "DataHub Policies",
-                "connected": connected,
-                "policies": [],
-                "local_policies": [],
-                "local_policies_count": 0,
-            },
-        )
+        return JsonResponse({
+            "success": False,
+            "error": str(e),
+            "connected": connected,
+            "policies": []
+        })
 
 
 def policy_create(request):

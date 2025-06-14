@@ -2,6 +2,8 @@ from django.apps import AppConfig
 import os
 import logging
 from django.db import connection
+from asgiref.sync import sync_to_async
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,24 @@ class WebUiConfig(AppConfig):
         ):
             return
 
+        # For ASGI servers, run database operations in a thread
+        try:
+            # Check if we're in an event loop (ASGI context)
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                # We're in an async context, defer initialization
+                import threading
+                threading.Thread(target=self._initialize_settings, daemon=True).start()
+                return
+        except RuntimeError:
+            # No event loop running, safe to run synchronously
+            pass
+
+        # Run initialization synchronously
+        self._initialize_settings()
+
+    def _initialize_settings(self):
+        """Initialize settings - can be called from thread or sync context"""
         # Check if tables exist before attempting to use them
         try:
             tables = connection.introspection.table_names()

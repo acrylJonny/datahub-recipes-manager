@@ -60,7 +60,51 @@
             </div>
         </div>
         <div class="card-body p-0">
-            {% if recipes %}
+            {% if loading_async %}
+                <div id="recipes-loading" class="text-center py-5">
+                    <i class="fas fa-spinner fa-spin fa-2x text-muted mb-3"></i>
+                    <p class="text-muted">Loading recipes...</p>
+                </div>
+                <div id="recipes-content" style="display: none;">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>ID</th>
+                                    <th>Type</th>
+                                    <th>Schedule</th>
+                                    <th>Status</th>
+                                    <th width="25%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recipes-tbody">
+                                <!-- Content will be populated via AJAX -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="recipes-empty" class="py-5 text-center" style="display: none;">
+                    <div class="mb-3">
+                        <i class="fas fa-code fa-4x text-muted"></i>
+                    </div>
+                    <h4>No recipes available</h4>
+                    <p class="text-muted">Create your first recipe to get started.</p>
+                    <a href="{% url 'recipe_create' %}" class="btn btn-primary mt-2">
+                        <i class="fas fa-plus me-1"></i> Create New Recipe
+                    </a>
+                </div>
+                <div id="recipes-error" class="py-5 text-center" style="display: none;">
+                    <div class="mb-3">
+                        <i class="fas fa-exclamation-triangle fa-4x text-danger"></i>
+                    </div>
+                    <h4>Error Loading Recipes</h4>
+                    <p class="text-muted" id="recipes-error-message"></p>
+                    <button class="btn btn-primary mt-2" onclick="loadRecipesData()">
+                        <i class="fas fa-refresh me-1"></i> Retry
+                    </button>
+                </div>
+            {% else %}
                 <div class="table-responsive">
                     <table class="table table-hover table-striped mb-0">
                         <thead>
@@ -127,69 +171,9 @@
                         </tbody>
                     </table>
                 </div>
-                
-                {% if is_paginated %}
-                    <div class="d-flex justify-content-center mt-3">
-                        <nav aria-label="Page navigation">
-                            <ul class="pagination">
-                                {% if page_obj.has_previous %}
-                                    <li class="page-item">
-                                        <a class="page-link" href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="First">
-                                            <span aria-hidden="true">&laquo;&laquo;</span>
-                                        </a>
-                                    </li>
-                                    <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Previous">
-                                            <span aria-hidden="true">&laquo;</span>
-                                        </a>
-                                    </li>
-                                {% endif %}
-                                
-                                {% for num in page_obj.paginator.page_range %}
-                                    {% if page_obj.number == num %}
-                                        <li class="page-item active">
-                                            <span class="page-link">{{ num }}</span>
-                                        </li>
-                                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                                        <li class="page-item">
-                                            <a class="page-link" href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">{{ num }}</a>
-                                        </li>
-                                    {% endif %}
-                                {% endfor %}
-                                
-                                {% if page_obj.has_next %}
-                                    <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Next">
-                                            <span aria-hidden="true">&raquo;</span>
-                                        </a>
-                                    </li>
-                                    <li class="page-item">
-                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Last">
-                                            <span aria-hidden="true">&raquo;&raquo;</span>
-                                        </a>
-                                    </li>
-                                {% endif %}
-                            </ul>
-                        </nav>
-                    </div>
-                {% endif %}
-            {% else %}
-                <div class="py-5 text-center">
-                    <div class="mb-3">
-                        <i class="fas fa-code fa-4x text-muted"></i>
-                    </div>
-                    {% if request.GET.search %}
-                        <h4>No recipes found matching "{{ request.GET.search }}"</h4>
-                        <p class="text-muted">Try a different search term or <a href="{% url 'recipes' %}">view all recipes</a>.</p>
-                    {% else %}
-                        <h4>No recipes available</h4>
-                        <p class="text-muted">Create your first recipe to get started.</p>
-                        <a href="{% url 'recipe_create' %}" class="btn btn-primary mt-2">
-                            <i class="fas fa-plus me-1"></i> Create New Recipe
-                        </a>
-                    {% endif %}
-                </div>
             {% endif %}
+                
+
         </div>
     </div>
 </div>
@@ -221,6 +205,188 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Load recipes data asynchronously if in async mode
+        {% if loading_async %}
+        loadRecipesData();
+        {% endif %}
+
+        // Function to initialize event handlers after dynamic content is loaded
+        function initializeEventHandlers() {
+            // Handle run recipe buttons
+            const runButtons = document.querySelectorAll('.run-recipe-btn');
+            runButtons.forEach(button => {
+                // Remove existing listeners to avoid duplicates
+                button.replaceWith(button.cloneNode(true));
+            });
+            
+            // Re-add event listeners
+            document.querySelectorAll('.run-recipe-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const recipeId = this.getAttribute('data-recipe-id');
+                    
+                    // Disable button and show spinner
+                    this.disabled = true;
+                    const originalHTML = this.innerHTML;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+                    
+                    // Send AJAX request to run recipe
+                    fetch(`/recipes/run/${recipeId}/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCSRFToken(),
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({})
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Re-enable button and restore original content
+                        this.disabled = false;
+                        this.innerHTML = originalHTML;
+                        
+                        // Show notification
+                        if (data.success) {
+                            // Create a toast notification
+                            const toast = document.createElement('div');
+                            toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                            toast.setAttribute('role', 'alert');
+                            toast.setAttribute('aria-live', 'assertive');
+                            toast.setAttribute('aria-atomic', 'true');
+                            toast.innerHTML = `
+                                <div class="d-flex">
+                                    <div class="toast-body">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        Recipe started successfully!
+                                    </div>
+                                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                                </div>
+                            `;
+                            document.body.appendChild(toast);
+                            
+                            // Initialize and show the toast
+                            const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                            bsToast.show();
+                            
+                            // Remove toast from DOM after it's hidden
+                            toast.addEventListener('hidden.bs.toast', function() {
+                                toast.remove();
+                            });
+                        } else {
+                            alert(`Error: ${data.error || 'Failed to run recipe'}`);
+                        }
+                    })
+                    .catch(error => {
+                        // Re-enable button and restore original content
+                        this.disabled = false;
+                        this.innerHTML = originalHTML;
+                        
+                        // Show error
+                        alert(`Error: ${error.message || 'Failed to run recipe'}`);
+                    });
+                });
+            });
+            
+            // Initialize Bootstrap tooltips for dynamic content
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+                new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        }
+
+        // Function to load recipes data via AJAX
+        function loadRecipesData() {
+            const loadingDiv = document.getElementById('recipes-loading');
+            const contentDiv = document.getElementById('recipes-content');
+            const emptyDiv = document.getElementById('recipes-empty');
+            const errorDiv = document.getElementById('recipes-error');
+            const errorMessage = document.getElementById('recipes-error-message');
+            
+            // Show loading state
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+            emptyDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            
+            fetch('{% url "recipes_data" %}')
+                .then(response => response.json())
+                .then(data => {
+                    loadingDiv.style.display = 'none';
+                    
+                    if (data.success && data.recipes && data.recipes.length > 0) {
+                        // Populate table with data
+                        const tbody = document.getElementById('recipes-tbody');
+                        tbody.innerHTML = '';
+                        
+                        data.recipes.forEach(recipe => {
+                            const row = document.createElement('tr');
+                            
+                            // Format schedule display
+                            let scheduleDisplay = '<span class="text-muted">None</span>';
+                            if (recipe.formatted_schedule) {
+                                scheduleDisplay = `<span class="badge bg-info d-flex align-items-center justify-content-center" style="width: fit-content">${recipe.formatted_schedule}</span>`;
+                            }
+                            
+                            // Format status display
+                            const statusDisplay = recipe.is_active ? 
+                                '<span class="badge bg-success">Active</span>' : 
+                                '<span class="badge bg-secondary">Inactive</span>';
+                                
+                            // Determine if recipe can be run from UI
+                            const canRun = !recipe.id.startsWith('cli-');
+                            const runButtonDisabled = canRun ? '' : 'disabled';
+                            const runButtonTitle = canRun ? 'Run this recipe now' : 'Cannot run CLI-created recipes from the UI';
+                            
+                            row.innerHTML = `
+                                <td><a href="/recipes/edit/${recipe.id}/" class="text-decoration-none">${recipe.name}</a></td>
+                                <td><code>${recipe.id || 'N/A'}</code></td>
+                                <td class="align-middle"><span class="badge bg-info d-flex align-items-center justify-content-center" style="width: fit-content">${recipe.type}</span></td>
+                                <td class="align-middle">${scheduleDisplay}</td>
+                                <td>${statusDisplay}</td>
+                                <td>
+                                    <div class="btn-group">
+                                        <a href="/recipes/edit/${recipe.id}/" class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit this recipe">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <a href="/recipes/download/${recipe.id}/" class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Download this recipe">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                        <a href="/recipes/templates/save/${recipe.id}/" class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="Save this recipe as a template">
+                                            <i class="fas fa-copy"></i>
+                                        </a>
+                                        <button class="btn btn-sm btn-outline-success run-recipe-btn" data-recipe-id="${recipe.id}" ${runButtonDisabled} data-bs-toggle="tooltip" data-bs-placement="top" title="${runButtonTitle}">
+                                            <i class="fas fa-play"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger delete-recipe-btn" data-recipe-id="${recipe.id}" data-recipe-name="${recipe.name}" data-bs-toggle="modal" data-bs-target="#deleteRecipeModal" title="Delete this recipe">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                        
+                        contentDiv.style.display = 'block';
+                        
+                        // Re-initialize event handlers and tooltips
+                        initializeEventHandlers();
+                        
+                    } else if (data.success && (!data.recipes || data.recipes.length === 0)) {
+                        // Show empty state
+                        emptyDiv.style.display = 'block';
+                    } else {
+                        // Show error state
+                        errorMessage.textContent = data.error || 'Unknown error occurred';
+                        errorDiv.style.display = 'block';
+                    }
+                })
+                .catch(error => {            
+                    loadingDiv.style.display = 'none';
+                    errorMessage.textContent = error.message || 'Network error occurred';
+                    errorDiv.style.display = 'block';
+                });
+        }
+
         // Get CSRF token
         function getCSRFToken() {
             const cookies = document.cookie.split(';');
@@ -326,75 +492,6 @@
             });
         }
         
-        // Handle run recipe buttons
-        const runButtons = document.querySelectorAll('.run-recipe-btn');
-        runButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const recipeId = this.getAttribute('data-recipe-id');
-                
-                // Disable button and show spinner
-                this.disabled = true;
-                const originalHTML = this.innerHTML;
-                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
-                
-                // Send AJAX request to run recipe
-                fetch(`/recipes/run/${recipeId}/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCSRFToken(),
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    body: JSON.stringify({})
-                })
-                .then(response => response.json())
-                .then(data => {
-                    // Re-enable button and restore original content
-                    this.disabled = false;
-                    this.innerHTML = originalHTML;
-                    
-                    // Show notification
-                    if (data.success) {
-                        // Create a toast notification
-                        const toast = document.createElement('div');
-                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
-                        toast.setAttribute('role', 'alert');
-                        toast.setAttribute('aria-live', 'assertive');
-                        toast.setAttribute('aria-atomic', 'true');
-                        toast.innerHTML = `
-                            <div class="d-flex">
-                                <div class="toast-body">
-                                    <i class="fas fa-check-circle me-2"></i>
-                                    Recipe started successfully!
-                                </div>
-                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                            </div>
-                        `;
-                        document.body.appendChild(toast);
-                        
-                        // Initialize and show the toast
-                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
-                        bsToast.show();
-                        
-                        // Remove toast from DOM after it's hidden
-                        toast.addEventListener('hidden.bs.toast', function() {
-                            toast.remove();
-                        });
-                    } else {
-                        alert(`Error: ${data.error || 'Failed to run recipe'}`);
-                    }
-                })
-                .catch(error => {
-                    // Re-enable button and restore original content
-                    this.disabled = false;
-                    this.innerHTML = originalHTML;
-                    
-                    // Show error
-                    alert(`Error: ${error.message || 'Failed to run recipe'}`);
-                });
-            });
-        });
-        
         // Auto-refresh functionality with cache refresh
         function setupAutoRefresh() {
             // Auto-refresh every 60 seconds (1 minute) with cache refresh
@@ -480,12 +577,6 @@
                 noResultsMessage.style.display = 'none';
             }
         }
-        
-        // Enable Bootstrap tooltips
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.forEach(function (tooltipTriggerEl) {
-            new bootstrap.Tooltip(tooltipTriggerEl);
-        });
     });
 </script>
 {% endblock %} 

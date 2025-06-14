@@ -66,7 +66,7 @@ def get_github_settings():
             logging.disable(logging.NOTSET)
 
             # Now import the model
-            from web_ui.web_ui.models import GitSettings
+            from web_ui.models import GitSettings
 
             # Get the settings
             settings = GitSettings.get_instance()
@@ -98,7 +98,7 @@ def get_environments_from_webapp():
             logging.disable(logging.NOTSET)
 
         # Import the Environment model
-        from web_ui.web_ui.models import Environment
+        from web_ui.models import Environment
 
         # Get all environments
         environments = []

@@ -134,7 +134,7 @@ def _auto_retrieve_client_info(client):
     """
     try:
         # Import here to avoid circular imports
-        from web_ui.web_ui.models import Environment
+        from web_ui.models import Environment
         from web_ui.web_ui.datahub_utils import get_datahub_client_info
         
         # Get the default environment

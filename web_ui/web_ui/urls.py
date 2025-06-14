@@ -48,6 +48,7 @@ urlpatterns = [
     path("metadata/", include("metadata_manager.urls", namespace="metadata_manager")),
     # Recipe management
     path("recipes/", web_ui_views.recipes, name="recipes"),
+    path("recipes/data/", web_ui_views.recipes_data, name="recipes_data"),
     path("recipes/create/", web_ui_views.recipe_create, name="recipe_create"),
     path("recipes/import/", web_ui_views.recipe_import, name="recipe_import"),
     path("recipes/edit/<str:recipe_id>/", web_ui_views.recipe_edit, name="recipe_edit"),
@@ -71,6 +72,7 @@ urlpatterns = [
     path("recipes/templates/", include("template_manager.urls")),
     # Policy management
     path("policies/", web_ui_views.policies, name="policies"),
+    path("policies/data/", web_ui_views.policies_data, name="policies_data"),
     path(
         "policies/detail/<str:policy_id>/", web_ui_views.policy_view, name="policy_view"
     ),
