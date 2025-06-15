@@ -58,6 +58,7 @@ except ImportError:
 from .models import (
     LogEntry,
     RecipeTemplate,
+    PolicyTemplate,
     EnvVarsTemplate,
     EnvVarsInstance,
     RecipeInstance,
@@ -66,6 +67,7 @@ from .models import (
     Environment,
     Mutation,
     DataHubClientInfo,
+    GitIntegration,
 )
 from .services.github_service import GitHubService
 from .services.git_service import GitService
@@ -126,6 +128,12 @@ def dashboard_data(request):
     recent_recipes = []
     recent_policies = []
 
+    # Initialize new dashboard data
+    environments_data = []
+    metadata_stats = {}
+    git_status = {}
+    system_health = {}
+
     if client:
         try:
             connected = client.test_connection()
@@ -184,14 +192,179 @@ def dashboard_data(request):
         except Exception as e:
             logger.error(f"Error connecting to DataHub: {str(e)}")
 
+    # Get environments data
+    try:
+        from metadata_manager.models import Environment
+        environments = Environment.objects.all().order_by('-is_default', 'name')
+        
+        for env in environments:
+            env_data = {
+                'id': env.id,
+                'name': env.name,
+                'description': env.description or '',
+                'is_default': env.is_default,
+                'datahub_url': env.datahub_url,
+                'git_branch': env.git_branch,
+                'connected': False,
+                'recipes_count': 0,
+                'policies_count': 0
+            }
+            
+            # Test connection for this environment if it has DataHub config
+            if env.datahub_url and env.datahub_token:
+                try:
+                    from utils.datahub_utils import DataHubClient
+                    env_client = DataHubClient(
+                        server=env.datahub_url,
+                        token=env.datahub_token
+                    )
+                    env_data['connected'] = env_client.test_connection()
+                    
+                    if env_data['connected']:
+                        # Get environment-specific counts if possible
+                        try:
+                            env_recipes = env_client.list_ingestion_sources()
+                            env_data['recipes_count'] = len(env_recipes) if env_recipes else 0
+                        except:
+                            pass
+                except Exception as e:
+                    logger.debug(f"Error testing environment {env.name}: {str(e)}")
+            
+            environments_data.append(env_data)
+    except Exception as e:
+        logger.error(f"Error fetching environments for dashboard: {str(e)}")
+
+    # Get metadata statistics
+    try:
+        from metadata_manager.models import Domain, GlossaryNode, GlossaryTerm, DataProduct, Assertion
+        
+        metadata_stats = {
+            'domains_count': Domain.objects.count(),
+            'domains_local': Domain.objects.filter(sync_status__in=['LOCAL_ONLY', 'MODIFIED']).count(),
+            'domains_synced': Domain.objects.filter(sync_status='SYNCED').count(),
+            
+            'glossary_nodes_count': GlossaryNode.objects.count(),
+            'glossary_nodes_local': GlossaryNode.objects.filter(sync_status__in=['LOCAL_ONLY', 'MODIFIED']).count(),
+            'glossary_nodes_synced': GlossaryNode.objects.filter(sync_status='SYNCED').count(),
+            
+            'glossary_terms_count': GlossaryTerm.objects.count(),
+            'glossary_terms_local': GlossaryTerm.objects.filter(sync_status__in=['LOCAL_ONLY', 'MODIFIED']).count(),
+            'glossary_terms_synced': GlossaryTerm.objects.filter(sync_status='SYNCED').count(),
+            
+            'data_products_count': DataProduct.objects.count(),
+            'data_products_local': DataProduct.objects.filter(sync_status__in=['LOCAL_ONLY', 'MODIFIED']).count(),
+            'data_products_synced': DataProduct.objects.filter(sync_status='SYNCED').count(),
+            
+            'assertions_count': Assertion.objects.count(),
+            'assertions_local': Assertion.objects.filter(sync_status__in=['LOCAL_ONLY', 'MODIFIED']).count(),
+            'assertions_synced': Assertion.objects.filter(sync_status='SYNCED').count(),
+        }
+        
+        # Get recent metadata activity
+        recent_domains = Domain.objects.filter(
+            sync_status__in=['LOCAL_ONLY', 'MODIFIED']
+        ).order_by('-updated_at')[:3]
+        
+        recent_glossary = list(GlossaryNode.objects.filter(
+            sync_status__in=['LOCAL_ONLY', 'MODIFIED']
+        ).order_by('-updated_at')[:2]) + list(GlossaryTerm.objects.filter(
+            sync_status__in=['LOCAL_ONLY', 'MODIFIED']
+        ).order_by('-updated_at')[:2])
+        
+        metadata_stats['recent_domains'] = [
+            {
+                'id': d.id,
+                'name': d.name,
+                'description': d.description[:100] + '...' if d.description and len(d.description) > 100 else d.description,
+                'sync_status': d.sync_status,
+                'updated_at': d.updated_at.isoformat() if d.updated_at else None
+            }
+            for d in recent_domains
+        ]
+        
+        metadata_stats['recent_glossary'] = [
+            {
+                'id': item.id,
+                'name': item.name,
+                'type': 'Node' if hasattr(item, 'parent_node') else 'Term',  
+                'description': (item.description[:100] + '...' if item.description and len(item.description) > 100 else item.description) if item.description else '',
+                'sync_status': item.sync_status,
+                'updated_at': item.updated_at.isoformat() if item.updated_at else None
+            }
+            for item in sorted(recent_glossary, key=lambda x: x.updated_at or timezone.now(), reverse=True)[:4]
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error fetching metadata stats for dashboard: {str(e)}")
+
+    # Get git status
+    try:
+        from web_ui.models import GitSettings
+        
+        git_settings = GitSettings.objects.first()
+        if git_settings:
+            # Check if git is enabled AND properly configured
+            git_configured = bool(git_settings.token and git_settings.username and git_settings.repository)
+            git_enabled = git_settings.enabled
+            
+            git_status = {
+                'enabled': git_enabled,
+                'configured': git_configured,
+                'current_branch': git_settings.current_branch or 'main',
+                'repository_url': f"https://github.com/{git_settings.username}/{git_settings.repository}" if git_settings.username and git_settings.repository else '',
+                'staged_files_count': 0,  # Could be enhanced with actual git status
+                'recent_commits': []  # Could be enhanced with commit history
+            }
+        else:
+            git_status = {
+                'enabled': False,
+                'configured': False
+            }
+    except Exception as e:
+        logger.error(f"Error fetching git status for dashboard: {str(e)}")
+        git_status = {
+            'enabled': False,
+            'configured': False,
+            'error': str(e)
+        }
+
+    # System health overview
+    system_health = {
+        'datahub_connection': connected,
+        'environments_configured': len(environments_data),
+        'environments_connected': sum(1 for env in environments_data if env.get('connected', False)),
+        'git_integration': git_status.get('enabled', False),
+        'metadata_sync_pending': (
+            metadata_stats.get('domains_local', 0) + 
+            metadata_stats.get('glossary_nodes_local', 0) + 
+            metadata_stats.get('glossary_terms_local', 0) +
+            metadata_stats.get('data_products_local', 0) +
+            metadata_stats.get('assertions_local', 0)
+        ),
+        'total_metadata_items': (
+            metadata_stats.get('domains_count', 0) +
+            metadata_stats.get('glossary_nodes_count', 0) +
+            metadata_stats.get('glossary_terms_count', 0) +
+            metadata_stats.get('data_products_count', 0) +
+            metadata_stats.get('assertions_count', 0)
+        )
+    }
+
     return JsonResponse(
         {
+            # Original data
             "connected": connected,
             "recipes_count": recipes_count,
             "active_schedules_count": active_schedules_count,
             "policies_count": policies_count,
             "recent_recipes": recent_recipes,
             "recent_policies": recent_policies,
+            
+            # New dashboard data
+            "environments": environments_data,
+            "metadata_stats": metadata_stats,
+            "git_status": git_status,
+            "system_health": system_health,
         }
     )
 

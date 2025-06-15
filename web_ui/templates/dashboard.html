@@ -28,8 +28,75 @@
         {% endfor %}
     {% endif %}
 
-    <!-- Quick Stats Cards -->
+    <!-- System Health Overview -->
     <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">System Health Overview</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="health-indicator" id="datahub-health">
+                                        <i class="fas fa-spinner fa-spin text-muted"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="fw-semibold">DataHub Connection</div>
+                                    <small class="text-muted">Primary connection status</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="health-indicator" id="environments-health">
+                                        <i class="fas fa-spinner fa-spin text-muted"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="fw-semibold">Environments</div>
+                                    <small class="text-muted" id="environments-health-text">Loading...</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="health-indicator" id="git-health">
+                                        <i class="fas fa-spinner fa-spin text-muted"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="fw-semibold">Git Integration</div>
+                                    <small class="text-muted" id="git-health-text">Loading...</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <div class="health-indicator" id="metadata-health">
+                                        <i class="fas fa-spinner fa-spin text-muted"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="fw-semibold">Metadata Sync</div>
+                                    <small class="text-muted" id="metadata-health-text">Loading...</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Operations Cards -->
+    <div class="row g-4 mb-5">
         <div class="col-md-4">
             <div class="card h-100 dashboard-card">
                 <div class="card-body">
@@ -89,6 +156,131 @@
         </div>
     </div>
 
+    <!-- System Configuration -->
+    <div class="row g-4 mb-5">
+        <!-- Environments Overview -->
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Environments</h5>
+                    <a href="{% url 'environments' %}" class="btn btn-sm btn-outline-primary">Manage</a>
+                </div>
+                <div class="card-body">
+                    <div id="environments-container">
+                        <div class="text-center py-4">
+                            <i class="fas fa-spinner fa-spin fa-2x text-muted mb-3"></i>
+                            <p class="text-muted">Loading environments...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Git Repository Status -->
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Git Repository</h5>
+                    <a href="{% url 'github_index' %}" class="btn btn-sm btn-outline-primary">Manage</a>
+                </div>
+                <div class="card-body">
+                    <div id="git-status-container">
+                        <div class="text-center py-4">
+                            <i class="fas fa-spinner fa-spin fa-2x text-muted mb-3"></i>
+                            <p class="text-muted">Loading git status...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr class="my-5">
+    
+    <!-- Metadata Overview -->
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Metadata Overview</h5>
+                    <a href="{% url 'metadata_manager:metadata_index' %}" class="btn btn-sm btn-outline-primary">Manage Metadata</a>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="display-6 fw-bold text-primary" id="domains-count">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </div>
+                                <small class="text-muted">Domains</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="display-6 fw-bold text-info" id="glossary-nodes-count">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </div>
+                                <small class="text-muted">Glossary Nodes</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="display-6 fw-bold text-success" id="glossary-terms-count">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </div>
+                                <small class="text-muted">Glossary Terms</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="display-6 fw-bold text-warning" id="data-products-count">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </div>
+                                <small class="text-muted">Data Products</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="display-6 fw-bold text-danger" id="assertions-count">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </div>
+                                <small class="text-muted">Assertions</small>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="text-center">
+                                <div class="display-6 fw-bold text-secondary" id="metadata-pending-count">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </div>
+                                <small class="text-muted">Pending Sync</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <h6 class="mb-3">Recent Domain Updates</h6>
+                            <div id="recent-domains-container">
+                                <div class="text-center py-2">
+                                    <i class="fas fa-spinner fa-spin text-muted"></i>
+                                    <small class="text-muted ms-2">Loading...</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="mb-3">Recent Glossary Updates</h6>
+                            <div id="recent-glossary-container">
+                                <div class="text-center py-2">
+                                    <i class="fas fa-spinner fa-spin text-muted"></i>
+                                    <small class="text-muted ms-2">Loading...</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Recent Activity Section -->
     <div class="row g-4">
         <!-- Recent Recipes -->
@@ -130,30 +322,145 @@
 </div>
 
 <style>
+    /* Dashboard Cards */
     .dashboard-card {
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        transition: all 0.3s ease;
+        border: 1px solid #e3e6f0;
+        box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
     }
     .dashboard-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+        box-shadow: 0 0.25rem 2rem 0 rgba(58, 59, 69, 0.25);
+        border-color: #0d6efd;
     }
     .dashboard-icon {
         font-size: 2.5rem;
         color: #0d6efd;
+        opacity: 0.8;
     }
+    
+    /* Connection Status */
     .connection-status .badge {
         font-size: 1rem;
         padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
     }
-    /* Center badge text vertically and horizontally */
+    
+    /* Card Headers */
+    .card-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-bottom: 1px solid #dee2e6;
+        font-weight: 600;
+    }
+    
+    /* List Group Items */
+    .list-group-item {
+        border-left: none;
+        border-right: none;
+        transition: background-color 0.2s ease;
+    }
+    .list-group-item:hover {
+        background-color: #f8f9fa;
+    }
     .list-group-item .badge {
+        font-size: 0.875rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.375rem;
+    }
+    
+    /* Health indicators */
+    .health-indicator {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        height: 100%;
-        min-width: 70px;
-        font-size: 1em;
-        padding: 0.5em 1em;
+        font-size: 1.2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s ease;
+    }
+    
+    .health-indicator:hover {
+        transform: scale(1.05);
+    }
+    
+    .health-indicator.healthy {
+        background: linear-gradient(135deg, #d1e7dd 0%, #a3d5a7 100%);
+        color: #0f5132;
+        border: 2px solid #198754;
+    }
+    
+    .health-indicator.warning {
+        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+        color: #664d03;
+        border: 2px solid #ffc107;
+    }
+    
+    .health-indicator.error {
+        background: linear-gradient(135deg, #f8d7da 0%, #f1a9a9 100%);
+        color: #721c24;
+        border: 2px solid #dc3545;
+    }
+    
+    .health-indicator.loading {
+        background: linear-gradient(135deg, #e9ecef 0%, #ced4da 100%);
+        color: #6c757d;
+        border: 2px solid #adb5bd;
+    }
+    
+    /* Environment status badges */
+    .env-status-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    /* Metadata sync status */
+    .sync-status {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.375rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .sync-status.local {
+        background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+        color: #2d3436;
+        border: 1px solid #fdcb6e;
+    }
+    
+    .sync-status.synced {
+        background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+        color: white;
+        border: 1px solid #00a085;
+    }
+    
+    /* Git status styling */
+    .git-branch {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.5rem;
+        font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+        font-size: 0.875rem;
+        border: 1px solid #dee2e6;
+        color: #495057;
+        font-weight: 500;
+    }
+    
+    /* Stat counters */
+    .display-6 {
+        font-weight: 700;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    
+    /* System health section */
+    .card-body .row .col-md-3 {
+        border-right: 1px solid #e3e6f0;
+    }
+    .card-body .row .col-md-3:last-child {
+        border-right: none;
     }
 </style>
 
@@ -183,6 +490,18 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('recipes-count').textContent = data.recipes_count || 0;
             document.getElementById('schedules-count').textContent = data.active_schedules_count || 0;
             document.getElementById('policies-count').textContent = data.policies_count || 0;
+            
+            // Update system health indicators
+            updateSystemHealth(data);
+            
+            // Update environments section
+            updateEnvironments(data.environments || []);
+            
+            // Update git status section
+            updateGitStatus(data.git_status || {});
+            
+            // Update metadata overview
+            updateMetadataOverview(data.metadata_stats || {});
             
             // Update recent recipes
             const recipesContainer = document.getElementById('recent-recipes-container');
@@ -293,6 +612,275 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('recent-recipes-container').innerHTML = errorHtml;
             document.getElementById('recent-policies-container').innerHTML = errorHtml;
         });
+    
+    // Function to update system health indicators
+    function updateSystemHealth(data) {
+        const health = data.system_health || {};
+        
+        // DataHub health
+        const datahubHealth = document.getElementById('datahub-health');
+        if (health.datahub_connection) {
+            datahubHealth.className = 'health-indicator healthy';
+            datahubHealth.innerHTML = '<i class="fas fa-check-circle"></i>';
+        } else {
+            datahubHealth.className = 'health-indicator error';
+            datahubHealth.innerHTML = '<i class="fas fa-times-circle"></i>';
+        }
+        
+        // Environments health
+        const envHealth = document.getElementById('environments-health');
+        const envHealthText = document.getElementById('environments-health-text');
+        const envConnected = health.environments_connected || 0;
+        const envTotal = health.environments_configured || 0;
+        
+        if (envTotal === 0) {
+            envHealth.className = 'health-indicator warning';
+            envHealth.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            envHealthText.textContent = 'No environments configured';
+        } else if (envConnected === envTotal) {
+            envHealth.className = 'health-indicator healthy';
+            envHealth.innerHTML = '<i class="fas fa-check-circle"></i>';
+            envHealthText.textContent = `All ${envTotal} connected`;
+        } else {
+            envHealth.className = 'health-indicator warning';
+            envHealth.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            envHealthText.textContent = `${envConnected}/${envTotal} connected`;
+        }
+        
+        // Git health
+        const gitHealth = document.getElementById('git-health');
+        const gitHealthText = document.getElementById('git-health-text');
+        const gitStatus = data.git_status || {};
+        
+        if (gitStatus.enabled && gitStatus.configured) {
+            gitHealth.className = 'health-indicator healthy';
+            gitHealth.innerHTML = '<i class="fas fa-check-circle"></i>';
+            gitHealthText.textContent = 'Configured and enabled';
+        } else if (gitStatus.enabled) {
+            gitHealth.className = 'health-indicator warning';
+            gitHealth.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            gitHealthText.textContent = 'Enabled but not configured';
+        } else {
+            gitHealth.className = 'health-indicator error';
+            gitHealth.innerHTML = '<i class="fas fa-times-circle"></i>';
+            gitHealthText.textContent = 'Not enabled';
+        }
+        
+        // Metadata health
+        const metadataHealth = document.getElementById('metadata-health');
+        const metadataHealthText = document.getElementById('metadata-health-text');
+        const pendingSync = health.metadata_sync_pending || 0;
+        const totalItems = health.total_metadata_items || 0;
+        
+        if (totalItems === 0) {
+            metadataHealth.className = 'health-indicator warning';
+            metadataHealth.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            metadataHealthText.textContent = 'No metadata items';
+        } else if (pendingSync === 0) {
+            metadataHealth.className = 'health-indicator healthy';
+            metadataHealth.innerHTML = '<i class="fas fa-check-circle"></i>';
+            metadataHealthText.textContent = 'All items synced';
+        } else {
+            metadataHealth.className = 'health-indicator warning';
+            metadataHealth.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            metadataHealthText.textContent = `${pendingSync} pending sync`;
+        }
+    }
+    
+    // Function to update environments section
+    function updateEnvironments(environments) {
+        const container = document.getElementById('environments-container');
+        
+        if (environments.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="mb-3">
+                        <i class="fas fa-server fa-3x text-muted"></i>
+                    </div>
+                    <h6>No environments configured</h6>
+                    <p class="text-muted">Set up environments to manage different DataHub instances</p>
+                    <a href="{% url 'environment_create' %}" class="btn btn-primary btn-sm mt-2">
+                        <i class="fas fa-plus me-1"></i> Create Environment
+                    </a>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '<div class="list-group list-group-flush">';
+        environments.forEach(env => {
+            const statusClass = env.connected ? 'success' : 'secondary';
+            const statusText = env.connected ? 'Connected' : 'Disconnected';
+            const defaultBadge = env.is_default ? '<span class="badge bg-primary env-status-badge ms-1">Default</span>' : '';
+            
+            html += `
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1">${env.name}${defaultBadge}</h6>
+                            <p class="mb-1 text-muted small">${env.description || 'No description'}</p>
+                            ${env.git_branch ? `<small class="text-muted">Branch: <span class="git-branch">${env.git_branch}</span></small>` : ''}
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-${statusClass} env-status-badge">${statusText}</span>
+                            ${env.recipes_count > 0 ? `<div class="small text-muted mt-1">${env.recipes_count} recipes</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+    
+    // Function to update git status section
+    function updateGitStatus(gitStatus) {
+        const container = document.getElementById('git-status-container');
+        
+        if (!gitStatus.configured) {
+            container.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="mb-3">
+                        <i class="fab fa-git-alt fa-3x text-muted"></i>
+                    </div>
+                    <h6>Git integration not configured</h6>
+                    <p class="text-muted">Configure git integration to sync your configurations</p>
+                    <a href="{% url 'github_settings' %}" class="btn btn-outline-primary btn-sm mt-2">
+                        <i class="fas fa-cog me-1"></i> Configure Git
+                    </a>
+                </div>
+            `;
+            return;
+        }
+        
+        let statusClass, statusText, statusIcon;
+        
+        if (gitStatus.enabled && gitStatus.configured) {
+            statusClass = 'success';
+            statusText = 'Active';
+            statusIcon = 'fa-check-circle';
+        } else if (gitStatus.configured && !gitStatus.enabled) {
+            statusClass = 'warning';
+            statusText = 'Configured but Disabled';
+            statusIcon = 'fa-pause-circle';
+        } else {
+            statusClass = 'secondary';
+            statusText = 'Not Configured';
+            statusIcon = 'fa-exclamation-circle';
+        }
+        
+        container.innerHTML = `
+            <div class="d-flex flex-column h-100">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <strong>Status</strong>
+                        <span class="badge bg-${statusClass}">
+                            <i class="fas ${statusIcon} me-1"></i> ${statusText}
+                        </span>
+                    </div>
+                </div>
+                
+                ${gitStatus.current_branch ? `
+                <div class="mb-3">
+                    <strong>Current Branch</strong>
+                    <div class="mt-1">
+                        <span class="git-branch">
+                            <i class="fas fa-code-branch me-1"></i> ${gitStatus.current_branch}
+                        </span>
+                    </div>
+                </div>
+                ` : ''}
+                
+                ${gitStatus.repository_url ? `
+                <div class="mb-3">
+                    <strong>Repository</strong>
+                    <div class="mt-1">
+                        <small class="text-muted text-break">
+                            <a href="${gitStatus.repository_url}" target="_blank" class="text-decoration-none">${gitStatus.repository_url}</a>
+                        </small>
+                    </div>
+                </div>
+                ` : ''}
+                
+                <div class="mt-auto">
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'github_index' %}" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-cog me-1"></i> Settings
+                        </a>
+                        <a href="{% url 'github_repo' %}" class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-code-branch me-1"></i> Repository
+                        </a>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Function to update metadata overview
+    function updateMetadataOverview(metadataStats) {
+        // Update counts
+        document.getElementById('domains-count').textContent = metadataStats.domains_count || 0;
+        document.getElementById('glossary-nodes-count').textContent = metadataStats.glossary_nodes_count || 0;
+        document.getElementById('glossary-terms-count').textContent = metadataStats.glossary_terms_count || 0;
+        document.getElementById('data-products-count').textContent = metadataStats.data_products_count || 0;
+        document.getElementById('assertions-count').textContent = metadataStats.assertions_count || 0;
+        document.getElementById('metadata-pending-count').textContent = (
+            (metadataStats.domains_local || 0) +
+            (metadataStats.glossary_nodes_local || 0) +
+            (metadataStats.glossary_terms_local || 0) +
+            (metadataStats.data_products_local || 0) +
+            (metadataStats.assertions_local || 0)
+        );
+        
+        // Update recent domains
+        const domainsContainer = document.getElementById('recent-domains-container');
+        const recentDomains = metadataStats.recent_domains || [];
+        
+        if (recentDomains.length === 0) {
+            domainsContainer.innerHTML = '<small class="text-muted">No recent domain updates</small>';
+        } else {
+            let domainsHtml = '';
+            recentDomains.forEach(domain => {
+                const syncClass = domain.sync_status === 'SYNCED' ? 'synced' : 'local';
+                domainsHtml += `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <div class="fw-medium">${domain.name}</div>
+                            <small class="text-muted">${domain.description || 'No description'}</small>
+                        </div>
+                        <span class="sync-status ${syncClass}">${domain.sync_status}</span>
+                    </div>
+                `;
+            });
+            domainsContainer.innerHTML = domainsHtml;
+        }
+        
+        // Update recent glossary
+        const glossaryContainer = document.getElementById('recent-glossary-container');
+        const recentGlossary = metadataStats.recent_glossary || [];
+        
+        if (recentGlossary.length === 0) {
+            glossaryContainer.innerHTML = '<small class="text-muted">No recent glossary updates</small>';
+        } else {
+            let glossaryHtml = '';
+            recentGlossary.forEach(item => {
+                const syncClass = item.sync_status === 'SYNCED' ? 'synced' : 'local';
+                const typeIcon = item.type === 'Node' ? 'fa-folder' : 'fa-tag';
+                glossaryHtml += `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <div class="fw-medium">
+                                <i class="fas ${typeIcon} me-1"></i> ${item.name}
+                            </div>
+                            <small class="text-muted">${item.description || 'No description'}</small>
+                        </div>
+                        <span class="sync-status ${syncClass}">${item.sync_status}</span>
+                    </div>
+                `;
+            });
+            glossaryContainer.innerHTML = glossaryHtml;
+        }
+    }
 });
 </script>
 {% endblock %} 

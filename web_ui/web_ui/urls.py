@@ -289,6 +289,16 @@ urlpatterns = [
     ),
     path("github/create-pr/", web_ui_views.github_create_pr, name="github_create_pr"),
     path(
+        "github/push-changes/",
+        web_ui_views.github_push_changes,
+        name="github_push_changes",
+    ),
+    path(
+        "github/fetch-prs/",
+        web_ui_views.github_fetch_prs,
+        name="github_fetch_prs",
+    ),
+    path(
         "github/branch-diff/",
         web_ui_views.github_branch_diff,
         name="github_branch_diff",
