@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 import uuid
+from django.contrib.sessions.models import Session
+import json
 
 
 class BaseMetadataModel(models.Model):
@@ -711,3 +713,102 @@ class Test(BaseMetadataModel):
             from datetime import datetime
             return datetime.fromtimestamp(self.last_run_timestamp / 1000)
         return None
+
+
+class SearchResultCache(models.Model):
+    """Cache for search results tied to user sessions"""
+    session_key = models.CharField(max_length=40, db_index=True)
+    cache_key = models.CharField(max_length=255, db_index=True)
+    entity_urn = models.CharField(max_length=500, db_index=True)
+    entity_data = models.JSONField()
+    search_params = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['session_key', 'cache_key', 'entity_urn']
+        indexes = [
+            models.Index(fields=['session_key', 'cache_key']),
+            models.Index(fields=['created_at']),
+        ]
+    
+    @classmethod
+    def cleanup_old_entries(cls, hours=24):
+        """Remove cache entries older than specified hours"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        cutoff_time = timezone.now() - timedelta(hours=hours)
+        deleted_count = cls.objects.filter(created_at__lt=cutoff_time).delete()[0]
+        return deleted_count
+    
+    @classmethod
+    def get_cached_results(cls, session_key, cache_key, start=0, count=20):
+        """Get paginated cached results"""
+        results = cls.objects.filter(
+            session_key=session_key,
+            cache_key=cache_key
+        ).order_by('id')[start:start + count]
+        
+        return [result.entity_data for result in results]
+    
+    @classmethod
+    def get_total_count(cls, session_key, cache_key):
+        """Get total count of cached results"""
+        return cls.objects.filter(
+            session_key=session_key,
+            cache_key=cache_key
+        ).count()
+    
+    @classmethod
+    def clear_cache(cls, session_key, cache_key=None):
+        """Clear cache for session, optionally for specific cache_key"""
+        query = cls.objects.filter(session_key=session_key)
+        if cache_key:
+            query = query.filter(cache_key=cache_key)
+        return query.delete()[0]
+
+
+class SearchProgress(models.Model):
+    """Track search progress for real-time updates"""
+    session_key = models.CharField(max_length=40, db_index=True)
+    cache_key = models.CharField(max_length=255, db_index=True)
+    current_step = models.CharField(max_length=200)
+    current_entity_type = models.CharField(max_length=50, blank=True)
+    current_platform = models.CharField(max_length=100, blank=True)
+    total_combinations = models.IntegerField(default=0)
+    completed_combinations = models.IntegerField(default=0)
+    total_results_found = models.IntegerField(default=0)
+    is_complete = models.BooleanField(default=False)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['session_key', 'cache_key']
+        indexes = [
+            models.Index(fields=['session_key', 'cache_key']),
+            models.Index(fields=['updated_at']),
+        ]
+    
+    @classmethod
+    def update_progress(cls, session_key, cache_key, **kwargs):
+        """Update search progress"""
+        progress, created = cls.objects.get_or_create(
+            session_key=session_key,
+            cache_key=cache_key,
+            defaults=kwargs
+        )
+        if not created:
+            for key, value in kwargs.items():
+                setattr(progress, key, value)
+            progress.save()
+        return progress
+    
+    @classmethod
+    def get_progress(cls, session_key, cache_key):
+        """Get current search progress"""
+        try:
+            return cls.objects.get(session_key=session_key, cache_key=cache_key)
+        except cls.DoesNotExist:
+            return None

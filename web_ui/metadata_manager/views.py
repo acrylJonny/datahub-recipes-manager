@@ -20,7 +20,7 @@ sys.path.append(project_root)
 # Import the deterministic URN utilities
 
 from utils.datahub_rest_client import DataHubRestClient
-from .models import Tag, GlossaryNode, GlossaryTerm, Domain, Assertion, Environment, StructuredProperty
+from .models import Tag, GlossaryNode, GlossaryTerm, Domain, Assertion, Environment, StructuredProperty, SearchResultCache, SearchProgress
 
 # Create a logger
 logger = logging.getLogger(__name__)
@@ -324,7 +324,7 @@ def get_platform_list(client, entity_type):
 def get_editable_entities(request):
     """
     Get entities with editable properties and return them as JSON.
-    Results are cached for 5 minutes.
+    Results are cached in database with session support and real-time progress tracking.
 
     Args:
         request: The HTTP request
@@ -333,275 +333,674 @@ def get_editable_entities(request):
         JsonResponse: The entities in JSON format
     """
     try:
-        # Get query parameters - handle both old and new parameter names for compatibility
+        # Get query parameters
         query = request.GET.get("query") or request.GET.get("searchQuery", "*")
         start = int(request.GET.get("start", 0))
-        count = int(request.GET.get("count", 100))
+        count = int(request.GET.get("count", 20))
         entity_type = request.GET.get("entity_type") or request.GET.get("entityType")
         platform = request.GET.get("platform")
         sort_by = request.GET.get("sort_by") or request.GET.get("sortBy", "name")
         editable_only = (
             request.GET.get("editable_only", "false").lower() == "true"
-        )  # Temporarily set to false
+        )
         use_platform_pagination = (
             request.GET.get("use_platform_pagination", "false").lower() == "true"
         )
+        refresh_cache = (
+            request.GET.get("refresh_cache", "false").lower() == "true"
+        )
 
         logger.info(
-            f"Search parameters: query='{query}', entity_type='{entity_type}', platform='{platform}', editable_only={editable_only}, use_platform_pagination={use_platform_pagination}"
+            f"Search parameters: query='{query}', entity_type='{entity_type}', platform='{platform}', editable_only={editable_only}, use_platform_pagination={use_platform_pagination}, refresh_cache={refresh_cache}"
         )
+
+        # Get session key
+        session_key = request.session.session_key
+        if not session_key:
+            request.session.create()
+            session_key = request.session.session_key
 
         # Create cache key based on all parameters
-        cache_params = f"{query}_{start}_{count}_{entity_type}_{platform}_{sort_by}_{editable_only}_{use_platform_pagination}"
-        cache_key = (
-            f"editable_entities_{hashlib.md5(cache_params.encode()).hexdigest()}"
+        cache_params = f"{query}_{entity_type}_{platform}_{sort_by}_{editable_only}_{use_platform_pagination}"
+        cache_key = hashlib.md5(cache_params.encode()).hexdigest()
+
+        # Import the new models
+        from .models import SearchResultCache, SearchProgress
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Check cache age (1 hour default)
+        cache_expiry_hours = 1
+        cache_cutoff = timezone.now() - timedelta(hours=cache_expiry_hours)
+        
+        # Clear cache if refresh requested or if cache is older than 1 hour
+        if refresh_cache:
+            logger.info(f"Refresh cache requested - clearing cache for session {session_key}")
+            SearchResultCache.clear_cache(session_key, cache_key)
+            SearchProgress.objects.filter(session_key=session_key, cache_key=cache_key).delete()
+        else:
+            # Check if cache is expired
+            oldest_cache_entry = SearchResultCache.objects.filter(
+                session_key=session_key,
+                cache_key=cache_key
+            ).order_by('created_at').first()
+            
+            if oldest_cache_entry and oldest_cache_entry.created_at < cache_cutoff:
+                logger.info(f"Cache expired (older than {cache_expiry_hours} hour) - clearing cache for session {session_key}")
+                SearchResultCache.clear_cache(session_key, cache_key)
+                SearchProgress.objects.filter(session_key=session_key, cache_key=cache_key).delete()
+
+        # Check if we have cached results
+        total_cached = SearchResultCache.get_total_count(session_key, cache_key)
+        
+        if total_cached > 0:
+            logger.info(f"Found {total_cached} cached results for session {session_key}")
+            
+            # Get paginated results from cache
+            cached_results = SearchResultCache.get_cached_results(session_key, cache_key, start, count)
+            
+            # Structure the response
+            response_data = {
+                "start": start,
+                "count": len(cached_results),
+                "total": total_cached,
+                "filtered_total": total_cached,
+                "searchResults": [{"entity": result} for result in cached_results],
+            }
+            
+            return JsonResponse({"success": True, "data": response_data})
+
+        # Check if search is in progress
+        progress = SearchProgress.get_progress(session_key, cache_key)
+        if progress and not progress.is_complete:
+            # Return progress status
+            return JsonResponse({
+                "success": True,
+                "in_progress": True,
+                "cache_key": cache_key,
+                "progress": {
+                    "current_step": progress.current_step,
+                    "current_entity_type": progress.current_entity_type,
+                    "current_platform": progress.current_platform,
+                    "completed_combinations": progress.completed_combinations,
+                    "total_combinations": progress.total_combinations,
+                    "total_results_found": progress.total_results_found,
+                    "percentage": (progress.completed_combinations / max(progress.total_combinations, 1)) * 100
+                }
+            })
+
+        # Start new search - create progress record FIRST to avoid race condition
+        import threading
+        
+        # Initialize progress record immediately
+        SearchProgress.update_progress(
+            session_key=session_key,
+            cache_key=cache_key,
+            current_step="Initializing search...",
+            total_combinations=0,
+            completed_combinations=0,
+            total_results_found=0,
+            is_complete=False
         )
-
-        # Try to get from cache first
-        cached_result = cache.get(cache_key)
-        if cached_result is not None:
-            logger.info(f"Returning cached results for query: {query}")
-            return JsonResponse(cached_result)
-
-        # Get client from session
-        client = get_client_from_session(request)
-        if not client:
-            return JsonResponse(
-                {"success": False, "error": "Not connected to DataHub"}, status=400
-            )
-
-        # Temporarily always use direct search for debugging
-        batch_size = min(count * 5, 500)  # Request 5x the needed amount or up to 500
-
-        result = client.get_editable_entities(
-            start=start,
-            count=batch_size,
-            query=query,
-            entity_type=entity_type,
-            platform=platform,
-            sort_by=sort_by,
-            editable_only=False,  # We'll filter ourselves
+        
+        # Start background search
+        search_thread = threading.Thread(
+            target=_perform_background_search,
+            args=(session_key, cache_key, query, entity_type, platform, sort_by, use_platform_pagination, request)
         )
+        search_thread.daemon = True
+        search_thread.start()
+        
+        # Return initial progress status with cache_key
+        return JsonResponse({
+            "success": True,
+            "in_progress": True,
+            "cache_key": cache_key,
+            "progress": {
+                "current_step": "Initializing search...",
+                "current_entity_type": "",
+                "current_platform": "",
+                "completed_combinations": 0,
+                "total_combinations": 0,
+                "total_results_found": 0,
+                "percentage": 0
+            }
+        })
 
-        # Handle the client response
-        if result:
-            if not result.get("success", True):
-                logger.error(
-                    f"Client returned error: {result.get('error', 'Unknown error')}"
-                )
-                return JsonResponse(
-                    {"success": False, "error": result.get("error", "Unknown error")},
-                    status=500,
-                )
-
-            # Extract the actual data from the client response
-            if "data" in result:
-                result = result["data"]
-
-        if not result or "searchResults" not in result:
-            logger.error("Failed to get entities from DataHub or empty response")
-            return JsonResponse(
-                {"success": False, "error": "Failed to get entities from DataHub"},
-                status=500,
-            )
-
-        # Get all search results
-        search_results = result.get("searchResults", [])
-
-        # Filter to only include entities with editable properties if requested
-        if editable_only:
-            filtered_results = []
-            for search_result in search_results:
-                entity = search_result.get("entity")
-                if entity and has_editable_properties(entity):
-                    filtered_results.append(search_result)
-
-            search_results = filtered_results
-
-        # Update the result with filtered search results
-        result["searchResults"] = search_results
-
-        # Structure the response
-        response_data = {
-            "start": result.get("start", 0),
-            "count": len(search_results),  # Use actual count of filtered results
-            "total": len(search_results),  # Use actual total of filtered results
-            "searchResults": search_results,
-        }
-
-        # Wrap in the expected structure for the frontend
-        response = {"success": True, "data": response_data}
-
-        # Cache the result for 5 minutes (300 seconds)
-        cache.set(cache_key, response, 300)
-        logger.info(
-            f"Cached results for query: {query}, found {len(search_results)} entities"
-        )
-
-        return JsonResponse(response)
     except Exception as e:
         logger.error(f"Error in get_editable_entities: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
-def get_comprehensive_search_results(
-    client, query, start, count, entity_type, platform, sort_by, editable_only
-):
-    """
-    Perform comprehensive search across platforms and entity types to gather more results.
-    """
-    # Define all supported entity types for multi-type pagination
+def _perform_background_search(session_key, cache_key, query, entity_type, platform, sort_by, use_platform_pagination, request):
+    """Perform the actual search in background with progress updates"""
+    from .models import SearchResultCache, SearchProgress
+    
+    try:
+        # Get client
+        client = get_client_from_session(request)
+        if not client:
+            SearchProgress.update_progress(
+                session_key=session_key,
+                cache_key=cache_key,
+                current_step="Error: Not connected to DataHub",
+                is_complete=True,
+                error_message="Not connected to DataHub"
+            )
+            return
+
+        # Clear any existing cache for this search
+        SearchResultCache.clear_cache(session_key, cache_key)
+        
+        # Use comprehensive search if platform pagination is enabled (default behavior)
+        if use_platform_pagination or (not entity_type and not platform):
+            logger.info("Using comprehensive search across all platforms and entity types")
+            _perform_comprehensive_search_with_progress(
+                client, query, entity_type, platform, sort_by, session_key, cache_key
+            )
+        else:
+            logger.info(f"Using direct search for entity_type={entity_type}, platform={platform}")
+            _perform_direct_search_with_progress(
+                client, query, entity_type, platform, sort_by, session_key, cache_key
+            )
+            
+        # Mark as complete
+        progress = SearchProgress.get_progress(session_key, cache_key)
+        if progress:
+            SearchProgress.update_progress(
+                session_key=session_key,
+                cache_key=cache_key,
+                current_step="Search completed",
+                is_complete=True
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in background search: {str(e)}")
+        SearchProgress.update_progress(
+            session_key=session_key,
+            cache_key=cache_key,
+            current_step=f"Error: {str(e)}",
+            is_complete=True,
+            error_message=str(e)
+        )
+
+
+def _perform_comprehensive_search_with_progress(client, query, entity_type, platform, sort_by, session_key, cache_key):
+    """Perform comprehensive search with real-time progress updates"""
+    from .models import SearchResultCache, SearchProgress
+    
+    # Define all supported entity types
     all_entity_types = [
-        "DATASET",
-        "CONTAINER",
-        "DASHBOARD",
-        "CHART",
-        "DATAFLOW",
-        "DATAJOB",
-        "DOMAIN",
-        "GLOSSARY_TERM",
-        "GLOSSARY_NODE",
-        "TAG",
+        "DATASET", "CONTAINER", "DASHBOARD", "CHART", "DATA_FLOW", "DATA_JOB",
+        "MLFEATURE_TABLE", "MLFEATURE", "MLMODEL", "MLMODEL_GROUP", "MLPRIMARY_KEY",
     ]
+    
+    # Determine entity types and platforms to search
+    if entity_type or platform:
+        entity_types_to_query = [entity_type] if entity_type else all_entity_types
+        platforms_to_query = [platform] if platform else []
+    else:
+        entity_types_to_query = all_entity_types
+        platforms_to_query = []
 
-    # Initialize an empty result set
-    combined_result = {"searchResults": [], "start": start, "count": count, "total": 0}
-
-    # Keep track of seen URNs to avoid duplicates
-    seen_urns = set()
-    target_count = count * 3  # Try to get 3x the requested amount for better pagination
-
-    # If no entity type is specified, cycle through all types
-    entity_types_to_query = [entity_type] if entity_type else all_entity_types
-
-    logger.info(
-        f"Starting comprehensive search for {target_count} results across {len(entity_types_to_query)} entity types"
+    # Update progress with step 1
+    SearchProgress.update_progress(
+        session_key=session_key,
+        cache_key=cache_key,
+        current_step="Discovering platforms...",
+        total_combinations=len(entity_types_to_query),
+        completed_combinations=0
     )
 
-    # First pass: Direct entity type searches with larger batch sizes
+    # Discover platforms if not specified
+    if not platforms_to_query:
+        platforms_to_query = _discover_platforms(client, query, sort_by)
+        logger.info(f"Discovered {len(platforms_to_query)} platforms to search")
+
+    # Calculate total combinations
+    total_combinations = len(entity_types_to_query) * (len(platforms_to_query) + 1)  # +1 for no-platform search
+    
+    SearchProgress.update_progress(
+        session_key=session_key,
+        cache_key=cache_key,
+        current_step="Starting comprehensive search...",
+        total_combinations=total_combinations,
+        completed_combinations=0
+    )
+
+    seen_urns = set()
+    current_combination = 0
+    
+    # Search by entity type + platform combinations
     for current_entity_type in entity_types_to_query:
-        if len(combined_result["searchResults"]) >= target_count:
-            break
+        # Search without platform filter first
+        current_combination += 1
+        SearchProgress.update_progress(
+            session_key=session_key,
+            cache_key=cache_key,
+            current_step=f"Searching {current_entity_type} (no platform filter)",
+            current_entity_type=current_entity_type,
+            current_platform="",
+            completed_combinations=current_combination
+        )
+        
+        results = _search_with_pagination_and_cache(
+            client, query, current_entity_type, None, sort_by, seen_urns, session_key, cache_key
+        )
+        
+        # Then search with each platform
+        for platform_name in platforms_to_query:
+            current_combination += 1
+            SearchProgress.update_progress(
+                session_key=session_key,
+                cache_key=cache_key,
+                current_step=f"Searching {current_entity_type} + {platform_name}",
+                current_entity_type=current_entity_type,
+                current_platform=platform_name,
+                completed_combinations=current_combination
+            )
+            
+            results = _search_with_pagination_and_cache(
+                client, query, current_entity_type, platform_name, sort_by, seen_urns, session_key, cache_key
+            )
 
-        logger.info(f"Processing entity type: {current_entity_type}")
+    # Update final progress
+    total_results = SearchResultCache.get_total_count(session_key, cache_key)
+    SearchProgress.update_progress(
+        session_key=session_key,
+        cache_key=cache_key,
+        current_step="Comprehensive search completed",
+        completed_combinations=total_combinations,
+        total_results_found=total_results
+    )
 
+
+def _search_with_pagination_and_cache(client, query, entity_type, platform, sort_by, seen_urns, session_key, cache_key):
+    """Search with pagination and store results in database cache"""
+    from .models import SearchResultCache, SearchProgress
+    from utils.datahub_rest_client import DataHubRestClient
+    
+    all_results = []
+    start = 0
+    batch_size = 1000
+    
+    while True:
         try:
-            # Use a larger batch size
-            batch_size = min(target_count, 500)
-
-            type_result = client.get_editable_entities(
-                start=0,
+            result = client.get_editable_entities(
+                start=start,
                 count=batch_size,
                 query=query,
-                entity_type=current_entity_type,
+                entity_type=entity_type,
                 platform=platform,
                 sort_by=sort_by,
                 editable_only=False,
             )
-
-            if type_result and "searchResults" in type_result:
-                # Filter and add results
-                for search_result in type_result.get("searchResults", []):
-                    entity = search_result.get("entity")
-                    if not entity or "urn" not in entity:
-                        continue
-
-                    entity_urn = entity["urn"]
-
-                    # Skip if we've already seen this entity
-                    if entity_urn in seen_urns:
-                        continue
-
-                    # Check if it has editable properties if filtering is enabled
-                    if editable_only and not has_editable_properties(entity):
-                        continue
-
-                    # Add to results
-                    combined_result["searchResults"].append(search_result)
-                    seen_urns.add(entity_urn)
-
-                    if len(combined_result["searchResults"]) >= target_count:
-                        break
-
-                # Add to total count
-                combined_result["total"] += type_result.get("total", 0)
-
-        except Exception as e:
-            logger.error(
-                f"Error processing entity type {current_entity_type}: {str(e)}"
-            )
-            continue
-
-    # Second pass: Platform-based search with common platforms only
-    if len(combined_result["searchResults"]) < target_count and not platform:
-        logger.info("Attempting platform-based search for additional results")
-
-        # Use a simple list of common platforms instead of calling get_platform_list
-        common_platforms = [
-            "postgres",
-            "mysql",
-            "snowflake",
-            "bigquery",
-            "redshift",
-            "databricks",
-            "glue",
-            "hive",
-            "kafka",
-        ]
-
-        for platform_name in common_platforms:
-            if len(combined_result["searchResults"]) >= target_count:
+            
+            # Handle client response format
+            if result and result.get("success") and "data" in result:
+                result_data = result["data"]
+            elif result and "searchResults" in result:
+                result_data = result
+            else:
                 break
-
-            logger.info(f"Searching platform: {platform_name}")
-
-            try:
-                platform_result = client.get_editable_entities(
-                    start=0,
-                    count=min(
-                        200, target_count - len(combined_result["searchResults"])
-                    ),
-                    query=query,
-                    entity_type=entity_type,
-                    platform=platform_name,
-                    sort_by=sort_by,
-                    editable_only=False,
+                
+            if not result_data or "searchResults" not in result_data:
+                break
+                
+            search_results = result_data.get("searchResults", [])
+            if not search_results:
+                break
+                
+            # Process and cache results
+            new_results = []
+            for search_result in search_results:
+                entity = search_result.get("entity")
+                if entity and "urn" in entity:
+                    entity_urn = entity["urn"]
+                    if entity_urn not in seen_urns:
+                        # Filter for entities with metadata
+                        temp_client = DataHubRestClient("", "")
+                        counts = temp_client._count_entity_metadata(entity)
+                        total_metadata_count = sum(counts.values())
+                        
+                        if total_metadata_count > 0:
+                            seen_urns.add(entity_urn)
+                            new_results.append(search_result)
+                            
+                            # Store in database cache
+                            try:
+                                SearchResultCache.objects.get_or_create(
+                                    session_key=session_key,
+                                    cache_key=cache_key,
+                                    entity_urn=entity_urn,
+                                    defaults={
+                                        'entity_data': entity,
+                                        'search_params': {
+                                            'query': query,
+                                            'entity_type': entity_type,
+                                            'platform': platform,
+                                            'sort_by': sort_by
+                                        }
+                                    }
+                                )
+                            except Exception as e:
+                                logger.error(f"Error caching result for {entity_urn}: {str(e)}")
+                        
+            all_results.extend(new_results)
+            
+            # Update progress with current results count
+            total_cached = SearchResultCache.get_total_count(session_key, cache_key)
+            progress = SearchProgress.get_progress(session_key, cache_key)
+            if progress:
+                SearchProgress.update_progress(
+                    session_key=session_key,
+                    cache_key=cache_key,
+                    total_results_found=total_cached
                 )
+            
+            # Check if we got fewer results than requested (end of results)
+            if len(search_results) < batch_size:
+                break
+                
+            start += batch_size
+            
+        except Exception as e:
+            logger.error(f"Error in pagination for {entity_type}+{platform}: {str(e)}")
+            break
+            
+    logger.info(f"Found {len(all_results)} results for {entity_type}+{platform}")
+    return all_results
 
-                if platform_result and "searchResults" in platform_result:
-                    for search_result in platform_result.get("searchResults", []):
-                        entity = search_result.get("entity")
-                        if not entity or "urn" not in entity:
-                            continue
 
-                        entity_urn = entity["urn"]
-
-                        # Skip if we've already seen this entity
-                        if entity_urn in seen_urns:
-                            continue
-
-                        # Check if it has editable properties if filtering is enabled
-                        if editable_only and not has_editable_properties(entity):
-                            continue
-
-                        # Add to results
-                        combined_result["searchResults"].append(search_result)
-                        seen_urns.add(entity_urn)
-
-                        if len(combined_result["searchResults"]) >= target_count:
-                            break
-
-                    combined_result["total"] += platform_result.get("total", 0)
-
-            except Exception as e:
-                logger.error(f"Error processing platform {platform_name}: {str(e)}")
-                continue
-
-    logger.info(
-        f"Comprehensive search completed: {len(combined_result['searchResults'])} entities found from {len(seen_urns)} unique entities"
+def _perform_direct_search_with_progress(client, query, entity_type, platform, sort_by, session_key, cache_key):
+    """Perform direct search with progress updates"""
+    from .models import SearchResultCache, SearchProgress
+    
+    SearchProgress.update_progress(
+        session_key=session_key,
+        cache_key=cache_key,
+        current_step=f"Searching {entity_type or 'all types'} + {platform or 'all platforms'}",
+        current_entity_type=entity_type or "",
+        current_platform=platform or "",
+        total_combinations=1,
+        completed_combinations=0
+    )
+    
+    seen_urns = set()
+    results = _search_with_pagination_and_cache(
+        client, query, entity_type, platform, sort_by, seen_urns, session_key, cache_key
+    )
+    
+    # Update final progress
+    total_results = SearchResultCache.get_total_count(session_key, cache_key)
+    SearchProgress.update_progress(
+        session_key=session_key,
+        cache_key=cache_key,
+        current_step="Direct search completed",
+        completed_combinations=1,
+        total_results_found=total_results
     )
 
-    return combined_result
+
+def _discover_platforms(client, query, sort_by):
+    """Discover all platforms available in DataHub"""
+    platforms_to_search = set()
+    
+    try:
+        # Quick discovery search
+        platform_discovery_result = client.get_editable_entities(
+            start=0,
+            count=1000,  # Get more for better platform discovery
+            query="*",
+            entity_type=None,
+            platform=None,
+            sort_by=sort_by,
+            editable_only=False,
+        )
+        
+        # Handle client response format
+        if platform_discovery_result and platform_discovery_result.get("success") and "data" in platform_discovery_result:
+            discovery_data = platform_discovery_result["data"]
+        elif platform_discovery_result and "searchResults" in platform_discovery_result:
+            discovery_data = platform_discovery_result
+        else:
+            discovery_data = None
+            
+        if discovery_data and "searchResults" in discovery_data:
+            for search_result in discovery_data.get("searchResults", []):
+                entity = search_result.get("entity", {})
+                
+                # Extract platform from various locations
+                if entity.get("platform") and entity["platform"].get("name"):
+                    platforms_to_search.add(entity["platform"]["name"])
+                elif entity.get("dataPlatformInstance") and entity["dataPlatformInstance"].get("platform"):
+                    platforms_to_search.add(entity["dataPlatformInstance"]["platform"].get("name"))
+                
+                # Also check for platform in URN
+                if entity.get("urn") and "urn:li:dataPlatform:" in entity["urn"]:
+                    try:
+                        urn_platform = entity["urn"].split("urn:li:dataPlatform:")[1].split(",")[0]
+                        if urn_platform:
+                            platforms_to_search.add(urn_platform)
+                    except:
+                        pass
+    except Exception as e:
+        logger.warning(f"Could not discover platforms from DataHub: {str(e)}")
+    
+    # Add comprehensive list of common platforms
+    common_platforms = [
+        "postgres", "mysql", "snowflake", "bigquery", "redshift", 
+        "databricks", "azure", "glue", "hive", "kafka", "oracle", 
+        "mssql", "teradata", "tableau", "looker", "metabase", 
+        "superset", "powerbi", "airflow", "spark", "delta", "unity-catalog"
+    ]
+    platforms_to_search.update(common_platforms)
+    
+    return sorted(list(platforms_to_search))
+
+
+def _search_with_pagination(client, query, entity_type, platform, sort_by, seen_urns):
+    """Search with automatic pagination until all results are retrieved"""
+    all_results = []
+    start = 0
+    batch_size = 1000  # Use larger batches
+    
+    while True:
+        try:
+            result = client.get_editable_entities(
+                start=start,
+                count=batch_size,
+                query=query,
+                entity_type=entity_type,
+                platform=platform,
+                sort_by=sort_by,
+                editable_only=False,
+            )
+            
+            # Handle client response format
+            if result and result.get("success") and "data" in result:
+                result_data = result["data"]
+            elif result and "searchResults" in result:
+                result_data = result
+            else:
+                break
+                
+            if not result_data or "searchResults" not in result_data:
+                break
+                
+            search_results = result_data.get("searchResults", [])
+            if not search_results:
+                break
+                
+            # Add unique results
+            new_results = []
+            for search_result in search_results:
+                entity = search_result.get("entity")
+                if entity and "urn" in entity:
+                    entity_urn = entity["urn"]
+                    if entity_urn not in seen_urns:
+                        seen_urns.add(entity_urn)
+                        new_results.append(search_result)
+                        
+            all_results.extend(new_results)
+            
+            # Check if we got fewer results than requested (end of results)
+            if len(search_results) < batch_size:
+                break
+                
+            # Check if we hit the 10,000 limit - if so, we need more granular filtering
+            total_available = result_data.get("total", 0)
+            if total_available >= 10000:
+                logger.warning(f"Hit 10,000 result limit for {entity_type}+{platform}, may need browse path filtering")
+                
+            start += batch_size
+            
+        except Exception as e:
+            logger.error(f"Error in pagination for {entity_type}+{platform}: {str(e)}")
+            break
+            
+    logger.info(f"Found {len(all_results)} results for {entity_type}+{platform}")
+    return all_results
+
+
+def _search_containers_with_browse_paths(client, query, platforms, sort_by, seen_urns):
+    """Special handling for containers using browse path filtering"""
+    container_results = []
+    
+    # First get all containers to identify browse paths
+    for platform in platforms:
+        try:
+            # Get containers for this platform
+            result = client.get_editable_entities(
+                start=0,
+                count=1000,
+                query=query,
+                entity_type="CONTAINER",
+                platform=platform,
+                sort_by=sort_by,
+                editable_only=False,
+            )
+            
+            # Handle response format
+            if result and result.get("success") and "data" in result:
+                result_data = result["data"]
+            elif result and "searchResults" in result:
+                result_data = result
+            else:
+                continue
+                
+            if not result_data or "searchResults" not in result_data:
+                continue
+                
+            # Check if we hit the limit
+            total_available = result_data.get("total", 0)
+            if total_available >= 10000:
+                logger.info(f"Container search for {platform} hit 10,000 limit, using browse path filtering")
+                
+                # Get container URNs from the first batch to use as browse path filters
+                container_urns = []
+                for search_result in result_data.get("searchResults", []):
+                    entity = search_result.get("entity")
+                    if entity and "urn" in entity and entity["type"] == "CONTAINER":
+                        container_urns.append(entity["urn"])
+                
+                # Now search for entities under each container using browsePathV2
+                for container_urn in container_urns[:50]:  # Limit to first 50 containers to avoid too many requests
+                    try:
+                        # Search for entities with this container in their browse path
+                        browse_path_result = _search_with_browse_path_filter(
+                            client, query, None, platform, container_urn, sort_by, seen_urns
+                        )
+                        container_results.extend(browse_path_result)
+                        
+                    except Exception as e:
+                        logger.error(f"Error searching with browse path filter for container {container_urn}: {str(e)}")
+                        continue
+                        
+            # Add unique results from the initial container search
+            for search_result in result_data.get("searchResults", []):
+                entity = search_result.get("entity")
+                if entity and "urn" in entity:
+                    entity_urn = entity["urn"]
+                    if entity_urn not in seen_urns:
+                        seen_urns.add(entity_urn)
+                        container_results.append(search_result)
+                        
+        except Exception as e:
+            logger.error(f"Error searching containers for platform {platform}: {str(e)}")
+            continue
+            
+    return container_results
+
+
+def _search_with_browse_path_filter(client, query, entity_type, platform, container_urn, sort_by, seen_urns):
+    """Search for entities with a specific container in their browse path"""
+    results = []
+    
+    # Use the client's browse path filtering capability
+    # This would require implementing browsePathV2 filtering in the GraphQL query
+    try:
+        # For now, we'll use a simpler approach and search for entities that might be under this container
+        # In a full implementation, we'd modify the GraphQL query to include browsePathV2 filters
+        
+        # Search for entities that might be related to this container
+        result = client.get_editable_entities(
+            start=0,
+            count=500,
+            query=f"{query} AND container:{container_urn.split(':')[-1]}",  # Simple container name search
+            entity_type=entity_type,
+            platform=platform,
+            sort_by=sort_by,
+            editable_only=False,
+        )
+        
+        # Handle response format
+        if result and result.get("success") and "data" in result:
+            result_data = result["data"]
+        elif result and "searchResults" in result:
+            result_data = result
+        else:
+            return results
+            
+        if result_data and "searchResults" in result_data:
+            for search_result in result_data.get("searchResults", []):
+                entity = search_result.get("entity")
+                if entity and "urn" in entity:
+                    entity_urn = entity["urn"]
+                    if entity_urn not in seen_urns:
+                        # Check if this entity actually has the container in its browse path
+                        if _entity_has_container_in_browse_path(entity, container_urn):
+                            seen_urns.add(entity_urn)
+                            results.append(search_result)
+                            
+    except Exception as e:
+        logger.error(f"Error in browse path filtering: {str(e)}")
+        
+    return results
+
+
+def _entity_has_container_in_browse_path(entity, container_urn):
+    """Check if an entity has a specific container in its browse path"""
+    try:
+        # Check browsePathV2 structure
+        if entity.get("browsePathV2") and entity["browsePathV2"].get("path"):
+            for path_element in entity["browsePathV2"]["path"]:
+                if (path_element.get("entity") and 
+                    path_element["entity"].get("container") and 
+                    path_element["entity"]["container"].get("urn") == container_urn):
+                    return True
+                    
+        # Check traditional browsePaths
+        if entity.get("browsePaths"):
+            for browse_path in entity["browsePaths"]:
+                if browse_path.get("path") and container_urn.split(":")[-1] in browse_path["path"]:
+                    return True
+                    
+        return False
+        
+    except Exception as e:
+        logger.debug(f"Error checking browse path for entity: {str(e)}")
+        return False
 
 
 @login_required
@@ -1423,6 +1822,96 @@ def get_client_from_session(request):
 
 
 @login_required
+@require_http_methods(["GET"])
+def get_platforms(request):
+    """Get list of platforms from DataHub."""
+    try:
+        # Get client from session
+        client = get_client_from_session(request)
+        if not client:
+            return JsonResponse(
+                {"success": False, "error": "Not connected to DataHub"}, status=400
+            )
+        
+        entity_type = request.GET.get("entity_type")
+        
+        # Use comprehensive platform search to get all available platforms
+        platforms = set()
+        
+        # Start with common platforms
+        common_platforms = [
+            "postgres", "mysql", "snowflake", "bigquery", "redshift", 
+            "databricks", "azure", "glue", "hive", "kafka", "oracle", 
+            "mssql", "teradata", "tableau", "looker", "metabase", 
+            "superset", "powerbi", "airflow"
+        ]
+        
+        # Try to get actual platforms from DataHub by searching for entities
+        try:
+            result = client.get_editable_entities(
+                start=0,
+                count=1000,
+                query="*",
+                entity_type=entity_type,
+                platform=None,
+                sort_by="name",
+                editable_only=False,
+            )
+            
+            if result and result.get("success") and "data" in result:
+                search_results = result["data"].get("searchResults", [])
+                for search_result in search_results:
+                    entity = search_result.get("entity", {})
+                    
+                    # Extract platform from various locations
+                    platform_name = None
+                    
+                    if entity.get("platform") and entity["platform"].get("name"):
+                        platform_name = entity["platform"]["name"]
+                    elif entity.get("dataPlatformInstance") and entity["dataPlatformInstance"].get("platform"):
+                        platform_name = entity["dataPlatformInstance"]["platform"].get("name")
+                    
+                    if platform_name:
+                        platforms.add(platform_name)
+                        
+                    # Also check for platform in URN
+                    if entity.get("urn") and "urn:li:dataPlatform:" in entity["urn"]:
+                        try:
+                            urn_platform = entity["urn"].split("urn:li:dataPlatform:")[1].split(",")[0]
+                            if urn_platform:
+                                platforms.add(urn_platform)
+                        except:
+                            pass
+                            
+        except Exception as e:
+            logger.warning(f"Could not fetch platforms from DataHub: {str(e)}")
+            # Fall back to common platforms
+            platforms.update(common_platforms)
+        
+        # Ensure we have at least the common platforms
+        platforms.update(common_platforms)
+        
+        # Filter by entity type if specified
+        if entity_type:
+            entity_type_platforms = get_platform_list(client, entity_type)
+            if entity_type_platforms:
+                platforms = platforms.intersection(set(entity_type_platforms))
+        
+        # Convert to sorted list
+        platform_list = sorted(list(platforms))
+        
+        return JsonResponse({
+            "success": True, 
+            "platforms": platform_list,
+            "entity_type": entity_type
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting platforms: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@login_required
 @require_http_methods(["POST"])
 def clear_editable_entities_cache(request):
     """
@@ -1447,3 +1936,46 @@ def clear_editable_entities_cache(request):
     except Exception as e:
         logger.error(f"Error clearing cache: {str(e)}")
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
+def get_search_progress(request):
+    """Get the current search progress for the user's session"""
+    try:
+        from .models import SearchProgress
+        
+        # Get session key
+        session_key = request.session.session_key
+        if not session_key:
+            return JsonResponse({"success": False, "error": "No active session"})
+
+        # Get cache key from request
+        cache_key = request.GET.get("cache_key")
+        if not cache_key:
+            return JsonResponse({"success": False, "error": "No cache key provided"})
+
+        # Get progress
+        progress = SearchProgress.get_progress(session_key, cache_key)
+        if not progress:
+            return JsonResponse({"success": False, "error": "No search in progress"})
+
+        # Return progress data
+        return JsonResponse({
+            "success": True,
+            "progress": {
+                "current_step": progress.current_step,
+                "current_entity_type": progress.current_entity_type,
+                "current_platform": progress.current_platform,
+                "completed_combinations": progress.completed_combinations,
+                "total_combinations": progress.total_combinations,
+                "total_results_found": progress.total_results_found,
+                "is_complete": progress.is_complete,
+                "error_message": progress.error_message,
+                "percentage": (progress.completed_combinations / max(progress.total_combinations, 1)) * 100 if progress.total_combinations > 0 else 0
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting search progress: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)

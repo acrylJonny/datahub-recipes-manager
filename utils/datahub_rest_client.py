@@ -109,51 +109,41 @@ class DataHubRestClient:
             dict: The GraphQL response
         """
         try:
-            # Only log a portion of the query to avoid overwhelming the logs
-            query_preview = query.replace("\n", " ").replace("  ", " ")[:200] + "..."
-            self.logger.info(f"Query: {query_preview}")
-            self.logger.info(f"Variables: {variables}")
+            # Reduced logging - only log query name and key details for entity searches
+            query_name = "Unknown"
+            if "query " in query:
+                query_name = query.split("query ")[1].split("(")[0].strip()
+            elif "mutation " in query:
+                query_name = query.split("mutation ")[1].split("(")[0].strip()
+            
+            # Only log minimal info to reduce clutter
+            self.logger.debug(f"Executing GraphQL {query_name}")
 
             # Try with DataHubGraph client if available
             if hasattr(self, "dhg_client") and self.dhg_client:
-                self.logger.debug(
-                    f"Executing GraphQL query with DataHubGraph client: {query[:100]}..."
-                )
-                self.logger.debug(f"Variables: {variables}")
                 return self.dhg_client.execute_graphql(query, variables)
 
             # Fallback to direct HTTP request
-            self.logger.debug(
-                f"Executing GraphQL query with direct HTTP request: {query[:100]}..."
-            )
-            self.logger.debug(f"Variables: {variables}")
-
             payload = {"query": query, "variables": variables or {}}
-
             graphql_url = f"{self.server_url}/api/graphql"
-            self.logger.info(f"Sending request to: {graphql_url}")
 
             response = self._session.post(
                 graphql_url, json=payload, headers=self._get_auth_headers()
             )
 
-            self.logger.info(f"GraphQL response status: {response.status_code}")
-
-            if response.status_code == 200:
-                result = response.json()
-                # Check for GraphQL errors
-                if "errors" in result:
-                    self.logger.warning(
-                        f"GraphQL query returned errors: {result['errors']}"
-                    )
-                    return result
-                else:
-                    return result
-            else:
-                self.logger.warning(
-                    f"GraphQL query failed with status {response.status_code}: {response.text}"
-                )
+            # Only log if there's an error
+            if response.status_code != 200:
+                self.logger.warning(f"GraphQL {query_name} failed with status {response.status_code}")
                 return None
+
+            result = response.json()
+            # Only log GraphQL errors if they exist
+            if "errors" in result:
+                self.logger.warning(f"GraphQL {query_name} returned errors: {len(result['errors'])} error(s)")
+                # Only log the first error message to avoid spam  
+                if result['errors']:
+                    self.logger.debug(f"First error: {result['errors'][0].get('message', 'Unknown error')}")
+            return result
         except Exception as e:
             self.logger.error(f"Error executing GraphQL query: {str(e)}")
             return None
@@ -6696,201 +6686,1040 @@ class DataHubRestClient:
                 }]
             }]
 
-        # Comprehensive query that gets all necessary metadata including editableProperties and browsePathV2
+        # Comprehensive query that gets all necessary metadata including ownership, editableProperties, structured properties, tags, domains, and glossary terms
         graphql_query = """
-            query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                start
-                count
-                total
-                searchResults {
-                  entity {
+query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
+  searchAcrossEntities(input: $input) {
+    start
+    count
+    total
+    searchResults {
+      entity {
+        urn
+        type
+        ... on Dataset {
+          name
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          platform {
+            name
+            properties {
+              displayName
+            }
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          browsePaths {
+            path
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
                     urn
-                    type
-                    ... on Dataset {
+                    properties {
                       name
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        name
-                        description
-                      }
-                      editableSchemaMetadata {
-                        editableSchemaFieldInfo {
-                          fieldPath
-                          description
-                          tags {
-                            tags {
-                              associatedUrn
-                              tag { urn }
-                            }
-                          }
-                        }
-                      }
-                    }
-                    ... on Container {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on Chart {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on Dashboard {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on DataFlow {
-                      properties { name }
-                      platform { 
-                        name
-                        properties { displayName }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
-                    }
-                    ... on DataJob {
-                      properties { name }
-                      dataFlow { 
-                        flowId
-                        properties { name }
-                      }
-                      dataPlatformInstance {
-                        instanceId
-                        platform { name }
-                      }
-                      browsePaths { path }
-                      browsePathV2 {
-                        path {
-                          name
-                          entity {
-                            ... on Container {
-                              container {
-                                urn
-                                properties { name }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      editableProperties {
-                        description
-                      }
                     }
                   }
                 }
               }
             }
+          }
+          editableProperties {
+            name
+            description
+          }
+          editableSchemaMetadata {
+            editableSchemaFieldInfo {
+              fieldPath
+              description
+              tags {
+                tags {
+                  tag {
+                    urn
+                  }
+                }
+              }
+              glossaryTerms {
+                terms {
+                  term {
+                    urn
+                    glossaryTermInfo {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          deprecation {
+            deprecated
+          }
+          schemaMetadata {
+            fields {
+              fieldPath
+              schemaFieldEntity {
+                deprecation {
+                  deprecated
+                }
+                structuredProperties {
+                  properties {
+                    structuredProperty {
+                      urn
+                    }
+                    values {
+                      ... on StringValue {
+                        stringValue
+                      }
+                      ... on NumberValue {
+                        numberValue
+                      }
+                    }
+                    valueEntities {
+                      urn
+                    }
+                  }
+                }
+              }
+              tags {
+                tags {
+                  tag {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+              glossaryTerms {
+                terms {
+                  term {
+                    urn
+                    glossaryTermInfo {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on Container {
+          properties {
+            name
+          }
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          platform {
+            name
+            properties {
+              displayName
+            }
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on Chart {
+          properties {
+            name
+          }
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          platform {
+            name
+            properties {
+              displayName
+            }
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          browsePaths {
+            path
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on Dashboard {
+          properties {
+            name
+          }
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          platform {
+            name
+            properties {
+              displayName
+            }
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          browsePaths {
+            path
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on DataFlow {
+          properties {
+            name
+          }
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          platform {
+            name
+            properties {
+              displayName
+            }
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          browsePaths {
+            path
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on DataJob {
+          properties {
+            name
+          }
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          dataFlow {
+            flowId
+            properties {
+              name
+            }
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          browsePaths {
+            path
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on MLFeatureTable {
+          name
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          platform {
+            name
+            properties {
+              displayName
+            }
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          browsePaths {
+            path
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on MLFeature {
+          name
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on MLModel {
+          name
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          dataPlatformInstance {
+            instanceId
+            platform {
+              name
+            }
+          }
+          browsePathV2 {
+            path {
+              name
+              entity {
+                ... on Container {
+                  container {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on MLModelGroup {
+          name
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+        ... on MLPrimaryKey {
+          name
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
+                }
+                ... on CorpGroup {
+                  urn
+                }
+              }
+              ownershipType {
+                urn
+              }
+            }
+          }
+          editableProperties {
+            description
+          }
+          deprecation {
+            deprecated
+          }
+          domain {
+            domain {
+              urn
+            }
+          }
+          tags {
+            tags {
+              tag {
+                urn
+              }
+            }
+          }
+          glossaryTerms {
+            terms {
+              term {
+                urn
+                glossaryTermInfo {
+                  name
+                }
+              }
+            }
+          }
+          structuredProperties {
+            properties {
+              structuredProperty {
+                urn
+              }
+              values {
+                ... on StringValue {
+                  stringValue
+                }
+                ... on NumberValue {
+                  numberValue
+                }
+              }
+              valueEntities {
+                urn
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
         """
         
         result = self.execute_graphql(graphql_query, variables)
@@ -6901,8 +7730,8 @@ class DataHubRestClient:
             
         search_results = result.get("data", {}).get("searchAcrossEntities", {})
         
-        # If editable_only is True, filter results to only include entities with 
-        # editableProperties or editableSchemaMetadata
+        # If editable_only is True, filter results to only include entities with any metadata
+        # (editable properties, schema metadata, domains, tags, glossary terms, or structured properties)
         if editable_only and "searchResults" in search_results:
             filtered_results = []
             total_count = 0
@@ -6910,11 +7739,12 @@ class DataHubRestClient:
             for result in search_results.get("searchResults", []):
                 entity = result.get("entity", {})
                 
-                # Check if entity has editable properties or schema metadata
-                has_editable_properties = entity.get("editableProperties") is not None
-                has_editable_schema = entity.get("editableSchemaMetadata") is not None
+                # Count all metadata types
+                counts = self._count_entity_metadata(entity)
+                total_metadata_count = sum(counts.values())
                 
-                if has_editable_properties or has_editable_schema:
+                # Only include entities that have at least one piece of metadata
+                if total_metadata_count > 0:
                     filtered_results.append(result)
                     total_count += 1
             
@@ -6930,6 +7760,91 @@ class DataHubRestClient:
             return {"success": True, "data": filtered_search_results}
         
         return {"success": True, "data": search_results}
+
+    def _count_entity_metadata(self, entity):
+        """
+        Count metadata elements for an entity to determine if it has meaningful content.
+        
+        Args:
+            entity (dict): The entity data from GraphQL
+            
+        Returns:
+            dict: Dictionary with counts for each metadata type
+        """
+        counts = {
+            'editable_properties': 0,
+            'schema_metadata': 0,
+            'domains': 0,
+            'glossary_terms': 0,
+            'tags': 0,
+            'structured_properties': 0
+        }
+        
+        # Count editable properties
+        if entity.get("editableProperties"):
+            editable_props = entity["editableProperties"]
+            if editable_props.get("name"):
+                counts['editable_properties'] += 1
+            if editable_props.get("description"):
+                counts['editable_properties'] += 1
+            # Count other editable properties
+            other_props = [k for k in editable_props.keys() if k not in ['name', 'description']]
+            counts['editable_properties'] += len(other_props)
+        
+        # Count schema metadata fields
+        if entity.get("editableSchemaMetadata") and entity["editableSchemaMetadata"].get("editableSchemaFieldInfo"):
+            counts['schema_metadata'] += len(entity["editableSchemaMetadata"]["editableSchemaFieldInfo"])
+        
+        if entity.get("schemaMetadata") and entity["schemaMetadata"].get("fields"):
+            counts['schema_metadata'] += len(entity["schemaMetadata"]["fields"])
+        
+        # Count domains
+        if entity.get("domain") and entity["domain"].get("domain") and entity["domain"]["domain"].get("urn"):
+            counts['domains'] = 1
+        
+        # Count entity-level glossary terms
+        if entity.get("glossaryTerms") and entity["glossaryTerms"].get("terms"):
+            counts['glossary_terms'] += len(entity["glossaryTerms"]["terms"])
+        
+        # Count schema-level glossary terms
+        if entity.get("editableSchemaMetadata") and entity["editableSchemaMetadata"].get("editableSchemaFieldInfo"):
+            for field in entity["editableSchemaMetadata"]["editableSchemaFieldInfo"]:
+                if field.get("glossaryTerms") and field["glossaryTerms"].get("terms"):
+                    counts['glossary_terms'] += len(field["glossaryTerms"]["terms"])
+        
+        if entity.get("schemaMetadata") and entity["schemaMetadata"].get("fields"):
+            for field in entity["schemaMetadata"]["fields"]:
+                if field.get("glossaryTerms") and field["glossaryTerms"].get("terms"):
+                    counts['glossary_terms'] += len(field["glossaryTerms"]["terms"])
+        
+        # Count entity-level tags
+        if entity.get("tags") and entity["tags"].get("tags"):
+            counts['tags'] += len(entity["tags"]["tags"])
+        
+        # Count schema-level tags
+        if entity.get("editableSchemaMetadata") and entity["editableSchemaMetadata"].get("editableSchemaFieldInfo"):
+            for field in entity["editableSchemaMetadata"]["editableSchemaFieldInfo"]:
+                if field.get("tags") and field["tags"].get("tags"):
+                    counts['tags'] += len(field["tags"]["tags"])
+        
+        if entity.get("schemaMetadata") and entity["schemaMetadata"].get("fields"):
+            for field in entity["schemaMetadata"]["fields"]:
+                if field.get("tags") and field["tags"].get("tags"):
+                    counts['tags'] += len(field["tags"]["tags"])
+        
+        # Count entity-level structured properties
+        if entity.get("structuredProperties") and entity["structuredProperties"].get("properties"):
+            counts['structured_properties'] += len(entity["structuredProperties"]["properties"])
+        
+        # Count schema-level structured properties
+        if entity.get("schemaMetadata") and entity["schemaMetadata"].get("fields"):
+            for field in entity["schemaMetadata"]["fields"]:
+                if (field.get("schemaFieldEntity") and 
+                    field["schemaFieldEntity"].get("structuredProperties") and 
+                    field["schemaFieldEntity"]["structuredProperties"].get("properties")):
+                    counts['structured_properties'] += len(field["schemaFieldEntity"]["structuredProperties"]["properties"])
+        
+        return counts
 
     def update_entity_properties(self, entity_urn: str, entity_type: str, properties: dict) -> bool:
         """Update editable properties of an entity.
@@ -6980,14 +7895,11 @@ class DataHubRestClient:
             result (dict): The GraphQL response with errors
         """
         errors = self._get_graphql_errors(result)
-        for error in errors:
-            self.logger.error(f"GraphQL error: {error}")
-        
-        # Also log any extensions if available
-        if isinstance(result, dict) and 'errors' in result:
-            for error in result['errors']:
-                if isinstance(error, dict) and 'extensions' in error:
-                    self.logger.debug(f"GraphQL error extensions: {error['extensions']}")
+        if errors:
+            # Only log the first error to avoid spam
+            self.logger.error(f"GraphQL error: {errors[0]}")
+            if len(errors) > 1:
+                self.logger.debug(f"Additional {len(errors) - 1} GraphQL errors occurred")
 
     def get_test(self, test_urn):
         """
@@ -7427,11 +8339,11 @@ class DataHubRestClient:
                         description
                         externalUrl
                       }
-                      ownership {
-                        owners {
-                          owner {
-                            ... on CorpUser {
-                              urn
+          ownership {
+            owners {
+              owner {
+                ... on CorpUser {
+                  urn
                               type
                               username
                               info {
@@ -7458,24 +8370,24 @@ class DataHubRestClient:
                                 pictureLink
                                 email
                               }
-                            }
-                            ... on CorpGroup {
-                              urn
+                }
+                ... on CorpGroup {
+                  urn
                               type
                               name
                               properties {
                                 displayName
                                 email
-                              }
+                }
                               info {
                                 displayName
                                 email
-                              }
+              }
                             }
                           }
                           type
-                          ownershipType {
-                            urn
+              ownershipType {
+                urn
                             type
                             info {
                               name
@@ -7495,7 +8407,7 @@ class DataHubRestClient:
                             type
                             name
                             description
-                            properties {
+            properties {
                               name
                               colorHex
                             }
@@ -7554,9 +8466,9 @@ class DataHubRestClient:
                                 type
                                 info {
                                   type
-                                  displayName
-                                }
-                              }
+              displayName
+            }
+          }
                             }
                           }
                           values {

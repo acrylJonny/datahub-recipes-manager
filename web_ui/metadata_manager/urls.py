@@ -25,18 +25,28 @@ urlpatterns = [
         name="get_editable_entities",
     ),
     path(
-        "entities/editable/clear-cache/",
+        "entities/editable/progress/",
+        views.get_search_progress,
+        name="get_search_progress",
+    ),
+    path(
+        "entities/editable/update/",
+        views.update_entity_properties,
+        name="update_entity_properties",
+    ),
+    path(
+        "entities/editable/cache/clear/",
         views.clear_editable_entities_cache,
         name="clear_editable_entities_cache",
+    ),
+    path(
+        "platforms/",
+        views.get_platforms,
+        name="get_platforms",
     ),
     path("entities/<str:urn>/", views.get_entity_details, name="get_entity_details"),
     path(
         "entities/<str:urn>/schema/", views.get_entity_schema, name="get_entity_schema"
-    ),
-    path(
-        "entities/update/",
-        views.update_entity_properties,
-        name="update_entity_properties",
     ),
     path("sync/", views.sync_metadata, name="sync_metadata"),
     # Structured Properties
@@ -475,3 +485,4 @@ urlpatterns = [
         name="sync_config_create",
     ),
 ]
+
