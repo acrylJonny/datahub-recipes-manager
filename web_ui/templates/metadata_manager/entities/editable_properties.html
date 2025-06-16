@@ -1232,6 +1232,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                     data-urn="${entity.urn}" data-type="${entity.type}">
                                 <i class="fas fa-eye"></i>
                             </button>
+                            <a href="#" class="btn btn-sm btn-outline-primary view-in-datahub"
+                               data-urn="${entity.urn}" data-type="${entity.type}" target="_blank">
+                                <i class="fas fa-external-link-alt"></i>
+                            </a>
                         </div>
                     </td>
                 `;
@@ -1245,6 +1249,33 @@ document.addEventListener('DOMContentLoaded', function() {
                     const type = this.getAttribute('data-type');
                     openViewModal(urn, type);
                 });
+            });
+            
+            // Add event listeners to the view-in-datahub links
+            document.querySelectorAll('.view-in-datahub').forEach(link => {
+                // Configure the DataHub URL for each link
+                fetch('/metadata/config/datahub-url/')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.url) {
+                            const urn = link.getAttribute('data-urn');
+                            const type = link.getAttribute('data-type').toLowerCase();
+                            
+                            // Use proper encoding for the URN
+                            const encodedUrn = encodeURIComponent(urn).replace(/%3A/g, ':').replace(/%2C/g, ',');
+                            
+                            // Build the DataHub URL
+                            const datahubUrl = `${data.url}/${type}/${encodedUrn}`.replace('//', '/');
+                            link.href = datahubUrl;
+                        } else {
+                            link.href = '#';
+                            console.warn('DataHub URL not found in configuration');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching DataHub URL:', error);
+                        link.href = '#';
+                    });
             });
             
             // Update pagination info if available

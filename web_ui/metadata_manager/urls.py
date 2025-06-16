@@ -143,6 +143,22 @@ urlpatterns = [
     path(
         "tags/entity/", views_tags.TagEntityView.as_view(), name="tag_entity"
     ),  # New endpoint for applying tags to entities
+    # API endpoints for tag actions
+    path(
+        "api/metadata_manager/tags/<uuid:tag_id>/sync_to_local/",
+        views_tags.TagSyncToLocalView.as_view(),
+        name="tag_sync_to_local_api"
+    ),
+    path(
+        "api/metadata_manager/tags/<uuid:tag_id>/download/",
+        views_tags.TagDownloadJsonView.as_view(),
+        name="tag_download_json_api"
+    ),
+    path(
+        "api/metadata_manager/tags/<uuid:tag_id>/stage_changes/",
+        views_tags.TagAddToStagedChangesView.as_view(),
+        name="tag_add_to_staged_changes_api"
+    ),
     # Glossary
     path("glossary/", views_glossary.GlossaryListView.as_view(), name="glossary_list"),
     path(

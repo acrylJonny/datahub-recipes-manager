@@ -13,15 +13,18 @@ from typing import Dict, Any, Optional
 
 
 def generate_deterministic_urn(
-    entity_type: str, name: str, namespace: Optional[str] = None
+    entity_type: str, name: str, namespace: Optional[str] = None, environment: Optional[str] = None, mutation_name: Optional[str] = None
 ) -> str:
     """
     Generate a deterministic URN for a DataHub entity using MD5 hashing.
+    If mutation_name is not specified, the original URN format will be preserved.
 
     Args:
         entity_type: The type of entity (tag, glossaryTerm, glossaryNode, domain)
         name: The name of the entity
         namespace: Optional namespace for scoping (e.g., parent node for glossary terms)
+        environment: Optional environment name (deprecated, use mutation_name instead)
+        mutation_name: Optional mutation name for environment-specific URNs
 
     Returns:
         A deterministic URN for the entity
@@ -34,16 +37,6 @@ def generate_deterministic_urn(
     entity_type = entity_type.lower().strip()
     name = name.lower().strip()
 
-    # Combine the inputs to create a unique identifier string
-    unique_id_string = f"{entity_type}:{name}"
-    if namespace:
-        namespace = str(namespace) if namespace is not None else ""
-        namespace = namespace.lower().strip()
-        unique_id_string = f"{namespace}:{unique_id_string}"
-
-    # Generate MD5 hash of the combined string
-    md5_hash = hashlib.md5(unique_id_string.encode("utf-8")).hexdigest()
-
     # Map entity type to the URN format
     type_map = {
         "tag": "tag",
@@ -55,6 +48,28 @@ def generate_deterministic_urn(
     }
 
     urn_type = type_map.get(entity_type, entity_type)
+    
+    # If no mutation, use original URN format
+    if mutation_name is None and not namespace and not environment:
+        return f"urn:li:{urn_type}:{name}"
+    
+    # Combine the inputs to create a unique identifier string
+    unique_id_string = f"{entity_type}:{name}"
+    
+    if namespace:
+        namespace = str(namespace) if namespace is not None else ""
+        namespace = namespace.lower().strip()
+        unique_id_string = f"{namespace}:{unique_id_string}"
+        
+    # Use mutation_name if available, otherwise fall back to environment for backward compatibility
+    mutation_or_env = mutation_name or environment
+    if mutation_or_env:
+        mutation_or_env = str(mutation_or_env) if mutation_or_env is not None else ""
+        mutation_or_env = mutation_or_env.lower().strip()
+        unique_id_string = f"{mutation_or_env}:{unique_id_string}"
+
+    # Generate MD5 hash of the combined string
+    md5_hash = hashlib.md5(unique_id_string.encode("utf-8")).hexdigest()
 
     # Return the URN in the DataHub format
     return f"urn:li:{urn_type}:{md5_hash}"

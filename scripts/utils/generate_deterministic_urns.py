@@ -64,6 +64,16 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--environment",
+        help="Optional environment name (deprecated, use --mutation-name instead)",
+    )
+    
+    parser.add_argument(
+        "--mutation-name",
+        help="Optional mutation name for environment-specific URNs",
+    )
+
+    parser.add_argument(
         "--input-file",
         help="Optional JSON file with multiple entities to generate URNs for",
     )
@@ -84,7 +94,11 @@ def parse_args():
 
 
 def generate_urn_from_args(
-    entity_type: str, name: str, namespace: Optional[str] = None
+    entity_type: str, 
+    name: str, 
+    namespace: Optional[str] = None, 
+    environment: Optional[str] = None,
+    mutation_name: Optional[str] = None
 ) -> Dict[str, str]:
     """
     Generate a deterministic URN from arguments
@@ -93,26 +107,42 @@ def generate_urn_from_args(
         entity_type: Type of entity (tag, glossaryTerm, glossaryNode, domain)
         name: Name of the entity
         namespace: Optional namespace for scoping
+        environment: Optional environment name (deprecated)
+        mutation_name: Optional mutation name for environment-specific URNs
 
     Returns:
         Dictionary with entity details and URN
     """
-    deterministic_urn = generate_deterministic_urn(entity_type, name, namespace)
+    deterministic_urn = generate_deterministic_urn(
+        entity_type, name, namespace, environment, mutation_name
+    )
 
     result = {"entityType": entity_type, "name": name, "urn": deterministic_urn}
 
     if namespace:
         result["namespace"] = namespace
+        
+    if environment:
+        result["environment"] = environment
+        
+    if mutation_name:
+        result["mutationName"] = mutation_name
 
     return result
 
 
-def generate_urns_from_file(input_file: str) -> List[Dict[str, str]]:
+def generate_urns_from_file(
+    input_file: str, 
+    environment: Optional[str] = None,
+    mutation_name: Optional[str] = None
+) -> List[Dict[str, str]]:
     """
     Generate deterministic URNs for entities defined in a JSON file
 
     Args:
         input_file: Path to JSON file with entity definitions
+        environment: Optional environment name
+        mutation_name: Optional mutation name for environment-specific URNs
 
     Returns:
         List of dictionaries with entity details and URNs
@@ -127,12 +157,16 @@ def generate_urns_from_file(input_file: str) -> List[Dict[str, str]]:
             entity_type = entity.get("entityType")
             name = entity.get("name")
             namespace = entity.get("namespace")
+            env = entity.get("environment", environment)
+            mut_name = entity.get("mutationName", mutation_name)
 
             if not entity_type or not name:
                 logger.warning(f"Skipping entity with missing type or name: {entity}")
                 continue
 
-            result = generate_urn_from_args(entity_type, name, namespace)
+            result = generate_urn_from_args(
+                entity_type, name, namespace, env, mut_name
+            )
             results.append(result)
 
         return results
@@ -151,12 +185,16 @@ def main():
     # Generate URNs from file if provided
     if args.input_file:
         logger.info(f"Generating URNs from file: {args.input_file}")
-        results = generate_urns_from_file(args.input_file)
+        results = generate_urns_from_file(
+            args.input_file, args.environment, args.mutation_name
+        )
 
     # Generate URN from command line arguments
     else:
         logger.info(f"Generating URN for {args.entity_type} with name '{args.name}'")
-        result = generate_urn_from_args(args.entity_type, args.name, args.namespace)
+        result = generate_urn_from_args(
+            args.entity_type, args.name, args.namespace, args.environment, args.mutation_name
+        )
         results = [result]
 
     # Output results

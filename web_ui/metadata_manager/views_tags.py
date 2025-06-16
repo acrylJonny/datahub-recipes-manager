@@ -1239,3 +1239,206 @@ def get_remote_tags_data(request):
             "success": False,
             "error": str(e)
         })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagSyncToLocalView(View):
+    """API endpoint to sync a remote tag to local"""
+
+    def post(self, request, tag_id):
+        try:
+            tag = get_object_or_404(Tag, id=tag_id)
+            
+            # Get DataHub client
+            client = get_datahub_client()
+            if not client:
+                return JsonResponse({"error": "Not connected to DataHub"}, status=400)
+            
+            # Get the tag data from DataHub
+            remote_tag = client.get_tag(tag.deterministic_urn)
+            if not remote_tag:
+                return JsonResponse({"error": "Tag not found in DataHub"}, status=404)
+
+            # Update local tag with remote data
+            tag.name = remote_tag.get("properties", {}).get("name", tag.name)
+            tag.description = remote_tag.get("properties", {}).get("description", "")
+            tag.color = remote_tag.get("properties", {}).get("colorHex", tag.color)
+            tag.sync_status = "SYNCED"
+            tag.last_synced = timezone.now()
+            
+            # Update ownership data if available
+            if "ownership" in remote_tag:
+                ownership_data = remote_tag.get("ownership", {})
+                owners = ownership_data.get("owners", [])
+                tag.owners_count = len(owners)
+                # Make sure ownership_data is properly formatted
+                if isinstance(ownership_data, dict):
+                    tag.ownership_data = sanitize_api_response(ownership_data)
+                else:
+                    tag.ownership_data = {"owners": []}
+            else:
+                # Set default empty ownership data to avoid None issues
+                tag.ownership_data = {"owners": []}
+                tag.owners_count = 0
+            
+            tag.save()
+            
+            logger.info(f"Tag {tag.name} (ID: {tag_id}) synced to local")
+            return JsonResponse({
+                "status": "success",
+                "message": "Tag synced successfully",
+                "refresh_needed": True
+            })
+                
+        except Exception as e:
+            logger.error(f"Error syncing tag to local: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagDownloadJsonView(View):
+    """API endpoint to download tag data as JSON"""
+    
+    def get(self, request, tag_id):
+        try:
+            tag = get_object_or_404(Tag, id=tag_id)
+            
+            # Create JSON data
+            tag_data = {
+                "id": str(tag.id),
+                "name": tag.name,
+                "description": tag.description,
+                "color": tag.color,
+                "deterministic_urn": tag.deterministic_urn,
+                "sync_status": tag.sync_status,
+                "last_synced": tag.last_synced.isoformat() if tag.last_synced else None,
+                "owners_count": tag.owners_count,
+                "ownership_data": tag.ownership_data
+            }
+            
+            # Add remote data if available
+            client = get_datahub_client()
+            if client:
+                try:
+                    remote_tag = client.get_tag(tag.deterministic_urn)
+                    if remote_tag:
+                        tag_data["remote"] = remote_tag
+                except Exception as e:
+                    logger.warning(f"Error fetching remote tag data: {str(e)}")
+            
+            # Return JSON response with content disposition header for download
+            response = JsonResponse(tag_data, json_dumps_params={"indent": 2})
+            response["Content-Disposition"] = f'attachment; filename="tag-{tag.name}.json"'
+            return response
+                
+        except Exception as e:
+            logger.error(f"Error generating tag JSON: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagAddToStagedChangesView(View):
+    """API endpoint to add a tag to staged changes"""
+    
+    def post(self, request, tag_id):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.tag_actions import add_tag_to_staged_changes
+            
+            # Get tag and request data
+            tag = get_object_or_404(Tag, id=tag_id)
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Create tag data dictionary
+            tag_data = {
+                "id": str(tag.id),
+                "name": tag.name,
+                "description": tag.description,
+                "color": tag.color,
+                "urn": tag.deterministic_urn,
+                "properties": {
+                    "name": tag.name,
+                    "description": tag.description,
+                    "colorHex": tag.color
+                }
+            }
+            
+            if tag.ownership_data:
+                tag_data["ownership"] = tag.ownership_data
+            
+            # Get environment
+            try:
+                environment = Environment.objects.get(name=environment_name)
+            except Environment.DoesNotExist:
+                # Create default environment if it doesn't exist
+                environment = Environment.objects.create(
+                    name=environment_name,
+                    description=f"Auto-created {environment_name} environment"
+                )
+            
+            # Build base directory path
+            base_dir = Path(os.getcwd()) / "metadata-manager" / environment_name
+            base_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Add tag to staged changes
+            result = add_tag_to_staged_changes(
+                tag_data=tag_data,
+                environment=environment_name,
+                owner=owner,
+                base_dir=str(base_dir),
+                mutation_name=mutation_name
+            )
+            
+            # Return success response
+            return JsonResponse({
+                "status": "success",
+                "message": "Tag added to staged changes",
+                "files_created": list(result.values())
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding tag to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+# Update URLs
+def update_urls():
+    """
+    This function isn't part of the view but serves as documentation for URLs that need to be added:
+    
+    1. path(
+        "api/metadata_manager/tags/<uuid:tag_id>/sync_to_local/",
+        views_tags.TagSyncToLocalView.as_view(),
+        name="tag_sync_to_local_api"
+    )
+    
+    2. path(
+        "api/metadata_manager/tags/<uuid:tag_id>/download/",
+        views_tags.TagDownloadJsonView.as_view(),
+        name="tag_download_json_api"
+    )
+    
+    3. path(
+        "api/metadata_manager/tags/<uuid:tag_id>/stage_changes/",
+        views_tags.TagAddToStagedChangesView.as_view(),
+        name="tag_add_to_staged_changes_api"
+    )
+    """
+    pass

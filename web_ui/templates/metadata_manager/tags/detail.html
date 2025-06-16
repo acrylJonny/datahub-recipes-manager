@@ -28,6 +28,36 @@
                     </button>
                     {% endif %}
                     
+                    <!-- New action buttons -->
+                    {% if datahub_url and remote_tag %}
+                    <a href="{{ datahub_url|datahub_url:remote_tag.urn }}" target="_blank" class="btn btn-outline-info">
+                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                    </a>
+                    {% endif %}
+                    
+                    {% if tag.is_remote or remote_tag %}
+                    <button type="button" class="btn btn-outline-primary sync-to-local" 
+                            data-tag-id="{{ tag.id }}"
+                            data-tag-urn="{% if remote_tag %}{{ remote_tag.urn }}{% else %}{{ tag.deterministic_urn }}{% endif %}">
+                        <i class="fas fa-download me-1"></i> Sync to Local
+                    </button>
+                    {% endif %}
+                    
+                    <button type="button" class="btn btn-outline-secondary download-json" 
+                            data-tag-id="{{ tag.id }}"
+                            data-tag-name="{{ tag.name }}" 
+                            data-tag-description="{{ tag.description }}"
+                            data-tag-color="{{ tag.color }}"
+                            data-tag-urn="{% if remote_tag %}{{ remote_tag.urn }}{% else %}{{ tag.deterministic_urn }}{% endif %}">
+                        <i class="fas fa-file-download me-1"></i> Download
+                    </button>
+                    
+                    <button type="button" class="btn btn-outline-warning add-to-staged" 
+                            data-tag-id="{{ tag.id }}"
+                            data-tag-urn="{% if remote_tag %}{{ remote_tag.urn }}{% else %}{{ tag.deterministic_urn }}{% endif %}">
+                        <i class="fab fa-github me-1"></i> Add to Staged Changes
+                    </button>
+                    
                     <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left me-1"></i> Back to Tags
                     </a>
@@ -363,6 +393,7 @@
 {% block extra_js %}
 {% load static %}
 <script src="{% static 'js/tag_utils.js' %}"></script>
+<script src="{% static 'metadata_manager/tags/tag_actions.js' %}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Handle main tag color checkbox
@@ -467,6 +498,46 @@
                         submitButton.innerHTML = originalText;
                         submitButton.disabled = false;
                 });
+            });
+        }
+        
+        // Handle new action buttons
+        const downloadBtn = document.querySelector('.download-json');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', function() {
+                // Create tag data object from data attributes
+                const tagData = {
+                    id: this.dataset.tagId,
+                    name: this.dataset.tagName,
+                    description: this.dataset.tagDescription,
+                    color: this.dataset.tagColor,
+                    urn: this.dataset.tagUrn
+                };
+                downloadTagJson(tagData);
+            });
+        }
+        
+        const syncBtn = document.querySelector('.sync-to-local');
+        if (syncBtn) {
+            syncBtn.addEventListener('click', function() {
+                // Create tag data object from data attributes
+                const tagData = {
+                    id: this.dataset.tagId,
+                    urn: this.dataset.tagUrn
+                };
+                syncTagToLocal(tagData);
+            });
+        }
+        
+        const stageBtn = document.querySelector('.add-to-staged');
+        if (stageBtn) {
+            stageBtn.addEventListener('click', function() {
+                // Create tag data object from data attributes
+                const tagData = {
+                    id: this.dataset.tagId,
+                    urn: this.dataset.tagUrn
+                };
+                addTagToStagedChanges(tagData);
             });
         }
     });

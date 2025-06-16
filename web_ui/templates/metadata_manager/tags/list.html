@@ -127,13 +127,13 @@
     }
     
     .table th:nth-child(7), .table td:nth-child(7) { /* URN */
-        max-width: 160px;
+        max-width: 140px;
         min-width: 100px;
     }
     
     .table th:nth-child(8), .table td:nth-child(8) { /* Actions */
-        width: 120px;
-        max-width: 120px;
+        width: 180px;
+        max-width: 180px;
     }
     
     /* Sortable table headers */
@@ -527,17 +527,14 @@
                                         <strong><span id="synced-selected-count">0</span></strong> tag(s) selected
                                     </div>
                                     <div class="btn-group" role="group" aria-label="Bulk actions">
-                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncTags('synced')">
-                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
-                                        </button>
-                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTags('synced')">
-                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                            <i class="fas fa-trash me-1"></i> Delete Local
                                         </button>
                                     </div>
                                 </div>
@@ -573,11 +570,14 @@
                                         <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTags('local')">
                                             <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
                                         </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete
+                                            <i class="fas fa-trash me-1"></i> Delete Local
                                         </button>
                                     </div>
                                 </div>
@@ -613,11 +613,11 @@
                                         <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
                                             <i class="fas fa-download me-1"></i> Bulk Sync to Local
                                         </button>
-                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
-                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemote('remote')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete Remote
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                     </div>
                                 </div>
@@ -783,6 +783,9 @@
 {% block scripts %}
 <!-- Select2 JavaScript -->
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<!-- Tags Actions JavaScript -->
+<script src="{% static 'metadata_manager/tags/tag_actions.js' %}"></script>
 
 <!-- Tags Enhanced JavaScript -->
 <script src="{% static 'metadata_manager/tags/tags_enhanced.js' %}"></script>
