@@ -484,6 +484,15 @@ document.addEventListener('DOMContentLoaded', function() {
     let allEntities = [];
     let currentCacheKey = null; // Store the current cache key for progress monitoring
     
+    // User, group, and ownership type cache
+    let usersAndGroupsCache = {
+        users: [],
+        groups: [],
+        ownership_types: [],
+        lastFetched: null,
+        cacheExpiry: 5 * 60 * 1000 // 5 minutes
+    };
+    
     // Load platforms dynamically from the backend
     function loadPlatforms(entityType = '') {
         const platformSelect = document.getElementById('platform');
@@ -539,6 +548,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load all platforms initially
     loadPlatforms();
+    
+    // Load users and groups for ownership lookup in parallel
+    loadUsersAndGroups();
     
     // Toggle advanced filters visibility
     document.getElementById('toggleAdvancedFilters').addEventListener('click', function() {
@@ -1782,6 +1794,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Error fetching DataHub URL:', error);
                 document.getElementById('viewInDataHubButton').href = '#';
             });
+            
+        // Make sure we have users and groups loaded if the entity has ownership
+        if (entity.ownership && entity.ownership.owners && entity.ownership.owners.length > 0 && 
+            usersAndGroupsCache.users.length === 0) {
+            loadUsersAndGroups();
+        }
         
         // Display ownership
         displayOwnership(entity);
@@ -1841,6 +1859,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const ownershipContainer = document.getElementById('viewEntityOwnership');
         ownershipContainer.innerHTML = '';
         
+        // Load users/groups cache if needed
+        if (usersAndGroupsCache.users.length === 0) {
+            loadUsersAndGroups();
+        }
+        
         if (entity.ownership && entity.ownership.owners && entity.ownership.owners.length > 0) {
             // Group owners by ownership type
             const ownersByType = {};
@@ -1855,6 +1878,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Use the info.name if available
                 if (ownerInfo.ownershipType && ownerInfo.ownershipType.info && ownerInfo.ownershipType.info.name) {
                     ownershipTypeName = ownerInfo.ownershipType.info.name;
+                } else {
+                    // Look up in ownership_types cache
+                    const ownershipType = usersAndGroupsCache.ownership_types.find(t => t.urn === ownershipTypeUrn);
+                    if (ownershipType) {
+                        ownershipTypeName = ownershipType.name || ownershipTypeName;
+                    }
                 }
                 
                 // Find or create the group
@@ -1872,6 +1901,19 @@ document.addEventListener('DOMContentLoaded', function() {
                                ownerInfo.owner.properties.fullName || 
                                ownerInfo.owner.username ||
                                ownerName;
+                } else {
+                    // Look up in cache
+                    if (isUser) {
+                        const user = usersAndGroupsCache.users.find(u => u.urn === ownerUrn);
+                        if (user) {
+                            ownerName = user.display_name || user.username || ownerName;
+                        }
+                    } else {
+                        const group = usersAndGroupsCache.groups.find(g => g.urn === ownerUrn);
+                        if (group) {
+                            ownerName = group.display_name || group.name || ownerName;
+                        }
+                    }
                 }
                 
                 ownersByType[ownershipTypeName].push({
@@ -2932,6 +2974,50 @@ document.addEventListener('DOMContentLoaded', function() {
         // Start the search with refresh
         startSearchWithProgress(searchParams, start, itemsPerPage, null, 1);
     }
+
+    // Function to load users and groups for ownership lookup
+    async function loadUsersAndGroups() {
+        const now = Date.now();
+        
+        // Check if cache is still valid
+        if (usersAndGroupsCache.lastFetched && 
+            (now - usersAndGroupsCache.lastFetched) < usersAndGroupsCache.cacheExpiry &&
+            usersAndGroupsCache.users.length > 0) {
+            console.log('Using cached users and groups');
+            return;
+        }
+        
+        console.log('Fetching fresh users and groups data');
+        
+        try {
+            // Fetch users, groups, and ownership types in a single request
+            const response = await fetch('/metadata/tags/users-groups/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ type: 'all' })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                usersAndGroupsCache.users = data.data.users || [];
+                usersAndGroupsCache.groups = data.data.groups || [];
+                usersAndGroupsCache.ownership_types = data.data.ownership_types || [];
+                usersAndGroupsCache.lastFetched = now;
+                
+                console.log(`Loaded ${usersAndGroupsCache.users.length} users, ${usersAndGroupsCache.groups.length} groups, and ${usersAndGroupsCache.ownership_types.length} ownership types${data.cached ? ' (cached)' : ''}`);
+            } else {
+                console.error('Failed to load users, groups, and ownership types:', data.error);
+            }
+        } catch (error) {
+            console.error('Error loading users and groups:', error);
+        }
+    }
+
+
 });
 </script>
 {% endblock %} 
