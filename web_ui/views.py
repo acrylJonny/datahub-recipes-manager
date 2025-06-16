@@ -675,7 +675,6 @@ def github_secrets(request):
     return redirect("github_secrets")
 
 
-@login_required
 @require_POST
 def github_create_secret(request):
     """
@@ -693,7 +692,6 @@ def github_create_secret(request):
         return redirect("github_secrets")
 
 
-@login_required
 @require_POST
 def github_delete_secret(request):
     """

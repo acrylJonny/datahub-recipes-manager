@@ -116,7 +116,6 @@ def ensure_default_environment():
         return None
 
 
-@login_required
 def editable_properties_view(request):
     """View for managing editable properties of all entities."""
     # Ensure there's a default environment
@@ -319,7 +318,6 @@ def get_platform_list(client, entity_type):
         return []
 
 
-@login_required
 @require_http_methods(["GET"])
 def get_editable_entities(request):
     """
@@ -659,8 +657,7 @@ def _search_with_pagination_and_cache(client, query, entity_type, platform, sort
                     entity_urn = entity["urn"]
                     if entity_urn not in seen_urns:
                         # Filter for entities with metadata
-                        temp_client = DataHubRestClient("", "")
-                        counts = temp_client._count_entity_metadata(entity)
+                        counts = client._count_entity_metadata(entity)
                         total_metadata_count = sum(counts.values())
                         
                         if total_metadata_count > 0:
@@ -1003,7 +1000,6 @@ def _entity_has_container_in_browse_path(entity, container_urn):
         return False
 
 
-@login_required
 @require_http_methods(["POST"])
 def update_entity_properties(request):
     """Update editable properties of an entity."""
@@ -1080,7 +1076,6 @@ from .views_assertions import *
 from .views_sync import *
 
 
-@login_required
 @require_http_methods(["GET"])
 def get_entity_details(request, urn):
     """Get details of a specific entity."""
@@ -1108,7 +1103,6 @@ def get_entity_details(request, urn):
         return JsonResponse({"success": False, "error": str(e)})
 
 
-@login_required
 @require_http_methods(["GET"])
 def get_entity_schema(request, urn):
     """Get schema details for a dataset entity."""
@@ -1136,7 +1130,6 @@ def get_entity_schema(request, urn):
         return JsonResponse({"success": False, "error": str(e)})
 
 
-@login_required
 @require_http_methods(["POST"])
 def sync_metadata(request):
     """Sync metadata with DataHub."""
@@ -1821,7 +1814,6 @@ def get_client_from_session(request):
         return None
 
 
-@login_required
 @require_http_methods(["GET"])
 def get_platforms(request):
     """Get list of platforms from DataHub."""
@@ -1911,7 +1903,6 @@ def get_platforms(request):
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
-@login_required
 @require_http_methods(["POST"])
 def clear_editable_entities_cache(request):
     """
@@ -1938,7 +1929,6 @@ def clear_editable_entities_cache(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-@login_required
 @require_http_methods(["GET"])
 def get_search_progress(request):
     """Get the current search progress for the user's session"""

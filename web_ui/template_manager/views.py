@@ -13,7 +13,6 @@ from web_ui.models import RecipeTemplate, EnvVarsInstance, RecipeInstance
 from web_ui.forms import RecipeTemplateForm
 
 
-@login_required
 def recipe_templates(request):
     """List all recipe templates."""
     templates = RecipeTemplate.objects.all().order_by("-updated_at")
@@ -56,7 +55,6 @@ def recipe_templates(request):
     )
 
 
-@login_required
 def recipe_template_detail(request, template_id):
     """View a recipe template details."""
     template = get_object_or_404(RecipeTemplate, id=template_id)
@@ -85,7 +83,6 @@ def recipe_template_detail(request, template_id):
     )
 
 
-@login_required
 def recipe_template_create(request):
     """Create a new recipe template."""
     if request.method == "POST":
@@ -123,7 +120,6 @@ def recipe_template_create(request):
     )
 
 
-@login_required
 def recipe_template_edit(request, template_id):
     """Edit a recipe template."""
     template = get_object_or_404(RecipeTemplate, id=template_id)
@@ -176,7 +172,6 @@ def recipe_template_edit(request, template_id):
     )
 
 
-@login_required
 def recipe_template_delete(request, template_id):
     """Delete a recipe template."""
     template = get_object_or_404(RecipeTemplate, id=template_id)
@@ -194,7 +189,6 @@ def recipe_template_delete(request, template_id):
     )
 
 
-@login_required
 def recipe_template_export(request, template_id):
     """Export a recipe template to a file."""
     template = get_object_or_404(RecipeTemplate, id=template_id)
@@ -217,7 +211,6 @@ def recipe_template_export(request, template_id):
     return response
 
 
-@login_required
 def recipe_template_deploy(request, template_id):
     """Deploy a recipe template."""
     template = get_object_or_404(RecipeTemplate, id=template_id)
@@ -226,7 +219,6 @@ def recipe_template_deploy(request, template_id):
     return redirect("template_manager:recipe_template_detail", template_id=template.id)
 
 
-@login_required
 def recipe_save_as_template(request, recipe_id):
     """Save a recipe as a template."""
     # Add logic to save recipe as template
@@ -234,14 +226,12 @@ def recipe_save_as_template(request, recipe_id):
     return redirect("template_manager:recipe_templates")
 
 
-@login_required
 def recipe_template_preview(request, template_id):
     """Preview a recipe template."""
     template = get_object_or_404(RecipeTemplate, id=template_id)
     return JsonResponse({"preview": template.content})
 
 
-@login_required
 def template_env_vars_instances(request, template_id):
     """Get environment variables instances for a template."""
     get_object_or_404(RecipeTemplate, id=template_id)
@@ -249,7 +239,6 @@ def template_env_vars_instances(request, template_id):
     return JsonResponse({"instances": list(instances.values())})
 
 
-@login_required
 def export_all_templates(request):
     """Export all recipe templates to JSON files in a zip archive."""
     try:
@@ -307,7 +296,6 @@ def export_all_templates(request):
         return redirect("template_manager:recipe_templates")
 
 
-@login_required
 def recipe_template_import(request):
     """Import a recipe template from a file."""
     if request.method == "POST":

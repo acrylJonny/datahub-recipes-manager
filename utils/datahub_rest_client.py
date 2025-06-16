@@ -6642,7 +6642,7 @@ class DataHubRestClient:
                 self.logger.error(f"Error listing tests: {error_str}")
                 return []
 
-    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None, platform=None, use_platform_pagination=False, sort_by="name", editable_only=True):
+    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None, platform=None, use_platform_pagination=False, sort_by=None, editable_only=True):
         """
         Get entities with editable properties or schema metadata.
         
@@ -6672,17 +6672,27 @@ class DataHubRestClient:
             variables["input"]["types"] = [entity_type]
             
         if platform:
+            # Format the platform value with proper URN format if it doesn't already have it
+            platform_value = platform
+            if not platform.startswith("urn:li:dataPlatform:"):
+                platform_value = f"urn:li:dataPlatform:{platform}"
+                
             variables["input"]["filters"] = [{
                 "field": "platform",
-                "value": platform
+                "value": platform_value
             }]
             
         # Use platform pagination if specified (for comprehensive search)
         if use_platform_pagination and platform:
+            # Format the platform value with proper URN format if it doesn't already have it
+            platform_value = platform
+            if not platform.startswith("urn:li:dataPlatform:"):
+                platform_value = f"urn:li:dataPlatform:{platform}"
+                
             variables["input"]["orFilters"] = [{
                 "and": [{
                     "field": "platform",
-                    "value": platform
+                    "value": platform_value
                 }]
             }]
 

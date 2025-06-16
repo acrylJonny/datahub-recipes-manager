@@ -2954,7 +2954,6 @@ def update_recipe_environment_variables(recipe_id, env_vars_dict):
         )
 
 
-@login_required
 def env_vars_templates(request):
     """List all environment variables templates."""
     templates = EnvVarsTemplate.objects.all().order_by("-updated_at")
@@ -2995,7 +2994,6 @@ def env_vars_template_create(request):
     )
 
 
-@login_required
 def env_vars_template_edit(request, template_id):
     """Edit an existing environment variables template."""
     template = get_object_or_404(EnvVarsTemplate, id=template_id)
@@ -3065,14 +3063,12 @@ def env_vars_template_edit(request, template_id):
     )
 
 
-@login_required
 def env_vars_instances(request):
     """List all environment variables instances."""
     instances = EnvVarsInstance.objects.all().order_by("-updated_at")
     return render(request, "env_vars/instances.html", {"instances": instances})
 
 
-@login_required
 def env_vars_instance_create(request):
     """Create a new environment variables instance."""
 
@@ -3130,7 +3126,6 @@ def env_vars_instance_create(request):
     )
 
 
-@login_required
 def recipe_instance_edit(request, instance_id):
     """Edit an existing recipe instance."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
@@ -3171,7 +3166,6 @@ def recipe_instance_edit(request, instance_id):
     )
 
 
-@login_required
 def recipe_instance_delete(request, instance_id):
     """Delete a recipe instance."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
@@ -3190,7 +3184,6 @@ def recipe_instance_delete(request, instance_id):
     )
 
 
-@login_required
 def recipe_instance_deploy(request, instance_id):
     """Deploy a recipe instance to DataHub."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
@@ -3428,7 +3421,6 @@ def recipe_instance_undeploy(request, instance_id):
     return redirect("recipe_instances")
 
 
-@login_required
 def recipe_instance_redeploy(request, instance_id):
     """Redeploy a recipe instance by undeploying and deploying it again."""
     get_object_or_404(RecipeInstance, id=instance_id)
@@ -3440,7 +3432,6 @@ def recipe_instance_redeploy(request, instance_id):
     return recipe_instance_deploy(request, instance_id)
 
 
-@login_required
 def recipe_instance_download(request, instance_id):
     """Download a recipe instance as JSON."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
@@ -3860,7 +3851,6 @@ def github_delete_pr(request, pr_id):
     return redirect("github_pull_requests")
 
 
-@login_required
 def github_switch_branch(request, branch_name):
     """Switch the current branch in GitHub settings."""
     try:
@@ -4194,7 +4184,6 @@ def env_vars_template_push_github(request, template_id):
         return JsonResponse({"success": False, "error": str(e)})
 
 
-@login_required
 def environments(request):
     """List all environments with mutations."""
     envs = Environment.objects.all().prefetch_related('mutations').order_by("name")
@@ -4207,7 +4196,6 @@ def environments(request):
     )
 
 
-@login_required
 def environment_create(request):
     """Create a new environment."""
     if request.method == "POST":
@@ -4289,7 +4277,6 @@ def environment_create(request):
     })
 
 
-@login_required
 def environment_edit(request, env_id):
     """Edit an existing environment."""
     environment = get_object_or_404(Environment, id=env_id)
@@ -4380,7 +4367,6 @@ def environment_edit(request, env_id):
     )
 
 
-@login_required
 def environment_delete(request, env_id):
     """Delete an environment."""
     environment = get_object_or_404(Environment, id=env_id)
@@ -4420,7 +4406,6 @@ def environment_delete(request, env_id):
     )
 
 
-@login_required
 def set_default_environment(request, env_id):
     """Set an environment as the default."""
     if request.method == "POST":
@@ -4457,7 +4442,6 @@ def github_repo_integration(request):
     )
 
 
-@login_required
 def github_push_changes(request):
     """Push all staged changes to GitHub."""
     if not GitSettings.is_configured():
@@ -4490,7 +4474,6 @@ def github_push_changes(request):
     return redirect("github_repo")
 
 
-@login_required
 def github_create_pr(request):
     """Create a pull request for pending changes."""
     if not GitSettings.is_configured():
@@ -4548,7 +4531,6 @@ def github_create_pr(request):
     return redirect("github_repo")
 
 
-@login_required
 def github_fetch_prs(request):
     """Refresh pull request statuses from GitHub."""
     if not GitSettings.is_configured():
@@ -4587,7 +4569,6 @@ def github_fetch_prs(request):
     return redirect("github_repo")
 
 
-@login_required
 def github_branches(request):
     """View to list and manage GitHub branches."""
     if not GitSettings.is_configured():
@@ -4610,7 +4591,6 @@ def github_branches(request):
     )
 
 
-@login_required
 def github_create_branch(request):
     """Create a new branch in GitHub."""
     if request.method != "POST":
@@ -4656,7 +4636,6 @@ def github_create_branch(request):
     return redirect("github_branches")
 
 
-@login_required
 def github_settings_view(request):
     """View for GitHub settings."""
     settings = GitSettings.get_instance()
@@ -4720,7 +4699,6 @@ def github_settings_view(request):
     return render(request, "github/settings.html", context)
 
 
-@login_required
 def github_sync_recipe(request, recipe_id):
     """Sync a recipe to GitHub."""
     if not GitSettings.is_configured():
@@ -4795,7 +4773,6 @@ def github_sync_recipe(request, recipe_id):
         )
 
 
-@login_required
 def github_sync_all_recipes(request):
     """Sync all recipes to GitHub."""
     if not GitSettings.is_configured():
@@ -4881,7 +4858,6 @@ def github_sync_all_recipes(request):
         )
 
 
-@login_required
 def github_sync_policy(request, policy_id):
     """Sync a policy to GitHub."""
     if not GitSettings.is_configured():
@@ -4952,7 +4928,6 @@ def github_sync_policy(request, policy_id):
         )
 
 
-@login_required
 def github_sync_all_policies(request):
     """Sync all policies to GitHub."""
     if not GitSettings.is_configured():
@@ -5022,7 +4997,6 @@ def github_sync_all_policies(request):
             return redirect("policies")
 
 
-@login_required
 def github_revert_staged_file(request):
     """Revert/delete a staged file in the Git repository."""
     if request.method != "POST":
@@ -5060,7 +5034,6 @@ def github_revert_staged_file(request):
     return redirect("github_index")
 
 
-@login_required
 def github_pull_request_detail(request, pr_id):
     """View details of a specific pull request."""
     pr = get_object_or_404(GitHubPR, id=pr_id)
@@ -5427,7 +5400,6 @@ def policy_push_github(request, policy_id):
         )
 
 
-@login_required
 def github_secrets(request):
     """
     View to list and manage GitHub repository secrets.
@@ -5500,7 +5472,6 @@ def github_secrets(request):
     )
 
 
-@login_required
 @require_POST
 def github_create_secret(request):
     """
@@ -5585,7 +5556,6 @@ def github_create_secret(request):
     return redirect("github_secrets")
 
 
-@login_required
 @require_POST
 def github_delete_secret(request):
     """
@@ -5703,7 +5673,6 @@ def refresh_logs(request):
     )
 
 
-@login_required
 def env_vars_template_list(request):
     """Get a list of all environment variables templates as JSON."""
     templates = EnvVarsTemplate.objects.all().order_by("name")
@@ -5724,7 +5693,6 @@ def env_vars_template_list(request):
     return JsonResponse({"templates": templates_list})
 
 
-@login_required
 def env_vars_template_get(request, template_id):
     """Get a specific environment variables template as JSON."""
     template = get_object_or_404(EnvVarsTemplate, id=template_id)
@@ -5743,7 +5711,6 @@ def env_vars_template_get(request, template_id):
     return JsonResponse(response_data)
 
 
-@login_required
 def env_vars_template_details(request, template_id):
     """Get the details of an environment variables template as JSON."""
     template = get_object_or_404(EnvVarsTemplate, id=template_id)
@@ -5775,7 +5742,6 @@ def env_vars_template_details(request, template_id):
     return JsonResponse(response_data)
 
 
-@login_required
 def env_vars_instance_list(request):
     """Get a list of all environment variables instances as JSON."""
     instances = EnvVarsInstance.objects.all().order_by("name")
@@ -5796,7 +5762,6 @@ def env_vars_instance_list(request):
     return JsonResponse({"instances": instances_list})
 
 
-@login_required
 def env_vars_instance_json(request, instance_id):
     """Get a specific environment variables instance as JSON."""
     instance = get_object_or_404(EnvVarsInstance, id=instance_id)
@@ -5819,7 +5784,6 @@ def env_vars_instance_json(request, instance_id):
     return JsonResponse(response_data)
 
 
-@login_required
 def env_vars_template_delete(request, template_id):
     """Delete an environment variables template."""
     template = get_object_or_404(EnvVarsTemplate, id=template_id)
@@ -5843,7 +5807,6 @@ def env_vars_template_delete(request, template_id):
     )
 
 
-@login_required
 def env_vars_instance_detail(request, instance_id):
     """View details of an environment variables instance."""
     instance = get_object_or_404(EnvVarsInstance, id=instance_id)
@@ -5859,7 +5822,6 @@ def env_vars_instance_detail(request, instance_id):
     )
 
 
-@login_required
 def env_vars_instance_edit(request, instance_id):
     """Edit an existing environment variables instance."""
     instance = get_object_or_404(EnvVarsInstance, id=instance_id)
@@ -5919,7 +5881,6 @@ def env_vars_instance_edit(request, instance_id):
     )
 
 
-@login_required
 def env_vars_instance_delete(request, instance_id):
     """Delete an environment variables instance."""
     instance = get_object_or_404(EnvVarsInstance, id=instance_id)
@@ -5956,7 +5917,6 @@ def recipe_instances(request):
     )
 
 
-@login_required
 def recipe_instance_create(request):
     """Create a new recipe instance."""
 
@@ -6023,7 +5983,6 @@ def recipe_instance_create(request):
     )
 
 
-@login_required
 def github_environments(request):
     """
     View to list and manage GitHub environments. It shows local environments
@@ -6066,7 +6025,6 @@ def github_environments(request):
     )
 
 
-@login_required
 @require_POST
 def github_create_environment(request):
     """
@@ -6200,7 +6158,6 @@ def policy_deploy(request, policy_id):
         return redirect("policies")
 
 
-@login_required
 def template_env_vars_instances(request, template_id):
     """API endpoint to get environment variables instances matching a template's recipe type."""
     template = get_object_or_404(RecipeTemplate, id=template_id)
@@ -6272,7 +6229,6 @@ def github_load_branches(request):
         return JsonResponse({"success": False, "error": f"Error: {str(e)}"})
 
 
-@login_required
 def mutations(request):
     """List all mutations."""
     mutations = Mutation.objects.all().order_by("name")
@@ -6283,7 +6239,6 @@ def mutations(request):
     )
 
 
-@login_required
 def mutation_create(request):
     """Create a new mutation."""
     if request.method == "POST":
@@ -6323,7 +6278,6 @@ def mutation_create(request):
     return render(request, "mutations/create.html", {"title": "Create Mutation"})
 
 
-@login_required
 def mutation_edit(request, mutation_id):
     """Edit an existing mutation."""
     mutation = get_object_or_404(Mutation, id=mutation_id)
@@ -6372,7 +6326,6 @@ def mutation_edit(request, mutation_id):
     )
 
 
-@login_required
 def mutation_delete(request, mutation_id):
     """Delete a mutation."""
     mutation = get_object_or_404(Mutation, id=mutation_id)
