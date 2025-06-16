@@ -1,0 +1,335 @@
+{% extends 'base.html' %}
+
+{% block title %}GitHub Repository - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<style>
+    .repo-stats-card {
+        transition: all 0.3s ease;
+        border: 1px solid #e3e6f0;
+        box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+    }
+    .repo-stats-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.25rem 2rem 0 rgba(58, 59, 69, 0.25);
+        border-color: #0d6efd;
+    }
+    .repo-stats-icon {
+        font-size: 2rem;
+        opacity: 0.8;
+    }
+    .pr-status-badge {
+        font-size: 0.85rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.375rem;
+    }
+    .branch-indicator {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.5rem;
+        font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+        font-size: 0.875rem;
+        border: 1px solid #dee2e6;
+        color: #495057;
+        font-weight: 500;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">GitHub Repository</h1>
+            <div class="text-muted">
+                <i class="fab fa-github me-2"></i>
+                <a href="https://github.com/{{ settings.username }}/{{ settings.repository }}" 
+                   target="_blank" class="text-decoration-none">
+                    {{ settings.username }}/{{ settings.repository }}
+                    <i class="fas fa-external-link-alt ms-1 small"></i>
+                </a>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'github_index' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Git Integration
+            </a>
+            <a href="{% url 'github_settings' %}" class="btn btn-outline-primary">
+                <i class="fas fa-cog me-1"></i> Settings
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Repository Statistics -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card h-100 repo-stats-card">
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-file-code repo-stats-icon text-primary"></i>
+                    </div>
+                    <h3 class="display-6 fw-bold text-primary mb-2">{{ recipe_count }}</h3>
+                    <h6 class="card-title mb-1">Recipe Templates</h6>
+                    <p class="text-muted small">Available for deployment</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 repo-stats-card">
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-shield-alt repo-stats-icon text-success"></i>
+                    </div>
+                    <h3 class="display-6 fw-bold text-success mb-2">{{ policy_count }}</h3>
+                    <h6 class="card-title mb-1">Policy Templates</h6>
+                    <p class="text-muted small">Access control policies</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 repo-stats-card">
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        <i class="fas fa-code-branch repo-stats-icon text-info"></i>
+                    </div>
+                    <h3 class="display-6 fw-bold text-info mb-2">
+                        <span class="branch-indicator">
+                            <i class="fas fa-code-branch me-1"></i>{{ settings.current_branch|default:"main" }}
+                        </span>
+                    </h3>
+                    <h6 class="card-title mb-1">Current Branch</h6>
+                    <p class="text-muted small">Active development branch</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Repository Actions -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-tools me-2"></i>Repository Actions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <form method="post" action="{% url 'github_push_changes' %}" class="d-grid">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload me-2"></i>Push Changes
+                            </button>
+                        </form>
+                        
+                        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createPRModal">
+                            <i class="fas fa-code-branch me-2"></i>Create Pull Request
+                        </button>
+                        
+                        <form method="post" action="{% url 'github_fetch_prs' %}" class="d-grid">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-info">
+                                <i class="fas fa-sync me-2"></i>Refresh PR Status
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-info-circle me-2"></i>Repository Info
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <strong>Provider:</strong>
+                        <span class="badge bg-secondary ms-2">{{ settings.provider_type|capfirst }}</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Repository URL:</strong><br>
+                        <small class="text-break">
+                            <a href="https://github.com/{{ settings.username }}/{{ settings.repository }}" 
+                               target="_blank" class="text-decoration-none">
+                                https://github.com/{{ settings.username }}/{{ settings.repository }}
+                            </a>
+                        </small>
+                    </div>
+                    {% if settings.base_url %}
+                    <div class="mb-3">
+                        <strong>Base URL:</strong><br>
+                        <small class="text-break">{{ settings.base_url }}</small>
+                    </div>
+                    {% endif %}
+                    <div class="text-muted small">
+                        <i class="fas fa-clock me-1"></i>
+                        Last updated: {{ settings.updated_at|date:"M j, Y g:i A" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pull Requests -->
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+                <i class="fas fa-code-branch me-2"></i>Pull Requests
+            </h5>
+            <span class="badge bg-info">{{ prs.count }} total</span>
+        </div>
+        <div class="card-body">
+            {% if prs %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>PR #</th>
+                                <th>Title</th>
+                                <th>Status</th>
+                                <th>Branch</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pr in prs %}
+                            <tr>
+                                <td>
+                                    <a href="{{ pr.pr_url }}" target="_blank" class="text-decoration-none">
+                                        #{{ pr.pr_number }}
+                                        <i class="fas fa-external-link-alt ms-1 small"></i>
+                                    </a>
+                                </td>
+                                <td>
+                                    <div class="fw-medium">{{ pr.title }}</div>
+                                    {% if pr.description %}
+                                        <small class="text-muted">{{ pr.description|truncatechars:80 }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if pr.pr_status == 'open' %}
+                                        <span class="badge bg-success pr-status-badge">
+                                            <i class="fas fa-circle me-1"></i>Open
+                                        </span>
+                                    {% elif pr.pr_status == 'merged' %}
+                                        <span class="badge bg-primary pr-status-badge">
+                                            <i class="fas fa-check me-1"></i>Merged
+                                        </span>
+                                    {% elif pr.pr_status == 'closed' %}
+                                        <span class="badge bg-danger pr-status-badge">
+                                            <i class="fas fa-times me-1"></i>Closed
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary pr-status-badge">
+                                            <i class="fas fa-question me-1"></i>{{ pr.pr_status|capfirst }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="branch-indicator">
+                                        <i class="fas fa-code-branch me-1"></i>{{ pr.branch_name }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <small class="text-muted">{{ pr.created_at|date:"M j, Y" }}</small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ pr.pr_url }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                            <i class="fas fa-external-link-alt"></i>
+                                        </a>
+                                        <form method="post" action="{% url 'github_update_pr_status' pr.pr_number %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-outline-info btn-sm" title="Refresh Status">
+                                                <i class="fas fa-sync"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-4">
+                    <div class="mb-3">
+                        <i class="fas fa-code-branch fa-3x text-muted"></i>
+                    </div>
+                    <h6>No pull requests found</h6>
+                    <p class="text-muted">Create your first pull request to track changes</p>
+                    <button type="button" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#createPRModal">
+                        <i class="fas fa-plus me-1"></i> Create Pull Request
+                    </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Create Pull Request Modal -->
+<div class="modal fade" id="createPRModal" tabindex="-1" aria-labelledby="createPRModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createPRModalLabel">Create Pull Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'github_create_pr' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="pr_title" class="form-label">Title <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="pr_title" name="pr_title" required 
+                               placeholder="Brief description of changes">
+                    </div>
+                    <div class="mb-3">
+                        <label for="pr_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="pr_description" name="pr_description" rows="4" 
+                                  placeholder="Detailed description of changes (optional)"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="target_branch" class="form-label">Target Branch</label>
+                        <select class="form-select" id="target_branch" name="target_branch">
+                            <option value="main">main</option>
+                            <option value="master">master</option>
+                            <option value="develop">develop</option>
+                        </select>
+                        <div class="form-text">Branch to merge changes into</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-code-branch me-1"></i> Create Pull Request
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Auto-hide alerts after 5 seconds
+    document.addEventListener('DOMContentLoaded', function() {
+        const alerts = document.querySelectorAll('.alert:not(.alert-danger)');
+        alerts.forEach(function(alert) {
+            setTimeout(function() {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            }, 5000);
+        });
+    });
+</script>
+{% endblock %} 

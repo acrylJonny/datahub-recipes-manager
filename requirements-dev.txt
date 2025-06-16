@@ -1,0 +1,10 @@
+# Development dependencies
+# Include all web UI dependencies
+-r requirements-web.txt
+
+# Additional development tools
+pytest-django  # Django-specific pytest features
+pytest-cov     # Coverage reporting
+flake8         # Additional linting
+mypy           # Type checking
+pre-commit     # Git hooks for code quality 

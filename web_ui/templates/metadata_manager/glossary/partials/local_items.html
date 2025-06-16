@@ -1,0 +1,21 @@
+<!-- Local Glossary Items Partial -->
+{% if local_nodes or local_terms %}
+    {% for node in local_nodes %}
+        {% include 'metadata_manager/glossary/partials/node_item.html' with item=node level=0 sync_status='local' %}
+    {% endfor %}
+    
+    {% for term in local_terms %}
+        {% if not term.parent_node %}
+            {% include 'metadata_manager/glossary/partials/term_item.html' with item=term level=0 sync_status='local' %}
+        {% endif %}
+    {% endfor %}
+{% else %}
+    <div class="text-center py-4 text-muted">
+        <i class="fas fa-laptop fa-2x mb-2"></i>
+        <p>No local glossary items found</p>
+        <p class="small">
+            <a href="{% url 'metadata_manager:glossary_node_create' %}" class="text-decoration-none">Create a node</a> or 
+            <a href="{% url 'metadata_manager:glossary_term_create' %}" class="text-decoration-none">create a term</a> to get started.
+        </p>
+    </div>
+{% endif %} 

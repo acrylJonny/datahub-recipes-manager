@@ -1,0 +1,4301 @@
+{% extends "base.html" %}
+{% load static %}
+{% load metadata_manager_filters %}
+
+{% block title %}DataHub Assertions{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<style>
+    .description-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+        white-space: normal;
+    }
+    
+    .description-preview {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.4;
+        max-height: 4.2em; /* 3 lines * 1.4 line-height */
+    }
+    
+    .related-items-cell {
+        max-width: 250px;
+    }
+    
+    .relationship-badge {
+        font-size: 0.7rem;
+        margin: 0.1rem;
+        padding: 0.2rem 0.4rem;
+    }
+    
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .type-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .tab-loading {
+        text-align: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+    
+    .table-responsive {
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+    }
+    
+    .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 350px;
+    }
+    
+    /* Modal enhancements */
+    .modal-body dl {
+        margin-bottom: 0;
+    }
+    
+    .modal-body dt {
+        font-weight: 600;
+        color: #495057;
+        margin-top: 1rem;
+    }
+    
+    .modal-body dt:first-child {
+        margin-top: 0;
+    }
+    
+    .modal-body dd {
+        margin-bottom: 0.5rem;
+        color: #6c757d;
+    }
+    
+    .relationship-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.25rem;
+        padding: 0.25rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+    }
+    
+    .owner-item {
+        display: inline-block;
+        margin: 0.1rem;
+        padding: 0.2rem 0.5rem;
+        background-color: #e9ecef;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+    }
+
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Tighter spacing for statistics rows */
+    .row.g-1.mb-1 {
+        margin-bottom: 3px !important;
+    }
+    
+    /* Unified Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    /* Single-select (overview row) */
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    /* Multi-select styling */
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    .clickable-stat.active .text-success,
+    .clickable-stat.active .text-danger, 
+    .clickable-stat.active .text-warning {
+        color: white !important;
+    }
+    
+    /* Row label styling */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+    }
+    
+    /* Larger text for better readability */
+    .filter-stat .h5 {
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+    
+    .filter-stat .h6 {
+        font-size: 1.25rem;
+        font-weight: 600;
+    }
+    
+    .filter-stat .text-muted {
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+    
+    /* Training status turquoise color */
+    .clickable-stat[data-filter="status-training"].active {
+        background-color: #17a2b8 !important;
+        color: white !important;
+        border-color: #17a2b8 !important;
+    }
+    
+    /* Make training number white when selected */
+    .clickable-stat[data-filter="status-training"].active .h6 {
+        color: white !important;
+    }
+    
+    /* Make row headers bigger */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+        font-size: 1.2rem !important;
+    }
+    
+    /* Ensure table has horizontal scrolling */
+    .table-responsive {
+        overflow-x: auto;
+        max-width: 100%;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .pagination .page-link {
+        color: #007bff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white !important;
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        pointer-events: none;
+        cursor: auto;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+    
+    /* Bulk selection styling */
+    .bulk-actions-bar {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+        display: none;
+    }
+    
+    .bulk-actions-bar.show {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .selection-info {
+        font-weight: 500;
+        color: #495057;
+    }
+    
+    .bulk-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    /* Checkbox styling */
+    .form-check-input:checked {
+        background-color: #007bff;
+        border-color: #007bff;
+    }
+    
+    .select-all-checkbox {
+        margin-right: 0.5rem;
+    }
+    
+    /* Table checkbox column */
+    .checkbox-column {
+        width: 40px;
+        text-align: center;
+    }
+    
+    /* Action buttons styling */
+    .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Dropdown for create assertion */
+    .create-assertion-dropdown .dropdown-menu {
+        min-width: 200px;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Hidden CSRF token for JavaScript -->
+    <form style="display: none;">
+        {% csrf_token %}
+    </form>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>DataHub Assertions</h1>
+                <div class="d-flex gap-2">
+                    <!-- Enhanced Create Assertion Dropdown -->
+                    <div class="dropdown create-assertion-dropdown">
+                        <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-plus me-1"></i> Create Assertion
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#createAssertionModal" data-location="local">
+                                <i class="fas fa-laptop me-2"></i> Create Locally
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#createAssertionModal" data-location="remote">
+                                <i class="fas fa-server me-2"></i> Create Remotely
+                            </a></li>
+                        </ul>
+                    </div>
+                    <button type="button" class="btn btn-success">
+                        <i class="fas fa-play me-1"></i> Run All
+                    </button>
+                    <button type="button" class="btn btn-outline-info" id="refreshAssertions">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- Loading indicator -->
+            <div id="loading-indicator" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading assertions data...</p>
+            </div>
+
+            <!-- Assertions content -->
+            <div id="assertions-content" style="display: none;">
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Total and sync status -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local" data-category="overview">
+                                        <div class="h5 mb-0" id="local-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 2: Types -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Types</strong>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-field" data-category="type">
+                                        <div class="h6 mb-0" id="field-assertions">0</div>
+                                        <div class="text-muted">Field</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-sql" data-category="type">
+                                        <div class="h6 mb-0" id="sql-assertions">0</div>
+                                        <div class="text-muted">SQL</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-volume" data-category="type">
+                                        <div class="h6 mb-0" id="volume-assertions">0</div>
+                                        <div class="text-muted">Volume</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-freshness" data-category="type">
+                                        <div class="h6 mb-0" id="freshness-assertions">0</div>
+                                        <div class="text-muted">Freshness</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-schema" data-category="type">
+                                        <div class="h6 mb-0" id="schema-assertions">0</div>
+                                        <div class="text-muted">Schema</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="type-custom" data-category="type">
+                                        <div class="h6 mb-0" id="custom-assertions">0</div>
+                                        <div class="text-muted">Custom</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 3: Status -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Status</strong>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="status-passing" data-category="status">
+                                        <div class="h6 mb-0 text-success" id="passing-assertions">0</div>
+                                        <div class="text-muted">Passing</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="status-failing" data-category="status">
+                                        <div class="h6 mb-0 text-danger" id="failing-assertions">0</div>
+                                        <div class="text-muted">Failing</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="status-error" data-category="status">
+                                        <div class="h6 mb-0 text-warning" id="error-assertions">0</div>
+                                        <div class="text-muted">Error</div>
+                                    </div>
+                                </div>
+                                <div class="col-md">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="status-training" data-category="status">
+                                        <div class="h6 mb-0" style="color: #17a2b8;" id="training-assertions">0</div>
+                                        <div class="text-muted">Training</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 4: Source -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Source</strong>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="source-native" data-category="source">
+                                        <div class="h6 mb-0" id="native-assertions">0</div>
+                                        <div class="text-muted">Native</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="source-external" data-category="source">
+                                        <div class="h6 mb-0" id="external-assertions">0</div>
+                                        <div class="text-muted">External</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Bulk Actions Bar -->
+                <div class="bulk-actions-bar" id="bulkActionsBar">
+                    <div class="selection-info">
+                        <span id="selectedCount">0</span> assertions selected
+                    </div>
+                    <div class="bulk-actions">
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkSync">
+                            <i class="fas fa-sync me-1"></i> Sync
+                        </button>
+                        <button type="button" class="btn btn-outline-success btn-sm" id="bulkAddToPR">
+                            <i class="fas fa-code-branch"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDelete">
+                            <i class="fas fa-trash me-1"></i> Delete
+                        </button>
+                        <button type="button" class="btn btn-outline-info btn-sm" id="bulkDownload">
+                            <i class="fas fa-download me-1"></i> Download
+                        </button>
+                    </div>
+                </div>
+            
+                <!-- Assertions Tabs -->
+                <ul class="nav nav-tabs mb-4" id="assertionTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
+                               type="button" role="tab" aria-controls="synced-items" aria-selected="true">
+                            <i class="fas fa-sync-alt me-1"></i> Synced Assertions
+                            <span class="badge bg-success ms-1" id="synced-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-items" 
+                               type="button" role="tab" aria-controls="local-items" aria-selected="false">
+                            <i class="fas fa-laptop me-1"></i> Local Only Assertions
+                            <span class="badge bg-secondary ms-1" id="local-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
+                               type="button" role="tab" aria-controls="remote-items" aria-selected="false">
+                            <i class="fas fa-server me-1"></i> Remote Only Assertions
+                            <span class="badge bg-info ms-1" id="remote-badge">0</span>
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="assertionTabsContent">
+                    <!-- Synced Assertions Tab -->
+                    <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <div class="d-flex align-items-center">
+                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllSynced">
+                                    <h5 class="card-title mb-0">Synced Assertions</h5>
+                                </div>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="synced-search" class="form-control" placeholder="Search synced assertions...">
+                                    <button type="button" class="btn btn-outline-secondary" id="synced-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="synced-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Local Assertions Tab -->
+                    <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <div class="d-flex align-items-center">
+                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllLocal">
+                                    <h5 class="card-title mb-0">Local Only Assertions</h5>
+                                </div>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="local-search" class="form-control" placeholder="Search local assertions...">
+                                    <button type="button" class="btn btn-outline-secondary" id="local-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="local-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Remote Assertions Tab -->
+                    <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <div class="d-flex align-items-center">
+                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllRemote">
+                                    <h5 class="card-title mb-0">Remote Only Assertions</h5>
+                                </div>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="remote-search" class="form-control" placeholder="Search remote assertions...">
+                                    <button type="button" class="btn btn-outline-secondary" id="remote-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="remote-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Assertion View Modal -->
+<div class="modal fade" id="assertionViewModal" tabindex="-1" aria-labelledby="assertionViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="assertionViewModalLabel">Assertion Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Basic Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row">
+                                    <dt class="col-sm-4">Name:</dt>
+                                    <dd class="col-sm-8" id="modal-assertion-name">-</dd>
+                                    
+                                    <dt class="col-sm-4">Type:</dt>
+                                    <dd class="col-sm-8" id="modal-assertion-type">-</dd>
+                                    
+                                    <dt class="col-sm-4">Description:</dt>
+                                    <dd class="col-sm-8" id="modal-assertion-description">-</dd>
+                                    
+                                    <dt class="col-sm-4">Status:</dt>
+                                    <dd class="col-sm-8">
+                                        <span id="modal-assertion-status" class="badge">-</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">URN:</dt>
+                                    <dd class="col-sm-8">
+                                        <code id="modal-assertion-urn" class="small">-</code>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4" id="modal-entity-label" style="display: none;">Entity:</dt>
+                                    <dd class="col-sm-8" id="modal-entity-value" style="display: none;">
+                                        <code id="modal-assertion-entity" class="small">-</code>
+                                    </dd>
+                                </dl>
+                                
+                                <div class="mt-3">
+                                    <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
+                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-owners-list">
+                                    <p class="text-muted">No ownership information available</p>
+                                </div>
+                                
+                                <div id="modal-last-modified" class="mt-3">
+                                    <!-- Last modified info will be shown here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Relationships -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-relationships-list">
+                                    <p class="text-muted">No relationships available</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Raw JSON Data -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Assertion Modal -->
+<div class="modal fade" id="createAssertionModal" tabindex="-1" aria-labelledby="createAssertionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createAssertionModalLabel">Create New DataHub Assertion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="createAssertionForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="assertionName" class="form-label">Assertion Name</label>
+                            <input type="text" class="form-control" id="assertionName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="datasetUrn" class="form-label">Dataset URN</label>
+                            <input type="text" class="form-control" id="datasetUrn" name="dataset_urn" required 
+                                   placeholder="urn:li:dataset:(urn:li:dataPlatform:snowflake,database.schema.table,PROD)">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="assertionDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="assertionDescription" name="description" rows="2"></textarea>
+                    </div>
+                    
+                    <!-- Assertion Type Selection -->
+                    <div class="mb-4">
+                        <label for="assertionType" class="form-label">Assertion Type</label>
+                        <select class="form-control" id="assertionType" name="type" required>
+                            <option value="">Select assertion type...</option>
+                            <option value="FIELD">Field Assertion - Validate column values</option>
+                            <option value="SQL">SQL Assertion - Custom SQL query validation</option>
+                            <option value="VOLUME">Volume Assertion - Row count validation</option>
+                            <option value="FRESHNESS">Freshness Assertion - Data recency validation</option>
+                            <option value="SCHEMA">Schema Assertion - Column structure validation</option>
+                            <option value="CUSTOM">Custom Assertion - Custom logic validation</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Type-specific fields -->
+                    <div id="type-specific-fields">
+                        
+                        <!-- Field Assertion Fields -->
+                        <div id="field-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-primary"><i class="fas fa-columns me-2"></i>Field Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="fieldPath" class="form-label">Field/Column Path</label>
+                                    <input type="text" class="form-control" id="fieldPath" name="field_path" placeholder="column_name">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="fieldType" class="form-label">Field Type</label>
+                                    <select class="form-control" id="fieldType" name="field_type">
+                                        <option value="NUMBER">Number</option>
+                                        <option value="STRING">String</option>
+                                        <option value="BOOLEAN">Boolean</option>
+                                        <option value="DATE">Date</option>
+                                        <option value="TIMESTAMP">Timestamp</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="nativeType" class="form-label">Native Type</label>
+                                    <input type="text" class="form-control" id="nativeType" name="native_type" placeholder="VARCHAR, INT, etc.">
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-4">
+                                    <label for="fieldOperator" class="form-label">Operator</label>
+                                    <select class="form-control" id="fieldOperator" name="field_operator">
+                                        <option value="EQUAL_TO">Equal To</option>
+                                        <option value="NOT_EQUAL_TO">Not Equal To</option>
+                                        <option value="GREATER_THAN">Greater Than</option>
+                                        <option value="GREATER_THAN_OR_EQUAL_TO">Greater Than or Equal</option>
+                                        <option value="LESS_THAN">Less Than</option>
+                                        <option value="LESS_THAN_OR_EQUAL_TO">Less Than or Equal</option>
+                                        <option value="BETWEEN">Between</option>
+                                        <option value="NOT_NULL">Not Null</option>
+                                        <option value="CONTAINS">Contains</option>
+                                        <option value="REGEX_MATCH">Regex Match</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="fieldValue" class="form-label">Value</label>
+                                    <input type="text" class="form-control" id="fieldValue" name="field_value" placeholder="Comparison value">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="failThreshold" class="form-label">Fail Threshold</label>
+                                    <input type="number" class="form-control" id="failThreshold" name="fail_threshold" value="0" min="0">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- SQL Assertion Fields -->
+                        <div id="sql-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-warning"><i class="fas fa-database me-2"></i>SQL Assertion Configuration</h6>
+                            <div class="mb-3">
+                                <label for="sqlStatement" class="form-label">SQL Statement</label>
+                                <textarea class="form-control" id="sqlStatement" name="sql_statement" rows="4" 
+                                          placeholder="SELECT COUNT(*) FROM table WHERE condition"></textarea>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="sqlOperator" class="form-label">Operator</label>
+                                    <select class="form-control" id="sqlOperator" name="sql_operator">
+                                        <option value="EQUAL_TO">Equal To</option>
+                                        <option value="GREATER_THAN">Greater Than</option>
+                                        <option value="GREATER_THAN_OR_EQUAL_TO">Greater Than or Equal</option>
+                                        <option value="LESS_THAN">Less Than</option>
+                                        <option value="LESS_THAN_OR_EQUAL_TO">Less Than or Equal</option>
+                                        <option value="BETWEEN">Between</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="sqlValue" class="form-label">Expected Value</label>
+                                    <input type="text" class="form-control" id="sqlValue" name="sql_value" placeholder="Expected result">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Volume Assertion Fields -->
+                        <div id="volume-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-info"><i class="fas fa-chart-bar me-2"></i>Volume Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label for="volumeOperator" class="form-label">Operator</label>
+                                    <select class="form-control" id="volumeOperator" name="volume_operator">
+                                        <option value="EQUAL_TO">Equal To</option>
+                                        <option value="GREATER_THAN">Greater Than</option>
+                                        <option value="GREATER_THAN_OR_EQUAL_TO">Greater Than or Equal</option>
+                                        <option value="LESS_THAN">Less Than</option>
+                                        <option value="LESS_THAN_OR_EQUAL_TO">Less Than or Equal</option>
+                                        <option value="BETWEEN">Between</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="volumeValue" class="form-label">Row Count Value</label>
+                                    <input type="number" class="form-control" id="volumeValue" name="volume_value" placeholder="Expected row count">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="volumeMaxValue" class="form-label">Max Value (for Between)</label>
+                                    <input type="number" class="form-control" id="volumeMaxValue" name="volume_max_value" placeholder="Maximum value">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Freshness Assertion Fields -->
+                        <div id="freshness-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-secondary"><i class="fas fa-clock me-2"></i>Freshness Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="freshnessInterval" class="form-label">Freshness Interval</label>
+                                    <input type="number" class="form-control" id="freshnessInterval" name="freshness_interval" value="24" min="1">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="freshnessUnit" class="form-label">Interval Unit</label>
+                                    <select class="form-control" id="freshnessUnit" name="freshness_unit">
+                                        <option value="HOUR">Hours</option>
+                                        <option value="DAY">Days</option>
+                                        <option value="WEEK">Weeks</option>
+                                        <option value="MINUTE">Minutes</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Schema Assertion Fields -->
+                        <div id="schema-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-success"><i class="fas fa-table me-2"></i>Schema Assertion Configuration</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="schemaCompatibility" class="form-label">Compatibility Level</label>
+                                    <select class="form-control" id="schemaCompatibility" name="schema_compatibility">
+                                        <option value="EXACT_MATCH">Exact Match</option>
+                                        <option value="SUBSET_FIELDS">Subset Fields</option>
+                                        <option value="SUPERSET_FIELDS">Superset Fields</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="expectedFields" class="form-label">Expected Fields</label>
+                                    <textarea class="form-control" id="expectedFields" name="expected_fields" rows="3" 
+                                              placeholder="field1:STRING&#10;field2:NUMBER&#10;field3:BOOLEAN"></textarea>
+                                    <small class="form-text text-muted">One field per line in format: field_name:field_type</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Custom Assertion Fields -->
+                        <div id="custom-assertion-fields" class="assertion-type-fields" style="display: none;">
+                            <h6 class="text-dark"><i class="fas fa-cogs me-2"></i>Custom Assertion Configuration</h6>
+                            <div class="mb-3">
+                                <label for="customLogic" class="form-label">Custom Logic</label>
+                                <textarea class="form-control" id="customLogic" name="custom_logic" rows="4" 
+                                          placeholder="Describe your custom assertion logic here"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Scheduling Configuration -->
+                    <div class="mt-4">
+                        <h6 class="text-muted"><i class="fas fa-calendar me-2"></i>Evaluation Schedule</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="timezone" class="form-label">Timezone</label>
+                                <select class="form-control" id="timezone" name="timezone">
+                                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                                    <option value="America/New_York">America/New_York</option>
+                                    <option value="America/Chicago">America/Chicago</option>
+                                    <option value="Europe/London">Europe/London</option>
+                                    <option value="UTC">UTC</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="cronExpression" class="form-label">Cron Expression</label>
+                                <input type="text" class="form-control" id="cronExpression" name="cron_expression" 
+                                       value="0 */8 * * *" placeholder="0 */8 * * *">
+                                <small class="form-text text-muted">Default: Every 8 hours</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Create Assertion
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Assertion Modal -->
+<div class="modal fade" id="editAssertionModal" tabindex="-1" aria-labelledby="editAssertionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editAssertionModalLabel">Edit Assertion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="editAssertionForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="editAssertionName" class="form-label">Assertion Name</label>
+                            <input type="text" class="form-control" id="editAssertionName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDatasetUrn" class="form-label">Dataset URN</label>
+                            <input type="text" class="form-control" id="editDatasetUrn" name="dataset_urn" required 
+                                   placeholder="urn:li:dataset:(urn:li:dataPlatform:snowflake,database.schema.table,PROD)">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="editAssertionDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editAssertionDescription" name="description" rows="2"></textarea>
+                    </div>
+                    
+                    <!-- Assertion Type Selection -->
+                    <div class="mb-4">
+                        <label for="editAssertionType" class="form-label">Assertion Type</label>
+                        <select class="form-control" id="editAssertionType" name="type" required>
+                            <option value="">Select assertion type...</option>
+                            <option value="FIELD">Field Assertion - Validate column values</option>
+                            <option value="SQL">SQL Assertion - Custom SQL query validation</option>
+                            <option value="VOLUME">Volume Assertion - Row count validation</option>
+                            <option value="FRESHNESS">Freshness Assertion - Data recency validation</option>
+                            <option value="SCHEMA">Schema Assertion - Column structure validation</option>
+                            <option value="CUSTOM">Custom Assertion - Custom logic validation</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Type-specific fields container -->
+                    <div id="edit-type-specific-fields"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Update Assertion
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Global variables
+let assertionsData = {
+    synced_items: [],
+    local_only_items: [],
+    remote_only_items: [],
+    datahub_url: ''
+};
+let currentSearch = {
+    synced: '',
+    local: '',
+    remote: ''
+};
+// Updated filtering system with multiple selection support
+let currentFilters = {
+    overview: null,  // single select for overview (total, synced, local, remote)
+    type: [],       // multi-select for types
+    status: [],     // multi-select for status
+    source: []      // multi-select for source
+};
+
+// Global pagination state
+let currentPagination = {
+    synced: { page: 1, perPage: 25 },
+    local: { page: 1, perPage: 25 },
+    remote: { page: 1, perPage: 25 }
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAssertionsData();
+    
+    // Search functionality for each tab
+    ['synced', 'local', 'remote'].forEach(tab => {
+        const searchInput = document.getElementById(`${tab}-search`);
+        const clearButton = document.getElementById(`${tab}-clear`);
+        
+        searchInput.addEventListener('input', function() {
+            // Reset pagination when searching
+            currentPagination[tab].page = 1;
+            currentSearch[tab] = this.value.toLowerCase();
+            displayTabContent(tab);
+        });
+        
+        clearButton.addEventListener('click', function() {
+            // Reset pagination when clearing search
+            currentPagination[tab].page = 1;
+            searchInput.value = '';
+            currentSearch[tab] = '';
+            displayTabContent(tab);
+        });
+    });
+    
+    // Refresh button
+    document.getElementById('refreshAssertions').addEventListener('click', function() {
+        loadAssertionsData();
+    });
+    
+    // Statistics card click handlers using event delegation
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.clickable-stat')) {
+            const card = e.target.closest('.clickable-stat');
+            const filter = card.dataset.filter;
+            console.log('🎯 Statistics card clicked via delegation:', filter);
+            console.log('🎯 Card element:', card);
+            console.log('🎯 Current filters before:', currentFilters);
+            console.log('🎯 Assertions data available:', !!assertionsData);
+            console.log('🎯 Data structure:', {
+                synced: assertionsData?.synced_items?.length || 0,
+                local: assertionsData?.local_only_items?.length || 0, 
+                remote: assertionsData?.remote_only_items?.length || 0
+            });
+            e.preventDefault(); // Prevent any default behavior
+            try {
+                applyStatisticFilter(filter);
+                console.log('🎯 Current filters after:', currentFilters);
+            } catch (error) {
+                console.error('❌ Error applying filter:', error);
+                console.error(error.stack);
+            }
+        }
+        
+        // Edit button click handlers using event delegation
+        if (e.target.closest('.edit-assertion')) {
+            const button = e.target.closest('.edit-assertion');
+            const assertionId = button.dataset.assertionId;
+            editAssertion(assertionId);
+        }
+    });
+    
+    // Edit form submission handler
+    document.getElementById('editAssertionForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const assertionId = this.dataset.assertionId;
+        const formData = new FormData(this);
+        
+        fetch(`/metadata/assertions/${assertionId}/edit/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showSuccess(data.message || 'Assertion updated successfully');
+                bootstrap.Modal.getInstance(document.getElementById('editAssertionModal')).hide();
+                loadAssertionsData(); // Refresh the data
+            } else {
+                showError(data.error || 'Failed to update assertion');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating assertion:', error);
+            showError('Error updating assertion');
+        });
+    });
+    
+    // Initialize bulk selection and create assertion dropdown
+    initializeBulkSelection();
+    initializeTooltips();
+    handleCreateAssertionDropdown();
+});
+
+function loadAssertionsData() {
+    console.log('Loading assertions data...');
+    showLoading(true);
+    
+    fetch('/metadata/assertions/data/')
+        .then(response => {
+            console.log('Received response:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
+            if (data.success) {
+                assertionsData = data.data;
+                updateStatistics(data.data.statistics);
+                updateTabBadges();
+                displayAllTabs();
+                
+                // Note: Click handlers are already attached via event delegation in DOMContentLoaded
+            } else {
+                console.error('Data loading failed:', data.error);
+                showError('Failed to load assertions: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error loading assertions:', error);
+            showError('Failed to load assertions data: ' + error.message);
+        })
+        .finally(() => {
+            showLoading(false);
+        });
+}
+
+function showLoading(show) {
+    document.getElementById('loading-indicator').style.display = show ? 'block' : 'none';
+    document.getElementById('assertions-content').style.display = show ? 'none' : 'block';
+}
+
+function updateStatistics(stats) {
+    // Calculate enhanced statistics from the data
+    const allItems = [
+        ...(assertionsData.synced_items || []).map(item => item.combined || item),
+        ...(assertionsData.local_only_items || []),
+        ...(assertionsData.remote_only_items || [])
+    ];
+    
+    // Count by sync status
+    const syncedCount = (assertionsData.synced_items || []).length;
+    const localCount = (assertionsData.local_only_items || []).length;
+    const remoteCount = (assertionsData.remote_only_items || []).length;
+    
+    // Count by assertion type
+    const fieldAssertions = allItems.filter(item => {
+        const type = (item.raw_data?.info?.type || item.type || '').toUpperCase();
+        return type === 'FIELD';
+    }).length;
+    
+    const sqlAssertions = allItems.filter(item => {
+        const type = (item.raw_data?.info?.type || item.type || '').toUpperCase();
+        return type === 'SQL';
+    }).length;
+    
+    const volumeAssertions = allItems.filter(item => {
+        const type = (item.raw_data?.info?.type || item.type || '').toUpperCase();
+        return type === 'VOLUME';
+    }).length;
+    
+    const freshnessAssertions = allItems.filter(item => {
+        const type = (item.raw_data?.info?.type || item.type || '').toUpperCase();
+        return type === 'FRESHNESS';
+    }).length;
+    
+    const schemaAssertions = allItems.filter(item => {
+        const type = (item.raw_data?.info?.type || item.type || '').toUpperCase();
+        return type === 'SCHEMA';
+    }).length;
+    
+    const customAssertions = allItems.filter(item => {
+        const type = (item.raw_data?.info?.type || item.type || '').toUpperCase();
+        return type === 'CUSTOM';
+    }).length;
+    
+    // Count by status
+    const passingAssertions = allItems.filter(item => {
+        const runEvents = item.raw_data?.runEvents;
+        if (runEvents && runEvents.runEvents && runEvents.runEvents.length > 0) {
+            const latestRun = runEvents.runEvents[0];
+            return latestRun.status === 'SUCCESS' || (latestRun.result && ['SUCCESS', 'PASSED'].includes(latestRun.result.type));
+        }
+        return false;
+    }).length;
+    
+    const failingAssertions = allItems.filter(item => {
+        const runEvents = item.raw_data?.runEvents;
+        if (runEvents && runEvents.runEvents && runEvents.runEvents.length > 0) {
+            const latestRun = runEvents.runEvents[0];
+            return latestRun.status === 'FAILURE' || (latestRun.result && ['FAILURE', 'FAILED'].includes(latestRun.result.type));
+        }
+        return false;
+    }).length;
+    
+    const errorAssertions = allItems.filter(item => {
+        const runEvents = item.raw_data?.runEvents;
+        if (runEvents && runEvents.runEvents && runEvents.runEvents.length > 0) {
+            const latestRun = runEvents.runEvents[0];
+            return latestRun.status === 'ERROR' || (latestRun.result && ['ERROR', 'INCOMPLETE', 'PARTIAL'].includes(latestRun.result.type));
+        }
+        return false;
+    }).length;
+    
+    const trainingAssertions = allItems.filter(item => {
+        const runEvents = item.raw_data?.runEvents;
+        if (runEvents && runEvents.runEvents && runEvents.runEvents.length > 0) {
+            const latestRun = runEvents.runEvents[0];
+            return latestRun.status === 'TRAINING' || (latestRun.result && ['TRAINING', 'LEARNING', 'PENDING'].includes(latestRun.result.type));
+        }
+        return false;
+    }).length;
+    
+    // Count by source
+    const nativeAssertions = allItems.filter(item => {
+        const source = item.raw_data?.info?.source;
+        return !source || source.type !== 'EXTERNAL';
+    }).length;
+    
+    const externalAssertions = allItems.filter(item => {
+        const source = item.raw_data?.info?.source;
+        return source && source.type === 'EXTERNAL';
+    }).length;
+    
+    // Update the statistics display
+    document.getElementById('total-items').textContent = stats.total_items || 0;
+    document.getElementById('synced-count').textContent = syncedCount;
+    document.getElementById('local-count').textContent = localCount;
+    document.getElementById('remote-count').textContent = remoteCount;
+    
+    document.getElementById('field-assertions').textContent = fieldAssertions;
+    document.getElementById('sql-assertions').textContent = sqlAssertions;
+    document.getElementById('volume-assertions').textContent = volumeAssertions;
+    document.getElementById('freshness-assertions').textContent = freshnessAssertions;
+    document.getElementById('schema-assertions').textContent = schemaAssertions;
+    document.getElementById('custom-assertions').textContent = customAssertions;
+    
+    document.getElementById('passing-assertions').textContent = passingAssertions;
+    document.getElementById('failing-assertions').textContent = failingAssertions;
+    document.getElementById('error-assertions').textContent = errorAssertions;
+    document.getElementById('training-assertions').textContent = trainingAssertions;
+    
+    document.getElementById('native-assertions').textContent = nativeAssertions;
+    document.getElementById('external-assertions').textContent = externalAssertions;
+}
+
+function updateTabBadges() {
+    document.getElementById('synced-badge').textContent = assertionsData.synced_items.length;
+    document.getElementById('local-badge').textContent = assertionsData.local_only_items.length;
+    document.getElementById('remote-badge').textContent = assertionsData.remote_only_items.length;
+}
+
+function displayAllTabs() {
+    displayTabContent('synced');
+    displayTabContent('local');
+    displayTabContent('remote');
+}
+
+function displayTabContent(tabType) {
+    console.log('Displaying tab content for:', tabType);
+    
+    let items, contentId;
+    
+    try {
+        switch(tabType) {
+            case 'synced':
+                items = assertionsData.synced_items.map(item => item.combined);
+                contentId = 'synced-content';
+                break;
+            case 'local':
+                items = assertionsData.local_only_items;
+                contentId = 'local-content';
+                break;
+            case 'remote':
+                items = assertionsData.remote_only_items;
+                contentId = 'remote-content';
+                break;
+        }
+        
+        console.log(`Tab ${tabType}: ${items?.length || 0} items`);
+        
+        // Sort items alphabetically by name (A-Z)
+        if (items && items.length > 0) {
+            items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+        }
+        
+        console.log(`Starting with ${items?.length || 0} items for tab ${tabType}`);
+        
+        // Apply statistic-based filters first using the new filtering system
+        const hasActiveFilters = currentFilters.type.length > 0 || 
+                               currentFilters.status.length > 0 || 
+                               currentFilters.source.length > 0;
+        
+        if (hasActiveFilters) {
+            console.log('🔍 Applying statistic filters:', currentFilters);
+            console.log('🔍 Items before filter:', items.length);
+            console.log('🔍 Sample item for testing:', items[0]);
+            const beforeFilter = items.length;
+            items = items.filter(item => {
+                const result = matchesFilter(item);
+                console.log('🔍 Testing item:', item.name || item.urn, 'Result:', result, 'Type:', item.raw_data?.info?.type || item.type);
+                return result;
+            });
+            console.log(`🔍 Statistic filter applied: ${beforeFilter} -> ${items.length} items`);
+        } else {
+            console.log('🔍 No statistic filters applied. Current filters:', currentFilters);
+        }
+        
+        // Then apply search filter on the filtered results
+        const searchTerm = currentSearch[tabType];
+        if (searchTerm) {
+            console.log('Applying search filter:', searchTerm);
+            const beforeSearch = items.length;
+            items = items.filter(item => 
+                (item.name || '').toLowerCase().includes(searchTerm) ||
+                (item.description || '').toLowerCase().includes(searchTerm) ||
+                (item.type || '').toLowerCase().includes(searchTerm) ||
+                (item.urn || '').toLowerCase().includes(searchTerm) ||
+                (item.entity_urn || '').toLowerCase().includes(searchTerm)
+            );
+            console.log(`Search filter applied: ${beforeSearch} -> ${items.length} items`);
+        }
+        
+        console.log(`Final filtered results: ${items.length} items`)
+        
+        const content = document.getElementById(contentId);
+        if (!content) {
+            console.error('Content element not found:', contentId);
+            return;
+        }
+        
+        if (items.length === 0) {
+            console.log(`No items for ${tabType}, showing empty state`);
+            content.innerHTML = getEmptyStateHTML(tabType, searchTerm);
+            return;
+        }
+        
+        console.log(`Generating table for ${tabType} with ${items.length} items`);
+        const tableHTML = generateTableHTML(items, tabType);
+        content.innerHTML = tableHTML;
+        
+        // Attach click handlers for view buttons
+        content.querySelectorAll('.view-item').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const itemData = JSON.parse(row.dataset.item);
+                showAssertionDetails(itemData);
+            });
+        });
+        
+        // Attach click handlers for action buttons
+        attachActionButtonHandlers(content);
+        
+        // Attach sorting handlers to table headers
+        attachSortingHandlers(content, tabType);
+        
+        // Attach pagination handlers
+        attachPaginationHandlers(content, tabType);
+        
+        console.log(`Successfully rendered ${tabType} tab`);
+        
+    } catch (error) {
+        console.error(`Error displaying ${tabType} tab:`, error);
+        const content = document.getElementById(contentId);
+        if (content) {
+            content.innerHTML = `<div class="alert alert-danger">Error loading ${tabType} assertions: ${error.message}</div>`;
+        }
+    }
+}
+
+function generateTableHTML(items, tabType) {
+    const pagination = currentPagination[tabType];
+    const totalItems = items.length;
+    const totalPages = Math.ceil(totalItems / pagination.perPage);
+    const startIndex = (pagination.page - 1) * pagination.perPage;
+    const endIndex = startIndex + pagination.perPage;
+    const paginatedItems = items.slice(startIndex, endIndex);
+    
+    const showingStart = totalItems === 0 ? 0 : startIndex + 1;
+    const showingEnd = Math.min(endIndex, totalItems);
+    
+    return `
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th class="checkbox-column">
+                            <input type="checkbox" class="form-check-input select-all-table" data-tab="${tabType}">
+                        </th>
+                        <th class="sortable-header" data-sort="urn">URN</th>
+                        <th class="sortable-header" data-sort="type">Type</th>
+                        <th>Logic</th>
+                        <th class="sortable-header" data-sort="status">Status</th>
+                        <th class="sortable-header" data-sort="asserteeUrn">Assertee URN</th>
+                        <th class="sortable-header" data-sort="parameters">Parameters</th>
+                        <th>Schedule</th>
+                        <th>URL</th>
+                        <th class="sortable-header" data-sort="tags">Tags</th>
+                        <th>Source</th>
+                        <th>Sync Status</th>
+                        <th width="15%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${paginatedItems.map(item => renderAssertionRow(item, tabType)).join('')}
+                </tbody>
+            </table>
+        </div>
+        ${generatePaginationHTML(pagination.page, totalPages, totalItems, showingStart, showingEnd, tabType)}
+    `;
+}
+
+function generatePaginationHTML(currentPage, totalPages, totalItems, showingStart, showingEnd, tabType) {
+    if (totalPages <= 1) return '';
+    
+    let paginationHTML = `
+        <div class="pagination-container d-flex justify-content-between align-items-center">
+            <div class="pagination-info">
+                Showing ${showingStart} to ${showingEnd} of ${totalItems} entries
+            </div>
+            <nav aria-label="Table pagination">
+                <ul class="pagination mb-0">
+    `;
+    
+    // Previous button
+    const prevDisabled = currentPage === 1 ? 'disabled' : '';
+    paginationHTML += `
+        <li class="page-item ${prevDisabled}">
+            <a class="page-link" href="#" data-page="${currentPage - 1}" data-tab="${tabType}">
+                <i class="fas fa-chevron-left"></i>
+            </a>
+        </li>
+    `;
+    
+    // Page numbers (show max 5 pages around current)
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="1" data-tab="${tabType}">1</a></li>`;
+        if (startPage > 2) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        const activeClass = i === currentPage ? 'active' : '';
+        paginationHTML += `<li class="page-item ${activeClass}"><a class="page-link" href="#" data-page="${i}" data-tab="${tabType}">${i}</a></li>`;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}" data-tab="${tabType}">${totalPages}</a></li>`;
+    }
+    
+    // Next button
+    const nextDisabled = currentPage === totalPages ? 'disabled' : '';
+    paginationHTML += `
+        <li class="page-item ${nextDisabled}">
+            <a class="page-link" href="#" data-page="${currentPage + 1}" data-tab="${tabType}">
+                <i class="fas fa-chevron-right"></i>
+            </a>
+        </li>
+    `;
+    
+    paginationHTML += `
+                </ul>
+            </nav>
+            <div class="d-flex align-items-center">
+                <label for="perPage-${tabType}" class="form-label me-2 mb-0 small">Per page:</label>
+                <select id="perPage-${tabType}" class="form-select form-select-sm" style="width: auto;">
+                    <option value="10" ${currentPagination[tabType].perPage === 10 ? 'selected' : ''}>10</option>
+                    <option value="25" ${currentPagination[tabType].perPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${currentPagination[tabType].perPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${currentPagination[tabType].perPage === 100 ? 'selected' : ''}>100</option>
+                </select>
+            </div>
+        </div>
+    `;
+    
+    return paginationHTML;
+}
+
+function attachPaginationHandlers(content, tabType) {
+    // Handle page link clicks
+    content.querySelectorAll('.page-link[data-page]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const page = parseInt(this.dataset.page);
+            if (page && !this.closest('.page-item').classList.contains('disabled')) {
+                currentPagination[tabType].page = page;
+                displayTabContent(tabType);
+            }
+        });
+    });
+    
+    // Handle per-page change
+    const perPageSelect = content.querySelector(`#perPage-${tabType}`);
+    if (perPageSelect) {
+        perPageSelect.addEventListener('change', function() {
+            currentPagination[tabType].perPage = parseInt(this.value);
+            currentPagination[tabType].page = 1; // Reset to first page
+            displayTabContent(tabType);
+        });
+    }
+}
+
+// Universal function to sanitize data for HTML attributes to prevent URI length issues
+function sanitizeDataForAttribute(item, maxDescriptionLength = 500) {
+    if (!item || typeof item !== 'object') {
+        return item;
+    }
+    
+    const sanitized = { ...item };
+    
+    // Truncate description if it's too long
+    if (sanitized.description && typeof sanitized.description === 'string' && sanitized.description.length > maxDescriptionLength) {
+        sanitized.description = sanitized.description.substring(0, maxDescriptionLength) + '...[truncated]';
+    }
+    
+    // Truncate properties.description if it exists
+    if (sanitized.properties && sanitized.properties.description && 
+        typeof sanitized.properties.description === 'string' && 
+        sanitized.properties.description.length > maxDescriptionLength) {
+        sanitized.properties = {
+            ...sanitized.properties,
+            description: sanitized.properties.description.substring(0, maxDescriptionLength) + '...[truncated]'
+        };
+    }
+    
+    // Remove potentially large raw data objects
+    sanitized.raw_data = undefined;
+    
+    return sanitized;
+}
+
+function renderAssertionRow(assertion, tabType) {
+    // Extract data from raw_data if available
+    const rawData = assertion.raw_data || {};
+    const info = rawData.info || {};
+    const runEvents = rawData.runEvents || {};
+    const tags = rawData.tags || {};
+    
+    // Get the assertee URN based on assertion type
+    const asserteeUrn = getAsserteeUrn(assertion, info);
+    
+    // Get assertion type and logic description
+    const assertionType = getAssertionTypeFromInfo(assertion, info);
+    const logic = getAssertionLogic(assertion, info);
+    
+    // Get status from latest run event
+    const status = getLastRunStatus(runEvents);
+    
+    // Get parameters summary
+    const parameters = getParametersSummary(assertion, info);
+    
+    // Get schedule information as label
+    const schedule = getScheduleInfoAsLabel(assertion, info);
+    
+    // Generate DataHub URL based on asserteeUrn
+    const datahubUrl = asserteeUrn ? generateDataHubUrl(asserteeUrn) : '';
+    
+    // Get tags display
+    const tagsDisplay = getTagsDisplay(tags);
+    
+    // Determine if native or external
+    const sourceDisplay = getAssertionSourceDisplay(assertion, info);
+    
+    const syncStatusClass = getStatusBadgeClass(assertion.sync_status);
+    
+    // Create unique identifier for checkbox
+    const checkboxId = `assertion-${assertion.id || assertion.urn?.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    
+    return `
+        <tr data-item='${JSON.stringify(sanitizeDataForAttribute(assertion))}' data-assertion-id="${assertion.id || ''}" data-assertion-urn="${escapeHtml(assertion.urn || '')}">
+            <td class="checkbox-column">
+                <input type="checkbox" class="form-check-input assertion-checkbox" id="${checkboxId}" data-tab="${tabType}">
+            </td>
+            <td>
+                <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 40))}</code>
+            </td>
+            <td>
+                <span class="badge bg-primary">${assertionType}</span>
+            </td>
+            <td>
+                <div class="text-wrap" style="max-width: 250px;">${logic}</div>
+            </td>
+            <td>
+                ${status}
+            </td>
+            <td>
+                ${asserteeUrn ? `
+                    <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 30))}</code>
+                ` : `<span class="text-muted">-</span>`}
+            </td>
+            <td>
+                <div class="text-wrap" style="max-width: 200px;">${parameters}</div>
+            </td>
+            <td>
+                ${schedule}
+            </td>
+            <td>
+                ${datahubUrl ? `
+                    <a href="${datahubUrl}" class="btn btn-sm btn-outline-info" target="_blank" title="View in DataHub">
+                        <i class="fas fa-external-link-alt"></i>
+                    </a>
+                ` : `<span class="text-muted">-</span>`}
+            </td>
+            <td>
+                ${tagsDisplay}
+            </td>
+            <td>
+                ${sourceDisplay}
+            </td>
+            <td>
+                <span class="badge ${syncStatusClass}">${assertion.sync_status_display || assertion.sync_status}</span>
+            </td>
+            <td>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-sm btn-outline-primary view-item" 
+                            title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    ${getEnhancedActionButtons(assertion, tabType)}
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+function getEnhancedActionButtons(item, tabType) {
+    const hasDataHubConnection = true; // This should come from the template context
+    let buttons = '';
+    
+    if (tabType === 'local') {
+        // Local assertions: Run, Edit, Add to PR, Push to DataHub, Delete
+        if (item.id) {
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-success run-remote-assertion" 
+                        data-assertion-urn="${escapeHtml(item.urn)}" title="Run Assertion">
+                    <i class="fas fa-play"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary edit-assertion" 
+                        data-assertion-id="${item.id}" title="Edit Assertion">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
+                        data-assertion-id="${item.id}" title="Add to GitHub PR">
+                    <i class="fas fa-code-branch"></i>
+                </button>
+            `;
+            
+            if (hasDataHubConnection) {
+                buttons += `
+                    <button type="button" class="btn btn-sm btn-outline-warning push-assertion" 
+                            data-assertion-id="${item.id}" title="Push to DataHub">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </button>
+                `;
+            }
+            
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-danger delete-local-assertion" 
+                        data-assertion-id="${item.id}" title="Delete Local">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+        }
+    } else if (tabType === 'remote') {
+        // Remote assertions: Run, Add to PR, Edit, Sync to Local, Delete
+        buttons += `
+            <button type="button" class="btn btn-sm btn-outline-success run-remote-assertion" 
+                    data-assertion-urn="${escapeHtml(item.urn)}" title="Run Assertion">
+                <i class="fas fa-play"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
+                    data-assertion-urn="${escapeHtml(item.urn)}" title="Add to PR">
+                <i class="fas fa-code-branch"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary edit-remote-assertion" 
+                    data-assertion-urn="${escapeHtml(item.urn)}" title="Edit">
+                <i class="fas fa-edit"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-info sync-to-local" 
+                    data-assertion-urn="${escapeHtml(item.urn)}" title="Sync to Local">
+                <i class="fas fa-download"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger delete-remote-assertion" 
+                    data-assertion-urn="${escapeHtml(item.urn)}" title="Delete">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    } else if (tabType === 'synced') {
+        // Synced assertions: Run, Edit, Add to PR, Resync, Delete Local, Push to DataHub
+        if (item.id) {
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-success run-remote-assertion" 
+                        data-assertion-urn="${escapeHtml(item.urn)}" title="Run Assertion">
+                    <i class="fas fa-play"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary edit-assertion" 
+                        data-assertion-id="${item.id}" title="Edit Assertion">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
+                        data-assertion-urn="${escapeHtml(item.urn)}" title="Add to PR">
+                    <i class="fas fa-code-branch"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-info resync-assertion" 
+                        data-assertion-id="${item.id}" data-assertion-urn="${escapeHtml(item.urn)}" title="Resync">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-warning push-assertion" 
+                        data-assertion-id="${item.id}" title="Push to DataHub">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger delete-local-assertion" 
+                        data-assertion-id="${item.id}" title="Delete Local Only">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+        } else {
+            // Remote-only part of synced item
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-success run-remote-assertion" 
+                        data-assertion-urn="${escapeHtml(item.urn)}" title="Run Assertion">
+                    <i class="fas fa-play"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
+                        data-assertion-urn="${escapeHtml(item.urn)}" title="Add to PR">
+                    <i class="fas fa-code-branch"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-info sync-to-local" 
+                        data-assertion-urn="${escapeHtml(item.urn)}" title="Sync to Local">
+                    <i class="fas fa-download"></i>
+                </button>
+            `;
+        }
+    }
+    
+    return buttons;
+}
+
+// Bulk selection functionality
+let selectedAssertions = new Set();
+
+function initializeBulkSelection() {
+    // Handle select all checkboxes in headers
+    document.querySelectorAll('.select-all-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const tabType = this.id.replace('selectAll', '').toLowerCase();
+            const tableCheckbox = document.querySelector(`.select-all-table[data-tab="${tabType}"]`);
+            if (tableCheckbox) {
+                tableCheckbox.checked = this.checked;
+                handleSelectAllTable(tableCheckbox);
+            }
+        });
+    });
+    
+    // Handle individual checkbox changes
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('assertion-checkbox')) {
+            handleIndividualCheckbox(e.target);
+        } else if (e.target.classList.contains('select-all-table')) {
+            handleSelectAllTable(e.target);
+        }
+    });
+    
+    // Handle bulk action buttons
+    document.getElementById('bulkSync')?.addEventListener('click', handleBulkSync);
+    document.getElementById('bulkAddToPR')?.addEventListener('click', handleBulkAddToPR);
+    document.getElementById('bulkDelete')?.addEventListener('click', handleBulkDelete);
+    document.getElementById('bulkDownload')?.addEventListener('click', handleBulkDownload);
+}
+
+function handleSelectAllTable(selectAllCheckbox) {
+    const tabType = selectAllCheckbox.dataset.tab;
+    const checkboxes = document.querySelectorAll(`.assertion-checkbox[data-tab="${tabType}"]`);
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+        const row = checkbox.closest('tr');
+        const assertionId = row.dataset.assertionId || row.dataset.assertionUrn;
+        
+        if (selectAllCheckbox.checked) {
+            selectedAssertions.add(assertionId);
+        } else {
+            selectedAssertions.delete(assertionId);
+        }
+    });
+    
+    updateBulkActionsBar();
+    updateHeaderCheckboxes();
+}
+
+function handleIndividualCheckbox(checkbox) {
+    const row = checkbox.closest('tr');
+    const assertionId = row.dataset.assertionId || row.dataset.assertionUrn;
+    
+    if (checkbox.checked) {
+        selectedAssertions.add(assertionId);
+    } else {
+        selectedAssertions.delete(assertionId);
+    }
+    
+    updateBulkActionsBar();
+    updateHeaderCheckboxes();
+    updateTableSelectAll(checkbox.dataset.tab);
+}
+
+function updateTableSelectAll(tabType) {
+    const tableCheckbox = document.querySelector(`.select-all-table[data-tab="${tabType}"]`);
+    const individualCheckboxes = document.querySelectorAll(`.assertion-checkbox[data-tab="${tabType}"]`);
+    const checkedCheckboxes = document.querySelectorAll(`.assertion-checkbox[data-tab="${tabType}"]:checked`);
+    
+    if (tableCheckbox) {
+        if (checkedCheckboxes.length === 0) {
+            tableCheckbox.checked = false;
+            tableCheckbox.indeterminate = false;
+        } else if (checkedCheckboxes.length === individualCheckboxes.length) {
+            tableCheckbox.checked = true;
+            tableCheckbox.indeterminate = false;
+        } else {
+            tableCheckbox.checked = false;
+            tableCheckbox.indeterminate = true;
+        }
+    }
+}
+
+function updateHeaderCheckboxes() {
+    // Update header checkboxes to match table state
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        const headerCheckbox = document.getElementById(`selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}`);
+        const tableCheckbox = document.querySelector(`.select-all-table[data-tab="${tabType}"]`);
+        
+        if (headerCheckbox && tableCheckbox) {
+            headerCheckbox.checked = tableCheckbox.checked;
+            headerCheckbox.indeterminate = tableCheckbox.indeterminate;
+        }
+    });
+}
+
+function updateBulkActionsBar() {
+    const bulkActionsBar = document.getElementById('bulkActionsBar');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    if (selectedAssertions.size > 0) {
+        bulkActionsBar.classList.add('show');
+        selectedCount.textContent = selectedAssertions.size;
+    } else {
+        bulkActionsBar.classList.remove('show');
+    }
+}
+
+function handleBulkSync() {
+    if (selectedAssertions.size === 0) return;
+    
+    const confirmMessage = `Are you sure you want to sync ${selectedAssertions.size} selected assertion(s)?`;
+    if (!confirm(confirmMessage)) return;
+    
+    // Implementation for bulk sync
+    console.log('Bulk sync:', Array.from(selectedAssertions));
+    showSuccess(`Syncing ${selectedAssertions.size} assertions...`);
+}
+
+function handleBulkAddToPR() {
+    if (selectedAssertions.size === 0) return;
+    
+    const confirmMessage = `Are you sure you want to add ${selectedAssertions.size} selected assertion(s) to PR?`;
+    if (!confirm(confirmMessage)) return;
+    
+    // Implementation for bulk add to PR
+    console.log('Bulk add to PR:', Array.from(selectedAssertions));
+    showSuccess(`Adding ${selectedAssertions.size} assertions to PR...`);
+}
+
+function handleBulkDelete() {
+    if (selectedAssertions.size === 0) return;
+    
+    const confirmMessage = `Are you sure you want to delete ${selectedAssertions.size} selected assertion(s)? This action cannot be undone.`;
+    if (!confirm(confirmMessage)) return;
+    
+    // Implementation for bulk delete
+    // Implemented bulk delete functionality
+    const assertionsArray = Array.from(selectedAssertions);
+    let completedRequests = 0;
+    let successCount = 0;
+    let errorCount = 0;
+    
+    assertionsArray.forEach(assertionId => {
+        const isUrn = assertionId.startsWith("urn:");
+        const endpoint = isUrn ? "/metadata/assertions/delete-remote/" : `/metadata/assertions/${assertionId}/delete/`;
+        const method = isUrn ? "POST" : "DELETE";
+        const body = isUrn ? JSON.stringify({ assertion_urn: assertionId }) : null;
+        
+        fetch(endpoint, {
+            method: method,
+            headers: {
+                "X-CSRFToken": getCsrfToken(),
+                "Content-Type": "application/json",
+            },
+            body: body
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                successCount++;
+            } else {
+                errorCount++;
+            }
+        })
+        .catch(error => {
+            errorCount++;
+        })
+        .finally(() => {
+            completedRequests++;
+            if (completedRequests === assertionsArray.length) {
+                selectedAssertions.clear();
+                updateBulkActionsBar();
+                if (successCount > 0) showSuccess(`Successfully deleted ${successCount} assertion(s)`);
+                if (errorCount > 0) showError(`Failed to delete ${errorCount} assertion(s)`);
+                loadAssertionsData();
+            }
+        });
+    });
+    showSuccess(`Deleting ${selectedAssertions.size} assertions...`);
+}
+
+function handleBulkDownload() {
+    if (selectedAssertions.size === 0) return;
+    
+    // Implementation for bulk download
+    console.log('Bulk download:', Array.from(selectedAssertions));
+    showSuccess(`Downloading ${selectedAssertions.size} assertions...`);
+}
+
+// Enhanced create assertion modal handling
+function handleCreateAssertionDropdown() {
+    document.querySelectorAll('.create-assertion-dropdown .dropdown-item').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            const location = this.dataset.location;
+            const modal = document.getElementById('createAssertionModal');
+            const modalTitle = modal.querySelector('.modal-title');
+            
+            // Update modal title based on location
+            if (location === 'local') {
+                modalTitle.textContent = 'Create Local Assertion';
+                // Add hidden field to indicate local creation
+                let locationField = modal.querySelector('input[name="creation_location"]');
+                if (!locationField) {
+                    locationField = document.createElement('input');
+                    locationField.type = 'hidden';
+                    locationField.name = 'creation_location';
+                    modal.querySelector('form').appendChild(locationField);
+                }
+                locationField.value = 'local';
+            } else if (location === 'remote') {
+                modalTitle.textContent = 'Create Remote Assertion';
+                let locationField = modal.querySelector('input[name="creation_location"]');
+                if (!locationField) {
+                    locationField = document.createElement('input');
+                    locationField.type = 'hidden';
+                    locationField.name = 'creation_location';
+                    modal.querySelector('form').appendChild(locationField);
+                }
+                locationField.value = 'remote';
+            }
+        });
+    });
+}
+
+function showAssertionDetails(assertion) {
+    // Basic information
+    document.getElementById('modal-assertion-name').textContent = assertion.name || 'Unnamed';
+    document.getElementById('modal-assertion-type').innerHTML = `
+        <i class="fas fa-check-circle text-success me-1"></i>
+        ${assertion.type || 'Unknown'}
+    `;
+    document.getElementById('modal-assertion-description').textContent = assertion.description || 'No description available';
+    document.getElementById('modal-assertion-urn').textContent = assertion.urn || 'No URN available';
+    
+    // Status
+    const statusBadge = document.getElementById('modal-assertion-status');
+    statusBadge.textContent = assertion.sync_status_display || assertion.sync_status;
+    statusBadge.className = `badge ${getStatusBadgeClass(assertion.sync_status)}`;
+    
+    // Entity URN
+    const entityLabel = document.getElementById('modal-entity-label');
+    const entityValue = document.getElementById('modal-entity-value');
+    if (assertion.entity_urn) {
+        entityLabel.style.display = 'block';
+        entityValue.style.display = 'block';
+        document.getElementById('modal-assertion-entity').textContent = assertion.entity_urn;
+    } else {
+        entityLabel.style.display = 'none';
+        entityValue.style.display = 'none';
+    }
+    
+    // DataHub link
+    const datahubLink = document.getElementById('modal-datahub-link');
+    if (assertion.urn && !assertion.urn.includes('local:') && assertionsData.datahub_url) {
+        datahubLink.href = getDataHubUrl(assertion.urn, assertion.type);
+        datahubLink.style.display = 'inline-block';
+    } else {
+        datahubLink.style.display = 'none';
+    }
+    
+    // Ownership information
+    const ownersList = document.getElementById('modal-owners-list');
+    if (assertion.ownership && assertion.ownership.owners && assertion.ownership.owners.length > 0) {
+        ownersList.innerHTML = assertion.ownership.owners.map(ownerInfo => {
+            const owner = ownerInfo.owner || {};
+            const ownershipType = ownerInfo.ownershipType || {};
+            const source = ownerInfo.source || {};
+            
+            const displayName = owner.properties ? 
+                (owner.properties.displayName || owner.properties.fullName || owner.username || owner.name) :
+                (owner.username || owner.name || 'Unknown');
+                
+            return `
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${escapeHtml(displayName)}</strong>
+                            <br>
+                            <small class="text-muted">${escapeHtml(ownershipType.info ? ownershipType.info.name : 'Owner')}</small>
+                        </div>
+                        <div class="text-end">
+                            ${source.type ? `<span class="badge bg-light text-dark">${source.type}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="mt-1">
+                        <code class="small">${escapeHtml(owner.urn || '')}</code>
+                    </div>
+                    ${owner.properties && (owner.properties.email || owner.properties.title) ? `
+                        <div class="mt-2">
+                            ${owner.properties.email ? `<small class="text-muted d-block"><i class="fas fa-envelope me-1"></i>${escapeHtml(owner.properties.email)}</small>` : ''}
+                            ${owner.properties.title ? `<small class="text-muted d-block"><i class="fas fa-briefcase me-1"></i>${escapeHtml(owner.properties.title)}</small>` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+    } else {
+        ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
+    }
+    
+    // Last modified information
+    const lastModifiedDiv = document.getElementById('modal-last-modified');
+    if (assertion.ownership && assertion.ownership.lastModified) {
+        lastModifiedDiv.innerHTML = `
+            <div class="border rounded p-2">
+                <strong>Last Modified:</strong><br>
+                <small class="text-muted">
+                    ${formatDate(assertion.ownership.lastModified.time)}
+                    ${assertion.ownership.lastModified.actor ? ` by ${assertion.ownership.lastModified.actor}` : ''}
+                </small>
+            </div>
+        `;
+    } else if (assertion.last_updated) {
+        lastModifiedDiv.innerHTML = `
+            <div class="border rounded p-2">
+                <strong>Last Updated:</strong><br>
+                <small class="text-muted">${formatDate(assertion.last_updated)}</small>
+            </div>
+        `;
+    } else {
+        lastModifiedDiv.innerHTML = '';
+    }
+    
+    // Relationships
+    const relationshipsList = document.getElementById('modal-relationships-list');
+    if (assertion.relationships && assertion.relationships.relationships && assertion.relationships.relationships.length > 0) {
+        relationshipsList.innerHTML = assertion.relationships.relationships.map(rel => `
+            <div class="border rounded p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${escapeHtml(rel.type || 'Unknown')}</strong>
+                        <span class="badge bg-${rel.direction === 'INCOMING' ? 'success' : 'primary'} ms-2">
+                            ${rel.direction || 'UNKNOWN'}
+                        </span>
+                    </div>
+                    <div class="text-end">
+                        ${rel.created ? `<small class="text-muted">${formatDate(rel.created.time)}</small>` : ''}
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <code class="small">${escapeHtml(rel.entity ? rel.entity.urn : 'No entity URN')}</code>
+                </div>
+                ${rel.entity && rel.entity.properties ? `
+                    <div class="mt-1">
+                        <small class="text-muted">${escapeHtml(rel.entity.properties.name || 'Unknown Entity')}</small>
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+    } else {
+        relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
+    }
+    
+    // Raw JSON - Show comprehensive GraphQL data
+    const rawData = assertion.raw_data || assertion;
+    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
+    
+    // Show modal
+    new bootstrap.Modal(document.getElementById('assertionViewModal')).show();
+}
+
+// Utility functions
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+}
+
+function truncateUrn(urn, maxLength) {
+    if (!urn || urn.length <= maxLength) return urn;
+    
+    // Keep the beginning of the URN and truncate from the end
+    return urn.substring(0, maxLength - 3) + '...';
+}
+
+function formatDate(timestamp) {
+    try {
+        const date = new Date(parseInt(timestamp));
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    } catch (e) {
+        return timestamp;
+    }
+}
+
+function getDataHubUrl(urn, type) {
+    if (assertionsData.datahub_url) {
+        return `${assertionsData.datahub_url}/assertion/${encodeURIComponent(urn)}`;
+    }
+    return '#';
+}
+
+function getStatusBadgeClass(status) {
+    switch(status) {
+        case 'SYNCED': return 'bg-success';
+        case 'MODIFIED': return 'bg-warning';
+        case 'LOCAL_ONLY': return 'bg-secondary';
+        case 'REMOTE_ONLY': return 'bg-info';
+        default: return 'bg-primary';
+    }
+}
+
+function getCsrfToken() {
+    const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
+    return csrfElement ? csrfElement.value : '';
+}
+
+function showError(message) {
+    // Create and show error alert
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger alert-dismissible fade show';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+}
+
+// Action button event handlers
+function attachActionButtonHandlers(content) {
+    // Run assertion buttons (local)
+    content.querySelectorAll('.run-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionId = this.dataset.assertionId;
+            runLocalAssertion(assertionId, this);
+        });
+    });
+    
+    // Run remote assertion buttons
+    content.querySelectorAll('.run-remote-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionUrn = this.dataset.assertionUrn;
+            runRemoteAssertion(assertionUrn, this);
+        });
+    });
+    
+    // Push to DataHub buttons
+    content.querySelectorAll('.push-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionId = this.dataset.assertionId;
+            pushAssertionToDataHub(assertionId, this);
+        });
+    });
+    
+    // Sync to local buttons
+    content.querySelectorAll('.sync-to-local').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionUrn = this.dataset.assertionUrn;
+            syncAssertionToLocal(assertionUrn, this);
+        });
+    });
+    
+    // Resync buttons
+    content.querySelectorAll('.resync-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionId = this.dataset.assertionId;
+            const assertionUrn = this.dataset.assertionUrn;
+            resyncAssertion(assertionId, assertionUrn, this);
+        });
+    });
+    
+    // Delete local assertion buttons
+    content.querySelectorAll('.delete-local-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionId = this.dataset.assertionId;
+            deleteLocalAssertion(assertionId, this);
+        });
+    });
+
+    // Edit assertion buttons (local and synced)
+    content.querySelectorAll('.edit-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionId = this.dataset.assertionId;
+            editAssertion(assertionId);
+        });
+    });
+
+    // New enhanced action handlers
+    content.querySelectorAll('.add-to-pr').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionUrn = this.dataset.assertionUrn;
+            const assertionId = this.dataset.assertionId;
+            addAssertionToPR(assertionUrn, assertionId, this);
+        });
+    });
+
+    content.querySelectorAll('.edit-remote-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionUrn = this.dataset.assertionUrn;
+            editRemoteAssertion(assertionUrn, this);
+        });
+    });
+
+    content.querySelectorAll('.delete-remote-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionUrn = this.dataset.assertionUrn;
+            deleteRemoteAssertion(assertionUrn, this);
+        });
+    });
+
+    // Edit assertion buttons (local and synced)
+    content.querySelectorAll('.edit-assertion').forEach(button => {
+        button.addEventListener('click', function() {
+            const assertionId = this.dataset.assertionId;
+            editAssertion(assertionId);
+        });
+    });
+}
+
+// Action button functions
+function runLocalAssertion(assertionId, button) {
+    if (!confirm('Are you sure you want to run this assertion?')) return;
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch(`/metadata/assertions/${assertionId}/run/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess('Assertion run successfully');
+            // Refresh the current tab
+            loadAssertionsData();
+        } else {
+            showError(data.error || 'Failed to run assertion');
+        }
+    })
+    .catch(error => {
+        console.error('Error running assertion:', error);
+        showError('Error running assertion');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function runRemoteAssertion(assertionUrn, button) {
+    if (!confirm('Are you sure you want to run this remote assertion?')) return;
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch('/metadata/assertions/run-remote/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ assertion_urn: assertionUrn })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess('Remote assertion run successfully');
+            // Refresh the current tab
+            loadAssertionsData();
+        } else {
+            showError(data.error || 'Failed to run remote assertion');
+        }
+    })
+    .catch(error => {
+        console.error('Error running remote assertion:', error);
+        showError('Error running remote assertion');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function pushAssertionToDataHub(assertionId, button) {
+    if (!confirm('Are you sure you want to push this assertion to DataHub?')) return;
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch(`/metadata/assertions/${assertionId}/push/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess('Assertion pushed to DataHub successfully');
+            // Refresh the current tab
+            loadAssertionsData();
+        } else {
+            showError(data.error || 'Failed to push assertion to DataHub');
+        }
+    })
+    .catch(error => {
+        console.error('Error pushing assertion:', error);
+        showError('Error pushing assertion to DataHub');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function syncAssertionToLocal(assertionUrn, button) {
+    if (!confirm('Are you sure you want to sync this assertion to local storage?')) return;
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch('/metadata/assertions/sync-to-local/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ assertion_urn: assertionUrn })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess('Assertion synced to local storage successfully');
+            
+            // Move assertion from remote-only to synced in real-time
+            moveAssertionToSynced(assertionUrn, data.assertion_id);
+        } else {
+            showError(data.error || 'Failed to sync assertion to local');
+        }
+    })
+    .catch(error => {
+        console.error('Error syncing assertion:', error);
+        showError('Error syncing assertion to local');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function moveAssertionToSynced(assertionUrn, localAssertionId) {
+    console.log('Moving assertion to synced:', assertionUrn);
+    
+    // Find the assertion in remote_only_items
+    const remoteIndex = assertionsData.remote_only_items.findIndex(item => item.urn === assertionUrn);
+    
+    if (remoteIndex !== -1) {
+        const assertionData = assertionsData.remote_only_items[remoteIndex];
+        
+        // Remove from remote_only_items
+        assertionsData.remote_only_items.splice(remoteIndex, 1);
+        
+        // Create a local version of the assertion data
+        const localAssertionData = {
+            id: localAssertionId,
+            urn: assertionUrn,
+            name: assertionData.name,
+            description: assertionData.description,
+            type: assertionData.type,
+            sync_status: 'SYNCED',
+            sync_status_display: 'Synced',
+            assertion_type: assertionData.type,
+            original_urn: assertionUrn,
+            entity_urn: assertionData.entity_urn,
+            platform_name: assertionData.platform_name || null,
+            external_url: assertionData.external_url || null,
+            removed: false,
+            
+            // Copy ownership and relationship data
+            ownership: assertionData.ownership,
+            owners_count: assertionData.owners_count || 0,
+            owner_names: assertionData.owner_names || [],
+            relationships: assertionData.relationships,
+            relationships_count: assertionData.relationships_count || 0,
+            
+            // Store raw data
+            raw_data: assertionData.raw_data,
+            
+            // Timestamps
+            last_synced: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+        
+        // Add to synced_items
+        const syncedItem = {
+            local: localAssertionData,
+            remote: assertionData,
+            combined: {
+                ...localAssertionData,
+                sync_status: 'SYNCED',
+                sync_status_display: 'Synced'
+            }
+        };
+        
+        assertionsData.synced_items.push(syncedItem);
+        
+        // Update tab badges
+        updateTabBadges();
+        
+        // Refresh the displayed content for both tabs
+        displayTabContent('remote');
+        displayTabContent('synced');
+        
+        console.log('Assertion moved to synced successfully');
+    } else {
+        console.warn('Assertion not found in remote items:', assertionUrn);
+        // Fallback to full refresh if we can't find the item
+        loadAssertionsData();
+    }
+}
+
+function resyncAssertion(assertionId, assertionUrn, button) {
+    if (!confirm('Are you sure you want to resync this assertion?')) return;
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch(`/metadata/assertions/${assertionId}/resync/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ assertion_urn: assertionUrn })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess('Assertion resynced successfully');
+            // Refresh the current tab
+            loadAssertionsData();
+        } else {
+            showError(data.error || 'Failed to resync assertion');
+        }
+    })
+    .catch(error => {
+        console.error('Error resyncing assertion:', error);
+        showError('Error resyncing assertion');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function deleteLocalAssertion(assertionId, button) {
+    if (!confirm('Are you sure you want to delete this local assertion? This will only remove it from local storage, not from DataHub.')) return;
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch(`/metadata/assertions/${assertionId}/delete/`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess('Local assertion deleted successfully');
+            // Refresh the current tab
+            loadAssertionsData();
+        } else {
+            showError(data.error || 'Failed to delete local assertion');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting assertion:', error);
+        showError('Error deleting local assertion');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function deleteRemoteAssertion(assertionUrn, button) {
+    if (!confirm('Are you sure you want to delete this assertion from DataHub? This action cannot be undone.')) return;
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    fetch('/metadata/assertions/delete-remote/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            assertion_urn: assertionUrn
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess('Remote assertion deleted successfully');
+            // Refresh the current tab
+            loadAssertionsData();
+        } else {
+            showError(data.error || 'Failed to delete remote assertion');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting remote assertion:', error);
+        showError('Error deleting remote assertion');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function showSuccess(message) {
+    // Create and show success alert
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-success alert-dismissible fade show';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
+}
+
+// Helper functions for enhanced assertion display
+function getAsserteeUrn(assertion, info) {
+    // Extract assertee URN from different assertion types
+    if (info.datasetAssertion) {
+        return info.datasetAssertion.datasetUrn;
+    }
+    if (info.freshnessAssertion) {
+        return info.freshnessAssertion.entityUrn;
+    }
+    if (info.volumeAssertion) {
+        return info.volumeAssertion.entityUrn;
+    }
+    if (info.sqlAssertion) {
+        return info.sqlAssertion.entityUrn;
+    }
+    if (info.fieldAssertion) {
+        return info.fieldAssertion.entityUrn;
+    }
+    if (info.schemaAssertion) {
+        return info.schemaAssertion.entityUrn;
+    }
+    if (info.customAssertion) {
+        return info.customAssertion.entityUrn;
+    }
+    return assertion.entity_urn || null;
+}
+
+function getAssertionTypeFromInfo(assertion, info) {
+    return (info.type || assertion.type || 'Unknown').toUpperCase();
+}
+
+function getAssertionLogic(assertion, info) {
+    const type = info.type || assertion.type || 'Unknown';
+    
+    switch (type.toUpperCase()) {
+        case 'FIELD':
+            if (info.fieldAssertion && info.fieldAssertion.fieldValuesAssertion) {
+                const field = info.fieldAssertion.fieldValuesAssertion.field;
+                const operator = info.fieldAssertion.fieldValuesAssertion.operator;
+                const params = info.fieldAssertion.fieldValuesAssertion.parameters;
+                // Fix NOT_NULL checks - don't add trailing dashes
+                if (operator === 'NOT_NULL') {
+                    return `<code>${field ? field.path : 'unknown'}</code> is not null`;
+                }
+                return `<code>${field ? field.path : 'unknown'}</code> ${operator} ${formatParameters(params)}`;
+            }
+            if (info.fieldAssertion && info.fieldAssertion.fieldMetricAssertion) {
+                const field = info.fieldAssertion.fieldMetricAssertion.field;
+                const metric = info.fieldAssertion.fieldMetricAssertion.metric;
+                const operator = info.fieldAssertion.fieldMetricAssertion.operator;
+                return `<code>${field ? field.path : 'unknown'}</code> ${metric} ${operator}`;
+            }
+            return 'Field check';
+            
+        case 'DATASET':
+            if (info.datasetAssertion) {
+                const scope = info.datasetAssertion.scope;
+                const operator = info.datasetAssertion.operator;
+                const params = info.datasetAssertion.parameters;
+                return `${scope} ${operator} ${formatParameters(params)}`;
+            }
+            return 'Dataset check';
+            
+        case 'SQL':
+            if (info.sqlAssertion) {
+                const statement = info.sqlAssertion.statement;
+                const operator = info.sqlAssertion.operator;
+                return `<code>${truncateText(statement || '', 50)}</code> ${operator}`;
+            }
+            return 'SQL check';
+            
+        case 'VOLUME':
+            if (info.volumeAssertion) {
+                if (info.volumeAssertion.rowCountTotal) {
+                    const operator = info.volumeAssertion.rowCountTotal.operator;
+                    const params = info.volumeAssertion.rowCountTotal.parameters;
+                    return `Row count ${operator} ${formatParameters(params)}`;
+                }
+                if (info.volumeAssertion.rowCountChange) {
+                    const type = info.volumeAssertion.rowCountChange.type;
+                    const operator = info.volumeAssertion.rowCountChange.operator;
+                    return `Row count change ${type} ${operator}`;
+                }
+            }
+            return 'Volume check';
+            
+        case 'FRESHNESS':
+            if (info.freshnessAssertion) {
+                const type = info.freshnessAssertion.type;
+                return `Data freshness check (${type})`;
+            }
+            return 'Freshness check';
+            
+        case 'SCHEMA':
+            if (info.schemaAssertion) {
+                const compatibility = info.schemaAssertion.compatibility;
+                const fields = info.schemaAssertion.fields;
+                return `Schema ${compatibility} (${fields ? fields.length : 0} fields)`;
+            }
+            return 'Schema check';
+            
+        case 'CUSTOM':
+            if (info.customAssertion) {
+                const logic = info.customAssertion.logic;
+                return truncateText(logic || '', 50);
+            }
+            return 'Custom check';
+            
+        default:
+            return 'Assertion check';
+    }
+}
+
+function getScheduleInfoAsLabel(assertion, info) {
+    // Look for schedule in freshness assertion
+    if (info.freshnessAssertion && info.freshnessAssertion.schedule) {
+        const scheduleText = getScheduleDisplay(info.freshnessAssertion.schedule);
+        return `<span class="badge bg-info">${scheduleText}</span>`;
+    }
+    
+    // Look for monitor schedule
+    if (assertion.raw_data && assertion.raw_data.monitor) {
+        const monitor = assertion.raw_data.monitor;
+        if (monitor.info && monitor.info.assertionMonitor) {
+            const assertions = monitor.info.assertionMonitor.assertions;
+            if (assertions && assertions.length > 0 && assertions[0].schedule) {
+                const cron = assertions[0].schedule.cron || 'Scheduled';
+                return `<span class="badge bg-info">${cron}</span>`;
+            }
+        }
+    }
+    
+    return '<span class="badge bg-secondary">On Demand</span>';
+}
+
+function getAssertionSourceDisplay(assertion, info) {
+    const source = info.source || {};
+    const sourceType = source.type;
+    
+    if (sourceType === 'EXTERNAL') {
+        return '<span class="badge bg-warning">External</span>';
+    } else if (sourceType === 'INFERRED') {
+        return '<span class="badge bg-info">Inferred</span>';
+    } else {
+        return '<span class="badge bg-success">Native</span>';
+    }
+}
+
+function getLastRunStatus(runEvents) {
+    if (!runEvents || !runEvents.runEvents || runEvents.runEvents.length === 0) {
+        return '<span class="badge bg-secondary">No Runs</span>';
+    }
+    
+    // Get the latest run event
+    const latestRun = runEvents.runEvents[0];
+    const status = latestRun.status;
+    const resultType = latestRun.result ? latestRun.result.type : null;
+    const timestamp = latestRun.timestampMillis;
+    
+    // Use result.type if available, otherwise fall back to status
+    const displayStatus = resultType || status;
+    
+    let badgeClass = 'bg-secondary';
+    let icon = 'fas fa-question-circle';
+    
+    // Determine badge class and icon based on status and result type
+    switch (status) {
+        case 'SUCCESS':
+            badgeClass = 'bg-success';
+            icon = 'fas fa-check-circle';
+            break;
+        case 'FAILURE':
+            badgeClass = 'bg-danger';
+            icon = 'fas fa-times-circle';
+            break;
+        case 'ERROR':
+            badgeClass = 'bg-warning';
+            icon = 'fas fa-exclamation-triangle';
+            break;
+        case 'RUNNING':
+            badgeClass = 'bg-info';
+            icon = 'fas fa-spinner fa-spin';
+            break;
+    }
+    
+    // Override with more specific result type styling if available
+    if (resultType) {
+        switch (resultType.toUpperCase()) {
+            case 'SUCCESS':
+            case 'PASSED':
+                badgeClass = 'bg-success';
+                icon = 'fas fa-check-circle';
+                break;
+            case 'FAILURE':
+            case 'FAILED':
+                badgeClass = 'bg-danger';
+                icon = 'fas fa-times-circle';
+                break;
+            case 'ERROR':
+                badgeClass = 'bg-warning';
+                icon = 'fas fa-exclamation-triangle';
+                break;
+            case 'INCOMPLETE':
+            case 'PARTIAL':
+                badgeClass = 'bg-warning';
+                icon = 'fas fa-exclamation-circle';
+                break;
+            case 'SKIPPED':
+                badgeClass = 'bg-info';
+                icon = 'fas fa-forward';
+                break;
+        }
+    }
+    
+    const timeAgo = timestamp ? formatTimeAgo(timestamp) : '';
+    
+    // Show both status and result type if they're different
+    const statusText = resultType && resultType !== status ? 
+        `${status}: ${resultType}` : displayStatus;
+    
+    return `
+        <span class="badge ${badgeClass}" title="${timeAgo}">
+            <i class="${icon} me-1"></i>${statusText}
+        </span>
+        ${timeAgo ? `<br><small class="text-muted">${timeAgo}</small>` : ''}
+    `;
+}
+
+function getParametersSummary(assertion, info) {
+    // Extract parameters based on assertion type
+    const type = info.type || assertion.type;
+    
+    if (info.fieldAssertion && info.fieldAssertion.fieldValuesAssertion) {
+        const params = info.fieldAssertion.fieldValuesAssertion.parameters;
+        return formatParameters(params);
+    }
+    
+    if (info.datasetAssertion) {
+        const params = info.datasetAssertion.parameters;
+        return formatParameters(params);
+    }
+    
+    if (info.sqlAssertion) {
+        const params = info.sqlAssertion.parameters;
+        return formatParameters(params);
+    }
+    
+    if (info.volumeAssertion) {
+        if (info.volumeAssertion.rowCountTotal) {
+            return formatParameters(info.volumeAssertion.rowCountTotal.parameters);
+        }
+        if (info.volumeAssertion.rowCountChange) {
+            return formatParameters(info.volumeAssertion.rowCountChange.parameters);
+        }
+    }
+    
+    // Fallback to local assertion config
+    if (assertion.config) {
+        return Object.entries(assertion.config).map(([key, value]) => 
+            `${key}: ${truncateText(String(value), 20)}`
+        ).join('<br>');
+    }
+    
+    return '<span class="text-muted">-</span>';
+}
+
+function getScheduleInfo(assertion, info) {
+    // Look for schedule in freshness assertion
+    if (info.freshnessAssertion && info.freshnessAssertion.schedule) {
+        return getScheduleDisplay(info.freshnessAssertion.schedule);
+    }
+    
+    // Look for monitor schedule
+    if (assertion.raw_data && assertion.raw_data.monitor) {
+        const monitor = assertion.raw_data.monitor;
+        if (monitor.info && monitor.info.assertionMonitor) {
+            const assertions = monitor.info.assertionMonitor.assertions;
+            if (assertions && assertions.length > 0 && assertions[0].schedule) {
+                return assertions[0].schedule.cron || 'Scheduled';
+            }
+        }
+    }
+    
+    return '<span class="text-muted">On Demand</span>';
+}
+
+function generateDataHubUrl(asserteeUrn) {
+    if (!asserteeUrn) return '';
+    
+    // Use the dynamic DataHub URL from the loaded data
+    const baseUrl = assertionsData.datahub_url;
+    if (!baseUrl) return '';
+    
+    // Extract entity type from URN
+    const urnParts = asserteeUrn.split(':');
+    if (urnParts.length < 3) return '';
+    
+    const entityType = urnParts[2]; // e.g., "dataset", "chart", etc.
+    
+    // Generate URL based on entity type
+    switch (entityType) {
+        case 'dataset':
+            return `${baseUrl}/dataset/${encodeURIComponent(asserteeUrn)}/Quality/List?separate_siblings=false`;
+        case 'chart':
+            return `${baseUrl}/chart/${encodeURIComponent(asserteeUrn)}`;
+        case 'dashboard':
+            return `${baseUrl}/dashboard/${encodeURIComponent(asserteeUrn)}`;
+        default:
+            return `${baseUrl}/entity/${encodeURIComponent(asserteeUrn)}`;
+    }
+}
+
+function getTagsDisplay(tags) {
+    if (!tags || !tags.tags || tags.tags.length === 0) {
+        return '<span class="text-muted">-</span>';
+    }
+    
+    return tags.tags.slice(0, 3).map(tagInfo => {
+        const tag = tagInfo.tag;
+        const name = tag.properties ? tag.properties.name : tag.urn.split(':').pop();
+        const color = tag.properties ? tag.properties.colorHex : null;
+        
+        return `<span class="badge me-1" style="${color ? `background-color: ${color}` : 'background-color: #6c757d'}">${escapeHtml(name)}</span>`;
+    }).join('') + (tags.tags.length > 3 ? `<span class="text-muted">+${tags.tags.length - 3} more</span>` : '');
+}
+
+function getAssertionTypeDisplay(assertion, info) {
+    const source = info.source || {};
+    const sourceType = source.type;
+    
+    if (sourceType === 'EXTERNAL') {
+        return '<span class="badge bg-warning">External</span>';
+    } else if (sourceType === 'INFERRED') {
+        return '<span class="badge bg-info">Inferred</span>';
+    } else {
+        return '<span class="badge bg-success">Native</span>';
+    }
+}
+
+function formatParameters(params) {
+    if (!params) return '-';
+    
+    const parts = [];
+    if (params.value) {
+        parts.push(`${params.value.value}${params.value.type ? ` (${params.value.type})` : ''}`);
+    }
+    if (params.minValue && params.maxValue) {
+        parts.push(`${params.minValue.value} - ${params.maxValue.value}`);
+    } else if (params.minValue) {
+        parts.push(`≥ ${params.minValue.value}`);
+    } else if (params.maxValue) {
+        parts.push(`≤ ${params.maxValue.value}`);
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : '-';
+}
+
+function getScheduleDisplay(schedule) {
+    if (!schedule) return 'On Demand';
+    
+    if (schedule.cron && schedule.cron.cron) {
+        return `CRON: ${schedule.cron.cron}`;
+    }
+    
+    if (schedule.fixedInterval) {
+        const interval = schedule.fixedInterval;
+        return `Every ${interval.multiple} ${interval.unit.toLowerCase()}`;
+    }
+    
+    return schedule.type || 'Scheduled';
+}
+
+function formatTimeAgo(timestamp) {
+    try {
+        const date = new Date(parseInt(timestamp));
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        
+        return date.toLocaleDateString();
+    } catch (e) {
+        return '';
+    }
+}
+
+// REMOVED DUPLICATE - using newer version below
+
+function switchToTab(tabName) {
+    console.log('switchToTab called with:', tabName);
+    const tabElement = document.querySelector(`#${tabName}-tab`);
+    if (tabElement) {
+        console.log('Found tab element, clicking it');
+        tabElement.click();
+    } else {
+        console.error('Could not find tab element:', `#${tabName}-tab`);
+    }
+}
+
+function clearAllFilters() {
+    console.log('Clearing all filters');
+    
+    // Reset pagination to page 1
+    resetPaginationToFirstPage();
+    
+    // Clear all filter arrays
+    currentFilters = {
+        overview: null,
+        type: [],
+        status: [],
+        source: []
+    };
+    
+    // Remove active class from all statistic cards
+    document.querySelectorAll('.clickable-stat').forEach(card => {
+        card.classList.remove('active');
+    });
+    
+    // Show all rows in all tabs
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        applyFiltersToTable(tabType);
+    });
+}
+
+function applyContentFilter(filter) {
+    // This would apply filters within the current tab
+    // For now, we'll just switch to the most relevant tab
+    const activeTab = document.querySelector('.nav-link.active').id.replace('-tab', '');
+    
+    // Apply search filter based on the statistic clicked
+    let searchTerm = '';
+    
+    if (filter.startsWith('type-')) {
+        searchTerm = filter.replace('type-', '');
+    } else if (filter.startsWith('status-')) {
+        // For status filters, we'd need more complex filtering
+        // For now, just clear filters
+        clearAllFilters();
+        return;
+    } else if (filter.startsWith('source-')) {
+        // For source filters, we'd need more complex filtering
+        clearAllFilters();
+        return;
+    }
+    
+    if (searchTerm) {
+        const searchInput = document.getElementById(`${activeTab}-search`);
+        if (searchInput) {
+            searchInput.value = searchTerm;
+            currentSearch[activeTab] = searchTerm.toLowerCase();
+            displayTabContent(activeTab);
+        }
+    }
+}
+
+// Function removed - using event delegation instead
+
+function matchesFilter(item, filterType = null) {
+    const rawData = item.raw_data || {};
+    const info = rawData.info || {};
+    
+    // If no filters are active, show all items
+    const hasActiveFilters = currentFilters.type.length > 0 || 
+                           currentFilters.status.length > 0 || 
+                           currentFilters.source.length > 0;
+    
+    if (!hasActiveFilters) {
+        return true;
+    }
+    
+    let matchesType = true;
+    let matchesStatus = true;
+    let matchesSource = true;
+    
+    // Check type filter
+    if (currentFilters.type.length > 0) {
+        const itemType = (info.type || item.type || '').toUpperCase();
+        matchesType = currentFilters.type.some(type => type.toUpperCase() === itemType);
+    }
+    
+    // Check status filter
+    if (currentFilters.status.length > 0) {
+        const runEvents = rawData.runEvents;
+        matchesStatus = false;
+        
+        if (runEvents && runEvents.runEvents && runEvents.runEvents.length > 0) {
+            const latestRun = runEvents.runEvents[0];
+            const status = latestRun.status;
+            const resultType = latestRun.result ? latestRun.result.type : null;
+            
+            matchesStatus = currentFilters.status.some(statusFilter => {
+                switch (statusFilter) {
+                    case 'passing':
+                        return status === 'SUCCESS' || (resultType && ['SUCCESS', 'PASSED'].includes(resultType));
+                    case 'failing':
+                        return status === 'FAILURE' || (resultType && ['FAILURE', 'FAILED'].includes(resultType));
+                    case 'error':
+                        return status === 'ERROR' || (resultType && ['ERROR', 'INCOMPLETE', 'PARTIAL'].includes(resultType));
+                    case 'training':
+                        return status === 'TRAINING' || (resultType && ['TRAINING', 'LEARNING', 'PENDING'].includes(resultType));
+                    default:
+                        return false;
+                }
+            });
+        }
+    }
+    
+    // Check source filter
+    if (currentFilters.source.length > 0) {
+        const source = info.source || {};
+        const sourceType = source.type;
+        
+        matchesSource = currentFilters.source.some(sourceFilter => {
+            switch (sourceFilter) {
+                case 'native':
+                    return !sourceType || sourceType !== 'EXTERNAL';
+                case 'external':
+                    return sourceType === 'EXTERNAL';
+                default:
+                    return false;
+            }
+        });
+    }
+    
+    return matchesType && matchesStatus && matchesSource;
+}
+
+// Create Assertion Form Handler
+document.addEventListener('DOMContentLoaded', function() {
+    const assertionTypeSelect = document.getElementById('assertionType');
+    const typeSpecificFields = document.getElementById('type-specific-fields');
+    
+    if (assertionTypeSelect) {
+        assertionTypeSelect.addEventListener('change', function() {
+            // Hide all type-specific field groups
+            document.querySelectorAll('.assertion-type-fields').forEach(group => {
+                group.style.display = 'none';
+            });
+            
+            // Show the selected type's fields
+            const selectedType = this.value.toLowerCase();
+            if (selectedType) {
+                const fieldsGroup = document.getElementById(`${selectedType}-assertion-fields`);
+                if (fieldsGroup) {
+                    fieldsGroup.style.display = 'block';
+                }
+            }
+        });
+    }
+    
+    // Handle form submission
+    const createAssertionForm = document.getElementById('createAssertionForm');
+    if (createAssertionForm) {
+        createAssertionForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const assertionType = formData.get('type');
+            
+            // Add type-specific validation
+            if (!validateAssertionForm(assertionType, formData)) {
+                return;
+            }
+            
+            // Submit the form
+            submitAssertionForm(formData);
+        });
+    }
+});
+
+function validateAssertionForm(assertionType, formData) {
+    const datasetUrn = formData.get('dataset_urn');
+    const name = formData.get('name');
+    
+    // Basic validation
+    if (!name || !datasetUrn || !assertionType) {
+        alert('Please fill in all required fields: Name, Dataset URN, and Assertion Type');
+        return false;
+    }
+    
+    // Type-specific validation
+    switch (assertionType) {
+        case 'FIELD':
+            if (!formData.get('field_path')) {
+                alert('Field path is required for field assertions');
+                return false;
+            }
+            break;
+        case 'SQL':
+            if (!formData.get('sql_statement')) {
+                alert('SQL statement is required for SQL assertions');
+                return false;
+            }
+            break;
+        case 'VOLUME':
+            if (!formData.get('volume_value') && formData.get('volume_operator') !== 'BETWEEN') {
+                alert('Volume value is required for volume assertions');
+                return false;
+            }
+            break;
+        case 'FRESHNESS':
+            if (!formData.get('freshness_interval')) {
+                alert('Freshness interval is required for freshness assertions');
+                return false;
+            }
+            break;
+        case 'SCHEMA':
+            if (!formData.get('expected_fields')) {
+                alert('Expected fields are required for schema assertions');
+                return false;
+            }
+            break;
+        case 'CUSTOM':
+            if (!formData.get('custom_logic')) {
+                alert('Custom logic is required for custom assertions');
+                return false;
+            }
+            break;
+    }
+    
+    return true;
+}
+
+function submitAssertionForm(formData) {
+    // Show loading state
+    const submitButton = document.querySelector('#createAssertionForm button[type="submit"]');
+    const originalText = submitButton.innerHTML;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Creating...';
+    submitButton.disabled = true;
+    
+    // Check if this is a local or remote creation
+    const creationLocation = formData.get('creation_location') || 'remote';
+    const endpoint = creationLocation === 'local' ? 
+        '/metadata/assertions/create-local/' : 
+        '/metadata/assertions/create/';
+    
+    console.log('Creating assertion:', creationLocation, 'using endpoint:', endpoint);
+    
+    fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Close modal and refresh data
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createAssertionModal'));
+            modal.hide();
+            
+            // Reset form
+            document.getElementById('createAssertionForm').reset();
+            document.querySelectorAll('.assertion-type-fields').forEach(group => {
+                group.style.display = 'none';
+            });
+            
+            // Refresh assertions data
+            loadAssertionsData();
+            
+            // Show success message with creation type
+            const creationType = creationLocation === 'local' ? 'Local' : 'DataHub';
+            showSuccess(`${creationType} assertion created successfully!`);
+        } else {
+            showError('Failed to create assertion: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error creating assertion:', error);
+        showError('Error creating assertion: ' + error.message);
+    })
+    .finally(() => {
+        // Restore button state
+        submitButton.innerHTML = originalText;
+        submitButton.disabled = false;
+    });
+}
+
+// Table sorting functionality - REMOVED DUPLICATE (keeping newer version below)
+
+// NEW FUNCTIONALITY FOR DIRECT TABLE FILTERING AND SORTING
+
+// Global sorting state  
+let currentSort = { column: null, direction: null, tabType: null };
+
+// Attach sorting handlers to table headers
+function attachSortingHandlers(content, tabType) {
+    const sortableHeaders = content.querySelectorAll('.sortable-header');
+    
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const sortColumn = this.dataset.sort;
+            
+            // Toggle sort direction
+            if (currentSort.column === sortColumn && currentSort.tabType === tabType) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = sortColumn;
+                currentSort.direction = 'asc';
+                currentSort.tabType = tabType;
+            }
+            
+            // Update header classes in this table only
+            const tableHeaders = content.querySelectorAll('.sortable-header');
+            tableHeaders.forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+            });
+            this.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            
+            // Sort the current table
+            sortCurrentTable(content, tabType);
+        });
+    });
+}
+
+// Sort the current table without re-rendering
+function sortCurrentTable(content, tabType) {
+    const tbody = content.querySelector('tbody');
+    if (!tbody) return;
+    
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Sort rows based on current sort settings
+    rows.sort((a, b) => {
+        const aVal = getSortValueFromRow(a, currentSort.column);
+        const bVal = getSortValueFromRow(b, currentSort.column);
+        
+        if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+    
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+    
+    console.log(`✅ Sorted ${rows.length} rows by ${currentSort.column} (${currentSort.direction})`);
+}
+
+// Get sort value from a table row
+function getSortValueFromRow(row, column) {
+    const cells = row.querySelectorAll('td');
+    
+    switch(column) {
+        case 'urn':
+            return cells[0]?.textContent?.trim().toLowerCase() || '';
+        case 'type':
+            return cells[1]?.textContent?.trim().toLowerCase() || '';
+        case 'logic':
+            return cells[2]?.textContent?.trim().toLowerCase() || '';
+        case 'status':
+            return cells[3]?.textContent?.trim().toLowerCase() || '';
+        case 'asserteeUrn':
+            return cells[4]?.textContent?.trim().toLowerCase() || '';
+        case 'parameters':
+            return cells[5]?.textContent?.trim().toLowerCase() || '';
+        case 'schedule':
+            return cells[6]?.textContent?.trim().toLowerCase() || '';
+        case 'tags':
+            return cells[8]?.textContent?.trim().toLowerCase() || '';
+        case 'source':
+            return cells[9]?.textContent?.trim().toLowerCase() || '';
+        case 'syncStatus':
+            return cells[10]?.textContent?.trim().toLowerCase() || '';
+        default:
+            return '';
+    }
+}
+
+// Apply filters directly to table rows (hide/show approach)
+function applyFiltersToTable(tabType) {
+    // For filtering, we need to regenerate the table to ensure pagination works correctly
+    // Since filtering changes the number of visible items, we should rebuild the table
+    displayTabContent(tabType);
+}
+
+// Override the applyStatisticFilter function to use direct table filtering
+function applyStatisticFilter(filter) {
+    console.log('applyStatisticFilter called with filter:', filter);
+    
+    const clickedCard = document.querySelector(`[data-filter="${filter}"]`);
+    if (!clickedCard) {
+        console.error('Could not find card with filter:', filter);
+        return;
+    }
+
+    const category = clickedCard.getAttribute('data-category');
+    
+    // Reset pagination to page 1 when filters change
+    resetPaginationToFirstPage();
+    
+    if (category === 'overview') {
+        // Single select for overview - clear others and switch tabs if needed
+        document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(card => {
+            card.classList.remove('active');
+        });
+        
+        if (filter !== 'total') {
+            clickedCard.classList.add('active');
+            currentFilters.overview = filter;
+        } else {
+            currentFilters.overview = null;
+        }
+        
+        // Clear all other filters when switching overview
+        currentFilters.type = [];
+        currentFilters.status = [];
+        currentFilters.source = [];
+        document.querySelectorAll('.multi-select.active').forEach(card => {
+            card.classList.remove('active');
+        });
+        
+        // Handle tab switching for overview filters
+        switch(filter) {
+            case 'total':
+                console.log('Clearing all filters');
+                clearAllFilters();
+                break;
+            case 'synced':
+                console.log('Switching to synced tab');
+                switchToTab('synced');
+                break;
+            case 'local':
+                console.log('Switching to local tab');  
+                switchToTab('local');
+                break;
+            case 'remote':
+                console.log('Switching to remote tab');
+                switchToTab('remote');
+                break;
+        }
+    } else {
+        // Multi-select for type, status, source
+        const isActive = clickedCard.classList.contains('active');
+        const filterValue = filter.replace(`${category}-`, '');
+        
+        if (isActive) {
+            // Remove from active filters
+            clickedCard.classList.remove('active');
+            const index = currentFilters[category].indexOf(filterValue);
+            if (index > -1) {
+                currentFilters[category].splice(index, 1);
+            }
+        } else {
+            // Add to active filters
+            clickedCard.classList.add('active');
+            if (!currentFilters[category].includes(filterValue)) {
+                currentFilters[category].push(filterValue);
+            }
+        }
+        
+        console.log('Updated filters:', currentFilters);
+        
+        // Apply filters to all currently visible tabs
+        ['synced', 'local', 'remote'].forEach(tabType => {
+            applyFiltersToTable(tabType);
+        });
+    }
+}
+
+// Helper function to reset pagination to page 1 for all tabs
+function resetPaginationToFirstPage() {
+    currentPagination.synced.page = 1;
+    currentPagination.local.page = 1;
+    currentPagination.remote.page = 1;
+}
+
+function getEmptyStateHTML(tabType, hasSearch) {
+    if (hasSearch) {
+        return `
+            <div class="py-5 text-center">
+                <div class="mb-3">
+                    <i class="fas fa-search fa-4x text-muted"></i>
+                </div>
+                <h4>No assertions found</h4>
+                <p class="text-muted">No assertions match your search criteria.</p>
+            </div>
+        `;
+    }
+    
+    const emptyStates = {
+        synced: {
+            icon: 'fas fa-sync-alt',
+            title: 'No synced assertions',
+            description: 'Assertions that exist both locally and in DataHub will appear here.'
+        },
+        local: {
+            icon: 'fas fa-laptop',
+            title: 'No local-only assertions',
+            description: 'Assertions that exist only in this application will appear here.',
+            action: `<div class="mt-2">
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createAssertionModal">
+                            <i class="fas fa-plus me-1"></i> Create Assertion
+                        </button>
+                     </div>`
+        },
+        remote: {
+            icon: 'fas fa-server',
+            title: 'No remote-only assertions',
+            description: 'Assertions that exist only in DataHub will appear here.'
+        }
+    };
+    
+    const state = emptyStates[tabType];
+    return `
+        <div class="py-5 text-center">
+            <div class="mb-3">
+                <i class="${state.icon} fa-4x text-muted"></i>
+            </div>
+            <h4>${state.title}</h4>
+            <p class="text-muted">${state.description}</p>
+            ${state.action || ''}
+        </div>
+    `;
+}
+
+// New action functions
+function addAssertionToPR(assertionUrn, assertionId, button) {
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+
+    // If we have an assertion ID (synced assertion), go directly to add to PR
+    if (assertionId) {
+        performAddToPR(assertionId, button, originalHtml);
+    } else if (assertionUrn) {
+        // Remote assertion - sync first, then add to PR
+        if (!confirm('This is a remote assertion. It will be synced to local storage first, then added to PR. Continue?')) {
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+            return;
+        }
+        
+        // First sync the assertion
+        fetch('/metadata/assertions/sync-to-local/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ assertion_urn: assertionUrn })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showSuccess('Assertion synced successfully. Now adding to PR...');
+                
+                // Move assertion to synced tab
+                moveAssertionToSynced(assertionUrn, data.assertion_id);
+                
+                // Now add to PR using the new assertion ID
+                performAddToPR(data.assertion_id, button, originalHtml);
+            } else {
+                showError('Failed to sync assertion: ' + (data.error || 'Unknown error'));
+                button.innerHTML = originalHtml;
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error syncing assertion:', error);
+            showError('Error syncing assertion before adding to PR');
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+        });
+    } else {
+        showError('No assertion ID or URN provided');
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    }
+}
+
+function performAddToPR(assertionId, button, originalHtml) {
+    fetch(`/metadata/assertions/${assertionId}/add-to-pr/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess(`Assertion added to PR successfully!<br>
+                        <strong>File:</strong> ${data.file_path}<br>
+                        <strong>Environment:</strong> ${data.environment}<br>
+                        <strong>Operation:</strong> ${data.operation}<br>
+                        <strong>Type:</strong> ${data.assertion_type}`);
+        } else {
+            showError('Failed to add assertion to PR: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error adding assertion to PR:', error);
+        showError('Error adding assertion to PR');
+    })
+    .finally(() => {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    });
+}
+
+function editRemoteAssertion(assertionUrn, button) {
+    // Show detailed assertion information for editing (read-only for now)
+    console.log('Showing details for remote assertion:', assertionUrn);
+    
+    // Find the assertion data in our local cache
+    const assertionData = assertionsData.remote_only_items.find(item => item.urn === assertionUrn);
+    
+    if (assertionData) {
+        showAssertionDetails(assertionData);
+    } else {
+        showError('Assertion details not found. Please refresh the page and try again.');
+    }
+}
+
+// Edit assertion functionality
+function editAssertion(assertionId) {
+    console.log('Editing assertion:', assertionId);
+    
+    // Fetch assertion data
+    fetch(`/metadata/assertions/${assertionId}/edit/`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            populateEditModal(data.assertion);
+            new bootstrap.Modal(document.getElementById('editAssertionModal')).show();
+        } else {
+            showError(data.error || 'Failed to load assertion data');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading assertion for edit:', error);
+        showError('Error loading assertion data');
+    });
+}
+
+function populateEditModal(assertion) {
+    // Populate basic fields
+    document.getElementById('editAssertionName').value = assertion.name || '';
+    document.getElementById('editAssertionDescription').value = assertion.description || '';
+    document.getElementById('editDatasetUrn').value = assertion.entity_urn || '';
+    document.getElementById('editAssertionType').value = assertion.assertion_type || '';
+    
+    // Store assertion ID for form submission
+    document.getElementById('editAssertionForm').dataset.assertionId = assertion.id;
+    
+    // Populate type-specific fields based on config
+    populateEditTypeSpecificFields(assertion.assertion_type, assertion.config || {});
+}
+
+function populateEditTypeSpecificFields(type, config) {
+    const container = document.getElementById('edit-type-specific-fields');
+    container.innerHTML = '';
+    
+    if (type === 'SQL') {
+        container.innerHTML = `
+            <div class="mb-3">
+                <label for="editSqlQuery" class="form-label">SQL Query</label>
+                <textarea class="form-control" id="editSqlQuery" name="query" rows="4" 
+                          placeholder="SELECT COUNT(*) FROM table WHERE condition">${config.query || ''}</textarea>
+            </div>
+            <div class="mb-3">
+                <label for="editExpectedResult" class="form-label">Expected Result</label>
+                <select class="form-control" id="editExpectedResult" name="expected_result">
+                    <option value="SUCCESS" ${config.expected_result === 'SUCCESS' ? 'selected' : ''}>Success</option>
+                    <option value="FAILURE" ${config.expected_result === 'FAILURE' ? 'selected' : ''}>Failure</option>
+                </select>
+            </div>
+        `;
+    } else if (type === 'FIELD') {
+        container.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <label for="editFieldPath" class="form-label">Field Path</label>
+                    <input type="text" class="form-control" id="editFieldPath" name="field_path" 
+                           value="${config.field_path || ''}" placeholder="column_name">
+                </div>
+                <div class="col-md-6">
+                    <label for="editFieldOperator" class="form-label">Operator</label>
+                    <select class="form-control" id="editFieldOperator" name="field_operator">
+                        <option value="NOT_NULL" ${config.field_operator === 'NOT_NULL' ? 'selected' : ''}>Not Null</option>
+                        <option value="EQUAL_TO" ${config.field_operator === 'EQUAL_TO' ? 'selected' : ''}>Equal To</option>
+                        <option value="GREATER_THAN" ${config.field_operator === 'GREATER_THAN' ? 'selected' : ''}>Greater Than</option>
+                        <option value="LESS_THAN" ${config.field_operator === 'LESS_THAN' ? 'selected' : ''}>Less Than</option>
+                        <option value="BETWEEN" ${config.field_operator === 'BETWEEN' ? 'selected' : ''}>Between</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <label for="editFieldValue" class="form-label">Value</label>
+                    <input type="text" class="form-control" id="editFieldValue" name="field_value" 
+                           value="${config.field_value || ''}" placeholder="Expected value">
+                </div>
+            </div>
+        `;
+    } else if (type === 'VOLUME') {
+        container.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <label for="editVolumeOperator" class="form-label">Operator</label>
+                    <select class="form-control" id="editVolumeOperator" name="volume_operator">
+                        <option value="GREATER_THAN" ${config.volume_operator === 'GREATER_THAN' ? 'selected' : ''}>Greater Than</option>
+                        <option value="LESS_THAN" ${config.volume_operator === 'LESS_THAN' ? 'selected' : ''}>Less Than</option>
+                        <option value="EQUAL_TO" ${config.volume_operator === 'EQUAL_TO' ? 'selected' : ''}>Equal To</option>
+                        <option value="BETWEEN" ${config.volume_operator === 'BETWEEN' ? 'selected' : ''}>Between</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="editVolumeValue" class="form-label">Row Count</label>
+                    <input type="number" class="form-control" id="editVolumeValue" name="volume_value" 
+                           value="${config.volume_value || ''}" placeholder="Expected row count">
+                </div>
+            </div>
+        `;
+    } else if (type === 'FRESHNESS') {
+        container.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <label for="editFreshnessValue" class="form-label">Max Age (hours)</label>
+                    <input type="number" class="form-control" id="editFreshnessValue" name="freshness_value" 
+                           value="${config.freshness_value || '24'}" placeholder="24">
+                </div>
+                <div class="col-md-6">
+                    <label for="editFreshnessColumn" class="form-label">Timestamp Column</label>
+                    <input type="text" class="form-control" id="editFreshnessColumn" name="freshness_column" 
+                           value="${config.freshness_column || ''}" placeholder="updated_at">
+                </div>
+            </div>
+        `;
+    } else if (type === 'SCHEMA') {
+        container.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <label for="editSchemaCompatibility" class="form-label">Compatibility Level</label>
+                    <select class="form-control" id="editSchemaCompatibility" name="schema_compatibility">
+                        <option value="EXACT_MATCH" ${config.schema_compatibility === 'EXACT_MATCH' ? 'selected' : ''}>Exact Match</option>
+                        <option value="SUBSET_FIELDS" ${config.schema_compatibility === 'SUBSET_FIELDS' ? 'selected' : ''}>Subset Fields</option>
+                        <option value="SUPERSET_FIELDS" ${config.schema_compatibility === 'SUPERSET_FIELDS' ? 'selected' : ''}>Superset Fields</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="editExpectedFields" class="form-label">Expected Fields</label>
+                    <textarea class="form-control" id="editExpectedFields" name="expected_fields" rows="3" 
+                              placeholder="field1:STRING&#10;field2:NUMBER&#10;field3:BOOLEAN">${config.expected_fields || ''}</textarea>
+                </div>
+            </div>
+        `;
+    } else if (type === 'CUSTOM') {
+        container.innerHTML = `
+            <div class="mb-3">
+                <label for="editCustomLogic" class="form-label">Custom Logic</label>
+                <textarea class="form-control" id="editCustomLogic" name="custom_logic" rows="4" 
+                          placeholder="Describe your custom assertion logic">${config.custom_logic || ''}</textarea>
+            </div>
+        `;
+    }
+}
+
+// Edit form submission and button click handlers will be added to the main DOMContentLoaded listener
+
+
+// Initialize tooltips function
+function initializeTooltips() {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll("[data-bs-toggle=tooltip], [title]:not([data-bs-toggle=modal]):not([data-bs-toggle=tab])"));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl, {
+            placement: "top",
+            trigger: "hover"
+        });
+    });
+}
+</script>
+
+<style>
+#modal-raw-json {
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+}
+
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Unified Filter Statistics Styling - removes gaps and creates cohesive appearance */
+    
+    /* Override existing clickable-stat for unified bar */
+    .clickable-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #dee2e6;
+        background-color: transparent;
+        border-radius: 0 !important;
+        border-top: none !important;
+        border-bottom: none !important;
+        border-left: none !important;
+        margin: 0 !important;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    .clickable-stat:last-child {
+        border-right: none;
+    }
+    
+    .clickable-stat:hover {
+        background-color: #f8f9fa;
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    .clickable-stat.active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+        box-shadow: none !important;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.8) !important;
+    }
+    
+    .clickable-stat.active .text-success,
+    .clickable-stat.active .text-danger,
+    .clickable-stat.active .text-warning {
+        color: white !important;
+    }
+    
+    /* Remove gaps between rows for seamless appearance */
+    .row.g-1.mb-1 {
+        margin-bottom: 0px !important;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .row.g-1:last-child {
+        border-bottom: none;
+    }
+    
+    /* Enhanced Filter Row Styling */
+    .filter-row {
+        min-height: 80px;
+    }
+    
+    /* Row label styling */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+        font-size: 1rem;
+    }
+    
+    /* Enhanced filter stat styling */
+    .filter-stat {
+        min-height: 80px;
+        padding: 1rem 0.75rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Larger text for better readability */
+    .filter-stat .h5 {
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .h6 {
+        font-size: 1.5rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .text-muted {
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Default blue styling for all active states */
+    .clickable-stat.active {
+        background-color: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+    }
+    
+    /* Color-matched styling for status filters - match the text color */
+    .clickable-stat[data-filter="status-passing"].active {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    
+    .clickable-stat[data-filter="status-failing"].active {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    
+    .clickable-stat[data-filter="status-error"].active {
+        background-color: #ffc107 !important;
+        color: black !important;
+        border-color: #ffc107 !important;
+    }
+    
+    /* Enhanced Filter Row Styling */
+    .filter-row {
+        min-height: 80px;
+    }
+    
+    /* Row label styling */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+        font-size: 1rem;
+    }
+    
+    /* Enhanced filter stat styling */
+    .filter-stat {
+        min-height: 80px;
+        padding: 1rem 0.75rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Larger text for better readability */
+    .filter-stat .h5 {
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .h6 {
+        font-size: 1.5rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .filter-stat .text-muted {
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Default blue styling for all active states */
+    .clickable-stat.active {
+        background-color: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+    }
+    
+    /* Color-matched styling for status filters - match the text color */
+    .clickable-stat[data-filter="status-passing"].active {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    
+    .clickable-stat[data-filter="status-failing"].active {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    
+    .clickable-stat[data-filter="status-error"].active {
+        background-color: #ffc107 !important;
+        color: black !important;
+        border-color: #ffc107 !important;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Tighter card body padding */
+    .clickable-stat .card-body {
+        padding: 0.5rem 0.25rem !important;
+        border: none;
+    }
+    
+    /* UPDATED COLOR SCHEME - Default blue, status colors match their text */
+    .clickable-stat.active {
+        background-color: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+    }
+    
+    /* Color-matched styling for status filters */
+    .clickable-stat[data-filter="status-passing"].active {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    
+    .clickable-stat[data-filter="status-failing"].active {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    
+    .clickable-stat[data-filter="status-error"].active {
+        background-color: #ffc107 !important;
+        color: black !important;
+        border-color: #ffc107 !important;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* NEW FIXES */
+    
+    /* Smaller rows for types, status, source (rows 2, 3, 4) */
+    .filter-row:not(:first-child) {
+        min-height: 60px !important;
+    }
+    
+    .filter-row:not(:first-child) .filter-stat {
+        min-height: 60px !important;
+        padding: 0.75rem 0.5rem !important;
+    }
+    
+    /* Hidden rows for filtering */
+    .filtered-out {
+        display: none !important;
+    }
+    
+    /* Training status turquoise color */
+    .clickable-stat[data-filter="status-training"].active {
+        background-color: #17a2b8 !important;
+        color: white !important;
+        border-color: #17a2b8 !important;
+    }
+    
+    /* Make training number white when selected */
+    .clickable-stat[data-filter="status-training"].active .h6 {
+        color: white !important;
+    }
+    
+    /* Add more apparent lines between filter values */
+    .filter-stat {
+        border-right: 1px solid rgba(0, 0, 0, 0.4);
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    /* Make row headers bigger */
+    .filter-row .bg-light {
+        font-weight: 600;
+        background-color: #f8f9fa !important;
+        font-size: 1.2rem !important;
+    }
+    
+    /* Ensure table has horizontal scrolling */
+    .table-responsive {
+        overflow-x: auto;
+        max-width: 100%;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .pagination .page-link {
+        color: #007bff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white !important;
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        pointer-events: none;
+        cursor: auto;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+</style>
+{% endblock %} 

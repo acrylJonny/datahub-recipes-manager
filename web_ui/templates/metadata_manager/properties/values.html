@@ -1,0 +1,763 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <a href="{% url 'metadata_manager:property_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+                        <i class="fas fa-arrow-left me-1"></i> Back to Properties
+                    </a>
+                    <h1>Property Values</h1>
+                    <p class="text-muted">View and manage entity property values</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" id="downloadButton">
+                        <i class="fas fa-download me-1"></i> Download
+                    </button>
+                    <button type="button" class="btn btn-primary" id="syncButton">
+                        <i class="fas fa-sync me-1"></i> Sync with DataHub
+                    </button>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <!-- Search Form -->
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">Search Entities with Properties</h5>
+                </div>
+                <div class="card-body">
+                    <form id="searchForm" class="row g-3">
+                        <div class="col-md-4">
+                            <label for="entityType" class="form-label">Entity Type</label>
+                            <select class="form-select" id="entityType" name="entity_type">
+                                <option value="">All Types</option>
+                                <option value="DATASET">Dataset</option>
+                                <option value="DASHBOARD">Dashboard</option>
+                                <option value="CHART">Chart</option>
+                                <option value="DATA_FLOW">Data Flow</option>
+                                <option value="DATA_JOB">Data Job</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="propertyUrn" class="form-label">Property</label>
+                            <select class="form-select" id="propertyUrn" name="property_urn">
+                                <option value="">All Properties</option>
+                                {% for property in properties %}
+                                    <option value="{{ property.deterministic_urn }}">{{ property.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="query" class="form-label">Search Query</label>
+                            <input type="text" class="form-control" id="query" name="query" placeholder="Search entities...">
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-search me-1"></i> Search
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" id="clearButton">
+                                <i class="fas fa-times me-1"></i> Clear
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Results Table -->
+            <div class="card mb-4">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Entities</h5>
+                    <div class="d-flex align-items-center">
+                        <span class="me-3" id="totalResults">0 results</span>
+                        <div class="pagination-controls"></div>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Entity</th>
+                                    <th>Type</th>
+                                    <th>Properties</th>
+                                    <th>Browse Path</th>
+                                    <th>Last Updated</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="entitiesTableBody">
+                                <tr>
+                                    <td colspan="6" class="text-center py-4">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <nav aria-label="Entities pagination">
+                        <ul class="pagination justify-content-center mb-0" id="pagination">
+                            <!-- Pagination will be inserted here by JavaScript -->
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Entity Modal -->
+<div class="modal fade" id="editEntityModal" tabindex="-1" aria-labelledby="editEntityModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editEntityModalLabel">Edit Entity Properties</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editEntityForm">
+                    <input type="hidden" id="entityUrn" name="urn">
+                    <input type="hidden" id="entityType" name="type">
+                    
+                    <div class="mb-3">
+                        <label for="entityName" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="entityName" name="name">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="entityDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="entityDescription" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <div id="editablePropertiesContainer">
+                        <h6 class="mb-3">Additional Properties</h6>
+                        <div id="editablePropertiesFields">
+                            <!-- Additional properties will be populated dynamically -->
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveEntityButton">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View Entity Properties Modal -->
+<div class="modal fade" id="viewEntityModal" tabindex="-1" aria-labelledby="viewEntityModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewEntityModalLabel">Entity Properties</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h6>Entity Details</h6>
+                    <dl class="row">
+                        <dt class="col-sm-3">Name</dt>
+                        <dd class="col-sm-9" id="viewEntityName"></dd>
+                        
+                        <dt class="col-sm-3">Type</dt>
+                        <dd class="col-sm-9" id="viewEntityType"></dd>
+                        
+                        <dt class="col-sm-3">URN</dt>
+                        <dd class="col-sm-9" id="viewEntityUrn"></dd>
+                    </dl>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>Editable Properties</h6>
+                    <div id="viewEntityProperties">
+                        <!-- Properties will be displayed here -->
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>Browse Path</h6>
+                    <div id="viewEntityBrowsePath">
+                        <!-- Browse path will be displayed here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" class="btn btn-primary" id="viewInDataHubButton" target="_blank">View in DataHub</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentPage = 1;
+    const itemsPerPage = 20;
+    let allEntities = []; // Store all entities for download
+    
+    // Function to load entities
+    function loadEntities(page = 1) {
+        currentPage = page;
+        const start = (page - 1) * itemsPerPage;
+        
+        // Get search parameters
+        const entityType = document.getElementById('entityType').value;
+        const propertyUrn = document.getElementById('propertyUrn').value;
+        const query = document.getElementById('query').value || '*';
+        
+        // Show loading spinner
+        document.getElementById('entitiesTableBody').innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </td>
+            </tr>
+        `;
+        
+        // Make API request
+        fetch(`/metadata/properties/values?entity_type=${encodeURIComponent(entityType)}&property_urn=${encodeURIComponent(propertyUrn)}&query=${encodeURIComponent(query)}&start=${start}&count=${itemsPerPage}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('API response data:', data);
+                if (data.success) {
+                    // Store entities for download
+                    allEntities = data.data.entities || [];
+                    updateEntitiesTable(data.data);
+                    updatePagination(data.data.total);
+                } else {
+                    showError(data.error || 'Failed to load entities');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading entities:', error);
+                showError(`Failed to load entities: ${error.message}`);
+            });
+    }
+    
+    // Function to show error message
+    function showError(message) {
+        document.getElementById('entitiesTableBody').innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4">
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        ${message}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    // Function to update entities table
+    function updateEntitiesTable(data) {
+        const tbody = document.getElementById('entitiesTableBody');
+        tbody.innerHTML = '';
+        
+        const entities = data.entities || [];
+        document.getElementById('totalResults').textContent = `${data.total || 0} results`;
+        
+        if (entities.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-4">
+                        <div class="py-4">
+                            <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                            <h5>No entities found</h5>
+                            <p class="text-muted">Try adjusting your search criteria.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        // Populate table with entities
+        entities.forEach(entity => {
+            // Extract basic entity info
+            const displayName = entity.properties?.name || entity.urn.split('/').pop();
+            
+            // Get properties from editableProperties directly
+            const editableProperties = entity.editableProperties || {};
+            
+            // Format properties list
+            let propertiesList = '';
+            const propKeys = Object.keys(editableProperties).filter(key => key !== 'name' && key !== 'description');
+            if (propKeys.length > 0) {
+                propertiesList = propKeys.map(key => {
+                    const value = editableProperties[key];
+                    return `<span class="badge bg-light text-dark me-1">${key}</span>`;
+                }).join(' ');
+            } else {
+                propertiesList = '<span class="text-muted">None</span>';
+            }
+            
+            // Format browse path (for non-glossary, non-domain, non-tag entities)
+            let browsePath = '<span class="text-muted">N/A</span>';
+            if (entity.browsePaths && entity.browsePaths.length > 0 && 
+                !['GLOSSARY_TERM', 'GLOSSARY_NODE', 'DOMAIN', 'TAG'].includes(entity.type)) {
+                browsePath = entity.browsePaths.map(path => 
+                    `<div class="small text-truncate">${path}</div>`
+                ).join('');
+            }
+            
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <div class="fw-bold">${displayName}</div>
+                    <div class="text-muted small text-truncate" style="max-width: 250px;" title="${entity.urn}">${entity.urn}</div>
+                </td>
+                <td><span class="badge bg-primary">${entity.type}</span></td>
+                <td>${propertiesList}</td>
+                <td>${browsePath}</td>
+                <td>${entity.lastModified ? new Date(entity.lastModified).toLocaleString() : 'Unknown'}</td>
+                <td>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-sm btn-outline-primary view-entity" 
+                                data-urn="${entity.urn}" data-type="${entity.type}" title="View">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary edit-entity" 
+                                data-urn="${entity.urn}" data-type="${entity.type}" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+            
+            tbody.appendChild(tr);
+        });
+        
+        // Add event listeners to buttons
+        document.querySelectorAll('.edit-entity').forEach(button => {
+            button.addEventListener('click', function() {
+                const urn = this.getAttribute('data-urn');
+                const type = this.getAttribute('data-type');
+                openEditModal(urn, type);
+            });
+        });
+        
+        document.querySelectorAll('.view-entity').forEach(button => {
+            button.addEventListener('click', function() {
+                const urn = this.getAttribute('data-urn');
+                const type = this.getAttribute('data-type');
+                openViewModal(urn, type);
+            });
+        });
+    }
+    
+    // Function to update pagination
+    function updatePagination(total) {
+        const pagination = document.getElementById('pagination');
+        pagination.innerHTML = '';
+        
+        if (!total || total <= 0) {
+            return;
+        }
+        
+        const totalPages = Math.ceil(total / itemsPerPage);
+        
+        // Add previous button
+        const prevLi = document.createElement('li');
+        prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+        prevLi.innerHTML = `
+            <a class="page-link" href="#" aria-label="Previous" ${currentPage === 1 ? 'tabindex="-1" aria-disabled="true"' : ''}>
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        `;
+        pagination.appendChild(prevLi);
+        
+        if (currentPage > 1) {
+            prevLi.addEventListener('click', (e) => {
+                e.preventDefault();
+                loadEntities(currentPage - 1);
+            });
+        }
+        
+        // Add page numbers
+        let startPage = Math.max(1, currentPage - 2);
+        let endPage = Math.min(totalPages, startPage + 4);
+        
+        if (endPage - startPage < 4) {
+            startPage = Math.max(1, endPage - 4);
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            const pageLi = document.createElement('li');
+            pageLi.className = `page-item ${i === currentPage ? 'active' : ''}`;
+            pageLi.innerHTML = `
+                <a class="page-link" href="#">${i}</a>
+            `;
+            
+            pageLi.addEventListener('click', (e) => {
+                e.preventDefault();
+                loadEntities(i);
+            });
+            
+            pagination.appendChild(pageLi);
+        }
+        
+        // Add next button
+        const nextLi = document.createElement('li');
+        nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+        nextLi.innerHTML = `
+            <a class="page-link" href="#" aria-label="Next" ${currentPage === totalPages ? 'tabindex="-1" aria-disabled="true"' : ''}>
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        `;
+        pagination.appendChild(nextLi);
+        
+        if (currentPage < totalPages) {
+            nextLi.addEventListener('click', (e) => {
+                e.preventDefault();
+                loadEntities(currentPage + 1);
+            });
+        }
+    }
+    
+    // Function to open edit modal
+    function openEditModal(urn, type) {
+        const modal = new bootstrap.Modal(document.getElementById('editEntityModal'));
+        
+        // Reset form
+        document.getElementById('editEntityForm').reset();
+        document.getElementById('entityUrn').value = urn;
+        document.getElementById('entityType').value = type;
+        
+        // Load entity details
+        fetch(`/metadata/entities/${urn}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.entity) {
+                    console.log('Entity details for editing:', data.entity);
+                    
+                    let name = '';
+                    let description = '';
+                    
+                    if (data.entity.editableProperties) {
+                        name = data.entity.editableProperties.name || '';
+                        description = data.entity.editableProperties.description || '';
+                        
+                        // Add additional editable properties
+                        const editablePropertiesFields = document.getElementById('editablePropertiesFields');
+                        editablePropertiesFields.innerHTML = '';
+                        
+                        Object.keys(data.entity.editableProperties).forEach(propKey => {
+                            if (propKey !== 'name' && propKey !== 'description') {
+                                const propValue = data.entity.editableProperties[propKey];
+                                editablePropertiesFields.innerHTML += `
+                                    <div class="mb-3">
+                                        <label class="form-label">${propKey}</label>
+                                        <input type="text" class="form-control" name="properties[${propKey}]" value="${propValue || ''}" />
+                                    </div>
+                                `;
+                            }
+                        });
+                    }
+                    
+                    // Set form values
+                    document.getElementById('entityName').value = name;
+                    document.getElementById('entityDescription').value = description;
+                    
+                    modal.show();
+                } else {
+                    console.error('Failed to load entity details:', data.error);
+                    showToast('error', 'Error', data.error || 'Failed to load entity details');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('error', 'Error', error.message);
+            });
+    }
+    
+    // Function to open view modal
+    function openViewModal(urn, type) {
+        const modal = new bootstrap.Modal(document.getElementById('viewEntityModal'));
+        
+        // Load entity details
+        fetch(`/metadata/entities/${urn}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.entity) {
+                    console.log('Entity details for viewing:', data.entity);
+                    
+                    // Set entity basic details
+                    document.getElementById('viewEntityName').textContent = 
+                        data.entity.editableProperties?.name || data.entity.properties?.name || 'Unnamed';
+                    document.getElementById('viewEntityType').textContent = data.entity.type;
+                    document.getElementById('viewEntityUrn').textContent = data.entity.urn;
+                    
+                    // Set DataHub link
+                    const datahubUrl = `${window.location.protocol}//${window.location.host}/entities/${encodeURIComponent(data.entity.type.toLowerCase())}/${encodeURIComponent(data.entity.urn)}`;
+                    document.getElementById('viewInDataHubButton').href = datahubUrl;
+                    
+                    // Display editable properties
+                    const propertiesContainer = document.getElementById('viewEntityProperties');
+                    propertiesContainer.innerHTML = '';
+                    
+                    if (data.entity.editableProperties && Object.keys(data.entity.editableProperties).length > 0) {
+                        const propsList = document.createElement('dl');
+                        propsList.className = 'row';
+                        
+                        Object.entries(data.entity.editableProperties).forEach(([key, value]) => {
+                            const dt = document.createElement('dt');
+                            dt.className = 'col-sm-3';
+                            dt.textContent = key;
+                            
+                            const dd = document.createElement('dd');
+                            dd.className = 'col-sm-9';
+                            dd.textContent = value || 'Not set';
+                            
+                            propsList.appendChild(dt);
+                            propsList.appendChild(dd);
+                        });
+                        
+                        propertiesContainer.appendChild(propsList);
+                    } else {
+                        propertiesContainer.innerHTML = '<p class="text-muted">No editable properties found</p>';
+                    }
+                    
+                    // Display browse path
+                    const browsePathContainer = document.getElementById('viewEntityBrowsePath');
+                    browsePathContainer.innerHTML = '';
+                    
+                    if (data.entity.browsePaths && data.entity.browsePaths.length > 0) {
+                        const pathList = document.createElement('ul');
+                        pathList.className = 'list-group';
+                        
+                        data.entity.browsePaths.forEach(path => {
+                            const pathItem = document.createElement('li');
+                            pathItem.className = 'list-group-item';
+                            pathItem.textContent = path;
+                            pathList.appendChild(pathItem);
+                        });
+                        
+                        browsePathContainer.appendChild(pathList);
+                    } else {
+                        browsePathContainer.innerHTML = '<p class="text-muted">No browse paths available</p>';
+                    }
+                    
+                    modal.show();
+                } else {
+                    console.error('Failed to load entity details:', data.error);
+                    showToast('error', 'Error', data.error || 'Failed to load entity details');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('error', 'Error', error.message);
+            });
+    }
+    
+    // Function to save entity changes
+    document.getElementById('saveEntityButton').addEventListener('click', function() {
+        const form = document.getElementById('editEntityForm');
+        const formData = new FormData(form);
+        
+        // Convert FormData to JSON
+        const data = {};
+        formData.forEach((value, key) => {
+            if (key.startsWith('properties[') && key.endsWith(']')) {
+                const propKey = key.substring(11, key.length - 1); // Extract property name
+                if (!data.properties) data.properties = {};
+                data.properties[propKey] = value;
+            } else {
+                data[key] = value;
+            }
+        });
+        
+        // Add name and description to properties
+        if (!data.properties) data.properties = {};
+        data.properties.name = formData.get('name');
+        data.properties.description = formData.get('description');
+        
+        // Make API request to update entity
+        fetch('/metadata/entities/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Close modal
+                bootstrap.Modal.getInstance(document.getElementById('editEntityModal')).hide();
+                
+                // Show success message
+                showToast('success', 'Success', 'Entity updated successfully');
+                
+                // Reload entities
+                loadEntities(currentPage);
+            } else {
+                showToast('error', 'Error', data.error || 'Failed to update entity');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating entity:', error);
+            showToast('error', 'Error', error.message);
+        });
+    });
+    
+    // Function to download entity data
+    document.getElementById('downloadButton').addEventListener('click', function() {
+        if (allEntities.length === 0) {
+            showToast('error', 'Error', 'No entities to download');
+            return;
+        }
+        
+        // Format the data for download
+        const downloadData = allEntities.map(entity => {
+            const properties = entity.editableProperties || {};
+            const name = properties.name || entity.urn.split('/').pop();
+            
+            return {
+                name: name,
+                urn: entity.urn,
+                type: entity.type,
+                properties: properties,
+                browsePaths: entity.browsePaths || []
+            };
+        });
+        
+        // Create a download link
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(downloadData, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "datahub_property_values.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    });
+    
+    // Function to sync with DataHub
+    document.getElementById('syncButton').addEventListener('click', function() {
+        // Show loading state
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Syncing...';
+        
+        // Make API request to sync entities
+        fetch('/metadata/entities/sync', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                showToast('success', 'Success', 'Entities synced successfully');
+                loadEntities(1); // Reload first page
+            } else {
+                showToast('error', 'Error', data.error || 'Failed to sync entities');
+            }
+        })
+        .catch(error => {
+            console.error('Error syncing entities:', error);
+            showToast('error', 'Error', error.message);
+        })
+        .finally(() => {
+            // Reset button state
+            const button = document.getElementById('syncButton');
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-sync me-1"></i> Sync with DataHub';
+        });
+    });
+    
+    // Function to show toast notifications
+    function showToast(type, title, message) {
+        // You can implement this based on your UI framework
+        console.log(`${type}: ${title} - ${message}`);
+    }
+    
+    // Function to get CSRF token from cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    // Setup search form
+    document.getElementById('searchForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        loadEntities(1); // Reset to first page
+    });
+    
+    // Setup clear button
+    document.getElementById('clearButton').addEventListener('click', function() {
+        document.getElementById('entityType').value = '';
+        document.getElementById('propertyUrn').value = '';
+        document.getElementById('query').value = '';
+        loadEntities(1);
+    });
+    
+    // Load entities on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadEntities();
+    });
+</script>
+{% endblock %} 

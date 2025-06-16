@@ -1,0 +1,16 @@
+name: analytics-db_env_vars
+description: Production Analytics Database ingestion
+recipe_type: postgres
+parameters:
+  PG_USER: postgres
+  PG_HOST_PORT: datahub_test_postgres:5432
+  PG_DATABASE: SimpleAdventureWorks
+  INCLUDE_TABLES: true
+  INCLUDE_VIEWS: true
+  STATEFUL_INGESTION_ENABLED: true
+  ENABLE_PROFILING: true
+  PROFILE_TABLE_LEVEL_ONLY: false
+secret_references:
+  - PG_PASSWORD
+  - DATAHUB_GMS_URL
+  - DATAHUB_TOKEN

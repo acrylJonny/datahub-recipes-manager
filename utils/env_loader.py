@@ -1,6 +1,7 @@
 """
 Utility module for loading environment variables from .env files
 """
+
 import os
 from dotenv import load_dotenv
 

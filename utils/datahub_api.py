@@ -7,9 +7,8 @@ This provides a more reliable and maintainable way to interact with DataHub.
 import logging
 import json
 import uuid
-from typing import Dict, Any, List, Optional, Union, Set
+from typing import Dict, Any, List, Optional, Set
 
-from datahub.emitter.mce_builder import make_data_platform_urn
 from datahub.ingestion.graph.client import DataHubGraph
 from datahub.metadata.schema_classes import (
     DataHubIngestionSourceConfigClass,
@@ -147,7 +146,7 @@ class DataHubClient:
                         "name": name,
                         "type": source_type,
                     }
-            except Exception as e:
+            except Exception:
                 # Source doesn't exist, create it
                 logger.info(f"Ingestion source {source_urn} doesn't exist, creating it")
                 pass

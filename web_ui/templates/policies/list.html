@@ -79,134 +79,133 @@
                     </div>
                 </div>
                 <div class="card-body p-0">
-                    {% if policies %}
-                        <div class="table-responsive">
-                            <table class="table table-hover table-striped mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>ID</th>
-                                        <th>Type</th>
-                                        <th>State</th>
-                                        <th width="15%">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for policy in policies %}
-                                        <tr>
-                                            <td>
-                                                {% if policy.id %}
-                                                <a href="{% url 'policy_view' policy.id %}" class="text-decoration-none">
-                                                    {{ policy.name }}
-                                                </a>
-                                                {% else %}
-                                                {{ policy.name }}
-                                                {% endif %}
-                                            </td>
-                                            <td><code>{{ policy.id|default:"N/A" }}</code></td>
-                                            <td>
-                                                <span class="badge bg-{% if policy.type == 'METADATA' %}primary{% else %}secondary{% endif %} d-flex align-items-center justify-content-center" style="width: fit-content">
-                                                    {{ policy.type }}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-{% if policy.state == 'ACTIVE' %}success{% else %}warning{% endif %} d-flex align-items-center justify-content-center" style="width: fit-content">
-                                                    {% if policy.state == 'ACTIVE' %}Active{% else %}Inactive{% endif %}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <div class="btn-group" role="group">
-                                                    {% if policy.id %}
-                                                    <a href="{% url 'policy_view' policy.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                    <a href="{% url 'policy_edit' policy.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                    <a href="{% url 'policy_download' policy.id %}" class="btn btn-sm btn-outline-info" title="Download">
-                                                        <i class="fas fa-download"></i>
-                                                    </a>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
-                                                            data-policy-id="{{ policy.id }}" data-environment-id="{{ policy.environment.id }}" title="Add to GitHub PR">
-                                                        <i class="fab fa-github"></i>
-                                                    </button>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger delete-policy" 
-                                                            data-bs-toggle="modal" data-bs-target="#deletePolicyModal"
-                                                            data-policy-id="{{ policy.id }}" data-policy-name="{{ policy.name }}" title="Delete">
-                                                        <i class="fas fa-trash"></i>
-                                                    </button>
-                                                    {% else %}
-                                                    <span class="text-muted">No actions available</span>
-                                                    {% endif %}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                    {% if loading_async %}
+                        <div id="policies-loading" class="text-center py-5">
+                            <i class="fas fa-spinner fa-spin fa-2x text-muted mb-3"></i>
+                            <p class="text-muted">Loading server policies...</p>
                         </div>
-                        
-                        {% if is_paginated %}
-                            <div class="d-flex justify-content-center mt-3">
-                                <nav aria-label="Page navigation">
-                                    <ul class="pagination">
-                                        {% if page_obj.has_previous %}
-                                            <li class="page-item">
-                                                <a class="page-link" href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="First">
-                                                    <span aria-hidden="true">&laquo;&laquo;</span>
-                                                </a>
-                                            </li>
-                                            <li class="page-item">
-                                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Previous">
-                                                    <span aria-hidden="true">&laquo;</span>
-                                                </a>
-                                            </li>
-                                        {% endif %}
-                                        
-                                        {% for num in page_obj.paginator.page_range %}
-                                            {% if page_obj.number == num %}
-                                                <li class="page-item active">
-                                                    <span class="page-link">{{ num }}</span>
-                                                </li>
-                                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                                                <li class="page-item">
-                                                    <a class="page-link" href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">{{ num }}</a>
-                                                </li>
-                                            {% endif %}
-                                        {% endfor %}
-                                        
-                                        {% if page_obj.has_next %}
-                                            <li class="page-item">
-                                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Next">
-                                                    <span aria-hidden="true">&raquo;</span>
-                                                </a>
-                                            </li>
-                                            <li class="page-item">
-                                                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" aria-label="Last">
-                                                    <span aria-hidden="true">&raquo;&raquo;</span>
-                                                </a>
-                                            </li>
-                                        {% endif %}
-                                    </ul>
-                                </nav>
+                        <div id="policies-content" style="display: none;">
+                            <div class="table-responsive">
+                                <table class="table table-hover table-striped mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>ID</th>
+                                            <th>Type</th>
+                                            <th>State</th>
+                                            <th width="15%">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="policies-tbody">
+                                        <!-- Content will be populated via AJAX -->
+                                    </tbody>
+                                </table>
                             </div>
-                        {% endif %}
-                    {% else %}
-                        <div class="py-5 text-center">
+                        </div>
+                        <div id="policies-empty" class="py-5 text-center" style="display: none;">
                             <div class="mb-3">
                                 <i class="fas fa-shield-alt fa-4x text-muted"></i>
                             </div>
-                            {% if request.GET.search %}
-                                <h4>No policies found matching "{{ request.GET.search }}"</h4>
-                                <p class="text-muted">Try a different search term or <a href="{% url 'policies' %}">view all policies</a>.</p>
-                            {% else %}
-                                <h4>No policies available on the server</h4>
-                                <p class="text-muted">Create your first policy to get started.</p>
-                                <a href="{% url 'policy_create' %}" class="btn btn-primary mt-2">
-                                    <i class="fas fa-plus me-1"></i> Create New Policy
-                                </a>
-                            {% endif %}
+                            <h4>No policies available on the server</h4>
+                            <p class="text-muted">Create your first policy to get started.</p>
+                            <a href="{% url 'policy_create' %}" class="btn btn-primary mt-2">
+                                <i class="fas fa-plus me-1"></i> Create New Policy
+                            </a>
                         </div>
+                        <div id="policies-error" class="py-5 text-center" style="display: none;">
+                            <div class="mb-3">
+                                <i class="fas fa-exclamation-triangle fa-4x text-danger"></i>
+                            </div>
+                            <h4>Error Loading Policies</h4>
+                            <p class="text-muted" id="policies-error-message"></p>
+                            <button class="btn btn-primary mt-2" onclick="loadPoliciesData()">
+                                <i class="fas fa-refresh me-1"></i> Retry
+                            </button>
+                        </div>
+                    {% else %}
+                        {% if policies %}
+                            <div class="table-responsive">
+                                <table class="table table-hover table-striped mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>ID</th>
+                                            <th>Type</th>
+                                            <th>State</th>
+                                            <th width="15%">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for policy in policies %}
+                                            <tr>
+                                                <td>
+                                                    {% if policy.id %}
+                                                    <a href="{% url 'policy_view' policy.id %}" class="text-decoration-none">
+                                                        {{ policy.name }}
+                                                    </a>
+                                                    {% else %}
+                                                    {{ policy.name }}
+                                                    {% endif %}
+                                                </td>
+                                                <td><code>{{ policy.id|default:"N/A" }}</code></td>
+                                                <td>
+                                                    <span class="badge bg-{% if policy.type == 'METADATA' %}primary{% else %}secondary{% endif %} d-flex align-items-center justify-content-center" style="width: fit-content">
+                                                        {{ policy.type }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-{% if policy.state == 'ACTIVE' %}success{% else %}warning{% endif %} d-flex align-items-center justify-content-center" style="width: fit-content">
+                                                        {% if policy.state == 'ACTIVE' %}Active{% else %}Inactive{% endif %}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div class="btn-group" role="group">
+                                                        {% if policy.id %}
+                                                        <a href="{% url 'policy_view' policy.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                            <i class="fas fa-eye"></i>
+                                                        </a>
+                                                        <a href="{% url 'policy_edit' policy.id %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                        <a href="{% url 'policy_download' policy.id %}" class="btn btn-sm btn-outline-info" title="Download">
+                                                            <i class="fas fa-download"></i>
+                                                        </a>
+                                                        <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                                data-policy-id="{{ policy.id }}" data-environment-id="{{ policy.environment.id }}" title="Add to GitHub PR">
+                                                            <i class="fab fa-github"></i>
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger delete-policy" 
+                                                                data-bs-toggle="modal" data-bs-target="#deletePolicyModal"
+                                                                data-policy-id="{{ policy.id }}" data-policy-name="{{ policy.name }}" title="Delete">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                        {% else %}
+                                                        <span class="text-muted">No actions available</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="py-5 text-center">
+                                <div class="mb-3">
+                                    <i class="fas fa-shield-alt fa-4x text-muted"></i>
+                                </div>
+                                {% if request.GET.search %}
+                                    <h4>No policies found matching "{{ request.GET.search }}"</h4>
+                                    <p class="text-muted">Try a different search term or <a href="{% url 'policies' %}">view all policies</a>.</p>
+                                {% else %}
+                                    <h4>No policies available on the server</h4>
+                                    <p class="text-muted">Create your first policy to get started.</p>
+                                    <a href="{% url 'policy_create' %}" class="btn btn-primary mt-2">
+                                        <i class="fas fa-plus me-1"></i> Create New Policy
+                                    </a>
+                                {% endif %}
+                            </div>
+                        {% endif %}
                     {% endif %}
                 </div>
             </div>
@@ -375,241 +374,190 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Check URL parameter to determine which tab to show initially
-        const urlParams = new URLSearchParams(window.location.search);
-        const tabParam = urlParams.get('tab');
-        
-        if (tabParam === 'local') {
-            const localTab = document.getElementById('local-tab');
-            const tab = new bootstrap.Tab(localTab);
-            tab.show();
-        }
-        
-        // Store the active tab in local storage when it changes
-        const tabEls = document.querySelectorAll('button[data-bs-toggle="tab"]');
-        tabEls.forEach(tabEl => {
-            tabEl.addEventListener('shown.bs.tab', function(e) {
-                const id = e.target.id;
-                localStorage.setItem('policyActiveTab', id);
-                
-                // Update URL without reloading the page
-                const tabName = id.replace('-tab', '');
-                const url = new URL(window.location);
-                url.searchParams.set('tab', tabName);
-                window.history.pushState({}, '', url);
-            });
-        });
-        
-        // Restore the active tab from local storage if not specified in URL
-        if (!tabParam && localStorage.getItem('policyActiveTab')) {
-            const activeTab = document.getElementById(localStorage.getItem('policyActiveTab'));
-            if (activeTab) {
-                const tab = new bootstrap.Tab(activeTab);
-                tab.show();
-            }
-        }
-        
-        // Handle delete policy modal
-        const deleteModal = document.getElementById('deletePolicyModal');
-        if (deleteModal) {
-            deleteModal.addEventListener('show.bs.modal', function(event) {
-                const button = event.relatedTarget;
-                const policyId = button.getAttribute('data-policy-id');
-                const policyName = button.getAttribute('data-policy-name');
-                
-                document.getElementById('delete-policy-name').textContent = policyName;
-                document.getElementById('delete-policy-form').action = "{% url 'policy_delete' 0 %}".replace('0', policyId);
-            });
-        }
-        
-        // Handle deploy policy modal
-        const deployModal = document.getElementById('deployPolicyModal');
-        if (deployModal) {
-            deployModal.addEventListener('show.bs.modal', function(event) {
-                const button = event.relatedTarget;
-                const policyId = button.getAttribute('data-policy-id');
-                const policyName = button.getAttribute('data-policy-name');
-                
-                document.getElementById('deploy-policy-name').textContent = policyName;
-                document.getElementById('deploy-policy-form').action = "{% url 'policy_deploy' 0 %}".replace('0', policyId);
-            });
-        }
-        
-        // Auto-refresh functionality
-        function setupAutoRefresh() {
-            const refreshRate = "{{ refresh_rate|default:60 }}";
-            const refreshRateNum = parseInt(refreshRate, 10);
-            if (refreshRateNum > 0) {
-                setTimeout(function() {
-                    window.location.reload();
-                }, refreshRateNum * 1000);
-            }
-        }
-        
-        // Initialize auto-refresh
-        setupAutoRefresh();
-        
-        // Client-side filtering functionality
-        const serverSearchInput = document.getElementById('server-policy-search');
-        const serverClearFilterButton = document.getElementById('server-clear-filter');
-        const serverPolicyRows = document.querySelectorAll('#server-policies tbody tr');
-        
-        const localSearchInput = document.getElementById('local-policy-search');
-        const localClearFilterButton = document.getElementById('local-clear-filter');
-        const localPolicyRows = document.querySelectorAll('#local-policies tbody tr');
-        
-        // Server policies filtering
-        if (serverSearchInput) {
-            serverSearchInput.addEventListener('input', function() {
-                filterPolicies(serverSearchInput, serverPolicyRows, 'server-policies');
-            });
+        // Load policies data asynchronously if in async mode
+        {% if loading_async %}
+        loadPoliciesData();
+        {% endif %}
+
+        // Function to load policies data via AJAX
+        function loadPoliciesData() {
+            const loadingDiv = document.getElementById('policies-loading');
+            const contentDiv = document.getElementById('policies-content');
+            const emptyDiv = document.getElementById('policies-empty');
+            const errorDiv = document.getElementById('policies-error');
+            const errorMessage = document.getElementById('policies-error-message');
             
-            if (serverClearFilterButton) {
-                serverClearFilterButton.addEventListener('click', function() {
-                    serverSearchInput.value = '';
-                    filterPolicies(serverSearchInput, serverPolicyRows, 'server-policies');
-                });
-            }
-        }
-        
-        // Local policies filtering
-        if (localSearchInput) {
-            localSearchInput.addEventListener('input', function() {
-                filterPolicies(localSearchInput, localPolicyRows, 'local-policies');
-            });
+            // Show loading state
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+            emptyDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
             
-            if (localClearFilterButton) {
-                localClearFilterButton.addEventListener('click', function() {
-                    localSearchInput.value = '';
-                    filterPolicies(localSearchInput, localPolicyRows, 'local-policies');
-                });
-            }
-        }
-        
-        function filterPolicies(searchInput, policyRows, containerId) {
-            const searchTerm = searchInput.value.toLowerCase();
-            
-            policyRows.forEach(row => {
-                const name = row.querySelector('td:first-child').textContent.toLowerCase();
-                const typeCell = row.querySelector('td:nth-child(2)');
-                const stateCell = row.querySelector('td:nth-child(3)');
-                const environmentCell = row.querySelector('td:nth-child(4)');
-                
-                const type = typeCell ? typeCell.textContent.toLowerCase() : '';
-                const state = stateCell ? stateCell.textContent.toLowerCase() : '';
-                const environment = environmentCell ? environmentCell.textContent.toLowerCase() : '';
-                
-                // Show row if any field contains the search term
-                if (name.includes(searchTerm) || 
-                    type.includes(searchTerm) || 
-                    state.includes(searchTerm) || 
-                    environment.includes(searchTerm)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-            
-            // Check if any rows are visible
-            const visibleRows = Array.from(policyRows).filter(row => row.style.display !== 'none');
-            const noResultsMessageId = `no-results-message-${containerId}`;
-            const noResultsMessage = document.getElementById(noResultsMessageId);
-            
-            // Create or show/hide no results message
-            if (visibleRows.length === 0) {
-                if (!noResultsMessage) {
-                    const tableBody = document.querySelector(`#${containerId} tbody`);
-                    const container = tableBody.parentElement.parentElement;
-                    const message = document.createElement('div');
-                    message.id = noResultsMessageId;
-                    message.className = 'py-4 text-center';
-                    message.innerHTML = `
-                        <i class="fas fa-search fa-2x text-muted mb-2"></i>
-                        <h5 class="text-muted">No policies match your filter</h5>
-                        <button id="clear-filter-inline-${containerId}" class="btn btn-sm btn-outline-secondary mt-2">
-                            <i class="fas fa-times me-1"></i> Clear Filter
-                        </button>
-                    `;
-                    container.appendChild(message);
-                    
-                    document.getElementById(`clear-filter-inline-${containerId}`).addEventListener('click', function() {
-                        searchInput.value = '';
-                        filterPolicies(searchInput, policyRows, containerId);
-                    });
-                } else {
-                    noResultsMessage.style.display = 'block';
-                }
-            } else if (noResultsMessage) {
-                noResultsMessage.style.display = 'none';
-            }
-        }
-        
-        // Handle "Add to Git PR" buttons
-        const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
-        addToGitPrButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const policyId = this.getAttribute('data-policy-id');
-                const environmentId = this.getAttribute('data-environment-id') || '';
-                
-                // Show loading state
-                const originalHTML = this.innerHTML;
-                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                this.disabled = true;
-                
-                // Prepare form data
-                const formData = new FormData();
-                formData.append('environment', environmentId);
-                
-                // Send POST request to add policy to GitHub PR
-                fetch(`/policies/${policyId}/push-github/`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                    },
-                    body: formData
-                })
+            fetch('{% url "policies_data" %}')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) {
-                        // Create a toast notification
-                        const toast = document.createElement('div');
-                        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
-                        toast.setAttribute('role', 'alert');
-                        toast.setAttribute('aria-live', 'assertive');
-                        toast.setAttribute('aria-atomic', 'true');
-                        toast.innerHTML = `
-                            <div class="d-flex">
-                                <div class="toast-body">
-                                    <i class="fas fa-check-circle me-2"></i>
-                                    Policy added to GitHub PR successfully!
-                                </div>
-                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                            </div>
-                        `;
-                        document.body.appendChild(toast);
+                    loadingDiv.style.display = 'none';
+                    
+                    if (data.success && data.policies && data.policies.length > 0) {
+                        // Populate table with data
+                        const tbody = document.getElementById('policies-tbody');
+                        tbody.innerHTML = '';
                         
-                        // Initialize and show the toast
-                        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
-                        bsToast.show();
-                        
-                        // Remove toast from DOM after it's hidden
-                        toast.addEventListener('hidden.bs.toast', function() {
-                            toast.remove();
+                        data.policies.forEach(policy => {
+                            const row = document.createElement('tr');
+                            
+                            // Format type display
+                            const typeClass = policy.type === 'METADATA' ? 'primary' : 'secondary';
+                            
+                            // Format state display
+                            const stateClass = policy.state === 'ACTIVE' ? 'success' : 'warning';
+                            const stateText = policy.state === 'ACTIVE' ? 'Active' : 'Inactive';
+                            
+                            // Build actions HTML
+                            let actionsHtml = '<span class="text-muted">No actions available</span>';
+                            if (policy.id) {
+                                actionsHtml = `
+                                    <div class="btn-group" role="group">
+                                        <a href="/policies/detail/${policy.id}/" class="btn btn-sm btn-outline-primary" title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        <a href="/policies/edit/${policy.id}/" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <a href="/policies/download/${policy.id}/" class="btn btn-sm btn-outline-info" title="Download">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary add-to-git-pr" 
+                                                data-policy-id="${policy.id}" data-environment-id="${policy.environment?.id || ''}" title="Add to GitHub PR">
+                                            <i class="fab fa-github"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger delete-policy" 
+                                                data-bs-toggle="modal" data-bs-target="#deletePolicyModal"
+                                                data-policy-id="${policy.id}" data-policy-name="${policy.name}" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                `;
+                            }
+                            
+                            row.innerHTML = `
+                                <td>
+                                    ${policy.id ? `<a href="/policies/detail/${policy.id}/" class="text-decoration-none">${policy.name}</a>` : policy.name}
+                                </td>
+                                <td><code>${policy.id || 'N/A'}</code></td>
+                                <td>
+                                    <span class="badge bg-${typeClass} d-flex align-items-center justify-content-center" style="width: fit-content">
+                                        ${policy.type}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-${stateClass} d-flex align-items-center justify-content-center" style="width: fit-content">
+                                        ${stateText}
+                                    </span>
+                                </td>
+                                <td>${actionsHtml}</td>
+                            `;
+                            tbody.appendChild(row);
                         });
+                        
+                        contentDiv.style.display = 'block';
+                        
+                        // Re-initialize event handlers
+                        initializePolicyEventHandlers();
+                        
+                    } else if (data.success && (!data.policies || data.policies.length === 0)) {
+                        // Show empty state
+                        emptyDiv.style.display = 'block';
                     } else {
-                        alert(`Error: ${data.error || 'Failed to add policy to GitHub PR'}`);
+                        // Show error state
+                        errorMessage.textContent = data.error || 'Unknown error occurred';
+                        errorDiv.style.display = 'block';
                     }
                 })
-                .catch(error => {
-                    alert(`Error: ${error}`);
-                })
-                .finally(() => {
-                    // Restore button state
-                    this.innerHTML = originalHTML;
-                    this.disabled = false;
+                .catch(error => {            
+                    loadingDiv.style.display = 'none';
+                    errorMessage.textContent = error.message || 'Network error occurred';
+                    errorDiv.style.display = 'block';
+                });
+        }
+
+        // Function to initialize event handlers for dynamically loaded policies
+        function initializePolicyEventHandlers() {
+            // Handle "Add to Git PR" buttons
+            const addToGitPrButtons = document.querySelectorAll('.add-to-git-pr');
+            addToGitPrButtons.forEach(button => {
+                // Remove existing listeners to avoid duplicates
+                button.replaceWith(button.cloneNode(true));
+            });
+            
+            // Re-add event listeners
+            document.querySelectorAll('.add-to-git-pr').forEach(button => {
+                button.addEventListener('click', function() {
+                    const policyId = this.getAttribute('data-policy-id');
+                    const environmentId = this.getAttribute('data-environment-id') || '';
+                    
+                    // Show loading state
+                    const originalHTML = this.innerHTML;
+                    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    this.disabled = true;
+                    
+                    // Prepare form data
+                    const formData = new FormData();
+                    formData.append('environment', environmentId);
+                    
+                    // Send POST request to add policy to GitHub PR
+                    fetch(`/policies/${policyId}/push-github/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        },
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Restore button state
+                        this.innerHTML = originalHTML;
+                        this.disabled = false;
+                        
+                        if (data.success) {
+                            // Show success message
+                            const toast = document.createElement('div');
+                            toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed bottom-0 end-0 m-3';
+                            toast.setAttribute('role', 'alert');
+                            toast.innerHTML = `
+                                <div class="d-flex">
+                                    <div class="toast-body">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        Policy added to Git PR successfully!
+                                    </div>
+                                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                                </div>
+                            `;
+                            document.body.appendChild(toast);
+                            
+                            const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+                            bsToast.show();
+                            
+                            toast.addEventListener('hidden.bs.toast', function() {
+                                toast.remove();
+                            });
+                        } else {
+                            alert(`Error: ${data.error || 'Failed to add policy to Git PR'}`);
+                        }
+                    })
+                    .catch(error => {
+                        // Restore button state
+                        this.innerHTML = originalHTML;
+                        this.disabled = false;
+                        
+                        alert(`Error: ${error.message || 'Network error occurred'}`);
+                    });
                 });
             });
-        });
+        }
+
+        // Make loadPoliciesData available globally for retry button
+        window.loadPoliciesData = loadPoliciesData;
     });
 </script>
 {% endblock %} 

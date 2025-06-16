@@ -1,0 +1,34 @@
+name: analytics-warehouse_env_vars
+description: Production Databricks Analytics Warehouse ingestion
+recipe_type: databricks
+parameters:
+  DBX_WORKSPACE_URL: https://your-workspace.cloud.databricks.com
+  DBX_WAREHOUSE_ID: warehouse_id_value
+  DBX_PLATFORM_INSTANCE: analytics-prod
+  INCLUDE_TABLE_LINEAGE: true
+  INCLUDE_COLUMN_LINEAGE: true
+  INCLUDE_HIVE_METASTORE: true
+  INCLUDE_READ_OPERATIONAL_STATS: true
+  ENABLE_STATEFUL_PROFILING: true
+  FORMAT_SQL_QUERIES: true
+  INCLUDE_OWNERSHIP: true
+  INCREMENTAL_LINEAGE: true
+  STATEFUL_INGESTION_ENABLED: true
+  STATEFUL_INGESTION_THRESHOLD: 100
+  REMOVE_STALE_METADATA: true
+  ENABLE_PROFILING: true
+  PROFILE_TABLE_LEVEL_ONLY: false
+  INCLUDE_FIELD_SAMPLE_VALUES: false
+  CATCH_PROFILING_EXCEPTIONS: false
+  MAX_PROFILING_WAIT_SECS: 6000
+  PROFILING_METHOD: ge
+  LOWER_FREQ_PROFILE_ENABLED: true
+  PROFILE_DAY_OF_WEEK: 6
+  EXECUTOR_ID: remote
+  SCHEDULE_CRON: 0 1 * * *
+  SCHEDULE_TIMEZONE: America/Chicago
+secret_references:
+  - DBX_TOKEN
+  - DATAHUB_GMS_URL
+  - DATAHUB_TOKEN
+template: databricks

@@ -1,0 +1,485 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    #yaml_definition {
+        font-family: monospace;
+        min-height: 400px;
+    }
+    .form-label {
+        font-weight: 500;
+    }
+    .yaml-help {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+    }
+    .yaml-help pre {
+        margin-bottom: 0;
+    }
+    .btn-action-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>{{ page_title }}</h1>
+        <div class="btn-action-group">
+            <a href="{% url 'metadata_manager:tests_list' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Tests
+            </a>
+            {% if not is_new and test %}
+            <button type="submit" form="testForm" class="btn btn-primary">
+                <i class="fas fa-save"></i> Save Changes
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not has_datahub_connection and not is_local_edit %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle"></i> Not connected to DataHub. Please check your connection settings.
+    </div>
+    {% endif %}
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    {% if not is_new and not test and not is_local_edit %}
+    <div class="alert alert-danger">
+        <i class="fas fa-exclamation-circle"></i> Test not found or could not be loaded.
+    </div>
+    {% else %}
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body">
+                    <ul class="nav nav-tabs mb-3" id="testSourceTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="edit-tab" data-bs-toggle="tab" data-bs-target="#edit-tab-content" 
+                                   type="button" role="tab" aria-controls="edit-tab-content" aria-selected="true">
+                                <i class="fas fa-edit me-1"></i> Edit Test
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="save-options-tab" data-bs-toggle="tab" data-bs-target="#save-options-tab-content" 
+                                   type="button" role="tab" aria-controls="save-options-tab-content" aria-selected="false">
+                                <i class="fas fa-save me-1"></i> Save Options
+                            </button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content" id="testSourceTabsContent">
+                        <div class="tab-pane fade show active" id="edit-tab-content" role="tabpanel" aria-labelledby="edit-tab">
+                            <form id="testForm" method="post" action="{% if is_new %}{% url 'metadata_manager:test_create' %}{% else %}{% url 'metadata_manager:test_detail' test_urn=test_urn %}{% endif %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="source" id="test_source" value="server">
+                                <input type="hidden" name="local_index" id="local_index" value="-1">
+                                
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" id="name" name="name" value="{{ test.name|default:'' }}" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="category" class="form-label">Category</label>
+                                        <select class="form-select" id="category" name="category">
+                                            {% for category_option in categories %}
+                                            <option value="{{ category_option }}" {% if test.category == category_option %}selected{% endif %}>{{ category_option }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="description" class="form-label">Description</label>
+                                    <textarea class="form-control" id="description" name="description" rows="3">{{ test.description|default:'' }}</textarea>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="yaml_definition" class="form-label">Test Definition (YAML) <span class="text-danger">*</span></label>
+                                    <div class="yaml-help mb-2">
+                                        <h6>YAML Format Example:</h6>
+                                        <pre>on:
+  types:
+    - dataset
+rules:
+  and:
+    - property: glossaryTerms.terms.urn
+      operator: contains_any
+      values:
+        - 'urn:li:glossaryTerm:example'
+    - property: glossaryTerms.terms.urn
+      operator: exists
+actions:
+  passing:
+    - type: add_glossary_terms
+      values:
+        - 'urn:li:glossaryTerm:Classification.Confidential'
+  failing:
+    - type: remove_glossary_terms
+      values:
+        - 'urn:li:glossaryTerm:Classification.Confidential'</pre>
+                                    </div>
+                                    <textarea class="form-control" id="yaml_definition" name="yaml_definition" required>{% if test.yaml_definition %}{{ test.yaml_definition }}{% else %}on:
+  types:
+    - dataset
+rules:
+  # Define your rules here
+  # Example:
+  # and:
+  #   - property: glossaryTerms.terms.urn
+  #     operator: exists
+{% endif %}</textarea>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <div class="tab-pane fade" id="save-options-tab-content" role="tabpanel" aria-labelledby="save-options-tab">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-light">
+                                            <h5 class="card-title mb-0">Local Storage</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <p>Save this test to your browser's local storage for offline editing.</p>
+                                            <p>Local tests can be synced to the server later when connected.</p>
+                                            <button type="button" class="btn btn-primary" id="save-local-btn">
+                                                <i class="fas fa-save me-1"></i> Save Locally
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-light">
+                                            <h5 class="card-title mb-0">Server</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <p>Save this test directly to the DataHub server.</p>
+                                            <button type="button" class="btn btn-primary" id="save-server-btn" {% if not has_datahub_connection %}disabled{% endif %}>
+                                                <i class="fas fa-cloud-upload-alt me-1"></i> Save to Server
+                                            </button>
+                                            {% if not has_datahub_connection %}
+                                            <div class="alert alert-warning mt-3">
+                                                <i class="fas fa-exclamation-triangle me-1"></i> Not connected to DataHub server.
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mt-4">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-light">
+                                            <h5 class="card-title mb-0">Export</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <p>Export this test as a YAML or JSON file.</p>
+                                            <div class="btn-group">
+                                                <button type="button" class="btn btn-outline-primary" id="export-yaml-btn">
+                                                    <i class="fas fa-download me-1"></i> Export as YAML
+                                                </button>
+                                                <button type="button" class="btn btn-outline-primary" id="export-json-btn">
+                                                    <i class="fas fa-download me-1"></i> Export as JSON
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mt-4">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-light">
+                                            <h5 class="card-title mb-0">GitHub PR</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <p>Add this test to a GitHub PR for version control.</p>
+                                            <button type="button" class="btn btn-primary" id="add-to-pr-btn">
+                                                <i class="fab fa-github me-1"></i> Add to GitHub PR
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end mt-3">
+                        <a href="{% url 'metadata_manager:tests_list' %}" class="btn btn-secondary me-2">Cancel</a>
+                        <button type="submit" form="testForm" class="btn btn-primary">
+                            {% if is_new %}
+                            <i class="fas fa-plus"></i> Create Test
+                            {% else %}
+                            <i class="fas fa-save"></i> Save Changes
+                            {% endif %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check if we're editing a local test
+        const localTestsKey = 'datahub_local_tests';
+        const editingTest = sessionStorage.getItem('editing_test');
+        const pushTest = sessionStorage.getItem('push_test');
+        let localEditIndex = -1;
+        
+        if (editingTest) {
+            // We're editing a local test
+            const test = JSON.parse(editingTest);
+            
+            // Fill form with local test data
+            document.getElementById('name').value = test.name || '';
+            document.getElementById('description').value = test.description || '';
+            document.getElementById('yaml_definition').value = test.yaml_definition || '';
+            
+            // Set category if available
+            if (test.category) {
+                const categorySelect = document.getElementById('category');
+                const categoryOption = Array.from(categorySelect.options).find(option => option.value === test.category);
+                if (categoryOption) {
+                    categoryOption.selected = true;
+                }
+            }
+            
+            // Find the index of this test in local storage
+            const localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+            if (test.urn) {
+                localEditIndex = localTests.findIndex(t => t.urn === test.urn);
+            } else {
+                // Match by name if no URN
+                localEditIndex = localTests.findIndex(t => t.name === test.name);
+            }
+            
+            // Update hidden fields
+            document.getElementById('test_source').value = 'local';
+            document.getElementById('local_index').value = localEditIndex;
+            
+            // Clear session storage
+            sessionStorage.removeItem('editing_test');
+        } else if (pushTest) {
+            // We're pushing a local test to the server
+            const test = JSON.parse(pushTest);
+            
+            // Fill form with local test data
+            document.getElementById('name').value = test.name || '';
+            document.getElementById('description').value = test.description || '';
+            document.getElementById('yaml_definition').value = test.yaml_definition || '';
+            
+            // Set category if available
+            if (test.category) {
+                const categorySelect = document.getElementById('category');
+                const categoryOption = Array.from(categorySelect.options).find(option => option.value === test.category);
+                if (categoryOption) {
+                    categoryOption.selected = true;
+                }
+            }
+            
+            // Find the index of this test in local storage
+            const localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+            if (test.urn) {
+                localEditIndex = localTests.findIndex(t => t.urn === test.urn);
+            } else {
+                // Match by name if no URN
+                localEditIndex = localTests.findIndex(t => t.name === test.name);
+            }
+            
+            // Update hidden fields
+            document.getElementById('test_source').value = 'server';  // Push to server
+            document.getElementById('local_index').value = localEditIndex;
+            
+            // Clear session storage
+            sessionStorage.removeItem('push_test');
+            
+            // Automatically submit the form to push to server
+            setTimeout(() => {
+                document.getElementById('testForm').submit();
+            }, 500);
+        }
+        
+        // Simple form validation
+        const form = document.getElementById('testForm');
+        if (form) {
+            form.addEventListener('submit', function(event) {
+                const name = document.getElementById('name').value.trim();
+                const yamlDefinition = document.getElementById('yaml_definition').value.trim();
+                
+                if (!name) {
+                    event.preventDefault();
+                    alert('Please enter a name for the test.');
+                    return;
+                }
+                
+                if (!yamlDefinition) {
+                    event.preventDefault();
+                    alert('Please enter a YAML definition for the test.');
+                    return;
+                }
+                
+                // Basic YAML validation
+                try {
+                    // You might want to add a YAML parser library for better validation
+                    if (!yamlDefinition.includes('on:') || !yamlDefinition.includes('types:')) {
+                        event.preventDefault();
+                        alert('The YAML definition must include at least the "on" and "types" sections.');
+                        return;
+                    }
+                } catch (error) {
+                    event.preventDefault();
+                    alert('Invalid YAML: ' + error.message);
+                    return;
+                }
+            });
+        }
+        
+        // Save locally button
+        document.getElementById('save-local-btn').addEventListener('click', function() {
+            const name = document.getElementById('name').value.trim();
+            const category = document.getElementById('category').value;
+            const description = document.getElementById('description').value.trim();
+            const yamlDefinition = document.getElementById('yaml_definition').value.trim();
+            
+            if (!name) {
+                alert('Please enter a name for the test.');
+                return;
+            }
+            
+            if (!yamlDefinition) {
+                alert('Please enter a YAML definition for the test.');
+                return;
+            }
+            
+            // Create test object
+            const test = {
+                name: name,
+                category: category,
+                description: description,
+                yaml_definition: yamlDefinition
+            };
+            
+            // If we're editing an existing test, add the URN
+            const testUrnField = document.getElementById('test_urn');
+            if (testUrnField) {
+                test.urn = testUrnField.value;
+            }
+            
+            // Get existing local tests
+            let localTests = JSON.parse(localStorage.getItem(localTestsKey) || '[]');
+            
+            if (localEditIndex >= 0) {
+                // Update existing test
+                localTests[localEditIndex] = test;
+            } else {
+                // Check if a test with the same name already exists
+                const existingIndex = localTests.findIndex(t => t.name === name);
+                if (existingIndex >= 0) {
+                    // Update existing test
+                    localTests[existingIndex] = test;
+                } else {
+                    // Add new test
+                    localTests.push(test);
+                }
+            }
+            
+            // Save to local storage
+            localStorage.setItem(localTestsKey, JSON.stringify(localTests));
+            
+            // Show success message
+            alert(`Test "${name}" saved locally.`);
+            
+            // Redirect to list page
+            window.location.href = "{% url 'metadata_manager:tests_list' %}";
+        });
+        
+        // Save to server button
+        document.getElementById('save-server-btn').addEventListener('click', function() {
+            document.getElementById('test_source').value = 'server';
+            document.getElementById('testForm').submit();
+        });
+        
+        // Export as YAML button
+        document.getElementById('export-yaml-btn').addEventListener('click', function() {
+            const name = document.getElementById('name').value.trim();
+            const yamlDefinition = document.getElementById('yaml_definition').value.trim();
+            
+            if (!name || !yamlDefinition) {
+                alert('Please fill in both name and YAML definition fields.');
+                return;
+            }
+            
+            // Create and download file
+            const blob = new Blob([yamlDefinition], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name.replace(/\s+/g, '_')}.yaml`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        
+        // Export as JSON button
+        document.getElementById('export-json-btn').addEventListener('click', function() {
+            const name = document.getElementById('name').value.trim();
+            const category = document.getElementById('category').value;
+            const description = document.getElementById('description').value.trim();
+            const yamlDefinition = document.getElementById('yaml_definition').value.trim();
+            
+            if (!name || !yamlDefinition) {
+                alert('Please fill in both name and YAML definition fields.');
+                return;
+            }
+            
+            // Create test object
+            const test = {
+                name: name,
+                category: category,
+                description: description,
+                yaml_definition: yamlDefinition
+            };
+            
+            // Create JSON string
+            const jsonStr = JSON.stringify(test, null, 2);
+            
+            // Create and download file
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name.replace(/\s+/g, '_')}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        
+        // Add to GitHub PR button
+        document.getElementById('add-to-pr-btn').addEventListener('click', function() {
+            // Implementation would depend on your GitHub integration
+            alert('GitHub PR integration not implemented yet.');
+        });
+    });
+</script>
+{% endblock %} 

@@ -1,0 +1,547 @@
+{% extends "base.html" %}
+{% load metadata_manager_filters %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>
+                    <span class="badge tag-badge" data-color="{{ tag.color|default:'#6c757d' }}">
+                        {{ tag.name }}
+                    </span>
+                </h1>
+                <div class="d-flex gap-2">
+                    {% if tag.can_deploy and has_datahub_connection %}
+                    <form method="post" action="{% url 'metadata_manager:tag_deploy' tag.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:tag_detail' tag.id %}">
+                        <button type="submit" class="btn btn-primary" onclick="return confirm('Deploy this tag to DataHub?')">
+                            <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                        </button>
+                    </form>
+                    {% endif %}
+                    
+                    {% if tag.is_local and has_git_integration %}
+                    <button type="button" class="btn btn-outline-primary add-to-git-pr" data-tag-id="{{ tag.id }}">
+                        <i class="fab fa-github me-1"></i> Add to Git PR
+                    </button>
+                    {% endif %}
+                    
+                    <!-- New action buttons -->
+                    {% if datahub_url and remote_tag %}
+                    <a href="{{ datahub_url|datahub_url:remote_tag.urn }}" target="_blank" class="btn btn-outline-info">
+                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                    </a>
+                    {% endif %}
+                    
+                    {% if tag.is_remote or remote_tag %}
+                    <button type="button" class="btn btn-outline-primary sync-to-local" 
+                            data-tag-id="{{ tag.id }}"
+                            data-tag-urn="{% if remote_tag %}{{ remote_tag.urn }}{% else %}{{ tag.deterministic_urn }}{% endif %}">
+                        <i class="fas fa-download me-1"></i> Sync to Local
+                    </button>
+                    {% endif %}
+                    
+                    <button type="button" class="btn btn-outline-secondary download-json" 
+                            data-tag-id="{{ tag.id }}"
+                            data-tag-name="{{ tag.name }}" 
+                            data-tag-description="{{ tag.description }}"
+                            data-tag-color="{{ tag.color }}"
+                            data-tag-urn="{% if remote_tag %}{{ remote_tag.urn }}{% else %}{{ tag.deterministic_urn }}{% endif %}">
+                        <i class="fas fa-file-download me-1"></i> Download
+                    </button>
+                    
+                    <button type="button" class="btn btn-outline-warning add-to-staged" 
+                            data-tag-id="{{ tag.id }}"
+                            data-tag-urn="{% if remote_tag %}{{ remote_tag.urn }}{% else %}{{ tag.deterministic_urn }}{% endif %}">
+                        <i class="fab fa-github me-1"></i> Add to Staged Changes
+                    </button>
+                    
+                    <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Back to Tags
+                    </a>
+                </div>
+            </div>
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <!-- Tag Status Badge -->
+            <div class="mb-4">
+                <span class="badge bg-{% if tag.is_synced %}success{% else %}warning{% endif %} p-2">
+                    <i class="fas {% if tag.is_synced %}fa-check-circle{% else %}fa-sync{% endif %} me-1"></i>
+                    {{ tag.get_sync_status_display }}
+                </span>
+                
+                {% if tag.last_synced %}
+                <span class="text-muted ms-2">Last synced: {{ tag.last_synced|date:"Y-m-d H:i" }}</span>
+                {% endif %}
+                
+                {% if tag.staged_for_git %}
+                <span class="badge bg-primary ms-2">
+                    <i class="fab fa-github me-1"></i> Staged for Git
+                </span>
+                {% endif %}
+            </div>
+            
+            <!-- Node Details Tabs -->
+            <ul class="nav nav-tabs mb-4" id="nodeDetailTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local" 
+                           type="button" role="tab" aria-controls="local" aria-selected="true">
+                        <i class="fas fa-laptop me-1"></i> Local
+                    </button>
+                </li>
+                {% if remote_tag %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote" 
+                           type="button" role="tab" aria-controls="remote" aria-selected="false">
+                        <i class="fas fa-server me-1"></i> Remote
+                    </button>
+                </li>
+                {% endif %}
+            </ul>
+            
+            <!-- Tab Content -->
+            <div class="tab-content" id="nodeDetailTabsContent">
+                <!-- Local Tab -->
+                <div class="tab-pane fade show active" id="local" role="tabpanel" aria-labelledby="local-tab">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Tag Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" action="{% url 'metadata_manager:tag_detail' tag.id %}">
+                                {% csrf_token %}
+                                <div class="mb-3">
+                                    <label for="name" class="form-label">Name</label>
+                                    <input type="text" class="form-control" id="name" name="name" value="{{ tag.name }}" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="description" class="form-label">Description</label>
+                                    <textarea class="form-control" id="description" name="description" rows="3">{{ tag.description }}</textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="color" class="form-label">Color</label>
+                                    <div class="input-group">
+                                        <input type="color" class="form-control form-control-color" id="color" name="color" value="{{ tag.color|default:'#0d6efd' }}" title="Choose tag color" {% if not tag.color %}disabled{% endif %}>
+                                        <input type="text" class="form-control" value="{{ tag.color|default:'' }}" id="colorText" readonly>
+                                        <div class="input-group-text">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="noColorCheck" {% if not tag.color %}checked{% endif %}>
+                                                <label class="form-check-label" for="noColorCheck">
+                                                    No color
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">URN</label>
+                                    <input type="text" class="form-control" value="{{ tag.deterministic_urn }}" readonly>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                    <button type="button" class="btn btn-danger" id="delete-tag">Delete Tag</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    {% if remote_tag %}
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Remote Tag Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Name</label>
+                                <input type="text" class="form-control" value="{{ remote_tag.name }}" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control" rows="3" readonly>{{ remote_tag.description }}</textarea>
+                            </div>
+                            {% if remote_tag.properties.colorHex %}
+                            <div class="mb-3">
+                                <label class="form-label">Color</label>
+                                <div class="input-group">
+                                    <input type="color" class="form-control form-control-color" value="{{ remote_tag.properties.colorHex }}" disabled>
+                                    <input type="text" class="form-control" value="{{ remote_tag.properties.colorHex }}" readonly>
+                                </div>
+                            </div>
+                            {% endif %}
+                            <div class="mb-3">
+                                <label class="form-label">URN</label>
+                                <input type="text" class="form-control" value="{{ remote_tag.urn }}" readonly>
+                            </div>
+                            
+                            {% if datahub_url %}
+                            <a href="{{ datahub_url|datahub_url:remote_tag.urn }}" target="_blank" class="btn btn-outline-primary">
+                                <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Remote Tab -->
+                {% if remote_tag %}
+                <div class="tab-pane fade" id="remote" role="tabpanel" aria-labelledby="remote-tab">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Usage Statistics</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if has_datahub_connection %}
+                                {% if total_related %}
+                                <p>This tag is used by <strong>{{ total_related }}</strong> entities in DataHub.</p>
+                                {% else %}
+                                <p>This tag is not currently in use by any entities in DataHub.</p>
+                                {% endif %}
+                            {% else %}
+                                <p class="text-muted">Connect to DataHub to view usage statistics.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Related Entities Section -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Related Entities</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            {% if has_datahub_connection %}
+                                {% if related_entities %}
+                                    <div class="table-responsive">
+                                        <table class="table table-hover table-striped mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Entity</th>
+                                                    <th>Type</th>
+                                                    <th>URN</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for entity in related_entities %}
+                                                    <tr>
+                                                        <td>{{ entity.name }}</td>
+                                                        <td>{{ entity.type }}</td>
+                                                        <td><code>{{ entity.urn }}</code></td>
+                                                        <td>
+                                                                                                        {% if datahub_url %}
+                                            <a href="{{ datahub_url|datahub_entity_url:entity }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-external-link-alt"></i> View
+                                            </a>
+                                            {% endif %}
+                                                        </td>
+                                                    </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    
+                                    {% if total_related > related_entities|length %}
+                                        <div class="py-3 text-center">
+                                            <p class="text-muted">Showing {{ related_entities|length }} of {{ total_related }} related entities.</p>
+                                            {% if datahub_url %}
+                                            <a href="{{ datahub_url|datahub_url:tag.deterministic_urn }}" target="_blank" class="btn btn-outline-primary">
+                                                <i class="fas fa-external-link-alt me-1"></i> View All in DataHub
+                                            </a>
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                {% elif related_entities_error %}
+                                    <div class="py-4 text-center">
+                                        <div class="alert alert-warning">
+                                            <i class="fas fa-exclamation-triangle me-2"></i>
+                                            Error fetching related entities: {{ related_entities_error }}
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <div class="py-4 text-center">
+                                        <div class="mb-3">
+                                            <i class="fas fa-tag fa-4x text-muted"></i>
+                                        </div>
+                                        <h4>No related entities found</h4>
+                                        <p class="text-muted">This tag is not currently associated with any entities in DataHub.</p>
+                                    </div>
+                                {% endif %}
+                            {% else %}
+                                <div class="py-4 text-center">
+                                    <div class="mb-3">
+                                        <i class="fas fa-cloud fa-4x text-muted"></i>
+                                    </div>
+                                    <h4>Not connected to DataHub</h4>
+                                    <p class="text-muted">Connect to DataHub to view entities associated with this tag.</p>
+                                    <a href="{% url 'settings' %}" class="btn btn-primary mt-2">
+                                        <i class="fas fa-cog me-1"></i> Settings
+                                    </a>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteTagModal" tabindex="-1" aria-labelledby="deleteTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTagModalLabel">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this tag?</p>
+                {% if tag.sync_status in 'SYNCED,REMOTE_ONLY,MODIFIED' %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    This tag exists in DataHub. Deleting it will attempt to remove it from DataHub as well.
+                </div>
+                {% endif %}
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Apply Tag to Entity Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Apply Tag to Entity</h5>
+    </div>
+    <div class="card-body">
+        <form id="apply-tag-form" class="row g-3">
+            {% csrf_token %}
+            <div class="col-md-6">
+                <label for="entity-urn" class="form-label">Entity URN</label>
+                <input type="text" class="form-control" id="entity-urn" placeholder="urn:li:dataset:(urn:li:dataPlatform:hive,table_name,PROD)" required>
+            </div>
+            <div class="col-md-3">
+                <label for="tag-color" class="form-label">Tag Color (optional)</label>
+                <div class="input-group">
+                    <input type="color" class="form-control form-control-color" id="tag-color" value="{{ tag.color|default:'#0d6efd' }}" title="Choose tag color" {% if not tag.color %}disabled{% endif %}>
+                    <div class="input-group-text">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="entityNoColorCheck" {% if not tag.color %}checked{% endif %}>
+                            <label class="form-check-label" for="entityNoColorCheck">
+                                No color
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary">Apply Tag</button>
+            </div>
+            <div class="col-12">
+                <div class="form-text">
+                    This will apply the tag "{{ tag.name }}" to the specified entity with the selected color.
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% block extra_css %}
+<style>
+    .tag-badge {
+        display: inline-block;
+        padding: 0.35em 0.65em;
+        font-size: 0.75em;
+        font-weight: 700;
+        color: #fff;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: baseline;
+        border-radius: 0.25rem;
+    }
+    
+    .color-swatch {
+        display: inline-block; 
+        width: 20px; 
+        height: 20px; 
+        border-radius: 4px; 
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script src="{% static 'js/tag_utils.js' %}"></script>
+<script src="{% static 'metadata_manager/tags/tag_actions.js' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle main tag color checkbox
+        const noColorCheck = document.getElementById('noColorCheck');
+        const colorInput = document.getElementById('color');
+        const colorTextInput = document.getElementById('colorText');
+        
+        if (noColorCheck && colorInput && colorTextInput) {
+            // Initial setup
+            if (noColorCheck.checked) {
+                colorInput.disabled = true;
+                colorTextInput.value = '';
+            }
+            
+            // Toggle color picker on checkbox change
+            noColorCheck.addEventListener('change', function() {
+                if (this.checked) {
+                    colorInput.disabled = true;
+                    colorTextInput.value = '';
+                    // Add a hidden input to signal no color
+                    let hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'hidden';
+                    hiddenInput.name = 'color';
+                    hiddenInput.value = '';
+                    hiddenInput.id = 'hiddenColorInput';
+                    colorInput.parentNode.appendChild(hiddenInput);
+                } else {
+                    colorInput.disabled = false;
+                    colorTextInput.value = colorInput.value;
+                    // Remove hidden input if exists
+                    let hiddenInput = document.getElementById('hiddenColorInput');
+                    if (hiddenInput) hiddenInput.remove();
+                }
+            });
+            
+            // Update text input when color changes
+            colorInput.addEventListener('input', function() {
+                colorTextInput.value = this.value;
+        });
+        }
+        
+        // Handle entity tag color checkbox
+        const entityNoColorCheck = document.getElementById('entityNoColorCheck');
+        const entityColorInput = document.getElementById('tag-color');
+        
+        if (entityNoColorCheck && entityColorInput) {
+            // Initial setup
+            if (entityNoColorCheck.checked) {
+                entityColorInput.disabled = true;
+            }
+            
+            // Toggle color picker on checkbox change
+            entityNoColorCheck.addEventListener('change', function() {
+                entityColorInput.disabled = this.checked;
+            });
+        }
+        
+        // Handle tag application form
+        const applyTagForm = document.getElementById('apply-tag-form');
+        if (applyTagForm) {
+            applyTagForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const entityUrn = document.getElementById('entity-urn').value;
+                const tagUrn = '{{ tag.deterministic_urn }}';
+                let colorHex = null;
+                
+                // Only use color if the no color checkbox is not checked
+                if (!entityNoColorCheck.checked) {
+                    colorHex = entityColorInput.value;
+                }
+                
+                // Show loading state
+                const submitButton = this.querySelector('button[type="submit"]');
+                const originalText = submitButton.innerHTML;
+                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Applying...';
+                submitButton.disabled = true;
+                
+                // Apply tag to entity
+                applyTagToEntity(entityUrn, tagUrn, colorHex)
+                    .then(response => {
+                        // Show success message
+                        const alertHtml = `<div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+                            Tag applied successfully to entity.
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>`;
+                        applyTagForm.insertAdjacentHTML('afterend', alertHtml);
+                        
+                        // Reset form
+                        applyTagForm.reset();
+                })
+                .catch(error => {
+                        // Show error message
+                        const alertHtml = `<div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                            Error applying tag: ${error.message}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>`;
+                        applyTagForm.insertAdjacentHTML('afterend', alertHtml);
+                })
+                .finally(() => {
+                        // Reset button state
+                        submitButton.innerHTML = originalText;
+                        submitButton.disabled = false;
+                });
+            });
+        }
+        
+        // Handle new action buttons
+        const downloadBtn = document.querySelector('.download-json');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', function() {
+                // Create tag data object from data attributes
+                const tagData = {
+                    id: this.dataset.tagId,
+                    name: this.dataset.tagName,
+                    description: this.dataset.tagDescription,
+                    color: this.dataset.tagColor,
+                    urn: this.dataset.tagUrn
+                };
+                downloadTagJson(tagData);
+            });
+        }
+        
+        const syncBtn = document.querySelector('.sync-to-local');
+        if (syncBtn) {
+            syncBtn.addEventListener('click', function() {
+                // Create tag data object from data attributes
+                const tagData = {
+                    id: this.dataset.tagId,
+                    urn: this.dataset.tagUrn
+                };
+                syncTagToLocal(tagData);
+            });
+        }
+        
+        const stageBtn = document.querySelector('.add-to-staged');
+        if (stageBtn) {
+            stageBtn.addEventListener('click', function() {
+                // Create tag data object from data attributes
+                const tagData = {
+                    id: this.dataset.tagId,
+                    urn: this.dataset.tagUrn
+                };
+                addTagToStagedChanges(tagData);
+            });
+        }
+    });
+</script>
+{% endblock %}
+
+{% endblock %} 

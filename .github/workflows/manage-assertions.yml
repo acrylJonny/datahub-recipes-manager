@@ -1,0 +1,122 @@
+name: Manage DataHub Assertions
+
+on:
+  push:
+    paths:
+      - 'metadata-manager/**/assertions/**'
+    branches:
+      - main
+      - develop
+  pull_request:
+    paths:
+      - 'metadata-manager/**/assertions/**'
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to process assertions for'
+        required: true
+        default: 'dev'
+        type: string
+      dry_run:
+        description: 'Dry run - validate without executing'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  process-assertions:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        # Process each environment directory separately
+        include:
+          - environment: dev
+          - environment: staging  
+          - environment: prod
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pydantic
+
+    - name: Check if environment directory exists
+      id: check_env
+      run: |
+        if [ -d "metadata-manager/${{ matrix.environment }}/assertions" ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Process assertion files
+      if: steps.check_env.outputs.exists == 'true'
+      env:
+        DATAHUB_URL: ${{ secrets[format('DATAHUB_URL_{0}', upper(matrix.environment))] || secrets.DATAHUB_URL }}
+        DATAHUB_TOKEN: ${{ secrets[format('DATAHUB_TOKEN_{0}', upper(matrix.environment))] || secrets.DATAHUB_TOKEN }}
+        ENVIRONMENT: ${{ matrix.environment }}
+        DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      run: |
+        python .github/scripts/process_assertions.py
+
+    - name: Comment on PR with results
+      if: github.event_name == 'pull_request' && steps.check_env.outputs.exists == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Read results file if it exists
+          const resultsFile = `assertion-results-${{ matrix.environment }}.json`;
+          if (fs.existsSync(resultsFile)) {
+            const results = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+            
+            let comment = `## 📊 Assertion Processing Results - ${{ matrix.environment }}\n\n`;
+            
+            if (results.processed > 0) {
+              comment += `✅ Successfully processed ${results.processed} assertion(s)\n`;
+              comment += `${results.created} created, ${results.updated} updated\n\n`;
+              
+              if (results.details.length > 0) {
+                comment += `### Details:\n`;
+                results.details.forEach(detail => {
+                  const icon = detail.success ? '✅' : '❌';
+                  comment += `${icon} **${detail.name}** (${detail.type}): ${detail.message}\n`;
+                });
+              }
+            } else {
+              comment += `ℹ️ No assertion files found for ${{ matrix.environment }}\n`;
+            }
+            
+            if (results.errors.length > 0) {
+              comment += `\n### ⚠️ Errors:\n`;
+              results.errors.forEach(error => {
+                comment += `- ${error}\n`;
+              });
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } 

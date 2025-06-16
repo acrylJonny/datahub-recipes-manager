@@ -1,0 +1,45 @@
+<!-- Glossary Term Item -->
+<div class="glossary-item hierarchy-level-{{ level }}" data-type="term" data-name="{{ item.name }}">
+    <div class="d-flex align-items-center">
+        <!-- No Toggle for Terms -->
+        <span class="node-toggle me-2">
+            <i class="fas fa-circle" style="font-size: 0.3rem;"></i>
+        </span>
+        
+        <!-- Term Icon -->
+        <span class="node-icon me-2">
+            <i class="fas fa-tag text-info"></i>
+        </span>
+        
+        <!-- Term Content -->
+        <div class="flex-grow-1">
+            <div class="d-flex align-items-center">
+                <span class="fw-medium">{{ item.name }}</span>
+                <span class="badge {% if sync_status == 'local' %}bg-secondary text-white{% elif sync_status == 'synced' %}bg-success text-white{% elif sync_status == 'modified' %}bg-warning text-dark{% else %}bg-light text-dark{% endif %} ms-2 status-badge">
+                    {% if sync_status == 'local' %}Local Only{% elif sync_status == 'synced' %}Synced{% elif sync_status == 'modified' %}Modified{% else %}{{ sync_status|title }}{% endif %}
+                </span>
+                <span class="badge bg-info ms-1 type-badge">Term</span>
+            </div>
+            {% if item.description %}
+                <div class="description-preview mt-1">{{ item.description|truncatechars:100 }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Actions -->
+        <div class="ms-2">
+            <div class="btn-group">
+                <a href="{% url 'metadata_manager:glossary_term_detail' item.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
+                    <i class="fas fa-eye"></i>
+                </a>
+                {% if sync_status == 'local' and has_datahub_connection %}
+                    <form action="{% url 'metadata_manager:glossary_term_deploy' item.id %}" method="post" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div> 

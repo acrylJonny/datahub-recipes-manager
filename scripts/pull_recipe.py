@@ -8,9 +8,8 @@ import argparse
 import json
 import os
 import sys
-import requests
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Tuple
 import logging
 
 import yaml
@@ -136,7 +135,6 @@ def fallback_get_source(client: DataHubRestClient, source_id: str) -> Dict:
 
     # Get the server URL from the client
     server_url = client.server_url.rstrip("/")
-    headers = client.session.headers
 
     # Try different endpoint formats
     endpoints = [

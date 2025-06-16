@@ -1,0 +1,37 @@
+executor_id: ${EXECUTOR_ID}
+schedule:
+  cron: ${SCHEDULE_CRON}
+  timezone: ${SCHEDULE_TIMEZONE}
+source:
+  config:
+    enable_stateful_profiling: ${ENABLE_STATEFUL_PROFILING}
+    format_sql_queries: ${FORMAT_SQL_QUERIES}
+    include_column_lineage: ${INCLUDE_COLUMN_LINEAGE}
+    include_hive_metastore: ${INCLUDE_HIVE_METASTORE}
+    include_ownership: ${INCLUDE_OWNERSHIP}
+    include_read_operational_stats: ${INCLUDE_READ_OPERATIONAL_STATS}
+    include_table_lineage: ${INCLUDE_TABLE_LINEAGE}
+    incremental_lineage: ${INCREMENTAL_LINEAGE}
+    platform_instance: ${DBX_PLATFORM_INSTANCE}
+    profiling:
+      catch_exceptions: ${CATCH_PROFILING_EXCEPTIONS}
+      enabled: ${ENABLE_PROFILING}
+      include_field_sample_values: ${INCLUDE_FIELD_SAMPLE_VALUES}
+      max_wait_secs: ${MAX_PROFILING_WAIT_SECS}
+      method: ${PROFILING_METHOD}
+      operation_config:
+        lower_freq_profile_enabled: ${LOWER_FREQ_PROFILE_ENABLED}
+        profile_day_of_week: ${PROFILE_DAY_OF_WEEK}
+      profile_table_level_only: ${PROFILE_TABLE_LEVEL_ONLY}
+      warehouse_id: ${DBX_WAREHOUSE_ID}
+    stateful_ingestion:
+      enabled: ${STATEFUL_INGESTION_ENABLED}
+      fail_safe_threshold: ${STATEFUL_INGESTION_THRESHOLD}
+      remove_stale_metadata: ${REMOVE_STALE_METADATA}
+      state_provider:
+        config: {}
+        type: datahub
+    token: ${DBX_TOKEN}
+    warehouse_id: ${DBX_WAREHOUSE_ID}
+    workspace_url: ${DBX_WORKSPACE_URL}
+  type: databricks

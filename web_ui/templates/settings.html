@@ -28,7 +28,7 @@
                         <div class="mb-3">
                             <label for="datahub_url" class="form-label">DataHub URL <span class="text-danger">*</span></label>
                             <input type="url" class="form-control" id="datahub_url" name="datahub_url" 
-                                   value="{{ config.datahub_url }}" placeholder="https://your-datahub-instance.com" required>
+                                   value="{{ datahub_url }}" placeholder="https://your-datahub-instance.com" required>
                             <div class="form-text">The base URL of your DataHub instance (e.g., https://datahub.example.com).</div>
                         </div>
                         
@@ -36,7 +36,7 @@
                             <label for="datahub_token" class="form-label">Personal Access Token</label>
                             <div class="input-group">
                                 <input type="password" class="form-control" id="datahub_token" name="datahub_token" 
-                                       placeholder="Enter your DataHub token">
+                                       placeholder="{% if has_token %}Token is set - enter new token to replace{% else %}Enter your DataHub token{% endif %}">
                                 <button class="btn btn-outline-secondary" type="button" id="togglePassword">
                                     <i class="fas fa-eye"></i>
                                 </button>
@@ -46,9 +46,16 @@
                         
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="verify_ssl" name="verify_ssl" 
-                                   {% if config.verify_ssl %}checked{% endif %}>
+                                   {% if verify_ssl %}checked{% endif %}>
                             <label class="form-check-label" for="verify_ssl">Verify SSL Certificate</label>
                             <div class="form-text">Uncheck only for testing with self-signed certificates.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="timeout" class="form-label">API Timeout (seconds)</label>
+                            <input type="number" class="form-control" id="timeout" name="timeout"
+                                   value="{{ timeout|default:30 }}" min="5" max="300">
+                            <div class="form-text">Timeout for API requests to DataHub (in seconds).</div>
                         </div>
                         
                         <div class="d-flex justify-content-between">
@@ -64,7 +71,7 @@
                 <div class="card-footer bg-light">
                     <div class="d-flex align-items-center">
                         <span class="me-2">Connection Status:</span>
-                        {% if connected %}
+                        {% if is_connected %}
                             <span class="badge bg-success">Connected</span>
                         {% else %}
                             <span class="badge bg-danger">Not Connected</span>

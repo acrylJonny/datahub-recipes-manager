@@ -1,0 +1,798 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block extra_css %}
+<!-- Select2 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
+<style>
+    .color-swatch {
+        width: 20px;
+        height: 20px;
+        border-radius: 3px;
+        border: 1px solid #ddd;
+        display: inline-block;
+    }
+    
+    .bulk-actions {
+        display: none;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 1;
+        max-width: none;
+    }
+    
+    /* Table column max-width constraints */
+    .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
+        width: 40px;
+        max-width: 40px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* Name */
+        max-width: 180px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* Description */
+        max-width: 250px;
+        min-width: 150px;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* Color */
+        width: 100px;
+        max-width: 100px;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* Owners */
+        width: 100px;
+        max-width: 100px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* Deprecation */
+        width: 130px;
+        max-width: 130px;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* URN */
+        max-width: 140px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* Actions */
+        width: 180px;
+        max-width: 180px;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .pagination .page-link {
+        color: #007bff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white !important;
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        pointer-events: none;
+        cursor: auto;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+
+
+
+
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .ownership-summary .col-4 {
+            margin-bottom: 10px;
+        }
+        
+        .owner-card .card-body {
+            padding: 15px !important;
+        }
+        
+        .owner-icon {
+            width: 35px;
+            height: 35px;
+        }
+        
+        .owner-icon i {
+            font-size: 1rem;
+        }
+        
+        .owner-entry .col-md-1 {
+            margin-top: 10px;
+        }
+        
+        .owner-entry .remove-owner {
+            width: 100%;
+        }
+    }
+    
+    /* Text truncation for table cells */
+    .table td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        position: relative;
+    }
+    
+    /* Specific truncation for name column content */
+    .table td:nth-child(2) .d-flex {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0; /* Allow flex items to shrink */
+    }
+    
+    .table td:nth-child(2) strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+    
+    /* Description column with ellipsis truncation */
+    .table td:nth-child(3) {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-height: none; /* Remove height constraint for single line */
+    }
+    
+    /* Owners column truncation */
+    .table td:nth-child(5) {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    /* Deprecation column truncation */
+    .table td:nth-child(6) .badge {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+    }
+    
+    /* URN column truncation */
+    .table td:nth-child(7) code {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+    
+    /* Ensure action buttons don't wrap */
+    .table td:nth-child(8) .btn-group {
+        white-space: nowrap;
+    }
+    
+    /* Select2 styling for modals */
+    .select2-container {
+        z-index: 1050;
+    }
+    
+    .select2-container--open {
+        z-index: 9999 !important;
+    }
+    
+    .select2-dropdown {
+        z-index: 9999 !important;
+    }
+    
+    .modal .select2-container {
+        width: 100% !important;
+    }
+    
+    .select2-container--bootstrap-5 .select2-selection {
+        min-height: calc(1.5em + 0.75rem + 2px);
+    }
+    
+    /* Ownership sections styling */
+    .ownership-section {
+        border: 2px solid #e9ecef;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+    
+    .ownership-section:hover {
+        border-color: #007bff;
+        box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
+    }
+    
+    .ownership-section .card-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-bottom: 1px solid #dee2e6;
+        border-radius: 6px 6px 0 0 !important;
+    }
+    
+    .ownership-section .card-header h6 {
+        color: #495057;
+        font-weight: 600;
+    }
+    
+    .ownership-section .remove-section {
+        opacity: 0.7;
+        transition: all 0.2s ease;
+    }
+    
+    .ownership-section .remove-section:hover {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+    
+    .ownership-type-label {
+        font-weight: 600;
+    }
+    
+    #add-ownership-section {
+        border: 2px dashed #007bff;
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        color: #007bff;
+        font-weight: 600;
+        padding: 0.75rem 1.5rem;
+        transition: all 0.3s ease;
+    }
+    
+    #add-ownership-section:hover {
+        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+        color: white;
+        border-color: #0056b3;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>DataHub Tags</h1>
+                <div class="d-flex gap-2">
+                    <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTagModal">
+                        <i class="fas fa-plus me-1"></i> Create Tag
+                    </a>
+                    
+                    <a href="{% url 'metadata_manager:tag_import_export' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-file-export me-1"></i> Import/Export
+                    </a>
+                    <button type="button" class="btn btn-outline-info" id="refreshTags">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <!-- Loading indicator -->
+            <div id="loading-indicator" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading tags data...</p>
+            </div>
+
+            <!-- Tags content -->
+            <div id="tags-content" style="display: none;">
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Overview -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-tags">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 2: Content Filters -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Filters</strong>
+                                </div>
+                                <div class="col-md-5 border-end">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="owned" data-category="content">
+                                        <div class="h6 mb-0" id="owned-tags">0</div>
+                                        <div class="text-muted">With Owners</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="deprecated" data-category="content">
+                                        <div class="h6 mb-0" id="deprecated-tags">0</div>
+                                        <div class="text-muted">Deprecated</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tags Tabs -->
+                <ul class="nav nav-tabs mb-4" id="tagTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-tags" 
+                               type="button" role="tab" aria-controls="synced-tags" aria-selected="true">
+                            <i class="fas fa-sync-alt me-1"></i> Synced Tags
+                            <span class="badge bg-success ms-1" id="synced-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-tags" 
+                               type="button" role="tab" aria-controls="local-tags" aria-selected="false">
+                            <i class="fas fa-laptop me-1"></i> Local Only Tags
+                            <span class="badge bg-secondary ms-1" id="local-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-tags" 
+                               type="button" role="tab" aria-controls="remote-tags" aria-selected="false">
+                            <i class="fas fa-server me-1"></i> Remote Only Tags
+                            <span class="badge bg-info ms-1" id="remote-badge">0</span>
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="tagTabsContent">
+                    <!-- Synced Tags Tab -->
+                    <div class="tab-pane fade show active" id="synced-tags" role="tabpanel" aria-labelledby="synced-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Synced Tags</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="synced-search" class="form-control" placeholder="Search synced tags...">
+                                    <button type="button" class="btn btn-outline-secondary" id="synced-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> tag(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncTags('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTags('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card-body p-0" id="synced-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Local Tags Tab -->
+                    <div class="tab-pane fade" id="local-tags" role="tabpanel" aria-labelledby="local-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Local Only Tags</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="local-search" class="form-control" placeholder="Search local tags...">
+                                    <button type="button" class="btn btn-outline-secondary" id="local-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> tag(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTags('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card-body p-0" id="local-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Remote Tags Tab -->
+                    <div class="tab-pane fade" id="remote-tags" role="tabpanel" aria-labelledby="remote-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Remote Only Tags</h5>
+                                <div class="input-group" style="width: 300px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" id="remote-search" class="form-control" placeholder="Search remote tags...">
+                                    <button type="button" class="btn btn-outline-secondary" id="remote-clear">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> tag(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card-body p-0" id="remote-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Tag View Modal -->
+<div class="modal fade" id="tagViewModal" tabindex="-1" aria-labelledby="tagViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tagViewModalLabel">Tag Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Basic Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row">
+                                    <dt class="col-sm-4">Name:</dt>
+                                    <dd class="col-sm-8" id="modal-tag-name">-</dd>
+                                    
+                                    <dt class="col-sm-4">Description:</dt>
+                                    <dd class="col-sm-8" id="modal-tag-description">-</dd>
+                                    
+                                    <dt class="col-sm-4">Color:</dt>
+                                    <dd class="col-sm-8">
+                                        <div class="d-flex align-items-center">
+                                            <div class="color-swatch me-2" id="modal-tag-color-swatch"></div>
+                                            <span id="modal-tag-color">-</span>
+                                        </div>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Deprecated:</dt>
+                                    <dd class="col-sm-8">
+                                        <span id="modal-tag-deprecated" class="badge">-</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">URN:</dt>
+                                    <dd class="col-sm-8">
+                                        <code id="modal-tag-urn" class="small">-</code>
+                                    </dd>
+                                </dl>
+                                
+                                <div class="mt-3">
+                                    <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
+                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-owners-list">
+                                    <p class="text-muted">No ownership information available</p>
+                                </div>
+                                
+                                <div id="modal-last-modified" class="mt-3">
+                                    <!-- Last modified info will be shown here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Raw JSON Data -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Tag Modal -->
+<div class="modal fade" id="createTagModal" tabindex="-1" aria-labelledby="createTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createTagModalLabel">Create New Tag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="tagName" class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="tagName" name="name" required>
+                        <div class="form-text">Tag name should be unique and descriptive</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="tagDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="tagDescription" name="description" rows="3"></textarea>
+                        <div class="form-text">Optional description for the tag</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="tagColor" class="form-label">Color</label>
+                        <input type="color" class="form-control form-control-color" id="tagColor" name="color" value="#0d6efd">
+                        <div class="form-text">Color for the tag (optional)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Ownership</label>
+                        <div id="ownership-sections-container">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-outline-primary" id="add-ownership-section">
+                            <i class="fas fa-plus me-2"></i>Add Ownership Section
+                        </button>
+                        <div class="form-text mt-2">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Each section defines one ownership type with multiple owners
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Tag</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Select2 JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<!-- Tags Actions JavaScript -->
+<script src="{% static 'metadata_manager/tags/tag_actions.js' %}"></script>
+
+<!-- Tags Enhanced JavaScript -->
+<script src="{% static 'metadata_manager/tags/tags_enhanced.js' %}"></script>
+{% endblock %} 

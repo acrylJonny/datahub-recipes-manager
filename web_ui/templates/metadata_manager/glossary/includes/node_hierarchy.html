@@ -1,0 +1,128 @@
+{% load metadata_manager_filters %}
+
+{# Show the current node #}
+<div class="glossary-item node-level-{{ level }} py-2">
+    <div class="d-flex align-items-center">
+        <div class="form-check">
+            <input class="form-check-input select-item" type="checkbox" 
+                  value="{% if node.urn %}{{ node.urn }}{% else %}{{ node.id }}{% endif %}" 
+                  data-item-type="node" data-sync-status="{{ node_type }}">
+        </div>
+        <div class="ms-2 d-flex align-items-center flex-grow-1">
+            {% if children or has_terms %}
+            <span class="toggle-node-children me-2" data-bs-toggle="collapse" 
+                 data-bs-target="#{{ node_type }}-node-{{ node.id }}-children" 
+                 role="button" aria-expanded="false" 
+                 aria-controls="{{ node_type }}-node-{{ node.id }}-children">
+                <i class="fas fa-caret-right"></i>
+            </span>
+            {% else %}
+            <span class="me-2" style="width:18px;"></span>
+            {% endif %}
+            <span class="node-icon me-2">
+                <i class="fas fa-folder text-warning"></i>
+            </span>
+            {% if node_type != "remote-only" %}
+            <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="text-decoration-none text-reset">
+                <span>{{ node.name }}</span>
+            </a>
+            {% else %}
+            <span>{{ node.name }}</span>
+            {% endif %}
+            {% if has_terms %}
+            <span class="ms-1"><i class="fas fa-tags text-info" title="Contains terms"></i></span>
+            {% endif %}
+            
+            {% if node_type == "synced" %}
+            <span class="badge bg-success text-white ms-2 badge-category">Synced</span>
+            {% elif node_type == "local-only" %}
+            <span class="badge bg-secondary text-white ms-2 badge-category">Local</span>
+            {% elif node_type == "remote-only" %}
+            <span class="badge bg-info text-white ms-2 badge-category">Remote</span>
+            {% elif node_type == "modified" %}
+            <span class="badge bg-warning text-dark ms-2 badge-category">Modified</span>
+            {% endif %}
+        </div>
+        <div class="ms-2">
+            <span class="badge bg-warning text-dark">Node</span>
+        </div>
+        <div class="ms-3">
+            {% if node_type == "remote-only" %}
+            <form action="{% url 'metadata_manager:glossary_pull' %}" method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="node_urn" value="{{ node.urn }}">
+                <input type="hidden" name="node_name" value="{{ node.name }}">
+                <input type="hidden" name="node_description" value="{{ node.description|default:'' }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Import to Local">
+                    <i class="fas fa-download"></i>
+                </button>
+            </form>
+            {% else %}
+            <div class="btn-group">
+                <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-secondary" title="View Details">
+                    <i class="fas fa-eye"></i>
+                </a>
+                {% if node_type != "synced" and has_datahub_connection and node.can_deploy %}
+                <form action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </button>
+                </form>
+                {% endif %}
+                {% if has_git_integration %}
+                <form action="{% url 'metadata_manager:glossary_node_push_github' node.id %}" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-dark" title="Push to GitHub">
+                        <i class="fab fa-github"></i>
+                    </button>
+                </form>
+                {% endif %}
+                
+                <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                        data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                        data-node-id="{{ node.id }}" data-node-name="{{ node.name }}" title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{# Render child nodes and terms #}
+{% if children or has_terms %}
+<div class="collapse" id="{{ node_type }}-node-{{ node.id }}-children">
+    <div class="glossary-node-children ms-4 ps-2">
+        {# Recursively render child nodes #}
+        {% if children %}
+            {% for child in children %}
+                {% render_node_hierarchy child node_type level|add:1 terms_dict %}
+            {% endfor %}
+        {% endif %}
+        
+        {# Render terms associated with this node #}
+        {% if terms_dict %}
+            {% comment %}Handle dictionary terms from the API{% endcomment %}
+            {% if node.urn %}
+                {% if terms_dict|get_item:node.urn %}
+                    {% with node_terms=terms_dict|get_item:node.urn %}
+                        {% include "metadata_manager/glossary/includes/terms_list.html" with terms=node_terms node_type=node_type level=level node=node %}
+                    {% endwith %}
+                {% endif %}
+            {% endif %}
+        {% endif %}
+        
+        {% comment %}Handle terms that were preloaded by the template tag{% endcomment %}
+        {% if has_terms and node_terms %}
+            {% include "metadata_manager/glossary/includes/terms_list.html" with terms=node_terms node_type=node_type level=level node=node %}
+        {% elif not terms_dict %}
+            {% with terms=node|safe_get_terms %}
+                {% if terms %}
+                    {% include "metadata_manager/glossary/includes/terms_list.html" with terms=terms node_type=node_type level=level node=node %}
+                {% endif %}
+            {% endwith %}
+        {% endif %}
+    </div>
+</div>
+{% endif %} 

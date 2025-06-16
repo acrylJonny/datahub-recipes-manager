@@ -1,0 +1,149 @@
+{% with node_id=node.id|slugify %}
+<div class="list-group-item glossary-item node-level-{{ level }} d-flex justify-content-between align-items-center">
+    <div class="d-flex align-items-center">
+        {% if show_checkbox %}
+        <div class="form-check me-2">
+            <input class="form-check-input node-checkbox" type="checkbox" data-node-id="{{ node.id }}" data-item-type="node">
+        </div>
+        {% endif %}
+        
+        {% if node.children.all|length > 0 or node.terms.all|length > 0 %}
+        <span class="toggle-node-children me-2" data-bs-toggle="collapse" data-bs-target="#node-{{ node_id }}" role="button" aria-expanded="false" aria-controls="node-{{ node_id }}">
+            <i class="fas fa-caret-right"></i>
+        </span>
+        {% else %}
+        <span class="toggle-node-children invisible me-2">
+            <i class="fas fa-caret-right"></i>
+        </span>
+        {% endif %}
+        
+        <span class="node-icon me-2">
+            <i class="fas fa-folder text-warning"></i>
+        </span>
+        
+        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="text-decoration-none">
+            <span>{{ node.name }}</span>
+        </a>
+        
+        {% if node.sync_status == 'MODIFIED' %}
+        <span class="badge bg-warning ms-2">Modified</span>
+        {% elif node.sync_status == 'LOCAL_ONLY' %}
+        <span class="badge bg-secondary ms-2">Local Only</span>
+        {% elif node.sync_status == 'REMOTE_ONLY' %}
+        <span class="badge bg-info ms-2">Remote Only</span>
+        {% elif node.sync_status == 'SYNCED' %}
+        <span class="badge bg-success ms-2">Synced</span>
+        {% elif node.sync_status == 'PENDING_PUSH' %}
+        <span class="badge bg-primary ms-2">Pending Push</span>
+        {% endif %}
+    </div>
+    
+    <div class="btn-group">
+        <a href="{% url 'metadata_manager:glossary_node_detail' node.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+            <i class="fas fa-eye"></i>
+        </a>
+        
+        {% if node.can_deploy and has_datahub_connection %}
+        <form action="{% url 'metadata_manager:glossary_node_deploy' node.id %}" method="post" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                <i class="fas fa-cloud-upload-alt"></i>
+            </button>
+        </form>
+        {% endif %}
+        
+        {% if has_git_integration %}
+        <button type="button" class="btn btn-sm btn-outline-primary add-node-to-git-pr" 
+                data-node-id="{{ node.id }}" title="Add to GitHub PR">
+            <i class="fab fa-github"></i>
+        </button>
+        {% endif %}
+        
+        <button type="button" class="btn btn-sm btn-outline-danger delete-node" 
+                data-bs-toggle="modal" data-bs-target="#deleteNodeModal"
+                data-node-id="{{ node.id }}" data-node-name="{{ node.name }}" title="Delete">
+            <i class="fas fa-trash"></i>
+        </button>
+    </div>
+</div>
+
+{% if node.children.all|length > 0 or node.terms.all|length > 0 %}
+<div class="collapse glossary-node-children" id="node-{{ node_id }}">
+    <div class="list-group">
+        {% for child in node.children.all %}
+            {% with node=child level=level|add:1 show_checkbox=show_checkbox %}
+                {% include "metadata_manager/glossary/partials/node_tree_item.html" %}
+            {% endwith %}
+        {% endfor %}
+        
+        {% for term in node.terms.all %}
+            <div class="list-group-item glossary-item term-item node-level-{{ level|add:1 }} d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    {% if show_checkbox %}
+                    <div class="form-check me-2">
+                        <input class="form-check-input term-checkbox" type="checkbox" data-term-id="{{ term.id }}" data-item-type="term" data-parent-node-id="{{ node.id }}">
+                    </div>
+                    {% endif %}
+                    
+                    <span class="toggle-node-children invisible me-2">
+                        <i class="fas fa-caret-right"></i>
+                    </span>
+                    
+                    <span class="node-icon me-2">
+                        <i class="fas fa-tag text-info"></i>
+                    </span>
+                    
+                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="text-decoration-none">
+                        <span>{{ term.name }}</span>
+                    </a>
+                    
+                    {% if term.sync_status == 'MODIFIED' %}
+                    <span class="badge bg-warning ms-2">Modified</span>
+                    {% elif term.sync_status == 'LOCAL_ONLY' %}
+                    <span class="badge bg-secondary ms-2">Local Only</span>
+                    {% elif term.sync_status == 'REMOTE_ONLY' %}
+                    <span class="badge bg-info ms-2">Remote Only</span>
+                    {% elif term.sync_status == 'SYNCED' %}
+                    <span class="badge bg-success ms-2">Synced</span>
+                    {% elif term.sync_status == 'PENDING_PUSH' %}
+                    <span class="badge bg-primary ms-2">Pending Push</span>
+                    {% endif %}
+                    
+                    {% if term.domain_urn %}
+                    <span class="badge bg-dark ms-2" title="{{ term.domain_urn }}">Domain</span>
+                    {% endif %}
+                </div>
+                
+                <div class="btn-group">
+                    <a href="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </a>
+                    
+                    {% if term.can_deploy and has_datahub_connection %}
+                    <form action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" method="post" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Deploy to DataHub">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                    
+                    {% if has_git_integration %}
+                    <button type="button" class="btn btn-sm btn-outline-primary add-term-to-git-pr" 
+                            data-term-id="{{ term.id }}" title="Add to GitHub PR">
+                        <i class="fab fa-github"></i>
+                    </button>
+                    {% endif %}
+                    
+                    <button type="button" class="btn btn-sm btn-outline-danger delete-term" 
+                            data-bs-toggle="modal" data-bs-target="#deleteTermModal"
+                            data-term-id="{{ term.id }}" data-term-name="{{ term.name }}" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endwith %} 

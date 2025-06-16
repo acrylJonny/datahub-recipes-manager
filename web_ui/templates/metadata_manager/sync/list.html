@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Metadata Sync Configurations</h1>
+                <div>
+                    <button type="button" class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#createSyncConfigModal">
+                        <i class="fas fa-plus"></i> Create Configuration
+                    </button>
+                    <button type="button" class="btn btn-success me-2">
+                        <i class="fas fa-sync"></i> Run All Syncs
+                    </button>
+                </div>
+            </div>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <strong>Error:</strong> {{ error }}
+            </div>
+            {% endif %}
+            
+            <div class="card">
+                <div class="card-body">
+                    {% if configs %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Source Environment</th>
+                                    <th>Target Environment</th>
+                                    <th>Entity Types</th>
+                                    <th>Last Run</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for config in configs %}
+                                <tr>
+                                    <td>{{ config.name }}</td>
+                                    <td>{{ config.source_environment }}</td>
+                                    <td>{{ config.target_environment }}</td>
+                                    <td>
+                                        {% for entity_type in config.entity_types %}
+                                        <span class="badge bg-info">{{ entity_type }}</span>
+                                        {% endfor %}
+                                    </td>
+                                    <td>{{ config.last_run|default:"Never" }}</td>
+                                    <td>
+                                        {% if config.last_status == "success" %}
+                                        <span class="badge bg-success">Success</span>
+                                        {% elif config.last_status == "failure" %}
+                                        <span class="badge bg-danger">Failed</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Not Run</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <button type="button" class="btn btn-sm btn-outline-success">
+                                                <i class="fas fa-sync"></i>
+                                            </button>
+                                            <a href="#" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <a href="#" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> No sync configurations found. 
+                        <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#createSyncConfigModal">
+                            Create your first configuration
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Sync Config Modal -->
+<div class="modal fade" id="createSyncConfigModal" tabindex="-1" aria-labelledby="createSyncConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="{% url 'sync_config_create' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createSyncConfigModalLabel">Create New Sync Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Configuration Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="source_environment" class="form-label">Source Environment <span class="text-danger">*</span></label>
+                                <select class="form-select" id="source_environment" name="source_environment" required>
+                                    <option value="">-- Select Environment --</option>
+                                    <option value="dev">Development</option>
+                                    <option value="staging">Staging</option>
+                                    <option value="prod">Production</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="target_environment" class="form-label">Target Environment <span class="text-danger">*</span></label>
+                                <select class="form-select" id="target_environment" name="target_environment" required>
+                                    <option value="">-- Select Environment --</option>
+                                    <option value="dev">Development</option>
+                                    <option value="staging">Staging</option>
+                                    <option value="prod">Production</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="entity_types" class="form-label">Entity Types to Sync <span class="text-danger">*</span></label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="tags" id="entity_type_tags" name="entity_types[]">
+                            <label class="form-check-label" for="entity_type_tags">Tags</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="glossary" id="entity_type_glossary" name="entity_types[]">
+                            <label class="form-check-label" for="entity_type_glossary">Glossary</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="domains" id="entity_type_domains" name="entity_types[]">
+                            <label class="form-check-label" for="entity_type_domains">Domains</label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Configuration</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %} 

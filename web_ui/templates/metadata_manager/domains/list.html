@@ -1,0 +1,941 @@
+{% extends "base.html" %}
+{% load static %}
+{% load metadata_manager_filters %}
+
+{% block title %}DataHub Domains{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<style>
+    .description-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+        white-space: normal;
+    }
+    
+    .description-preview {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.4;
+        max-height: 4.2em;
+    }
+    
+    .related-items-cell {
+        max-width: 250px;
+    }
+    
+    .relationship-badge {
+        font-size: 0.7rem;
+        margin: 0.1rem;
+        padding: 0.2rem 0.4rem;
+    }
+    
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .tab-loading {
+        text-align: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+    
+    .table-responsive {
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+    }
+    
+    .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 350px;
+    }
+    
+    /* Modal enhancements */
+    .modal-body dl {
+        margin-bottom: 0;
+    }
+    
+    .modal-body dt {
+        font-weight: 600;
+        color: #495057;
+        margin-top: 1rem;
+    }
+    
+    .modal-body dt:first-child {
+        margin-top: 0;
+    }
+    
+    .modal-body dd {
+        margin-bottom: 0.5rem;
+        color: #6c757d;
+    }
+    
+    .relationship-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.25rem;
+        padding: 0.25rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+    }
+    
+    .owner-item {
+        display: inline-block;
+        margin: 0.1rem;
+        padding: 0.2rem 0.5rem;
+        background-color: #e9ecef;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+    }
+
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    /* Bulk actions */
+    .bulk-actions {
+        background-color: #e3f2fd;
+        border: 1px solid #2196f3;
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        border-radius: 0.375rem;
+        display: none;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+    
+    /* Action buttons styling - consistent with data products */
+    .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Status badges */
+    .badge.bg-success { background-color: #198754 !important; }
+    .badge.bg-secondary { background-color: #6c757d !important; }
+    .badge.bg-info { background-color: #0dcaf0 !important; }
+    .badge.bg-warning { background-color: #ffc107 !important; }
+    .badge.bg-danger { background-color: #dc3545 !important; }
+
+    /* Interactive hierarchy styles */
+    .hierarchy-container {
+        display: flex;
+        align-items: center;
+        position: relative;
+        min-height: 20px;
+    }
+    
+    .tree-connector {
+        position: relative;
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        margin-right: 2px;
+    }
+    
+    .tree-connector::before {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 0;
+        width: 1px;
+        height: 100%;
+        background-color: #dee2e6;
+    }
+    
+    .tree-connector::after {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: 10px;
+        height: 1px;
+        background-color: #dee2e6;
+    }
+    
+    /* Hide vertical line for last items in a group */
+    .tree-connector.last-child::before {
+        height: 10px;
+    }
+    
+    /* Hide connectors for root level */
+    tr[data-level="0"] .tree-connector {
+        display: none;
+    }
+    
+    .expand-button-container {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-right: 4px;
+    }
+    
+    /* Expand/collapse button styling */
+    .expand-button {
+        border: none !important;
+        background: none !important;
+        padding: 2px !important;
+        margin: 0 !important;
+        color: #6c757d;
+        cursor: pointer;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+    }
+    
+    .expand-button:hover {
+        color: #007bff !important;
+        background-color: #f8f9fa !important;
+    }
+    
+    .expand-icon {
+        font-size: 12px;
+        transition: transform 0.2s ease;
+    }
+    
+    .expand-button:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Item name styling */
+    .item-name {
+        font-weight: 500;
+        margin-left: 2px;
+        flex-grow: 1;
+    }
+    
+    /* Smooth transitions for expand/collapse */
+    tbody tr {
+        transition: opacity 0.15s ease;
+    }
+    
+    /* Better visual spacing */
+    .table td {
+        vertical-align: middle;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    /* Ensure consistent alignment */
+    .name-cell {
+        position: relative;
+    }
+
+    /* Simple hierarchy visual styles */
+    tr[data-level="0"] {
+        background-color: #ffffff;
+    }
+
+    tr[data-level="1"] {
+        background-color: #f8f9fa;
+    }
+
+    tr[data-level="2"] {
+        background-color: #f1f3f4;
+    }
+
+    tr[data-level="1"]:hover,
+    tr[data-level="2"]:hover {
+        background-color: #e3f2fd !important;
+    }
+
+    /* Domain icon styling */
+    .domain-icon {
+        width: 20px;
+        height: 20px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        margin-right: 8px;
+        font-size: 12px;
+    }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 0 0 20%;
+        max-width: 20%;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Hidden CSRF token for JavaScript -->
+    <form style="display: none;">
+        {% csrf_token %}
+    </form>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>DataHub Domains</h1>
+                <div class="d-flex gap-2">
+                    <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createDomainModal">
+                        <i class="fas fa-plus me-1"></i> Create Domain
+                    </a>
+                    <a href="{% url 'metadata_manager:domain_import_export' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-file-export me-1"></i> Import/Export
+                    </a>
+                    <button type="button" class="btn btn-outline-info" id="refreshDomains">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- Loading indicator -->
+            <div id="loading-indicator" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading domains data...</p>
+            </div>
+
+            <!-- Domains content -->
+            <div id="domains-content" style="display: none;">
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Overview -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 2: Content Filters -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Filters</strong>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="owned" data-category="content">
+                                        <div class="h6 mb-0" id="owned-domains">0</div>
+                                        <div class="text-muted">With Owners</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-entities" data-category="content">
+                                        <div class="h6 mb-0" id="domains-with-entities">0</div>
+                                        <div class="text-muted">With Entities</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            
+                <!-- Domains Tabs -->
+                <ul class="nav nav-tabs mb-4" id="domainTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
+                               type="button" role="tab" aria-controls="synced-items" aria-selected="true">
+                            <i class="fas fa-sync-alt me-1"></i> Synced Domains
+                            <span class="badge bg-success ms-1" id="synced-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-items" 
+                               type="button" role="tab" aria-controls="local-items" aria-selected="false">
+                            <i class="fas fa-laptop me-1"></i> Local Only Domains
+                            <span class="badge bg-secondary ms-1" id="local-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
+                               type="button" role="tab" aria-controls="remote-items" aria-selected="false">
+                            <i class="fas fa-server me-1"></i> Remote Only Domains
+                            <span class="badge bg-info ms-1" id="remote-badge">0</span>
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="domainTabsContent">
+                    <!-- Synced Domains Tab -->
+                    <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Synced Domains</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="expandAllDomains()" title="Expand All">
+                                            <i class="fas fa-expand-arrows-alt"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="collapseAllDomains()" title="Collapse All">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="synced-search" class="form-control" placeholder="Search synced domains...">
+                                        <button type="button" class="btn btn-outline-secondary" id="synced-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> domain(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncDomains('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushDomains('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card-body p-0" id="synced-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Local Only Domains Tab -->
+                    <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Local Only Domains</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="expandAllDomains()" title="Expand All">
+                                            <i class="fas fa-expand-arrows-alt"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="collapseAllDomains()" title="Collapse All">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="local-search" class="form-control" placeholder="Search local domains...">
+                                        <button type="button" class="btn btn-outline-secondary" id="local-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> domain(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushDomains('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card-body p-0" id="local-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Remote Only Domains Tab -->
+                    <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Remote Only Domains</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="expandAllDomains()" title="Expand All">
+                                            <i class="fas fa-expand-arrows-alt"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="collapseAllDomains()" title="Collapse All">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="remote-search" class="form-control" placeholder="Search remote domains...">
+                                        <button type="button" class="btn btn-outline-secondary" id="remote-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> domain(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemote('remote')">
+                                            <i class="fas fa-trash me-1"></i> Bulk Delete Remote
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card-body p-0" id="remote-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Domain Modal -->
+<div class="modal fade" id="createDomainModal" tabindex="-1" aria-labelledby="createDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createDomainModalLabel">Create New Domain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="createDomainForm" method="post">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="domainName" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="domainName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="domainDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="domainDescription" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Domain</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Domain View Modal -->
+<div class="modal fade" id="domainViewModal" tabindex="-1" aria-labelledby="domainViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="domainViewModalLabel">Domain Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Basic Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row">
+                                    <dt class="col-sm-4">Name:</dt>
+                                    <dd class="col-sm-8" id="modal-domain-name">-</dd>
+                                    
+                                    <dt class="col-sm-4">Type:</dt>
+                                    <dd class="col-sm-8">
+                                        <i class="fas fa-folder text-primary me-1"></i>Domain
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Parent Domain:</dt>
+                                    <dd class="col-sm-8" id="modal-domain-parent">-</dd>
+                                    
+                                    <dt class="col-sm-4">Description:</dt>
+                                    <dd class="col-sm-8" id="modal-domain-description">-</dd>
+                                    
+                                    <dt class="col-sm-4">Status:</dt>
+                                    <dd class="col-sm-8">
+                                        <span id="modal-domain-status" class="badge">-</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">URN:</dt>
+                                    <dd class="col-sm-8">
+                                        <code id="modal-domain-urn" class="small">-</code>
+                                    </dd>
+                                </dl>
+                                
+                                <div class="mt-3">
+                                    <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
+                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership & Metrics -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-chart-bar me-2"></i>Metrics & Ownership</h6>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row">
+                                    <dt class="col-sm-4">Owners:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-secondary" id="modal-domain-owners">0</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Entities:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-primary" id="modal-domain-entities">0</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">Sub-domains:</dt>
+                                    <dd class="col-sm-8">
+                                        <span class="badge bg-info" id="modal-domain-children">0</span>
+                                    </dd>
+                                </dl>
+                                
+                                <div id="modal-domain-owners-list" class="mt-3">
+                                    <h6 class="text-muted">Domain Owners</h6>
+                                    <p class="text-muted">No ownership information available</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Domain Properties -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-cog me-2"></i>Domain Properties</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-domain-properties">
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <strong>Icon:</strong>
+                                            <div id="modal-domain-icon" class="mt-1">
+                                                <i class="fas fa-folder"></i> Default
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <strong>Color:</strong>
+                                            <div id="modal-domain-color" class="mt-1">
+                                                <span class="badge" style="background-color: #6c757d;">#6c757d</span>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Created:</strong>
+                                            <div id="modal-domain-created" class="mt-1 text-muted">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Raw JSON Data -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Edit Domain Modal -->
+<div class="modal fade" id="editDomainModal" tabindex="-1" aria-labelledby="editDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editDomainModalLabel">Edit Domain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editDomainForm" method="post">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainName" class="form-label">Domain Name *</label>
+                            <input type="text" class="form-control" id="editDomainName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainParent" class="form-label">Parent Domain</label>
+                            <select class="form-control" id="editDomainParent" name="parent_domain">
+                                <option value="">No parent (root domain)</option>
+                                <!-- Will be populated dynamically -->
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="editDomainDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="editDomainDescription" name="description" rows="3" 
+                                  placeholder="Describe the purpose and scope of this domain..."></textarea>
+                    </div>
+                    
+                    <!-- Appearance -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-palette me-2"></i>Appearance</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainIcon" class="form-label">Icon</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i id="editDomainIconPreview" class="fas fa-folder"></i></span>
+                                <input type="text" class="form-control" id="editDomainIcon" name="icon_name" 
+                                       placeholder="folder" value="folder">
+                            </div>
+                            <small class="form-text text-muted">FontAwesome icon name (without 'fa-' prefix)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDomainColor" class="form-label">Color</label>
+                            <div class="input-group">
+                                <input type="color" class="form-control form-control-color" id="editDomainColor" 
+                                       name="color_hex" value="#6c757d">
+                                <input type="text" class="form-control" id="editDomainColorText" 
+                                       placeholder="#6c757d" pattern="^#[0-9A-Fa-f]{6}$">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership -->
+                    <div class="mb-4">
+                        <h6 class="text-primary"><i class="fas fa-users me-2"></i>Ownership</h6>
+                        <label for="editDomainOwners" class="form-label">Domain Owners</label>
+                        <textarea class="form-control" id="editDomainOwners" name="owners" rows="2" 
+                                  placeholder="Enter email addresses separated by commas (e.g., user1@company.com, user2@company.com)"></textarea>
+                        <small class="form-text text-muted">Comma-separated list of email addresses</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Remote Domain Modal -->
+<div class="modal fade" id="editRemoteDomainModal" tabindex="-1" aria-labelledby="editRemoteDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editRemoteDomainModalLabel">Edit Remote Domain</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Remote domains cannot be edited directly. You can sync the domain locally first to make changes.
+                </div>
+                <dl id="remoteDomaindDetails">
+                    <!-- Details will be loaded here -->
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Include the domains JavaScript -->
+{% load static %}
+<script src="{% static 'metadata_manager/domains/domains_enhanced.js' %}"></script>
+
+{% endblock %} 

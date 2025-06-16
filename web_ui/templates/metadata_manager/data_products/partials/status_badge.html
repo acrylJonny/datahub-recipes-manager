@@ -1,0 +1,13 @@
+{% if status == "SYNCED" %}
+    <span class="badge bg-success">Synced</span>
+{% elif status == "LOCAL_ONLY" %}
+    <span class="badge bg-secondary">Local Only</span>
+{% elif status == "REMOTE_ONLY" %}
+    <span class="badge bg-info">Remote Only</span>
+{% elif status == "MODIFIED" %}
+    <span class="badge bg-warning">Modified</span>
+{% elif status == "PENDING_PUSH" %}
+    <span class="badge bg-primary">Pending Push</span>
+{% else %}
+    <span class="badge bg-dark">{{ status|default:"Unknown" }}</span>
+{% endif %} 

@@ -1,0 +1,596 @@
+{% extends "base.html" %}
+{% load metadata_manager_filters %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>
+                    <span class="badge glossary-term-badge">
+                        {{ term.name }}
+                    </span>
+                </h1>
+                <div class="d-flex gap-2">
+                    {% if term.can_deploy and has_datahub_connection %}
+                    <form method="post" action="{% url 'metadata_manager:glossary_term_deploy' term.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="redirect_url" value="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                        <button type="submit" class="btn btn-primary" onclick="return confirm('Deploy this term to DataHub?')">
+                            <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                        </button>
+                    </form>
+                    {% endif %}
+                    
+                    {% if term.is_local and has_git_integration %}
+                    <button type="button" class="btn btn-outline-primary add-term-to-git-pr" data-term-id="{{ term.id }}">
+                        <i class="fab fa-github me-1"></i> Add to Git PR
+                    </button>
+                    {% endif %}
+                    
+                    <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Back to Glossary
+                    </a>
+                </div>
+            </div>
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <!-- Term Status Badge -->
+            <div class="mb-4">
+                <span class="badge bg-{% if term.is_synced %}success{% else %}warning{% endif %} p-2">
+                    <i class="fas {% if term.is_synced %}fa-check-circle{% else %}fa-sync{% endif %} me-1"></i>
+                    {{ term.get_sync_status_display }}
+                </span>
+                
+                {% if term.last_synced %}
+                <span class="text-muted ms-2">Last synced: {{ term.last_synced|date:"Y-m-d H:i" }}</span>
+                {% endif %}
+                
+                {% if term.staged_for_git %}
+                <span class="badge bg-primary ms-2">
+                    <i class="fab fa-github me-1"></i> Staged for Git
+                </span>
+                {% endif %}
+            </div>
+            
+            <!-- Term Details Tabs -->
+            <ul class="nav nav-tabs mb-4" id="termDetailTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="local-tab" data-bs-toggle="tab" data-bs-target="#local" 
+                           type="button" role="tab" aria-controls="local" aria-selected="true">
+                        <i class="fas fa-laptop me-1"></i> Local
+                    </button>
+                </li>
+                {% if remote_term %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote" 
+                           type="button" role="tab" aria-controls="remote" aria-selected="false">
+                        <i class="fas fa-server me-1"></i> Remote
+                    </button>
+                </li>
+                {% endif %}
+            </ul>
+            
+            <!-- Tab Content -->
+            <div class="tab-content" id="termDetailTabsContent">
+                <!-- Local Tab -->
+                <div class="tab-pane fade show active" id="local" role="tabpanel" aria-labelledby="local-tab">
+                    <div class="row">
+                        <!-- Term Details Card -->
+                        <div class="col-md-8">
+                            <div class="card mb-4">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0">Term Details</h5>
+                                    <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteTermModal">
+                                        <i class="fas fa-trash-alt me-1"></i> Delete
+                                    </button>
+                                </div>
+                                <div class="card-body">
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="update">
+                                        
+                                        <div class="mb-3">
+                                            <label for="name" class="form-label">Name</label>
+                                            <input type="text" class="form-control" id="name" name="name" value="{{ term.name }}" required>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="parent_node_id" class="form-label">Parent Node</label>
+                                            <div class="input-group">
+                                                <select class="form-select" id="parent_node_id" name="parent_node_id">
+                                                    <option value="">Root (No parent)</option>
+                                                    {% for node in nodes %}
+                                                    <option value="{{ node.id }}" {% if term.parent_node and term.parent_node.id == node.id %}selected{% endif %}>{{ node.name }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#moveTermModal">
+                                                    <i class="fas fa-arrows-alt"></i> Move
+                                                </button>
+                                            </div>
+                                            <small class="form-text text-muted">Terms can exist at the root level (no parent) or under a node.</small>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="description" class="form-label">Description</label>
+                                            <textarea class="form-control" id="description" name="description" rows="5">{{ term.description }}</textarea>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="term_source" class="form-label">Term Source</label>
+                                            <input type="text" class="form-control" id="term_source" name="term_source" value="{{ term.term_source }}">
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label">URN</label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" value="{{ term.deterministic_urn }}" readonly>
+                                                <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText('{{ term.deterministic_urn }}')">
+                                                    <i class="fas fa-copy"></i>
+                                                </button>
+                                            </div>
+                                            {% if term.original_urn and term.original_urn != term.deterministic_urn %}
+                                            <small class="text-muted">Original URN: {{ term.original_urn }}</small>
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            {% if has_datahub_connection %}
+                            <!-- Usage Statistics -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h5 class="mb-0">Usage Statistics</h5>
+                                </div>
+                                <div class="card-body">
+                                    {% if total_related %}
+                                    <p>This term is used by <strong>{{ total_related }}</strong> entities in DataHub.</p>
+                                    {% else %}
+                                    <p>This term is not currently in use by any entities in DataHub.</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Domain Card -->
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Domain</h5>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#setDomainModal">
+                                <i class="fas fa-edit me-1"></i> Edit Domain
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            {% if term.domain_urn or domain %}
+                            <div class="mb-3">
+                                {% if domain %}
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6>{{ domain.properties.name }}</h6>
+                                        <p class="text-muted mb-0">{{ domain.urn }}</p>
+                                    </div>
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="set_domain">
+                                        <input type="hidden" name="domain_urn" value="">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove domain association?')">
+                                            <i class="fas fa-unlink me-1"></i> Remove
+                                        </button>
+                                    </form>
+                                </div>
+                                {% elif term.domain_urn %}
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6>Domain URN</h6>
+                                        <p class="text-muted mb-0">{{ term.domain_urn }}</p>
+                                    </div>
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="set_domain">
+                                        <input type="hidden" name="domain_urn" value="">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove domain association?')">
+                                            <i class="fas fa-unlink me-1"></i> Remove
+                                        </button>
+                                    </form>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            {% if has_datahub_connection and datahub_url and term.domain_urn %}
+                                                            <a href="{{ datahub_url|datahub_domain_url:term.domain_urn }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                            </a>
+                            {% endif %}
+                            
+                            {% else %}
+                            <p class="text-muted">No domain associated with this term.</p>
+                            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#setDomainModal">
+                                <i class="fas fa-link me-1"></i> Associate with Domain
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Owners Card -->
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Owners</h5>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addOwnerModal">
+                                <i class="fas fa-user-plus me-1"></i> Add Owner
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            {% if owners %}
+                            <ul class="list-group">
+                                {% for owner in owners %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>{{ owner.owner.info.label }}</strong>
+                                        <p class="text-muted mb-0">{{ owner.type }} | {{ owner.owner.urn }}</p>
+                                    </div>
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="remove_owner">
+                                        <input type="hidden" name="owner_urn" value="{{ owner.owner.urn }}">
+                                        <input type="hidden" name="ownership_type" value="{{ owner.type }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-user-minus"></i>
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <p class="text-muted">No owners assigned to this term.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Related Terms Card -->
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Related Terms</h5>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addRelatedTermModal">
+                                <i class="fas fa-link me-1"></i> Add Related Term
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            {% if related_terms %}
+                            <ul class="list-group">
+                                {% for related_term in related_terms %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>{{ related_term.term.properties.name }}</strong>
+                                        <p class="text-muted mb-0">{{ related_term.relationshipType }} | {{ related_term.term.urn }}</p>
+                                    </div>
+                                    <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="remove_related_term">
+                                        <input type="hidden" name="related_term_urn" value="{{ related_term.term.urn }}">
+                                        <input type="hidden" name="relationship_type" value="{{ related_term.relationshipType }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-unlink"></i>
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <p class="text-muted">No related terms.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Related Entities Card -->
+                    {% if has_datahub_connection and related_entities %}
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Related Entities</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover table-striped mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Entity</th>
+                                            <th>Type</th>
+                                            <th>URN</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for entity in related_entities %}
+                                            <tr>
+                                                <td>{{ entity.name }}</td>
+                                                <td>{{ entity.type }}</td>
+                                                <td><code>{{ entity.urn }}</code></td>
+                                                <td>
+                                                    {% if datahub_url %}
+                                                    <a href="{{ datahub_url|datahub_entity_url:entity }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                        <i class="fas fa-external-link-alt"></i> View
+                                                    </a>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            {% if total_related > related_entities|length %}
+                                <div class="py-3 text-center">
+                                    <p class="text-muted">Showing {{ related_entities|length }} of {{ total_related }} related entities.</p>
+                                    {% if datahub_url %}
+                                                                                <a href="{{ datahub_url|datahub_glossary_term_url:term.deterministic_urn }}" target="_blank" class="btn btn-outline-primary">
+                                        <i class="fas fa-external-link-alt me-1"></i> View All in DataHub
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Remote Tab -->
+                {% if remote_term %}
+                <div class="tab-pane fade" id="remote" role="tabpanel" aria-labelledby="remote-tab">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Remote Term Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Name</label>
+                                <input type="text" class="form-control" value="{{ remote_term.properties.name }}" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control" rows="5" readonly>{{ remote_term.description }}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Term Source</label>
+                                <input type="text" class="form-control" value="{{ remote_term.term_source }}" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">URN</label>
+                                <input type="text" class="form-control" value="{{ remote_term.urn }}" readonly>
+                            </div>
+                            
+                            {% if datahub_url %}
+                            <a href="{{ datahub_url|datahub_glossary_term_url:remote_term.urn }}" target="_blank" class="btn btn-outline-primary">
+                                <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Term Modal -->
+<div class="modal fade" id="deleteTermModal" tabindex="-1" aria-labelledby="deleteTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTermModalLabel">Delete Glossary Term</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the term <strong>{{ term.name }}</strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-danger">Delete Term</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Owner Modal -->
+<div class="modal fade" id="addOwnerModal" tabindex="-1" aria-labelledby="addOwnerModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_owner">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addOwnerModalLabel">Add Owner</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="owner_urn" class="form-label">Owner URN</label>
+                        <input type="text" class="form-control" id="owner_urn" name="owner_urn" placeholder="urn:li:corpuser:username" required>
+                        <div class="form-text">Enter the URN of the user or group (e.g., urn:li:corpuser:username or urn:li:corpGroup:groupname)</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="ownership_type" class="form-label">Ownership Type</label>
+                        <select class="form-select" id="ownership_type" name="ownership_type" required>
+                            <option value="urn:li:ownershipType:__system__technical_owner">Technical Owner</option>
+                            <option value="urn:li:ownershipType:__system__business_owner">Business Owner</option>
+                            <option value="urn:li:ownershipType:__system__data_steward">Data Steward</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Owner</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Related Term Modal -->
+<div class="modal fade" id="addRelatedTermModal" tabindex="-1" aria-labelledby="addRelatedTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_related_term">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addRelatedTermModalLabel">Add Related Term</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="related_term_urn" class="form-label">Term URN</label>
+                        <input type="text" class="form-control" id="related_term_urn" name="related_term_urn" placeholder="urn:li:glossaryTerm:..." required>
+                        <div class="form-text">Enter the URN of the related glossary term</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="relationship_type" class="form-label">Relationship Type</label>
+                        <select class="form-select" id="relationship_type" name="relationship_type" required>
+                            <option value="hasA">Contains (hasA)</option>
+                            <option value="isA">Inherits From (isA)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Related Term</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Move Term Modal -->
+<div class="modal fade" id="moveTermModal" tabindex="-1" aria-labelledby="moveTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="move_term">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="moveTermModalLabel">Move Term</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Move <strong>{{ term.name }}</strong> to:</p>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="move_destination" id="move_to_root" value="root" {% if not term.parent_node %}checked{% endif %}>
+                        <label class="form-check-label" for="move_to_root">
+                            <i class="fas fa-home me-1"></i> Root Level (No parent)
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="move_destination" id="move_to_node" value="node" {% if term.parent_node %}checked{% endif %}>
+                        <label class="form-check-label" for="move_to_node">
+                            <i class="fas fa-folder me-1"></i> Under a Node
+                        </label>
+                    </div>
+                    
+                    <div id="node_selection" class="mb-3 ps-4 {% if not term.parent_node %}d-none{% endif %}">
+                        <label for="new_parent_node_id" class="form-label">Select Node</label>
+                        <select class="form-select" id="new_parent_node_id" name="new_parent_node_id">
+                            {% for node in nodes %}
+                            <option value="{{ node.id }}" {% if term.parent_node and term.parent_node.id == node.id %}selected{% endif %}>{{ node.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <small>Moving a term will change its URN. If this term is already synced with DataHub, it will be treated as a new term.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Move Term</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Set Domain Modal -->
+<div class="modal fade" id="setDomainModal" tabindex="-1" aria-labelledby="setDomainModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'metadata_manager:glossary_term_detail' term.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="set_domain">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="setDomainModalLabel">Set Domain</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="domain_urn" class="form-label">Domain URN</label>
+                        <input type="text" class="form-control" id="domain_urn" name="domain_urn" placeholder="urn:li:domain:..." required>
+                        <div class="form-text">Enter the URN of the domain to associate with this term.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Set Domain</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Toggle node selection in move modal
+    $('input[name="move_destination"]').change(function() {
+        if ($(this).val() === 'node') {
+            $('#node_selection').removeClass('d-none');
+        } else {
+            $('#node_selection').addClass('d-none');
+        }
+    });
+    
+    // Handle the "Add to GitHub PR" button for terms
+    $('.add-term-to-git-pr').click(function() {
+        const termId = $(this).data('term-id');
+        
+        // Create a form and submit it
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = `/metadata/glossary/terms/${termId}/push-github/`;
+        
+        // Add CSRF token
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+        form.appendChild(csrfToken);
+        
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+    });
+});
+</script>
+{% endblock %} 

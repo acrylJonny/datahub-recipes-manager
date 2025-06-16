@@ -1,11 +1,13 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.models import User
-from django.conf import settings
 import json
-import yaml
 
-from .models import RecipeTemplate, EnvVarsTemplate, EnvVarsInstance, GitSettings, Environment
+from .models import (
+    RecipeTemplate,
+    EnvVarsTemplate,
+    EnvVarsInstance,
+    GitSettings,
+    Environment,
+)
 
 # Define friendly names for common recipe types
 FRIENDLY_NAMES = {
@@ -57,52 +59,88 @@ FRIENDLY_NAMES = {
     "mlflow": "MLflow",
 }
 
+
 class RecipeForm(forms.Form):
     """Form for creating or editing a recipe."""
-    recipe_id = forms.CharField(label="Recipe ID", max_length=255, required=True,
-                               widget=forms.TextInput(attrs={'class': 'form-control'}))
-    recipe_name = forms.CharField(label="Recipe Name", max_length=255, required=True,
-                                 widget=forms.TextInput(attrs={'class': 'form-control'}))
-    recipe_type = forms.CharField(label="Recipe Type", max_length=50, required=True,
-                                 widget=forms.TextInput(attrs={'class': 'form-control'}))
-    description = forms.CharField(label="Description", required=False,
-                                 widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
-    schedule_cron = forms.CharField(label="Schedule (Cron Expression)", max_length=100, required=False,
-                                   widget=forms.TextInput(attrs={'class': 'form-control'}))
-    schedule_timezone = forms.CharField(label="Timezone", max_length=50, required=False,
-                                       widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'UTC'}))
-    recipe_content = forms.CharField(label="Recipe Content (YAML/JSON)", required=True,
-                                    widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 15}))
-    replace_env_vars = forms.BooleanField(label="Replace environment variables in recipe", required=False,
-                                         initial=False,
-                                         widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-                                         help_text="If checked, environment variable placeholders will be replaced with their values in the recipe.")
+
+    recipe_id = forms.CharField(
+        label="Recipe ID",
+        max_length=255,
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    recipe_name = forms.CharField(
+        label="Recipe Name",
+        max_length=255,
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    recipe_type = forms.CharField(
+        label="Recipe Type",
+        max_length=50,
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    description = forms.CharField(
+        label="Description",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
+    schedule_cron = forms.CharField(
+        label="Schedule (Cron Expression)",
+        max_length=100,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    schedule_timezone = forms.CharField(
+        label="Timezone",
+        max_length=50,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "UTC"}),
+    )
+    recipe_content = forms.CharField(
+        label="Recipe Content (YAML/JSON)",
+        required=True,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 15}),
+    )
+    replace_env_vars = forms.BooleanField(
+        label="Replace environment variables in recipe",
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        help_text="If checked, environment variable placeholders will be replaced with their values in the recipe.",
+    )
+
 
 class RecipeImportForm(forms.Form):
     """Form for importing a recipe from a file."""
-    recipe_file = forms.FileField(label="Recipe File (YAML/JSON)", required=True,
-                                 widget=forms.FileInput(attrs={'class': 'form-control'}))
+
+    recipe_file = forms.FileField(
+        label="Recipe File (YAML/JSON)",
+        required=True,
+        widget=forms.FileInput(attrs={"class": "form-control"}),
+    )
+
 
 class PolicyForm(forms.Form):
     """Form for creating or editing a policy."""
+
     policy_id = forms.CharField(required=False, max_length=255)
     policy_name = forms.CharField(required=True, max_length=255)
-    policy_type = forms.ChoiceField(required=True, choices=[
-        ('METADATA', 'Metadata'),
-        ('PLATFORM', 'Platform')
-    ])
-    policy_state = forms.ChoiceField(required=True, choices=[
-        ('ACTIVE', 'Active'),
-        ('INACTIVE', 'Inactive')
-    ])
+    policy_type = forms.ChoiceField(
+        required=True, choices=[("METADATA", "Metadata"), ("PLATFORM", "Platform")]
+    )
+    policy_state = forms.ChoiceField(
+        required=True, choices=[("ACTIVE", "Active"), ("INACTIVE", "Inactive")]
+    )
     description = forms.CharField(required=False, widget=forms.Textarea)
     policy_resources = forms.CharField(required=True, widget=forms.Textarea)
     policy_privileges = forms.CharField(required=True, widget=forms.Textarea)
     policy_actors = forms.CharField(required=True, widget=forms.Textarea)
-    
+
     def clean_policy_resources(self):
         """Validate the policy resources field."""
-        data = self.cleaned_data['policy_resources']
+        data = self.cleaned_data["policy_resources"]
         try:
             resources = json.loads(data)
             if not isinstance(resources, list):
@@ -110,10 +148,10 @@ class PolicyForm(forms.Form):
             return json.dumps(resources)
         except json.JSONDecodeError:
             raise forms.ValidationError("Invalid JSON format for resources")
-    
+
     def clean_policy_privileges(self):
         """Validate the policy privileges field."""
-        data = self.cleaned_data['policy_privileges']
+        data = self.cleaned_data["policy_privileges"]
         try:
             privileges = json.loads(data)
             if not isinstance(privileges, list):
@@ -121,10 +159,10 @@ class PolicyForm(forms.Form):
             return json.dumps(privileges)
         except json.JSONDecodeError:
             raise forms.ValidationError("Invalid JSON format for privileges")
-    
+
     def clean_policy_actors(self):
         """Validate the policy actors field."""
-        data = self.cleaned_data['policy_actors']
+        data = self.cleaned_data["policy_actors"]
         try:
             actors = json.loads(data)
             # Actors can be an array or an object depending on the policy
@@ -132,57 +170,87 @@ class PolicyForm(forms.Form):
         except json.JSONDecodeError:
             raise forms.ValidationError("Invalid JSON format for actors")
 
+
 class PolicyImportForm(forms.Form):
     """Form for importing a policy from a file."""
-    policy_file = forms.FileField(label="Policy File (JSON)", required=True,
-                                 widget=forms.FileInput(attrs={'class': 'form-control'}))
+
+    policy_file = forms.FileField(
+        label="Policy File (JSON)",
+        required=True,
+        widget=forms.FileInput(attrs={"class": "form-control"}),
+    )
+
 
 class RecipeTemplateForm(forms.Form):
     """Form for creating or editing a recipe template."""
-    name = forms.CharField(label="Template Name", max_length=255, required=True,
-                          widget=forms.TextInput(attrs={'class': 'form-control'}))
-    description = forms.CharField(label="Description", required=False,
-                                 widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
-    recipe_type = forms.ChoiceField(
-        label="Recipe Type", 
+
+    name = forms.CharField(
+        label="Template Name",
+        max_length=255,
         required=True,
-        widget=forms.Select(attrs={'class': 'form-select select2-enable'})
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    description = forms.CharField(
+        label="Description",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
+    recipe_type = forms.ChoiceField(
+        label="Recipe Type",
+        required=True,
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
     )
     recipe_type_other = forms.CharField(
-        label="Custom Recipe Type", 
+        label="Custom Recipe Type",
         required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control mt-2',
-            'id': 'id_recipe_type_other',
-            'placeholder': 'Enter custom recipe type',
-            'style': 'display:none;'
-        })
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control mt-2",
+                "id": "id_recipe_type_other",
+                "placeholder": "Enter custom recipe type",
+                "style": "display:none;",
+            }
+        ),
     )
-    tags = forms.CharField(label="Tags", max_length=255, required=False,
-                          widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'comma,separated,tags'}),
-                          help_text="Enter comma-separated tags to categorize this template")
-    content = forms.CharField(label="Recipe Content (YAML/JSON)", required=True,
-                             widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 15}))
-    executor_id = forms.CharField(label="Executor ID", max_length=255, required=False,
-                                initial='default',
-                                widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'default'}),
-                                help_text="The executor ID to use when deploying this recipe to DataHub")
+    tags = forms.CharField(
+        label="Tags",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "comma,separated,tags"}
+        ),
+        help_text="Enter comma-separated tags to categorize this template",
+    )
+    content = forms.CharField(
+        label="Recipe Content (YAML/JSON)",
+        required=True,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 15}),
+    )
+    executor_id = forms.CharField(
+        label="Executor ID",
+        max_length=255,
+        required=False,
+        initial="default",
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "default"}
+        ),
+        help_text="The executor ID to use when deploying this recipe to DataHub",
+    )
     cron_schedule = forms.CharField(
-        label="Schedule (Cron Expression)", 
-        max_length=100, 
+        label="Schedule (Cron Expression)",
+        max_length=100,
         required=False,
         initial="0 0 * * *",
-        widget=forms.TextInput(attrs={
-            'class': 'form-control', 
-            'placeholder': '0 0 * * *'
-        }),
-        help_text="Default: Daily at midnight (0 0 * * *)"
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "0 0 * * *"}
+        ),
+        help_text="Default: Daily at midnight (0 0 * * *)",
     )
     timezone = forms.ChoiceField(
         label="Timezone",
         required=False,
         initial="Etc/UTC",
-        widget=forms.Select(attrs={'class': 'form-select select2-enable'}),
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
         choices=[
             ("Pacific/Midway", "Pacific/Midway"),
             ("Pacific/Pago_Pago", "Pacific/Pago_Pago"),
@@ -307,335 +375,472 @@ class RecipeTemplateForm(forms.Form):
             ("Pacific/Auckland", "Pacific/Auckland"),
             ("Pacific/Tongatapu", "Pacific/Tongatapu"),
             ("Pacific/Fakaofo", "Pacific/Fakaofo"),
-            ("Pacific/Apia", "Pacific/Apia")
+            ("Pacific/Apia", "Pacific/Apia"),
         ],
-        help_text="Select the timezone for the cron schedule"
+        help_text="Select the timezone for the cron schedule",
     )
-                             
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Get source types from directories
         source_types = []
         try:
             import os
             import sys
-            
+
             # Look for datahub ingestion source directories
             datahub_path = None
             for path in sys.path:
-                if os.path.exists(os.path.join(path, 'datahub', 'ingestion', 'source')):
-                    datahub_path = os.path.join(path, 'datahub', 'ingestion', 'source')
+                if os.path.exists(os.path.join(path, "datahub", "ingestion", "source")):
+                    datahub_path = os.path.join(path, "datahub", "ingestion", "source")
                     break
-            
+
             if datahub_path:
                 # Get list of directories in source folder that aren't private
                 for item in os.listdir(datahub_path):
-                    if not item.startswith('_') and os.path.isdir(os.path.join(datahub_path, item)):
+                    if not item.startswith("_") and os.path.isdir(
+                        os.path.join(datahub_path, item)
+                    ):
                         # Use friendly name if available, otherwise convert to title case
                         if item in FRIENDLY_NAMES:
                             display_name = FRIENDLY_NAMES[item]
                         else:
-                            display_name = ' '.join(word.capitalize() for word in item.split('_'))
+                            display_name = " ".join(
+                                word.capitalize() for word in item.split("_")
+                            )
                         source_types.append((item, display_name))
-        except Exception as e:
+        except Exception:
             # Fallback to basic list if there's an error
             pass
-        
+
         # Add existing RECIPE_TYPES from models.py
         from .models import RECIPE_TYPES
-        
+
         # Combine and sort by display name
         all_types = set(source_types + list(RECIPE_TYPES))
         all_types = sorted(all_types, key=lambda x: x[1].lower())
-        
+
         # Ensure 'other' is included
-        if not any(t[0] == 'other' for t in all_types):
-            all_types.append(('other', 'Other'))
-            
+        if not any(t[0] == "other" for t in all_types):
+            all_types.append(("other", "Other"))
+
         # Update choices for recipe_type
-        self.fields['recipe_type'].choices = all_types
-        
+        self.fields["recipe_type"].choices = all_types
+
     def clean(self):
         cleaned_data = super().clean()
-        recipe_type = cleaned_data.get('recipe_type')
-        recipe_type_other = cleaned_data.get('recipe_type_other')
-        
+        recipe_type = cleaned_data.get("recipe_type")
+        recipe_type_other = cleaned_data.get("recipe_type_other")
+
         # If 'other' is selected, use the custom type value
-        if recipe_type == 'other' and recipe_type_other:
-            cleaned_data['recipe_type'] = recipe_type_other
-            
+        if recipe_type == "other" and recipe_type_other:
+            cleaned_data["recipe_type"] = recipe_type_other
+
         return cleaned_data
+
 
 class RecipeTemplateImportForm(forms.Form):
     """Form for importing a recipe template from a file."""
-    template_file = forms.FileField(label="Recipe Template File (YAML/JSON)", required=True,
-                                   widget=forms.FileInput(attrs={'class': 'form-control'}))
-    tags = forms.CharField(label="Tags", max_length=255, required=False,
-                          widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'comma,separated,tags'}),
-                          help_text="Enter comma-separated tags to categorize this template")
+
+    template_file = forms.FileField(
+        label="Recipe Template File (YAML/JSON)",
+        required=True,
+        widget=forms.FileInput(attrs={"class": "form-control"}),
+    )
+    tags = forms.CharField(
+        label="Tags",
+        max_length=255,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "comma,separated,tags"}
+        ),
+        help_text="Enter comma-separated tags to categorize this template",
+    )
+
 
 class RecipeDeployForm(forms.Form):
     """Form for deploying a recipe template to DataHub."""
-    recipe_id = forms.CharField(label="Recipe ID", max_length=255, required=True,
-                               widget=forms.TextInput(attrs={'class': 'form-control'}))
-    recipe_name = forms.CharField(label="Recipe Name", max_length=255, required=True,
-                                 widget=forms.TextInput(attrs={'class': 'form-control'}))
-    schedule_cron = forms.CharField(label="Schedule (Cron Expression)", max_length=100, required=False,
-                                   widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '0 0 * * *'}))
-    schedule_timezone = forms.CharField(label="Timezone", max_length=50, required=False,
-                                       widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'UTC'}))
-    environment_variables = forms.CharField(label="Environment Variables", required=False,
-                                          widget=forms.HiddenInput(attrs={'id': 'env_vars_json'}))
-    description = forms.CharField(label="Description", required=False,
-                                widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
+
+    recipe_id = forms.CharField(
+        label="Recipe ID",
+        max_length=255,
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    recipe_name = forms.CharField(
+        label="Recipe Name",
+        max_length=255,
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    schedule_cron = forms.CharField(
+        label="Schedule (Cron Expression)",
+        max_length=100,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "0 0 * * *"}
+        ),
+    )
+    schedule_timezone = forms.CharField(
+        label="Timezone",
+        max_length=50,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "UTC"}),
+    )
+    environment_variables = forms.CharField(
+        label="Environment Variables",
+        required=False,
+        widget=forms.HiddenInput(attrs={"id": "env_vars_json"}),
+    )
+    description = forms.CharField(
+        label="Description",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
+
 
 class EnvVarsTemplateForm(forms.ModelForm):
     """Form for creating or editing an environment variables template."""
-    variables = forms.CharField(label="Environment Variables", required=True,
-                              widget=forms.HiddenInput(attrs={'id': 'env_vars_template_json'}))
-    recipe_type = forms.ChoiceField(
-        label="Recipe Type", 
+
+    variables = forms.CharField(
+        label="Environment Variables",
         required=True,
-        widget=forms.Select(attrs={'class': 'form-select select2-enable'})
+        widget=forms.HiddenInput(attrs={"id": "env_vars_template_json"}),
+    )
+    recipe_type = forms.ChoiceField(
+        label="Recipe Type",
+        required=True,
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
     )
     recipe_type_other = forms.CharField(
-        label="Custom Recipe Type", 
+        label="Custom Recipe Type",
         required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control mt-2',
-            'id': 'id_recipe_type_other',
-            'placeholder': 'Enter custom recipe type',
-            'style': 'display:none;'
-        })
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control mt-2",
+                "id": "id_recipe_type_other",
+                "placeholder": "Enter custom recipe type",
+                "style": "display:none;",
+            }
+        ),
     )
     tags = forms.CharField(
-        label="Tags", 
-        max_length=255, 
+        label="Tags",
+        max_length=255,
         required=False,
-        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'comma,separated,tags'}),
-        help_text="Enter comma-separated tags to categorize this template"
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "comma,separated,tags"}
+        ),
+        help_text="Enter comma-separated tags to categorize this template",
     )
-    
+
     class Meta:
         model = EnvVarsTemplate
-        fields = ['name', 'description', 'recipe_type', 'tags', 'variables']
+        fields = ["name", "description", "recipe_type", "tags", "variables"]
         widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            "name": forms.TextInput(attrs={"class": "form-control"}),
+            "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
-        
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Get source types from directories
         source_types = []
         try:
             import os
             import sys
-            
+
             # Look for datahub ingestion source directories
             datahub_path = None
             for path in sys.path:
-                if os.path.exists(os.path.join(path, 'datahub', 'ingestion', 'source')):
-                    datahub_path = os.path.join(path, 'datahub', 'ingestion', 'source')
+                if os.path.exists(os.path.join(path, "datahub", "ingestion", "source")):
+                    datahub_path = os.path.join(path, "datahub", "ingestion", "source")
                     break
-            
+
             if datahub_path:
                 # Get list of directories in source folder that aren't private
                 for item in os.listdir(datahub_path):
-                    if not item.startswith('_') and os.path.isdir(os.path.join(datahub_path, item)):
+                    if not item.startswith("_") and os.path.isdir(
+                        os.path.join(datahub_path, item)
+                    ):
                         # Use friendly name if available, otherwise convert to title case
                         if item in FRIENDLY_NAMES:
                             display_name = FRIENDLY_NAMES[item]
                         else:
-                            display_name = ' '.join(word.capitalize() for word in item.split('_'))
+                            display_name = " ".join(
+                                word.capitalize() for word in item.split("_")
+                            )
                         source_types.append((item, display_name))
-        except Exception as e:
+        except Exception:
             # Fallback to basic list if there's an error
             pass
-        
+
         # Add existing RECIPE_TYPES from models.py
         from .models import RECIPE_TYPES
-        
+
         # Combine and sort by display name
         all_types = set(source_types + list(RECIPE_TYPES))
         all_types = sorted(all_types, key=lambda x: x[1].lower())
-        
+
         # Ensure 'other' is included
-        if not any(t[0] == 'other' for t in all_types):
-            all_types.append(('other', 'Other'))
-            
+        if not any(t[0] == "other" for t in all_types):
+            all_types.append(("other", "Other"))
+
         # Update choices for recipe_type
-        self.fields['recipe_type'].choices = all_types
-        
+        self.fields["recipe_type"].choices = all_types
+
     def clean(self):
         cleaned_data = super().clean()
-        recipe_type = cleaned_data.get('recipe_type')
-        recipe_type_other = cleaned_data.get('recipe_type_other')
-        
+        recipe_type = cleaned_data.get("recipe_type")
+        recipe_type_other = cleaned_data.get("recipe_type_other")
+
         # If 'other' is selected, use the custom type
-        if recipe_type == 'other' and recipe_type_other:
-            cleaned_data['recipe_type'] = recipe_type_other
-            
+        if recipe_type == "other" and recipe_type_other:
+            cleaned_data["recipe_type"] = recipe_type_other
+
         return cleaned_data
+
 
 class EnvVarsInstanceForm(forms.Form):
     """Form for creating or editing an environment variables instance."""
-    name = forms.CharField(label="Instance Name", max_length=255, required=True,
-                         widget=forms.TextInput(attrs={'class': 'form-control'}))
-    description = forms.CharField(label="Description", required=False,
-                                widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
-    template = forms.ModelChoiceField(label="Template", required=False,
-                                    queryset=None,  # Set in __init__
-                                    widget=forms.Select(attrs={'class': 'form-control'}),
-                                    help_text="Select an optional template to base this instance on")
-    recipe_type = forms.ChoiceField(label="Recipe Type", required=True,
-                                  widget=forms.Select(attrs={'class': 'form-select select2-enable'}))
-    recipe_type_other = forms.CharField(
-        label="Custom Recipe Type", 
-        required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control mt-2',
-            'id': 'id_recipe_type_other',
-            'placeholder': 'Enter custom recipe type',
-            'style': 'display:none;'
-        })
+
+    name = forms.CharField(
+        label="Instance Name",
+        max_length=255,
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
     )
-    variables = forms.CharField(label="Environment Variables", required=True,
-                             widget=forms.HiddenInput(attrs={'id': 'env_vars_instance_json'}))
-    environment = forms.ModelChoiceField(queryset=Environment.objects.all(), required=False,
-                                       widget=forms.Select(attrs={'class': 'form-select select2-enable'}))
-    
+    description = forms.CharField(
+        label="Description",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
+    template = forms.ModelChoiceField(
+        label="Template",
+        required=False,
+        queryset=None,  # Set in __init__
+        widget=forms.Select(attrs={"class": "form-control"}),
+        help_text="Select an optional template to base this instance on",
+    )
+    recipe_type = forms.ChoiceField(
+        label="Recipe Type",
+        required=True,
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
+    )
+    recipe_type_other = forms.CharField(
+        label="Custom Recipe Type",
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control mt-2",
+                "id": "id_recipe_type_other",
+                "placeholder": "Enter custom recipe type",
+                "style": "display:none;",
+            }
+        ),
+    )
+    variables = forms.CharField(
+        label="Environment Variables",
+        required=True,
+        widget=forms.HiddenInput(attrs={"id": "env_vars_instance_json"}),
+    )
+    environment = forms.ModelChoiceField(
+        queryset=Environment.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
+    )
+
     def __init__(self, *args, **kwargs):
         from .models import EnvVarsTemplate
+
         super().__init__(*args, **kwargs)
-        self.fields['template'].queryset = EnvVarsTemplate.objects.all().order_by('name')
-        
+        self.fields["template"].queryset = EnvVarsTemplate.objects.all().order_by(
+            "name"
+        )
+
         # Set initial environment to the default if it exists
         default_env = Environment.get_default()
         if default_env:
-            self.fields['environment'].initial = default_env.id
-        
+            self.fields["environment"].initial = default_env.id
+
         # Get source types from directories
         source_types = []
         try:
             import os
             import sys
-            
+
             # Look for datahub ingestion source directories
             datahub_path = None
             for path in sys.path:
-                if os.path.exists(os.path.join(path, 'datahub', 'ingestion', 'source')):
-                    datahub_path = os.path.join(path, 'datahub', 'ingestion', 'source')
+                if os.path.exists(os.path.join(path, "datahub", "ingestion", "source")):
+                    datahub_path = os.path.join(path, "datahub", "ingestion", "source")
                     break
-            
+
             if datahub_path:
                 # Get list of directories in source folder that aren't private
                 for item in os.listdir(datahub_path):
-                    if not item.startswith('_') and os.path.isdir(os.path.join(datahub_path, item)):
+                    if not item.startswith("_") and os.path.isdir(
+                        os.path.join(datahub_path, item)
+                    ):
                         # Use friendly name if available, otherwise convert to title case
                         if item in FRIENDLY_NAMES:
                             display_name = FRIENDLY_NAMES[item]
                         else:
-                            display_name = ' '.join(word.capitalize() for word in item.split('_'))
+                            display_name = " ".join(
+                                word.capitalize() for word in item.split("_")
+                            )
                         source_types.append((item, display_name))
-        except Exception as e:
+        except Exception:
             # Fallback to basic list if there's an error
             pass
-        
+
         # Add existing RECIPE_TYPES from models.py
         from .models import RECIPE_TYPES
-        
+
         # Combine and sort by display name
         all_types = set(source_types + list(RECIPE_TYPES))
         all_types = sorted(all_types, key=lambda x: x[1].lower())
-        
+
         # Ensure 'other' is included
-        if not any(t[0] == 'other' for t in all_types):
-            all_types.append(('other', 'Other'))
-            
+        if not any(t[0] == "other" for t in all_types):
+            all_types.append(("other", "Other"))
+
         # Update choices for recipe_type
-        self.fields['recipe_type'].choices = all_types
-    
+        self.fields["recipe_type"].choices = all_types
+
     def clean(self):
         cleaned_data = super().clean()
-        recipe_type = cleaned_data.get('recipe_type')
-        recipe_type_other = cleaned_data.get('recipe_type_other')
-        
+        recipe_type = cleaned_data.get("recipe_type")
+        recipe_type_other = cleaned_data.get("recipe_type_other")
+
         # If 'other' is selected, use the custom type
-        if recipe_type == 'other' and recipe_type_other:
-            cleaned_data['recipe_type'] = recipe_type_other
-            
+        if recipe_type == "other" and recipe_type_other:
+            cleaned_data["recipe_type"] = recipe_type_other
+
         return cleaned_data
+
 
 class RecipeInstanceForm(forms.Form):
     """Form for creating or editing a recipe instance."""
-    name = forms.CharField(label="Name", max_length=255, required=True,
-                          widget=forms.TextInput(attrs={'class': 'form-control'}))
-    description = forms.CharField(label="Description", required=False,
-                                widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
-    template = forms.ModelChoiceField(label="Recipe Template", queryset=RecipeTemplate.objects.all().order_by('name'),
-                                    widget=forms.Select(attrs={'class': 'form-select select2-enable'}))
-    env_vars_instance = forms.ModelChoiceField(label="Environment Variables Instance", required=False,
-                                            queryset=EnvVarsInstance.objects.all().order_by('name'),
-                                            widget=forms.Select(attrs={'class': 'form-select select2-enable'}))
-    environment = forms.ModelChoiceField(queryset=Environment.objects.all(), required=False,
-                                      widget=forms.Select(attrs={'class': 'form-select select2-enable'}))
-    cron_schedule = forms.CharField(label="Cron Schedule", required=False, 
-                                 initial="0 0 * * *",
-                                 widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '0 0 * * *'}))
-    timezone = forms.CharField(label="Timezone", required=False,
-                            initial="UTC",
-                            widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'UTC'}))
-    debug_mode = forms.BooleanField(label="Debug Mode", required=False,
-                                 initial=False,
-                                 widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}))
-    
+
+    name = forms.CharField(
+        label="Name",
+        max_length=255,
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    description = forms.CharField(
+        label="Description",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
+    template = forms.ModelChoiceField(
+        label="Recipe Template",
+        queryset=RecipeTemplate.objects.all().order_by("name"),
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
+    )
+    env_vars_instance = forms.ModelChoiceField(
+        label="Environment Variables Instance",
+        required=False,
+        queryset=EnvVarsInstance.objects.all().order_by("name"),
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
+    )
+    environment = forms.ModelChoiceField(
+        queryset=Environment.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select select2-enable"}),
+    )
+    cron_schedule = forms.CharField(
+        label="Cron Schedule",
+        required=False,
+        initial="0 0 * * *",
+        widget=forms.TextInput(
+            attrs={"class": "form-control", "placeholder": "0 0 * * *"}
+        ),
+    )
+    timezone = forms.CharField(
+        label="Timezone",
+        required=False,
+        initial="UTC",
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "UTC"}),
+    )
+    debug_mode = forms.BooleanField(
+        label="Debug Mode",
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Set initial environment to the default if it exists
         default_env = Environment.get_default()
         if default_env:
-            self.fields['environment'].initial = default_env.id
-        
+            self.fields["environment"].initial = default_env.id
+
         # Get initial template_id if it exists
-        initial = kwargs.get('initial', {})
-        template_id = initial.get('template', None)
-        
+        initial = kwargs.get("initial", {})
+        template_id = initial.get("template", None)
+
         # Filter env_vars_instance choices based on template recipe_type if provided
         if template_id:
             try:
                 template = RecipeTemplate.objects.get(id=template_id)
                 recipe_type = template.recipe_type
-                
+
                 # Filter env vars instances by recipe type
-                filtered_instances = EnvVarsInstance.objects.filter(recipe_type=recipe_type).order_by('name')
-                self.fields['env_vars_instance'].queryset = filtered_instances
-                
+                filtered_instances = EnvVarsInstance.objects.filter(
+                    recipe_type=recipe_type
+                ).order_by("name")
+                self.fields["env_vars_instance"].queryset = filtered_instances
+
                 # Add a note to help text
-                self.fields['env_vars_instance'].help_text = f"Showing only environment variable instances for {recipe_type} recipe type"
+                self.fields[
+                    "env_vars_instance"
+                ].help_text = f"Showing only environment variable instances for {recipe_type} recipe type"
             except RecipeTemplate.DoesNotExist:
                 pass
 
+
 class GitSettingsForm(forms.ModelForm):
     """Form for Git integration settings."""
-    
+
     class Meta:
         model = GitSettings
-        fields = ['provider_type', 'base_url', 'username', 'repository', 'token', 'enabled']
+        fields = [
+            "provider_type",
+            "base_url",
+            "username",
+            "repository",
+            "token",
+            "enabled",
+        ]
         widgets = {
-            'token': forms.PasswordInput(render_value=True),
-            'username': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter username or organization/project'}),
-            'repository': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Repository name'}),
-            'base_url': forms.URLInput(attrs={'class': 'form-control', 'placeholder': 'https://api.github.com (GitHub), https://dev.azure.com (Azure DevOps), etc.'}),
+            "token": forms.PasswordInput(render_value=True),
+            "username": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "Enter username or organization/project",
+                }
+            ),
+            "repository": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "Repository name"}
+            ),
+            "base_url": forms.URLInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "https://api.github.com (GitHub), https://dev.azure.com (Azure DevOps), etc.",
+                }
+            ),
         }
         help_texts = {
-            'token': 'Personal Access Token with repository/code access permissions',
-            'username': 'For GitHub: username or organization. For Azure DevOps: organization/project',
-            'repository': 'The repository name without the full URL',
-            'base_url': 'Leave empty for GitHub.com. For Azure DevOps or self-hosted instances, enter the base API URL',
-            'enabled': 'Enable Git integration',
-            'provider_type': 'Select your Git provider'
-        } 
+            "token": "Personal Access Token with repository/code access permissions",
+            "username": "For GitHub: username or organization. For Azure DevOps: organization/project",
+            "repository": "The repository name without the full URL",
+            "base_url": "Leave empty for GitHub.com. For Azure DevOps or self-hosted instances, enter the base API URL",
+            "enabled": "Enable Git integration",
+            "provider_type": "Select your Git provider",
+        }

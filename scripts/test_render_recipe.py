@@ -10,7 +10,6 @@ import yaml
 import os
 import glob
 import argparse
-from pathlib import Path
 
 # Attempt to import pytest
 try:
@@ -63,11 +62,11 @@ def render_instance(instance_path):
 
             # Validate essential keys in the rendered template
             if "source" not in rendered or not isinstance(rendered["source"], dict):
-                print(f"Error: Rendered template missing source configuration")
+                print("Error: Rendered template missing source configuration")
                 return False
 
             if "type" not in rendered["source"]:
-                print(f"Error: Rendered template missing source type")
+                print("Error: Rendered template missing source type")
                 return False
 
             return True
@@ -107,9 +106,9 @@ if pytest:
     @pytest.mark.parametrize("instance_file", get_instance_files())
     def test_render_instance(instance_file):
         """Pytest version of the render test function"""
-        assert render_instance(
-            instance_file
-        ), f"Failed to render template for {instance_file}"
+        assert render_instance(instance_file), (
+            f"Failed to render template for {instance_file}"
+        )
 
 
 if __name__ == "__main__":

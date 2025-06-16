@@ -2,7 +2,7 @@ import os
 import yaml
 import logging
 import copy
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 try:
     from utils.docker_utils import (

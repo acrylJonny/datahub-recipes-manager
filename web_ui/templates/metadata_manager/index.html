@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}Metadata Manager - DataHub CI/CD Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <h1 class="h2">Metadata Manager</h1>
+        <p class="text-muted">Manage DataHub metadata entities and their properties</p>
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Note:</strong> The counts below represent locally stored and/or synced metadata items. 
+            These are items that have been synchronized from DataHub or created locally for management.
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Mutations Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-dna me-2"></i>Mutations
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        Configure and manage metadata mutations for different environments. 
+                        Mutations allow you to transform and customize metadata during ingestion.
+                    </p>
+                    <a href="{% url 'environments' %}" class="btn btn-primary">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Mutations
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Tags</h6>
+                            <h2 class="card-title mb-0">{{ stats.tags_count }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-primary">
+                            <i class="fas fa-tag fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:tag_list' %}" class="btn btn-sm btn-outline-primary mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Tags
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Glossary Terms</h6>
+                            <h2 class="card-title mb-0">{{ stats.glossary_terms_count }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-success">
+                            <i class="fas fa-book fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-sm btn-outline-success mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Glossary
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Domains</h6>
+                            <h2 class="card-title mb-0">{{ stats.domains_count }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-info">
+                            <i class="fas fa-sitemap fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:domain_list' %}" class="btn btn-sm btn-outline-info mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Domains
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Assertions</h6>
+                            <h2 class="card-title mb-0">{{ stats.assertions_count }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-warning">
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:assertion_list' %}" class="btn btn-sm btn-outline-warning mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Assertions
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Data Contracts</h6>
+                            <h2 class="card-title mb-0">{{ stats.data_contracts_count|default:0 }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-dark">
+                            <i class="fas fa-file-contract fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:data_contract_list' %}" class="btn btn-sm btn-outline-dark mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Contracts
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Data Products</h6>
+                            <h2 class="card-title mb-0">{{ stats.data_products_count|default:0 }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-purple">
+                            <i class="fas fa-cube fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:data_product_list' %}" class="btn btn-sm btn-outline-primary mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Products
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Structured Properties</h6>
+                            <h2 class="card-title mb-0">{{ stats.structured_properties_count }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-secondary">
+                            <i class="fas fa-cubes fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:property_list' %}" class="btn btn-sm btn-outline-secondary mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Properties
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Metadata Tests</h6>
+                            <h2 class="card-title mb-0">{{ stats.tests_count|default:0 }}</h2>
+                            <small class="text-muted">Locally stored & synced</small>
+                        </div>
+                        <div class="text-success">
+                            <i class="fas fa-vial fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:tests_list' %}" class="btn btn-sm btn-outline-success mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Tests
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2 text-muted">Editable Properties</h6>
+                            <p class="card-text">Manage entity properties</p>
+                        </div>
+                        <div class="text-secondary">
+                            <i class="fas fa-edit fa-2x"></i>
+                        </div>
+                    </div>
+                    <a href="{% url 'metadata_manager:editable_properties' %}" class="btn btn-sm btn-outline-secondary mt-3">
+                        <i class="fas fa-arrow-right me-1"></i> Manage Properties
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

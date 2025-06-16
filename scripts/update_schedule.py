@@ -8,7 +8,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any
 
 from dotenv import load_dotenv
 
@@ -38,15 +37,12 @@ def update_ingestion_schedule(
         client = DataHubClient(server, token)
 
         # Update the schedule
-        success = client.update_ingestion_schedule(source_id, cron, timezone)
+        client.update_ingestion_schedule(source_id, cron, timezone)
 
-        if success:
-            print(f"Schedule updated successfully for source: {source_id}")
-            print(f"New schedule: {cron} (timezone: {timezone})")
-        else:
-            print(f"Failed to update schedule for source: {source_id}")
+        print(f"Schedule updated successfully for source: {source_id}")
+        print(f"New schedule: {cron} (timezone: {timezone})")
 
-        return success
+        return True
 
     except Exception as e:
         print(f"Error updating schedule: {str(e)}")
@@ -80,7 +76,7 @@ def main():
         )
 
     # Update schedule
-    result = update_ingestion_schedule(
+    update_ingestion_schedule(
         server=datahub_config["server"],
         token=datahub_config["token"],
         source_id=args.source_id,

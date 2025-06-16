@@ -1,0 +1,924 @@
+{% extends "base.html" %}
+{% load static %}
+{% load metadata_manager_filters %}
+
+{% block title %}DataHub Glossary{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<style>
+    .description-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+        white-space: normal;
+    }
+    
+    .description-preview {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.4;
+        max-height: 2.8em; /* 2 lines * 1.4 line-height */
+        word-break: break-word;
+        hyphens: auto;
+    }
+    
+    .related-items-cell {
+        max-width: 250px;
+    }
+    
+    .relationship-badge {
+        font-size: 0.7rem;
+        margin: 0.1rem;
+        padding: 0.2rem 0.4rem;
+    }
+    
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .type-badge {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .tab-loading {
+        text-align: center;
+        padding: 2rem;
+        color: #6c757d;
+    }
+    
+    .table-responsive {
+        border-radius: 0.375rem;
+        border: 1px solid #dee2e6;
+    }
+    
+    .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 350px;
+    }
+    
+    /* Modal enhancements */
+    .modal-body dl {
+        margin-bottom: 0;
+    }
+    
+    .modal-body dt {
+        font-weight: 600;
+        color: #495057;
+        margin-top: 1rem;
+    }
+    
+    .modal-body dt:first-child {
+        margin-top: 0;
+    }
+    
+    .modal-body dd {
+        margin-bottom: 0.5rem;
+        color: #6c757d;
+    }
+    
+    .relationship-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.25rem;
+        padding: 0.25rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+    }
+    
+    .owner-item {
+        display: inline-block;
+        margin: 0.1rem;
+        padding: 0.2rem 0.5rem;
+        background-color: #e9ecef;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+    }
+    
+    /* Interactive hierarchy styles */
+    .hierarchy-container {
+        display: flex;
+        align-items: center;
+        position: relative;
+        min-height: 20px;
+    }
+    
+    .tree-connector {
+        position: relative;
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        margin-right: 2px;
+    }
+    
+    .tree-connector::before {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 0;
+        width: 1px;
+        height: 100%;
+        background-color: #dee2e6;
+    }
+    
+    .tree-connector::after {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: 10px;
+        height: 1px;
+        background-color: #dee2e6;
+    }
+    
+    /* Hide vertical line for last items in a group */
+    .tree-connector.last-child::before {
+        height: 10px;
+    }
+    
+    /* Hide connectors for root level */
+    tr[data-level="0"] .tree-connector {
+        display: none;
+    }
+    
+    .expand-button-container {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-right: 4px;
+    }
+    
+    /* Expand/collapse button styling */
+    .expand-button {
+        border: none !important;
+        background: none !important;
+        padding: 2px !important;
+        margin: 0 !important;
+        color: #6c757d;
+        cursor: pointer;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+    }
+    
+    .expand-button:hover {
+        color: #007bff !important;
+        background-color: #f8f9fa !important;
+    }
+    
+    .expand-icon {
+        font-size: 12px;
+        transition: transform 0.2s ease;
+    }
+    
+    .expand-button:focus {
+        outline: none !important;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25) !important;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+        border-radius: 0 0 0.375rem 0.375rem;
+        margin-top: 0;
+    }
+    
+    .pagination-info {
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+    
+    .pagination .page-link {
+        color: #007bff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white;
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+    
+    .expand-button[aria-expanded="true"] .expand-icon {
+        transform: rotate(90deg);
+    }
+    
+
+    
+    /* Clickable statistics styling */
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 1;
+        max-width: none;
+    }
+    
+    /* Table column max-width constraints */
+    .table th:nth-child(1), .table td:nth-child(1) { /* Name */
+        max-width: 250px;
+        min-width: 150px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* Description */
+        max-width: 300px;
+        min-width: 200px;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* Owners */
+        width: 100px;
+        max-width: 100px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* Relationships */
+        width: 120px;
+        max-width: 120px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* Custom Properties */
+        width: 140px;
+        max-width: 140px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* Structured Properties */
+        width: 160px;
+        max-width: 160px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* URN */
+        max-width: 200px;
+        min-width: 150px;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* Actions */
+        width: 120px;
+        max-width: 120px;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Text truncation for table cells */
+    .table td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        position: relative;
+    }
+    
+    /* Specific truncation for name column content */
+    .table td:nth-child(1) .hierarchy-container {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+    
+    .table td:nth-child(1) .item-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+    
+    /* Description column with proper preview handling */
+    .table td:nth-child(2) .description-preview {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-height: none;
+    }
+    
+    /* URN column truncation */
+    .table td:nth-child(7) code {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+    
+    /* Ensure action buttons don't wrap */
+    .table td:nth-child(8) .btn-group {
+        white-space: nowrap;
+    }
+    
+    /* Filter text styling - prevent wrapping */
+    .filter-stat .text-muted {
+        white-space: nowrap;
+        font-size: 0.8rem;
+        line-height: 1.2;
+    }
+    
+    /* Adjust filter column widths for longer text */
+    .filter-row .col-3 {
+        min-width: 0;
+        flex: 1;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Hidden CSRF token for JavaScript -->
+    <form style="display: none;">
+        {% csrf_token %}
+    </form>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>DataHub Glossary</h1>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'metadata_manager:glossary_node_create' %}" class="btn btn-primary">
+                        <i class="fas fa-folder-plus me-1"></i> Create Node
+                    </a>
+                    <a href="{% url 'metadata_manager:glossary_term_create' %}" class="btn btn-success">
+                        <i class="fas fa-tag me-1"></i> Create Term
+                    </a>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-file-csv me-1"></i> CSV
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="downloadCSV()">
+                                <i class="fas fa-download me-1"></i> Download CSV
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="showUploadCSVModal()">
+                                <i class="fas fa-upload me-1"></i> Upload CSV
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" onclick="downloadCSVTemplate()">
+                                <i class="fas fa-file-alt me-1"></i> Download Template
+                            </a></li>
+                        </ul>
+                    </div>
+                    <a href="{% url 'metadata_manager:glossary_import_export' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-file-export me-1"></i> Import/Export
+                    </a>
+                    <button type="button" class="btn btn-outline-info" id="refreshGlossary">
+                        <i class="fas fa-sync-alt me-1"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            {% if not has_datahub_connection %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Not connected to DataHub. Please check your connection settings.
+                    <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            {% endif %}
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+
+
+
+            
+            <!-- Loading indicator -->
+            <div id="loading-indicator" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading glossary data...</p>
+            </div>
+
+            <!-- Glossary content -->
+            <div id="glossary-content" style="display: none;">
+                <!-- Statistics Filter Bar -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Overview -->
+                            <div class="row g-0 filter-row">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Overview</strong>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
+                                        <div class="h5 mb-0" id="total-items">0</div>
+                                        <div class="text-muted">Total</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
+                                        <div class="h5 mb-0" id="synced-count">0</div>
+                                        <div class="text-muted">Synced</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                        <div class="text-muted">Local Only</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                        <div class="text-muted">Remote Only</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 2: Content Filters -->
+                            <div class="row g-0 filter-row border-top">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
+                                    <strong class="text-muted">Filters</strong>
+                                </div>
+                                                                <div class="col-3 border-end">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-owners" data-category="content">
+                                        <div class="h6 mb-0" id="owned-items">0</div>
+                                        <div class="text-muted small">With Owners</div>
+                                    </div>
+                                </div>
+                                <div class="col-3 border-end">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-relationships" data-category="content">
+                                        <div class="h6 mb-0" id="items-with-relationships">0</div>
+                                        <div class="text-muted small">With Relationships</div>
+                                    </div>
+                                </div>
+                                <div class="col-3 border-end">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-properties" data-category="content">
+                                        <div class="h6 mb-0" id="items-with-properties">0</div>
+                                        <div class="text-muted small">With Custom Properties</div>
+                                    </div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-structured-properties" data-category="content">
+                                        <div class="h6 mb-0" id="items-with-structured-properties">0</div>
+                                        <div class="text-muted small">With Structured Properties</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Glossary Tabs -->
+                <ul class="nav nav-tabs mb-4" id="glossaryTabs" role="tablist">
+                                        <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items"
+                               type="button" role="tab" aria-controls="synced-items" aria-selected="true">
+                            <i class="fas fa-sync-alt me-1"></i> Synced Items
+                            <span class="badge bg-success ms-1" id="synced-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-items"
+                               type="button" role="tab" aria-controls="local-items" aria-selected="false">
+                            <i class="fas fa-laptop me-1"></i> Local Only Items
+                            <span class="badge bg-secondary ms-1" id="local-badge">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
+                               type="button" role="tab" aria-controls="remote-items" aria-selected="false">
+                            <i class="fas fa-server me-1"></i> Remote Only Items
+                            <span class="badge bg-info ms-1" id="remote-badge">0</span>
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="glossaryTabsContent">
+                    <!-- Synced Items Tab -->
+                    <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Synced Items</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="expandAllNodes()" title="Expand All">
+                                            <i class="fas fa-expand-arrows-alt"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="collapseAllNodes()" title="Collapse All">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="synced-search" class="form-control" placeholder="Search synced items...">
+                                        <button type="button" class="btn btn-outline-secondary" id="synced-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="synced-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Local Items Tab -->
+                    <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Local Only Items</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="expandAllNodes()" title="Expand All">
+                                            <i class="fas fa-expand-arrows-alt"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="collapseAllNodes()" title="Collapse All">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="local-search" class="form-control" placeholder="Search local items...">
+                                        <button type="button" class="btn btn-outline-secondary" id="local-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="local-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Remote Items Tab -->
+                    <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
+                        <div class="card mb-4">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Remote Only Items</h5>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="expandAllNodes()" title="Expand All">
+                                            <i class="fas fa-expand-arrows-alt"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="collapseAllNodes()" title="Collapse All">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+                                    <div class="input-group" style="width: 300px;">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" id="remote-search" class="form-control" placeholder="Search remote items...">
+                                        <button type="button" class="btn btn-outline-secondary" id="remote-clear">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" id="remote-content">
+                                <!-- Content will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Glossary Item View Modal -->
+<div class="modal fade" id="itemViewModal" tabindex="-1" aria-labelledby="itemViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="itemViewModalLabel">Item Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Basic Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row">
+                                    <dt class="col-sm-4">Name:</dt>
+                                    <dd class="col-sm-8" id="modal-item-name">-</dd>
+                                    
+                                    <dt class="col-sm-4">Type:</dt>
+                                    <dd class="col-sm-8" id="modal-item-type">-</dd>
+                                    
+                                    <dt class="col-sm-4">Description:</dt>
+                                    <dd class="col-sm-8" id="modal-item-description">-</dd>
+                                    
+                                    <dt class="col-sm-4">Status:</dt>
+                                    <dd class="col-sm-8">
+                                        <span id="modal-item-status" class="badge">-</span>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4">URN:</dt>
+                                    <dd class="col-sm-8">
+                                        <code id="modal-item-urn" class="small">-</code>
+                                    </dd>
+                                    
+                                    <dt class="col-sm-4" id="modal-parent-label" style="display: none;">Parent:</dt>
+                                    <dd class="col-sm-8" id="modal-parent-value" style="display: none;">
+                                        <code id="modal-item-parent" class="small">-</code>
+                                    </dd>
+                                </dl>
+                                
+                                <div class="mt-3">
+                                    <a href="#" id="modal-datahub-link" class="btn btn-sm btn-outline-primary" target="_blank">
+                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership Information -->
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-users me-2"></i>Ownership</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-owners-list">
+                                    <p class="text-muted">No ownership information available</p>
+                                </div>
+                                
+                                <div id="modal-last-modified" class="mt-3">
+                                    <!-- Last modified info will be shown here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Relationships -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-project-diagram me-2"></i>Relationships</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-relationships-list">
+                                    <p class="text-muted">No relationships available</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Glossary Properties -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-cogs me-2"></i>Properties</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-glossary-properties">
+                                    <p class="text-muted">No additional properties available</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Raw JSON Data -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-code me-2"></i>Raw Data</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre id="modal-raw-json" class="language-json"><code>Loading...</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CSV Upload Modal -->
+<div class="modal fade" id="csvUploadModal" tabindex="-1" aria-labelledby="csvUploadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="csvUploadModalLabel">
+                    <i class="fas fa-upload me-2"></i>Upload Glossary CSV
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-1"></i>CSV Format Requirements:</h6>
+                    <ul class="mb-0">
+                        <li><strong>name</strong>: The name of the glossary term or node</li>
+                        <li><strong>type</strong>: Either "term" or "node"</li>
+                        <li><strong>description</strong>: Description of the item</li>
+                        <li><strong>parent</strong>: URN or name of the parent node (optional)</li>
+                        <li><strong>owner_email</strong>: Email address of the owner (optional)</li>
+                        <li><strong>owner_group</strong>: Name of the owner group (optional)</li>
+                        <li><strong>relationships</strong>: JSON array of relationships (optional)</li>
+                        <li><strong>custom_properties</strong>: JSON object of custom properties (optional)</li>
+                    </ul>
+                </div>
+                
+                <form id="csvUploadForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="csvFile" class="form-label">Select CSV File</label>
+                        <input type="file" class="form-control" id="csvFile" name="csv_file" accept=".csv" required>
+                        <div class="form-text">Maximum file size: 10MB</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="updateExisting" name="update_existing">
+                            <label class="form-check-label" for="updateExisting">
+                                Update existing items if they already exist
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="dryRun" name="dry_run" checked>
+                            <label class="form-check-label" for="dryRun">
+                                Dry run (preview changes without applying them)
+                            </label>
+                        </div>
+                    </div>
+                </form>
+                
+                <!-- Upload Progress -->
+                <div id="uploadProgress" class="d-none">
+                    <div class="progress mb-3">
+                        <div class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <div id="uploadStatus" class="text-muted">Preparing upload...</div>
+                </div>
+                
+                <!-- Upload Results -->
+                <div id="uploadResults" class="d-none">
+                    <h6>Upload Results:</h6>
+                    <div id="uploadResultsContent"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="uploadCSVBtn" onclick="uploadCSV()">
+                    <i class="fas fa-upload me-1"></i>Upload CSV
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Select2 JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<!-- Glossary Enhanced JavaScript -->
+<script src="{% static 'metadata_manager/glossary/glossary_enhanced.js' %}"></script>
+{% endblock %} 

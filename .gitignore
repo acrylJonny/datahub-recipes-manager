@@ -59,3 +59,9 @@ web_ui/logs/
 
 # Local Workflow Analysis
 workflow_analysis.md
+
+# Local database
+db.*
+
+# venv
+.venv/*

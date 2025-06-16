@@ -54,6 +54,19 @@
                             <div class="form-text">Optional description of this environment</div>
                         </div>
                         
+                        <div class="mb-3">
+                            <label for="mutations" class="form-label">Optional Mutations</label>
+                            <select class="form-select" id="mutations" name="mutations">
+                                <option value="">No mutations</option>
+                                {% for mutation in mutations %}
+                                    <option value="{{ mutation.id }}" {% if environment.mutations and environment.mutations.id == mutation.id %}selected{% endif %}>
+                                        {{ mutation.name }} ({{ mutation.platform_instance }} - {{ mutation.env }})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Select a mutation to apply to this environment's metadata transformations</div>
+                        </div>
+                        
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="is_default" name="is_default" {% if environment.is_default %}checked{% endif %}>
                             <label class="form-check-label" for="is_default">Default Environment</label>

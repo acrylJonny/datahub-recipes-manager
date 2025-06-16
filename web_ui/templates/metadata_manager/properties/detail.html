@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <a href="{% url 'metadata_manager:property_list' %}" class="btn btn-sm btn-outline-secondary mb-2">
+                        <i class="fas fa-arrow-left me-1"></i> Back to Properties
+                    </a>
+                    <h1>{{ property.name }}</h1>
+                    <div class="d-flex align-items-center">
+                        <span class="badge bg-{% if property.sync_status == 'SYNCED' %}success{% elif property.sync_status == 'MODIFIED' %}warning{% elif property.sync_status == 'LOCAL_ONLY' %}secondary{% else %}primary{% endif %} me-2">
+                            {{ property.get_sync_status_display }}
+                        </span>
+                        <span class="badge bg-info me-2">{{ property.value_type }}</span>
+                        <span class="badge bg-light text-dark">{{ property.cardinality }}</span>
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    {% if property.can_deploy and has_datahub_connection %}
+                    <form action="{% url 'metadata_manager:property_deploy' property.id %}" method="post" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                        </button>
+                    </form>
+                    {% endif %}
+                    <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deletePropertyModal">
+                        <i class="fas fa-trash me-1"></i> Delete
+                    </button>
+                </div>
+            </div>
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+            
+            <div class="row">
+                <div class="col-lg-8">
+                    <!-- Property Details Card -->
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">Property Details</h5>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editPropertyModal">
+                                <i class="fas fa-edit me-1"></i> Edit
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <form>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">Display Name</label>
+                                        <p>{{ property.name }}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">Qualified Name</label>
+                                        <p><code>{{ property.qualified_name }}</code></p>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Description</label>
+                                    <p>{{ property.description|default:"No description provided" }}</p>
+                                </div>
+                                
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold">Value Type</label>
+                                        <p>{{ property.value_type }}</p>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold">Cardinality</label>
+                                        <p>{{ property.cardinality }}</p>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold">Immutable</label>
+                                        <p>{{ property.immutable|yesno:"Yes,No" }}</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Entity Types</label>
+                                    <div>
+                                        {% for entity_type in property.entity_types %}
+                                            <span class="badge bg-secondary me-1">{{ entity_type }}</span>
+                                        {% empty %}
+                                            <p class="text-muted">No entity types specified</p>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Display Settings</label>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" disabled {% if property.show_in_search_filters %}checked{% endif %}>
+                                                <label class="form-check-label">Show in search filters</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" disabled {% if property.show_as_asset_badge %}checked{% endif %}>
+                                                <label class="form-check-label">Show as asset badge</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" disabled {% if property.show_in_asset_summary %}checked{% endif %}>
+                                                <label class="form-check-label">Show in asset summary</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" disabled {% if property.show_in_columns_table %}checked{% endif %}>
+                                                <label class="form-check-label">Show in columns table</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="checkbox" disabled {% if property.is_hidden %}checked{% endif %}>
+                                                <label class="form-check-label">Hidden</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {% if property.allowed_values %}
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Allowed Values</label>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-bordered">
+                                            <thead>
+                                                <tr>
+                                                    <th>Value</th>
+                                                    <th>Description</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for value_item in property.allowed_values %}
+                                                <tr>
+                                                    <td><code>{{ value_item.value }}</code></td>
+                                                    <td>{{ value_item.description|default:"" }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                {% endif %}
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">URN</label>
+                                    <p><code>{{ property.deterministic_urn }}</code></p>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">Created</label>
+                                        <p>{{ property.created_at|date:"F j, Y, g:i a" }}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">Last Updated</label>
+                                        <p>{{ property.updated_at|date:"F j, Y, g:i a" }}</p>
+                                    </div>
+                                </div>
+                                
+                                {% if property.last_synced %}
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Last Synced with DataHub</label>
+                                    <p>{{ property.last_synced|date:"F j, Y, g:i a" }}</p>
+                                </div>
+                                {% endif %}
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <!-- Sync Status Card -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">Sync Status</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-3">
+                                {% if property.sync_status == 'SYNCED' %}
+                                    <div class="bg-success text-white p-2 rounded me-3">
+                                        <i class="fas fa-check fa-2x"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-0">Synced with DataHub</h6>
+                                        <small class="text-muted">Property is in sync with DataHub</small>
+                                    </div>
+                                {% elif property.sync_status == 'MODIFIED' %}
+                                    <div class="bg-warning text-dark p-2 rounded me-3">
+                                        <i class="fas fa-exclamation fa-2x"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-0">Modified</h6>
+                                        <small class="text-muted">Property has been modified and needs to be synced</small>
+                                    </div>
+                                {% elif property.sync_status == 'LOCAL_ONLY' %}
+                                    <div class="bg-secondary text-white p-2 rounded me-3">
+                                        <i class="fas fa-laptop fa-2x"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-0">Local Only</h6>
+                                        <small class="text-muted">Property exists only locally</small>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            {% if property.sync_status != 'LOCAL_ONLY' and property.last_synced %}
+                                <p><small class="text-muted">Last synced: {{ property.last_synced|date:"F j, Y, g:i a" }}</small></p>
+                            {% endif %}
+                            
+                            {% if property.can_deploy and has_datahub_connection %}
+                                <form action="{% url 'metadata_manager:property_deploy' property.id %}" method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="fas fa-cloud-upload-alt me-1"></i> Deploy to DataHub
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- DataHub View Card -->
+                    {% if has_datahub_connection and datahub_url and property.sync_status != 'LOCAL_ONLY' %}
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="card-title mb-0">DataHub View</h5>
+                        </div>
+                        <div class="card-body">
+                            <a href="{{ datahub_url }}/entities/structured-property-entity/{{ property.deterministic_urn }}" target="_blank" class="btn btn-outline-secondary w-100">
+                                <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Property Modal -->
+<div class="modal fade" id="editPropertyModal" tabindex="-1" aria-labelledby="editPropertyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="{% url 'metadata_manager:property_detail' property.id %}" method="post">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editPropertyModalLabel">Edit Property</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="name" class="form-label">Display Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="name" name="name" value="{{ property.name }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="qualified_name" class="form-label">Qualified Name</label>
+                            <input type="text" class="form-control" id="qualified_name" name="qualified_name" 
+                                   value="{{ property.qualified_name }}" readonly>
+                            <small class="text-muted">Qualified name cannot be changed once created</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3">{{ property.description }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Display Settings</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="show_in_search_filters" id="show_in_search_filters" {% if property.show_in_search_filters %}checked{% endif %}>
+                                    <label class="form-check-label" for="show_in_search_filters">Show in search filters</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="show_as_asset_badge" id="show_as_asset_badge" {% if property.show_as_asset_badge %}checked{% endif %}>
+                                    <label class="form-check-label" for="show_as_asset_badge">Show as asset badge</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="show_in_asset_summary" id="show_in_asset_summary" {% if property.show_in_asset_summary %}checked{% endif %}>
+                                    <label class="form-check-label" for="show_in_asset_summary">Show in asset summary</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="show_in_columns_table" id="show_in_columns_table" {% if property.show_in_columns_table %}checked{% endif %}>
+                                    <label class="form-check-label" for="show_in_columns_table">Show in columns table</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="is_hidden" id="is_hidden" {% if property.is_hidden %}checked{% endif %}>
+                                    <label class="form-check-label" for="is_hidden">Hidden</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Property Modal -->
+<div class="modal fade" id="deletePropertyModal" tabindex="-1" aria-labelledby="deletePropertyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deletePropertyModalLabel">Delete Property</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the property "{{ property.name }}"?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+                
+                {% if property.sync_status != 'LOCAL_ONLY' %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    This property is also in DataHub. Deleting it here will not remove it from DataHub.
+                </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{% url 'metadata_manager:property_detail' property.id %}" method="post" class="d-inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="_method" value="DELETE">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

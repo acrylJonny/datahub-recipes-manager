@@ -1,0 +1,10 @@
+name: analytics-warehouse
+description: Production Databricks Analytics Warehouse ingestion
+template:
+  name: databricks
+  id: 2
+  path: recipes/templates/databricks.yml
+env_vars_instance:
+  name: analytics-warehouse_env_vars
+  id: 1
+  path: recipes/instances/dev/databricks.yml

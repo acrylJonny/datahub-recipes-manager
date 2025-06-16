@@ -5,16 +5,16 @@ Script to import DataHub policies from files.
 Example usage:
     # Import all policies from a directory
     python import_policy.py --input-dir policies/
-    
+
     # Import a specific policy file
     python import_policy.py --input-file policies/my_policy_123.json
-    
+
     # Import using custom DataHub connection
     python import_policy.py --server http://datahub:8080 --token your-token --input-dir policies/
-    
+
     # Skip existing policies
     python import_policy.py --input-dir policies/ --skip-existing
-    
+
     # Force update existing policies
     python import_policy.py --input-dir policies/ --force-update
 """
@@ -25,8 +25,7 @@ import argparse
 import logging
 import json
 import glob
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Tuple
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.datahub_rest_client import DataHubRestClient
@@ -86,7 +85,7 @@ def import_policy(
     Returns:
         True if successful, False otherwise
     """
-    policy_id = policy_data.get("id")
+    policy_data.get("id")
     policy_name = policy_data.get("name", "Unknown policy")
 
     # Remove metadata fields that should not be sent to DataHub

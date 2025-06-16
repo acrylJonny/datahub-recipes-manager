@@ -1,0 +1,13 @@
+{% if type == 'schema' %}
+    <span class="badge bg-info">Schema</span>
+{% elif type == 'sql' %}
+    <span class="badge bg-warning">SQL</span>
+{% elif type == 'field' %}
+    <span class="badge bg-success">Field</span>
+{% elif type == 'volume' %}
+    <span class="badge bg-primary">Volume</span>
+{% elif type == 'freshness' %}
+    <span class="badge bg-secondary">Freshness</span>
+{% else %}
+    <span class="badge bg-dark">{{ type }}</span>
+{% endif %} 

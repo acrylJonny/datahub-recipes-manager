@@ -10,7 +10,6 @@ import argparse
 import logging
 import os
 import sys
-from typing import Dict, Any, Optional
 
 # Add the parent directory to the path so we can import the utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
