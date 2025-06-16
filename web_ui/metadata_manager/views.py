@@ -347,6 +347,18 @@ def get_editable_entities(request):
         refresh_cache = (
             request.GET.get("refresh_cache", "false").lower() == "true"
         )
+        
+        # Parse orFilters if provided
+        or_filters = None
+        or_filters_param = request.GET.get("orFilters")
+        if or_filters_param:
+            try:
+                import json
+                or_filters = json.loads(or_filters_param)
+                logger.info(f"Received orFilters with {len(or_filters)} conditions")
+            except Exception as e:
+                logger.error(f"Error parsing orFilters: {str(e)}")
+                or_filters = None
 
         logger.info(
             f"Search parameters: query='{query}', entity_type='{entity_type}', platform='{platform}', editable_only={editable_only}, use_platform_pagination={use_platform_pagination}, refresh_cache={refresh_cache}"
@@ -359,7 +371,16 @@ def get_editable_entities(request):
             session_key = request.session.session_key
 
         # Create cache key based on all parameters
-        cache_params = f"{query}_{entity_type}_{platform}_{sort_by}_{editable_only}_{use_platform_pagination}"
+        or_filters_str = "no_filters"
+        if or_filters:
+            # Create a deterministic string representation of the filters
+            try:
+                import json
+                or_filters_str = json.dumps(or_filters, sort_keys=True)[:100]  # Limit length for the cache key
+            except:
+                or_filters_str = f"filters_{len(or_filters)}"
+                
+        cache_params = f"{query}_{entity_type}_{platform}_{sort_by}_{editable_only}_{use_platform_pagination}_{or_filters_str}"
         cache_key = hashlib.md5(cache_params.encode()).hexdigest()
 
         # Import the new models
@@ -444,7 +465,7 @@ def get_editable_entities(request):
         # Start background search
         search_thread = threading.Thread(
             target=_perform_background_search,
-            args=(session_key, cache_key, query, entity_type, platform, sort_by, use_platform_pagination, request)
+            args=(session_key, cache_key, query, entity_type, platform, sort_by, use_platform_pagination, request, or_filters)
         )
         search_thread.daemon = True
         search_thread.start()
@@ -470,7 +491,7 @@ def get_editable_entities(request):
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
-def _perform_background_search(session_key, cache_key, query, entity_type, platform, sort_by, use_platform_pagination, request):
+def _perform_background_search(session_key, cache_key, query, entity_type, platform, sort_by, use_platform_pagination, request, or_filters=None):
     """Perform the actual search in background with progress updates"""
     from .models import SearchResultCache, SearchProgress
     
@@ -490,8 +511,14 @@ def _perform_background_search(session_key, cache_key, query, entity_type, platf
         # Clear any existing cache for this search
         SearchResultCache.clear_cache(session_key, cache_key)
         
+        # If we have orFilters, use them for more efficient search
+        if or_filters and len(or_filters) > 0:
+            logger.info(f"Using advanced search with {len(or_filters)} orFilters")
+            _perform_direct_search_with_progress(
+                client, query, entity_type, platform, sort_by, session_key, cache_key, or_filters
+            )
         # Use comprehensive search if platform pagination is enabled (default behavior)
-        if use_platform_pagination or (not entity_type and not platform):
+        elif use_platform_pagination or (not entity_type and not platform):
             logger.info("Using comprehensive search across all platforms and entity types")
             _perform_comprehensive_search_with_progress(
                 client, query, entity_type, platform, sort_by, session_key, cache_key
@@ -714,14 +741,20 @@ def _search_with_pagination_and_cache(client, query, entity_type, platform, sort
     return all_results
 
 
-def _perform_direct_search_with_progress(client, query, entity_type, platform, sort_by, session_key, cache_key):
+def _perform_direct_search_with_progress(client, query, entity_type, platform, sort_by, session_key, cache_key, or_filters=None):
     """Perform direct search with progress updates"""
     from .models import SearchResultCache, SearchProgress
+    
+    # Update progress message based on whether we're using advanced filters
+    if or_filters and len(or_filters) > 0:
+        step_message = f"Searching with advanced filters ({len(or_filters)} conditions)"
+    else:
+        step_message = f"Searching {entity_type or 'all types'} + {platform or 'all platforms'}"
     
     SearchProgress.update_progress(
         session_key=session_key,
         cache_key=cache_key,
-        current_step=f"Searching {entity_type or 'all types'} + {platform or 'all platforms'}",
+        current_step=step_message,
         current_entity_type=entity_type or "",
         current_platform=platform or "",
         total_combinations=1,
@@ -729,9 +762,104 @@ def _perform_direct_search_with_progress(client, query, entity_type, platform, s
     )
     
     seen_urns = set()
-    results = _search_with_pagination_and_cache(
-        client, query, entity_type, platform, sort_by, seen_urns, session_key, cache_key
-    )
+    
+    # If we have orFilters, use them for more efficient search
+    if or_filters and len(or_filters) > 0:
+        logger.info(f"Using advanced search with {len(or_filters)} orFilters")
+        
+        try:
+            # Direct search with orFilters
+            start = 0
+            batch_size = 1000  # Use larger batches for efficiency
+            all_results = []
+            
+            while True:
+                try:
+                    # Use the client with orFilters
+                    result = client.get_editable_entities(
+                        start=start,
+                        count=batch_size,
+                        query=query,
+                        entity_type=entity_type,
+                        platform=platform,
+                        sort_by=sort_by,
+                        editable_only=True,
+                        orFilters=or_filters
+                    )
+                    
+                    # Handle client response format
+                    if result and result.get("success") and "data" in result:
+                        result_data = result["data"]
+                    elif result and "searchResults" in result:
+                        result_data = result
+                    else:
+                        break
+                        
+                    if not result_data or "searchResults" not in result_data:
+                        break
+                        
+                    search_results = result_data.get("searchResults", [])
+                    if not search_results:
+                        break
+                        
+                    # Cache results directly
+                    for search_result in search_results:
+                        entity = search_result.get("entity")
+                        if entity and "urn" in entity:
+                            entity_urn = entity["urn"]
+                            if entity_urn not in seen_urns:
+                                seen_urns.add(entity_urn)
+                                
+                                try:
+                                    SearchResultCache.objects.get_or_create(
+                                        session_key=session_key,
+                                        cache_key=cache_key,
+                                        entity_urn=entity_urn,
+                                        defaults={
+                                            'entity_data': entity,
+                                            'search_params': {
+                                                'query': query,
+                                                'entity_type': entity_type,
+                                                'platform': platform,
+                                                'sort_by': sort_by,
+                                                'orFilters': True
+                                            }
+                                        }
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Error caching result for {entity_urn}: {str(e)}")
+                    
+                    # Update progress with current results count
+                    total_cached = SearchResultCache.get_total_count(session_key, cache_key)
+                    SearchProgress.update_progress(
+                        session_key=session_key,
+                        cache_key=cache_key,
+                        total_results_found=total_cached
+                    )
+                    
+                    # Check if we got fewer results than requested (end of results)
+                    if len(search_results) < batch_size:
+                        break
+                        
+                    start += batch_size
+                    
+                except Exception as e:
+                    logger.error(f"Error in advanced search pagination: {str(e)}")
+                    break
+                    
+            logger.info(f"Found {len(seen_urns)} results with advanced filters")
+            
+        except Exception as e:
+            logger.error(f"Error in advanced search: {str(e)}")
+            # Fall back to standard search
+            results = _search_with_pagination_and_cache(
+                client, query, entity_type, platform, sort_by, seen_urns, session_key, cache_key
+            )
+    else:
+        # Standard search
+        results = _search_with_pagination_and_cache(
+            client, query, entity_type, platform, sort_by, seen_urns, session_key, cache_key
+        )
     
     # Update final progress
     total_results = SearchResultCache.get_total_count(session_key, cache_key)
@@ -1978,39 +2106,65 @@ def get_search_progress(request):
 
 @require_http_methods(["GET"])
 def get_datahub_url_config(request):
-    """Get the DataHub URL from the system configuration."""
+    """Get DataHub URL configuration for frontend use"""
     try:
-        # Try to get from AppSettings
-        try:
-            from web_ui.models import AppSettings
-            datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", ""))
-            
-            # If URL ends with /api/gms, strip it for frontend use
-            if datahub_url and datahub_url.endswith("/api/gms"):
-                datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
-            
-            if not datahub_url:
-                # Fall back to the default environment in the database
-                environment = ensure_default_environment()
-                if environment and environment.datahub_url:
-                    datahub_url = environment.datahub_url
-                    # Same cleanup
-                    if datahub_url.endswith("/api/gms"):
-                        datahub_url = datahub_url[:-8]
-
-            return JsonResponse({
-                "success": True,
-                "url": datahub_url
-            })
-        except Exception as e:
-            logger.error(f"Error getting DataHub URL: {str(e)}")
-            return JsonResponse({
-                "success": False,
-                "error": f"Failed to get DataHub URL: {str(e)}"
-            }, status=500)
-    except Exception as e:
-        logger.error(f"Unexpected error in get_datahub_url_config: {str(e)}")
+        # Get the default environment
+        environment = ensure_default_environment()
+        if not environment:
+            return JsonResponse({"success": False, "error": "No default environment configured"})
+        
         return JsonResponse({
-            "success": False,
-            "error": f"Internal server error: {str(e)}"
-        }, status=500)
+            "success": True,
+            "url": environment.datahub_url
+        })
+    except Exception as e:
+        logger.error(f"Error getting DataHub URL config: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["GET"])
+def get_structured_properties(request):
+    """
+    Get all structured properties from DataHub.
+    This endpoint is used to build filters for the editable entities search.
+    Results are cached for 60 minutes.
+    """
+    try:
+        # Check if we have a cached response
+        cache_key = "structured_properties_cache"
+        cached_data = cache.get(cache_key)
+        
+        if cached_data:
+            logger.info("Returning cached structured properties")
+            return JsonResponse(cached_data)
+        
+        # Get client from environment
+        client = get_client_from_session(request)
+        if not client:
+            return JsonResponse({"success": False, "error": "Could not connect to DataHub"})
+        
+        # Fetch structured properties from DataHub
+        result = client.get_structured_properties(count=1000)
+        
+        if not result or not result.get("success", False):
+            error_msg = result.get("error", "Unknown error fetching structured properties")
+            logger.error(f"Error fetching structured properties: {error_msg}")
+            return JsonResponse({"success": False, "error": error_msg})
+        
+        # Log some information about the structured properties
+        structured_properties = result.get("structured_properties", [])
+        total = result.get("total", 0)
+        logger.info(f"Retrieved {len(structured_properties)} structured properties out of {total} total")
+        
+        if structured_properties and len(structured_properties) > 0:
+            # Log a few examples
+            examples = structured_properties[:3]
+            logger.info(f"Example structured properties: {examples}")
+        
+        # Cache the result for 60 minutes
+        cache.set(cache_key, result, 60 * 60)
+        
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Error getting structured properties: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)})

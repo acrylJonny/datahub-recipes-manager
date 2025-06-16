@@ -493,6 +493,14 @@ document.addEventListener('DOMContentLoaded', function() {
         cacheExpiry: 5 * 60 * 1000 // 5 minutes
     };
     
+    // Structured properties cache for building filters
+    let structuredPropertiesCache = {
+        properties: [],
+        lastFetched: null,
+        cacheExpiry: 60 * 60 * 1000, // 60 minutes
+        loading: false
+    };
+    
     // Load platforms dynamically from the backend
     function loadPlatforms(entityType = '') {
         const platformSelect = document.getElementById('platform');
@@ -551,6 +559,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load users and groups for ownership lookup in parallel
     loadUsersAndGroups();
+    
+    // Load structured properties for advanced filtering in parallel
+    loadStructuredProperties();
     
     // Toggle advanced filters visibility
     document.getElementById('toggleAdvancedFilters').addEventListener('click', function() {
@@ -864,7 +875,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // Update the loadEntities function to handle progress updates and progressive rendering
-    window.loadEntities = function(page = 1) {
+    window.loadEntities = async function(page = 1) {
         const searchQuery = document.getElementById('searchQuery').value;
         const entityType = document.getElementById('entityType').value;
         const platform = document.getElementById('platform').value;
@@ -884,7 +895,26 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const start = (page - 1) * itemsPerPage;
         
-        console.log(`Loading entities with: start=${start}, count=${itemsPerPage}, searchQuery=${searchQuery}, entityType=${entityType}, platform=${platform}, browsePath=${browsePath}, platformInstance=${platformInstance}, usePlatformPagination=${usePlatformPagination}, editablePropertiesOnly=${editablePropertiesOnly}`);
+        // Build advanced filters for more efficient searching
+        let orFilters = null;
+        
+        // Only use advanced filters if platform pagination is enabled
+        if (usePlatformPagination) {
+            try {
+                // Show loading state while building filters
+                updateCacheStatus('Building advanced filters...');
+                
+                // Build filters in the background
+                orFilters = await buildAdvancedFilters(platform);
+                
+                console.log(`Built ${orFilters.length} advanced filters for efficient search`);
+            } catch (error) {
+                console.error('Error building advanced filters:', error);
+            }
+        }
+        
+        console.log(`Loading entities with: start=${start}, count=${itemsPerPage}, searchQuery=${searchQuery}, entityType=${entityType}, platform=${platform}, browsePath=${browsePath}, platformInstance=${platformInstance}, usePlatformPagination=${usePlatformPagination}, editablePropertiesOnly=${editablePropertiesOnly}, advancedFilters=${orFilters ? 'yes' : 'no'}`);
+        
         
         // Show loading state with better coverage
         document.getElementById('entitiesTableBody').innerHTML = `
@@ -952,7 +982,8 @@ document.addEventListener('DOMContentLoaded', function() {
             hasProperties: hasProperties,
             sortBy: sortBy,
             usePlatformPagination: usePlatformPagination,
-            editablePropertiesOnly: editablePropertiesOnly
+            editablePropertiesOnly: editablePropertiesOnly,
+            orFilters: orFilters // Include the advanced filters
             // Note: refreshCache is not included in regular searches
         };
         
@@ -968,6 +999,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add refresh_cache parameter if specified
         if (searchParams.refreshCache) {
             apiUrl += '&refresh_cache=true';
+        }
+        
+        // Add orFilters as JSON if available
+        if (searchParams.orFilters && searchParams.orFilters.length > 0) {
+            const orFiltersParam = encodeURIComponent(JSON.stringify(searchParams.orFilters));
+            apiUrl += `&orFilters=${orFiltersParam}`;
         }
         
         console.log(`Starting search: ${apiUrl}`);
@@ -3017,6 +3054,313 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Function to load structured properties for advanced filtering
+    async function loadStructuredProperties() {
+        const now = Date.now();
+        
+        // Check if cache is still valid
+        if (structuredPropertiesCache.lastFetched && 
+            (now - structuredPropertiesCache.lastFetched) < structuredPropertiesCache.cacheExpiry &&
+            structuredPropertiesCache.properties.length > 0) {
+            console.log('Using cached structured properties');
+            return structuredPropertiesCache.properties;
+        }
+        
+        // Prevent multiple simultaneous loads
+        if (structuredPropertiesCache.loading) {
+            console.log('Structured properties are already loading');
+            return [];
+        }
+        
+        structuredPropertiesCache.loading = true;
+        console.log('Fetching fresh structured properties data');
+        
+        try {
+            // Fetch structured properties from the backend
+            const response = await fetch('/metadata/structured-properties/');
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                structuredPropertiesCache.properties = data.structured_properties || [];
+                structuredPropertiesCache.lastFetched = now;
+                
+                console.log(`Loaded ${structuredPropertiesCache.properties.length} structured properties`);
+                return structuredPropertiesCache.properties;
+            } else {
+                console.error('Failed to load structured properties:', data.error);
+                return [];
+            }
+        } catch (error) {
+            console.error('Error loading structured properties:', error);
+            return [];
+        } finally {
+            structuredPropertiesCache.loading = false;
+        }
+    }
+    
+    // Function to build advanced orFilters for DataHub search
+    async function buildAdvancedFilters(platform) {
+        // Create an array to hold all the OR filters
+        const orFilters = [];
+        
+        // Add platform filter if provided
+        let platformFilter = null;
+        if (platform) {
+            // Format the platform value with proper URN format if it doesn't already have it
+            let platformValue = platform;
+            if (!platform.startsWith("urn:li:dataPlatform:")) {
+                platformValue = `urn:li:dataPlatform:${platform}`;
+            }
+            
+            platformFilter = {
+                "field": "platform",
+                "condition": "EQUAL",
+                "values": [platformValue],
+                "negated": false
+            };
+        }
+        
+        // Add filter for entities with tags
+        orFilters.push({
+            "and": platformFilter ? [
+                {
+                    "field": "tags",
+                    "condition": "EXISTS",
+                    "negated": false
+                },
+                platformFilter
+            ] : [
+                {
+                    "field": "tags",
+                    "condition": "EXISTS",
+                    "negated": false
+                }
+            ]
+        });
+        
+        // Add filter for entities with glossary terms
+        orFilters.push({
+            "and": platformFilter ? [
+                {
+                    "field": "glossaryTerms",
+                    "condition": "EXISTS",
+                    "negated": false
+                },
+                platformFilter
+            ] : [
+                {
+                    "field": "glossaryTerms",
+                    "condition": "EXISTS",
+                    "negated": false
+                }
+            ]
+        });
+        
+        // Add filter for entities with domain
+        orFilters.push({
+            "and": platformFilter ? [
+                {
+                    "field": "domain",
+                    "condition": "EXISTS",
+                    "negated": false
+                },
+                platformFilter
+            ] : [
+                {
+                    "field": "domain",
+                    "condition": "EXISTS",
+                    "negated": false
+                }
+            ]
+        });
+        
+        // Add filter for entities with editable properties
+        orFilters.push({
+            "and": platformFilter ? [
+                {
+                    "field": "editableProperties",
+                    "condition": "EXISTS",
+                    "negated": false
+                },
+                platformFilter
+            ] : [
+                {
+                    "field": "editableProperties",
+                    "condition": "EXISTS",
+                    "negated": false
+                }
+            ]
+        });
+        
+        // Add filter for entities with schema metadata
+        orFilters.push({
+            "and": platformFilter ? [
+                {
+                    "field": "schemaMetadata",
+                    "condition": "EXISTS",
+                    "negated": false
+                },
+                platformFilter
+            ] : [
+                {
+                    "field": "schemaMetadata",
+                    "condition": "EXISTS",
+                    "negated": false
+                }
+            ]
+        });
+        
+        // Add filter for deprecated entities
+        orFilters.push({
+            "and": platformFilter ? [
+                {
+                    "field": "deprecated",
+                    "condition": "EQUAL",
+                    "values": ["true"],
+                    "negated": false
+                },
+                platformFilter
+            ] : [
+                {
+                    "field": "deprecated",
+                    "condition": "EQUAL",
+                    "values": ["true"],
+                    "negated": false
+                }
+            ]
+        });
+        
+        // Add filters for all structured properties
+        try {
+            const structuredProperties = await loadStructuredProperties();
+            
+            if (structuredProperties && structuredProperties.length > 0) {
+                console.log(`Adding filters for ${structuredProperties.length} structured properties`);
+                
+                // Log a few examples of the structured properties
+                if (structuredProperties.length > 0) {
+                    console.log('First few structured properties:', structuredProperties.slice(0, 3));
+                }
+                
+                structuredProperties.forEach(prop => {
+                    if (prop.filter_field) {
+                        orFilters.push({
+                            "and": platformFilter ? [
+                                {
+                                    "field": prop.filter_field,
+                                    "condition": "EXISTS",
+                                    "negated": false
+                                },
+                                platformFilter
+                            ] : [
+                                {
+                                    "field": prop.filter_field,
+                                    "condition": "EXISTS",
+                                    "negated": false
+                                }
+                            ]
+                        });
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error loading structured properties for filters:', error);
+        }
+        
+        return orFilters;
+    }
+    
+    // Function to open edit modal
+    function openEditModal(urn, type) {
+        const modal = new bootstrap.Modal(document.getElementById('editEntityModal'));
+        document.getElementById('entityUrn').value = urn;
+        document.getElementById('entityType').value = type;
+        
+        // Reset form
+        document.getElementById('editEntityForm').reset();
+        
+        // Show/hide schema fields container based on entity type
+        const schemaFieldsContainer = document.getElementById('schemaFieldsContainer');
+        if (type === 'DATASET') {
+            schemaFieldsContainer.classList.remove('d-none');
+            // Load schema fields
+            loadSchemaFields(urn);
+        } else {
+            schemaFieldsContainer.classList.add('d-none');
+        }
+        
+        // Load entity details
+        fetch(`/metadata/entities/${urn}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.entity) {
+                    console.log('Entity details:', data.entity);
+                    
+                    // Extract name and description, checking different possible locations
+                    let name = '';
+                    let description = '';
+                    
+                    // First try to get from editableProperties
+                    if (data.entity.editableProperties) {
+                        name = data.entity.editableProperties.name || '';
+                        description = data.entity.editableProperties.description || '';
+                        
+                        // Add additional editable properties
+                        const editablePropertiesFields = document.getElementById('editablePropertiesFields');
+                        editablePropertiesFields.innerHTML = '';
+                        
+                        Object.keys(data.entity.editableProperties).forEach(propKey => {
+                            if (propKey !== 'name' && propKey !== 'description') {
+                                const propValue = data.entity.editableProperties[propKey];
+                                editablePropertiesFields.innerHTML += `
+                                    <div class="mb-3">
+                                        <label class="form-label">${propKey}</label>
+                                        <input type="text" class="form-control" name="properties[${propKey}]" value="${propValue || ''}" />
+                                    </div>
+                                `;
+                            }
+                        });
+                    }
+                    
+                    // If still empty, try other possible locations
+                    if (!name && data.entity.properties && data.entity.properties.name) {
+                        name = data.entity.properties.name;
+                    }
+                    
+                    if (!description && data.entity.properties && data.entity.properties.description) {
+                        description = data.entity.properties.description;
+                    }
+                    
+                    // Last resort: extract name from URN
+                    if (!name) {
+                        const urnParts = urn.split('/');
+                        if (urnParts.length > 0) {
+                            name = urnParts[urnParts.length - 1];
+                        }
+                    }
+                    
+                    document.getElementById('entityName').value = name;
+                    document.getElementById('entityDescription').value = description;
+                    modal.show();
+                } else {
+                    showError(data.error || 'Failed to load entity details');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading entity details:', error);
+                showError(`Failed to load entity details: ${error.message}`);
+            });
+    }
 
 });
 </script>

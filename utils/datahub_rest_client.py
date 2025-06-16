@@ -5277,6 +5277,75 @@ class DataHubRestClient:
                 self.logger.error(f"Error listing structured properties: {error_str}")
                 return []
 
+    def get_structured_properties(self, start=0, count=1000):
+        """
+        Get all structured property entities.
+        
+        Args:
+            start: Start index for pagination
+            count: Number of entities to return
+            
+        Returns:
+            Dictionary with structured property URNs and filter fields
+        """
+        query = """
+        query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+              }
+            }
+          }
+        }
+        """
+        
+        variables = {
+            "input": {
+                "start": start,
+                "count": count,
+                "query": "*",
+                "types": ["STRUCTURED_PROPERTY"]
+            }
+        }
+        
+        result = self.execute_graphql(query, variables)
+        
+        if not result or "errors" in result:
+            self._log_graphql_errors(result)
+            return {"success": False, "error": "Failed to fetch structured properties"}
+        
+        try:
+            search_data = result.get("data", {}).get("searchAcrossEntities", {})
+            structured_properties = []
+            
+            for item in search_data.get("searchResults", []):
+                entity = item.get("entity", {})
+                urn = entity.get("urn")
+                
+                if urn and "urn:li:structuredProperty:" in urn:
+                    # Extract the ID from the URN by removing the prefix
+                    property_id = urn.replace("urn:li:structuredProperty:", "")
+                    
+                    structured_properties.append({
+                        "urn": urn,
+                        "id": property_id,
+                        "filter_field": f"structuredProperties.{property_id}"
+                    })
+            
+            return {
+                "success": True,
+                "total": search_data.get("total", 0),
+                "structured_properties": structured_properties
+            }
+            
+        except Exception as e:
+            logging.error(f"Error processing structured properties: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     def get_assertions(self, entity_urn=None, query="*", start=0, count=100):
         """
         Get assertions from DataHub using comprehensive GraphQL query.
@@ -6642,7 +6711,7 @@ class DataHubRestClient:
                 self.logger.error(f"Error listing tests: {error_str}")
                 return []
 
-    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None, platform=None, use_platform_pagination=False, sort_by=None, editable_only=True):
+    def get_editable_entities(self, start=0, count=20, query="*", entity_type=None, platform=None, use_platform_pagination=False, sort_by=None, editable_only=True, orFilters=None):
         """
         Get entities with editable properties or schema metadata.
         
@@ -6655,6 +6724,7 @@ class DataHubRestClient:
             use_platform_pagination: Whether to use platform-based pagination for complete results
             sort_by: Field to sort by (name, type, updated)
             editable_only: If True, only return entities with editableProperties or editableSchemaMetadata
+            orFilters: List of OR filters to apply (each containing AND conditions)
             
         Returns:
             Dictionary with search results
@@ -6664,7 +6734,7 @@ class DataHubRestClient:
                 "query": query,
                 "start": start,
                 "count": count,
-                "orFilters": []
+                "orFilters": orFilters if orFilters else []
             }
         }
         
@@ -6683,7 +6753,7 @@ class DataHubRestClient:
             }]
             
         # Use platform pagination if specified (for comprehensive search)
-        if use_platform_pagination and platform:
+        if use_platform_pagination and platform and not orFilters:
             # Format the platform value with proper URN format if it doesn't already have it
             platform_value = platform
             if not platform.startswith("urn:li:dataPlatform:"):
@@ -6692,7 +6762,9 @@ class DataHubRestClient:
             variables["input"]["orFilters"] = [{
                 "and": [{
                     "field": "platform",
-                    "value": platform_value
+                    "condition": "EQUAL",
+                    "values": [platform_value],
+                    "negated": False
                 }]
             }]
 
