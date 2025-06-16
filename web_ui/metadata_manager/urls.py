@@ -49,6 +49,7 @@ urlpatterns = [
         "entities/<str:urn>/schema/", views.get_entity_schema, name="get_entity_schema"
     ),
     path("sync/", views.sync_metadata, name="sync_metadata"),
+    path("config/datahub-url/", views.get_datahub_url_config, name="get_datahub_url_config"),
     # Structured Properties
     path(
         "properties/", views_properties.PropertyListView.as_view(), name="property_list"

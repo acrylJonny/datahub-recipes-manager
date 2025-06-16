@@ -120,15 +120,6 @@
                                     </select>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">Sort By</label>
-                    <select class="form-select" id="sortBy" name="sortBy">
-                        <option value="name">Sort by Name</option>
-                        <option value="type">Sort by Type</option>
-                        <option value="updated">Sort by Last Updated</option>
-                                        <option value="platform">Sort by Platform</option>
-                    </select>
-                </div>
-                                <div class="col-md-6">
                                     <label class="form-label">Search Mode</label>
                                     <div>
                                         <div class="form-check form-check-inline">
@@ -175,7 +166,7 @@
                 </div>
                 <div class="text-muted small">
                     <i class="fas fa-info-circle me-1"></i>
-                    Results are cached for 5 minutes for better performance
+                    Results are cached for 60 minutes for better performance
                 </div>
             </div>
         </div>
@@ -299,20 +290,26 @@
                             <div class="card-body">
                                 <dl class="row mb-0">
                                     <dt class="col-sm-4">Name</dt>
-                                    <dd class="col-sm-8" id="viewEntityName"></dd>
+                                    <dd class="col-sm-8 text-break" id="viewEntityName"></dd>
                                     
                                     <dt class="col-sm-4">Type</dt>
-                                    <dd class="col-sm-8" id="viewEntityType"></dd>
+                                    <dd class="col-sm-8 text-break" id="viewEntityType"></dd>
                                     
                                     <dt class="col-sm-4">Platform</dt>
-                                    <dd class="col-sm-8" id="viewEntityPlatform"></dd>
+                                    <dd class="col-sm-8 text-break" id="viewEntityPlatform"></dd>
                                     
                                     <dt class="col-sm-4">Deprecated</dt>
                                     <dd class="col-sm-8" id="viewEntityDeprecated"></dd>
                                     
                                     <dt class="col-sm-4">URN</dt>
-                                    <dd class="col-sm-8"><code class="small" id="viewEntityUrn"></code></dd>
+                                    <dd class="col-sm-8"><code class="small text-break" id="viewEntityUrn"></code></dd>
                                 </dl>
+                                
+                                <div class="mt-3">
+                                    <a href="#" class="btn btn-sm btn-outline-primary" id="viewInDataHubButton" target="_blank">
+                                        <i class="fas fa-external-link-alt me-1"></i> View in DataHub
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -413,10 +410,26 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Raw Entity JSON -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0"><i class="fas fa-code me-2"></i>Raw Entity JSON</h6>
+                                <button type="button" class="btn btn-sm btn-outline-light" id="copyRawJsonBtn">
+                                    <i class="fas fa-copy me-1"></i> Copy JSON
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <pre id="viewEntityRawJson" class="small bg-light p-2 rounded text-break" style="max-height: 300px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <a href="#" class="btn btn-primary" id="viewInDataHubButton" target="_blank">View in DataHub</a>
             </div>
         </div>
     </div>
@@ -428,2409 +441,220 @@
 #applyButtonSpinner {
     display: none;
 }
+
+/* Improve text wrapping in the view entity modal */
+#viewEntityModal .text-break {
+    word-wrap: break-word;
+    word-break: break-all;
+}
+
+#viewEntityModal dl.row dt, 
+#viewEntityModal dl.row dd {
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+#viewEntityModal .card-body {
+    word-wrap: break-word;
+    word-break: break-word;
+}
+
+#viewEntityModal code {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-word;
+}
+
+/* Improve display of structured properties */
+#viewEntityStructuredProperties .property-value {
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    word-break: break-word;
+}
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Global variables
     let currentPage = 1;
-    let totalPages = 1;
-    let itemsPerPage = 20;
+    let itemsPerPage = 10;
     let allEntities = [];
-    let currentCacheKey = null; // Store the current cache key for progress monitoring
     
-    // Load platforms dynamically from the backend
-    function loadPlatforms(entityType = '') {
-        const platformSelect = document.getElementById('platform');
-        const applyButton = document.getElementById('applyFiltersButton');
-        const spinner = document.getElementById('applyButtonSpinner');
-        
-        // Disable apply button while loading platforms
-        applyButton.disabled = true;
-        spinner.style.display = 'inline-block';
-        
-        // Clear existing options and show loading
-        platformSelect.innerHTML = '<option value="">Loading platforms...</option>';
-        platformSelect.disabled = true;
-        
-        // Fetch platforms from backend
-        const url = entityType ? 
-            `/metadata/platforms/?entity_type=${encodeURIComponent(entityType)}` : 
-            '/metadata/platforms/';
-            
-        fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.platforms) {
-                    // Clear loading option
-                    platformSelect.innerHTML = '<option value="">All Platforms</option>';
-                    
-                    // Add platform options
-                    data.platforms.forEach(platform => {
-                        const option = document.createElement('option');
-                        option.value = platform;
-                        option.textContent = platform.charAt(0).toUpperCase() + platform.slice(1);
-                        platformSelect.appendChild(option);
-                    });
-                    
-                    // Enable platform dropdown
-                    platformSelect.disabled = false;
-                    console.log(`Loaded ${data.platforms.length} platforms for entity type: ${entityType || 'all'}`);
-                } else {
-                    platformSelect.innerHTML = '<option value="">No platforms available</option>';
-                    console.error('Failed to load platforms:', data.error || 'Unknown error');
-                }
-            })
-            .catch(error => {
-                console.error('Error loading platforms:', error);
-                platformSelect.innerHTML = '<option value="">Error loading platforms</option>';
-            })
-            .finally(() => {
-                // Enable apply button when platforms loading is complete
-                applyButton.disabled = false;
-                spinner.style.display = 'none';
-            });
-    }
-    
-    // Load all platforms initially
-    loadPlatforms();
-    
-    // Toggle advanced filters visibility
-    document.getElementById('toggleAdvancedFilters').addEventListener('click', function() {
-        const advancedFilters = document.querySelector('.advanced-filters');
-        if (advancedFilters.style.display === 'none') {
-            advancedFilters.style.display = 'block';
-            this.innerHTML = '<i class="fas fa-chevron-up me-1"></i> Hide Advanced Filters';
-        } else {
-            advancedFilters.style.display = 'none';
-            this.innerHTML = '<i class="fas fa-sliders-h me-1"></i> Advanced Filters';
-        }
-    });
-    
-    // Track recently used browse paths
-    let recentBrowsePaths = [];
-    const MAX_RECENT_PATHS = 5;
-
-    // Function to add a browse path to recent paths
-    function addToRecentBrowsePaths(path) {
-        if (!path) return;
-        
-        // Remove the path if it already exists (to avoid duplicates)
-        recentBrowsePaths = recentBrowsePaths.filter(p => p !== path);
-        
-        // Add the path to the beginning of the array
-        recentBrowsePaths.unshift(path);
-        
-        // Limit the array to MAX_RECENT_PATHS
-        if (recentBrowsePaths.length > MAX_RECENT_PATHS) {
-            recentBrowsePaths = recentBrowsePaths.slice(0, MAX_RECENT_PATHS);
-        }
-        
-        // Save to local storage
-        localStorage.setItem('recentBrowsePaths', JSON.stringify(recentBrowsePaths));
-        
-        // Update the UI
-        updateRecentBrowsePathsUI();
-    }
-
-    // Function to update the UI with recent browse paths
-    function updateRecentBrowsePathsUI() {
-        const container = document.getElementById('recentBrowsePathsContainer');
-        if (!container) return;
-        
-        if (recentBrowsePaths.length > 0) {
-            container.style.display = 'block';
-            const pathsList = document.getElementById('recentBrowsePathsList');
-            pathsList.innerHTML = '';
-            
-            recentBrowsePaths.forEach(path => {
-                const li = document.createElement('li');
-                li.className = 'list-inline-item';
-                li.innerHTML = `
-                    <a href="#" class="badge rounded-pill bg-light text-dark" data-path="${path}">
-                        <i class="fas fa-folder me-1"></i>${path}
-                    </a>
-                `;
-                pathsList.appendChild(li);
-                
-                // Add click event to the badge
-                li.querySelector('a').addEventListener('click', function(e) {
-                    e.preventDefault();
-                    document.getElementById('browsePath').value = this.getAttribute('data-path');
-                    document.querySelector('.advanced-filters').style.display = 'block';
-                    document.getElementById('toggleAdvancedFilters').innerHTML = '<i class="fas fa-chevron-up me-1"></i> Hide Advanced Filters';
-                    document.getElementById('filterForm').dispatchEvent(new Event('submit'));
-                });
-            });
-        } else {
-            container.style.display = 'none';
-        }
-    }
-
-    // Load recent browse paths from local storage
-    function loadRecentBrowsePaths() {
-        const savedPaths = localStorage.getItem('recentBrowsePaths');
-        if (savedPaths) {
-            try {
-                recentBrowsePaths = JSON.parse(savedPaths);
-                updateRecentBrowsePathsUI();
-            } catch (e) {
-                console.error('Error loading recent browse paths:', e);
-                recentBrowsePaths = [];
-            }
-        }
-    }
-
-    // Add recent browse paths container after the filters card
-    const filtersCard = document.querySelector('.card.mb-4');
-    if (filtersCard) {
-        const recentPathsContainer = document.createElement('div');
-        recentPathsContainer.id = 'recentBrowsePathsContainer';
-        recentPathsContainer.className = 'mb-3';
-        recentPathsContainer.style.display = 'none';
-        recentPathsContainer.innerHTML = `
-            <small class="text-muted">Recent Browse Paths:</small>
-            <ul class="list-inline mb-0 mt-1" id="recentBrowsePathsList"></ul>
-        `;
-        filtersCard.after(recentPathsContainer);
-        
-        // Load recent browse paths
-        loadRecentBrowsePaths();
-    }
-    
-    // Enhanced results cache system with background loading
-    const resultsCache = {
-        // Cache storage
-        cache: {},
-        
-        // Cache key components
-        currentCacheKey: null,
-        
-        // Background loading state
-        backgroundLoading: new Set(),
-        
-        // Generate a cache key from search parameters
-        generateCacheKey: function(params) {
-            return JSON.stringify({
-                query: params.query || '',
-                entityType: params.entityType || '',
-                platform: params.platform || '',
-                browsePath: params.browsePath || '',
-                platformInstance: params.platformInstance || '',
-                hasProperties: params.hasProperties || '',
-                usePlatformPagination: params.usePlatformPagination || false,
-                sortBy: params.sortBy || 'name'
-            });
-        },
-        
-        // Check if this is a comprehensive search (all entity types and platforms)
-        isComprehensiveSearch: function(params) {
-            return (!params.query || params.query === '*') && 
-                   !params.entityType && 
-                   !params.platform && 
-                   !params.browsePath && 
-                   !params.platformInstance && 
-                   !params.hasProperties &&
-                   params.usePlatformPagination;
-        },
-        
-        // Store results in the cache
-        store: function(params, data) {
-            const cacheKey = this.generateCacheKey(params);
-            this.currentCacheKey = cacheKey;
-            
-            // Store the complete result set
-            this.cache[cacheKey] = {
-                timestamp: Date.now(),
-                totalCount: data.total,
-                filteredTotal: data.filtered_total,
-                allResults: data.searchResults || [],
-                params: params,
-                isComplete: data.searchResults ? data.searchResults.length >= data.total : false,
-                isComprehensive: this.isComprehensiveSearch(params)
-            };
-            
-            console.log(`Cached ${this.cache[cacheKey].allResults.length} results with key: ${cacheKey} (complete: ${this.cache[cacheKey].isComplete})`);
-        },
-        
-        // Append more results to existing cache
-        appendResults: function(params, data, startIndex) {
-            const cacheKey = this.generateCacheKey(params);
-            
-            if (this.cache[cacheKey]) {
-                const existingResults = this.cache[cacheKey].allResults;
-                const newResults = data.searchResults || [];
-                
-                // Merge results, avoiding duplicates
-                const mergedResults = [...existingResults];
-                newResults.forEach((newResult, index) => {
-                    const targetIndex = startIndex + index;
-                    if (targetIndex < mergedResults.length) {
-                        mergedResults[targetIndex] = newResult;
-                    } else {
-                        mergedResults.push(newResult);
-                    }
-                });
-                
-                this.cache[cacheKey].allResults = mergedResults;
-                this.cache[cacheKey].isComplete = mergedResults.length >= data.total;
-                
-                console.log(`Appended ${newResults.length} results to cache. Total: ${mergedResults.length}/${data.total} (complete: ${this.cache[cacheKey].isComplete})`);
-            }
-        },
-        
-        // Get results from the cache for a specific page
-        get: function(params, start, count) {
-            const cacheKey = this.generateCacheKey(params);
-            
-            // Check if we have this query cached
-            if (this.cache[cacheKey]) {
-                const cachedData = this.cache[cacheKey];
-                
-                // Check if we have enough results to satisfy this page request
-                if (cachedData.allResults.length >= start + count || cachedData.isComplete) {
-                    console.log(`Cache hit for key: ${cacheKey}, serving page from ${start} to ${start + count}`);
-                    
-                    // Return the paginated subset from the cache
-                    return {
-                        success: true,
-                        data: {
-                            start: start,
-                            count: count,
-                            total: cachedData.totalCount,
-                            filtered_total: cachedData.filteredTotal,
-                            searchResults: cachedData.allResults.slice(start, start + count)
-                        },
-                        timestamp: cachedData.timestamp
-                    };
-                } else {
-                    console.log(`Cache hit for key: ${cacheKey}, but not enough results cached (have ${cachedData.allResults.length}, need ${start + count})`);
-                }
-            } else {
-                console.log(`Cache miss for key: ${cacheKey}`);
-            }
-            
-            return null;
-        },
-        
-        // Check if we should use cache or re-query
-        shouldUseCache: function(params) {
-            const cacheKey = this.generateCacheKey(params);
-            const cachedData = this.cache[cacheKey];
-            
-            if (!cachedData) return false;
-            
-            // Always use cache if it's a comprehensive search and we have it cached
-            if (cachedData.isComprehensive && this.isComprehensiveSearch(params)) {
-                console.log('Using comprehensive cache');
-                return true;
-            }
-            
-            // Use cache if it's not stale (5 minutes)
-            const maxAge = 5 * 60 * 1000;
-            const isStale = Date.now() - cachedData.timestamp > maxAge;
-            
-            if (isStale) {
-                console.log('Cache is stale, will re-query');
-                return false;
-            }
-            
-            return true;
-        },
-        
-        // Start background loading of additional pages
-        startBackgroundLoading: function(params) {
-            const cacheKey = this.generateCacheKey(params);
-            const cachedData = this.cache[cacheKey];
-            
-            if (!cachedData || cachedData.isComplete || this.backgroundLoading.has(cacheKey)) {
-                return;
-            }
-            
-            this.backgroundLoading.add(cacheKey);
-            console.log(`Starting background loading for: ${cacheKey}`);
-            
-            // Load next batch in background
-            const nextStart = cachedData.allResults.length;
-            const batchSize = itemsPerPage * 5; // Load 5 pages at a time
-            
-            this.loadMoreResults(params, nextStart, batchSize)
-                .finally(() => {
-                    this.backgroundLoading.delete(cacheKey);
-                });
-        },
-        
-        // Load more results for background caching
-        loadMoreResults: function(params, start, count) {
-            const query = params.query || '';
-            const apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${count}&searchQuery=${encodeURIComponent(query)}&entityType=${params.entityType || ''}&platform=${params.platform || ''}&use_platform_pagination=${params.usePlatformPagination || false}&sortBy=${params.sortBy || 'name'}&editable_only=true`;
-            
-            console.log(`Background loading from: ${apiUrl}`);
-            
-            return fetch(apiUrl)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        this.appendResults(params, data.data, start);
-                        console.log(`Background loaded ${data.data.searchResults.length} more results`);
-                    }
-                })
-                .catch(error => {
-                    console.error('Background loading error:', error);
-                });
-        },
-        
-        // Clear the cache
-        clear: function() {
-            this.cache = {};
-            this.currentCacheKey = null;
-            this.backgroundLoading.clear();
-            console.log('Cache cleared');
-        },
-        
-        // Clear cache older than a certain age (in milliseconds)
-        clearStale: function(maxAge = 5 * 60 * 1000) { // Default: 5 minutes
-            const now = Date.now();
-            let clearedCount = 0;
-            
-            Object.keys(this.cache).forEach(key => {
-                if (now - this.cache[key].timestamp > maxAge) {
-                    delete this.cache[key];
-                    clearedCount++;
-                }
-            });
-            
-            if (clearedCount > 0) {
-                console.log(`Cleared ${clearedCount} stale cache entries`);
-            }
-        }
-    };
-
-    // Update the loadEntities function to handle progress updates and progressive rendering
-    window.loadEntities = function(page = 1) {
-        const searchQuery = document.getElementById('searchQuery').value;
-        const entityType = document.getElementById('entityType').value;
-        const platform = document.getElementById('platform').value;
-        const browsePath = document.getElementById('browsePath')?.value || '';
-        const platformInstance = document.getElementById('platformInstance')?.value || '';
-        const hasProperties = document.getElementById('hasProperties')?.value || '';
-        const sortBy = document.getElementById('sortBy')?.value || 'name';
-        const usePlatformPagination = document.getElementById('usePlatformPagination').checked;
-        
-        // Add a parameter to explicitly filter for entities with editable properties
-        const editablePropertiesOnly = true;
-        
-        // If a browse path is specified, add it to recent paths
-        if (browsePath) {
-            addToRecentBrowsePaths(browsePath);
-        }
-        
-        const start = (page - 1) * itemsPerPage;
-        
-        console.log(`Loading entities with: start=${start}, count=${itemsPerPage}, searchQuery=${searchQuery}, entityType=${entityType}, platform=${platform}, browsePath=${browsePath}, platformInstance=${platformInstance}, usePlatformPagination=${usePlatformPagination}, editablePropertiesOnly=${editablePropertiesOnly}`);
-        
-        // Show loading state with better coverage
-        document.getElementById('entitiesTableBody').innerHTML = `
-            <tr>
-                <td colspan="13" class="text-center py-4">
-                    <div class="d-flex flex-column align-items-center">
-                        <div class="spinner-border text-primary mb-3" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <div id="progressContainer" class="w-100" style="max-width: 500px;">
-                            <div id="progressText" class="mb-2">
-                                <strong>Initializing search...</strong>
-                            </div>
-                            <div class="progress mb-2">
-                                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
-                                     role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                                </div>
-                            </div>
-                            <div id="progressDetails" class="small text-muted">
-                                Preparing comprehensive search across all platforms and entity types...
-                            </div>
-                        </div>
-                    </div>
-                </td>
-            </tr>
-        `;
-        
-        // Build the query string
-        let query = searchQuery;
-        
-        // Add browse path filter if specified
-        if (browsePath) {
-            if (query && query !== '*') {
-                query += ` AND browsePaths:"/${browsePath}*"`;
-            } else {
-                query = `browsePaths:"/${browsePath}*"`;
-            }
-        }
-        
-        // Add platform instance filter if specified
-        if (platformInstance && platform) {
-            if (query && query !== '*') {
-                query += ` AND instance:${platformInstance}`;
-            } else {
-                query = `instance:${platformInstance}`;
-            }
-        }
-        
-        // Add property existence filters if specified
-        if (hasProperties) {
-            if (query && query !== '*') {
-                query += ` AND has:${hasProperties}`;
-            } else {
-                query = `has:${hasProperties}`;
-            }
-        }
-        
-        // Create search parameters object for cache key
-        const searchParams = {
-            query: query,
-            entityType: entityType,
-            platform: platform,
-            browsePath: browsePath,
-            platformInstance: platformInstance,
-            hasProperties: hasProperties,
-            sortBy: sortBy,
-            usePlatformPagination: usePlatformPagination,
-            editablePropertiesOnly: editablePropertiesOnly
-            // Note: refreshCache is not included in regular searches
-        };
-        
-        // Start the search and progress monitoring
-        startSearchWithProgress(searchParams, start, itemsPerPage, null, page);
+    // User, group, and ownership type cache
+    let usersAndGroupsCache = {
+        users: [],
+        groups: [],
+        ownership_types: [],
+        lastFetched: null,
+        cacheExpiry: 5 * 60 * 1000 // 5 minutes
     };
     
-    // Start search with progress monitoring
-    function startSearchWithProgress(searchParams, start, count, cacheKey, page) {
-        // Construct the API URL
-        let apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${count}&searchQuery=${encodeURIComponent(searchParams.query)}&entityType=${searchParams.entityType}&platform=${searchParams.platform}&use_platform_pagination=${searchParams.usePlatformPagination}&sortBy=${searchParams.sortBy}&editable_only=${searchParams.editablePropertiesOnly}`;
+    // Function to load users, groups and ownership types
+    async function loadUsersAndGroups() {
+        const now = Date.now();
         
-        // Add refresh_cache parameter if specified
-        if (searchParams.refreshCache) {
-            apiUrl += '&refresh_cache=true';
+        // Check if cache is still valid
+        if (usersAndGroupsCache.lastFetched && 
+            (now - usersAndGroupsCache.lastFetched) < usersAndGroupsCache.cacheExpiry &&
+            usersAndGroupsCache.users.length > 0) {
+            console.log('Using cached users and groups');
+            return;
         }
         
-        console.log(`Starting search: ${apiUrl}`);
+        console.log('Fetching fresh users and groups data');
         
-        fetch(apiUrl)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    if (data.in_progress) {
-                        // Store the cache key for progress monitoring
-                        currentCacheKey = data.cache_key;
-                        
-                        // Search is in progress, start monitoring
-                        updateProgress(data.progress);
-                        monitorProgress(currentCacheKey, searchParams, start, count, page);
-                    } else {
-                        // Search completed immediately (cached results)
-                        handleSearchResults(data.data, page);
-                    }
-                } else {
-                    showError(data.error || 'Failed to start search');
-                }
-            })
-            .catch(error => {
-                console.error('Error starting search:', error);
-                showError(`Failed to start search: ${error.message}`);
-            });
-    }
-    
-    // Monitor search progress
-    function monitorProgress(cacheKey, searchParams, start, count, page) {
-        const progressInterval = setInterval(() => {
-            fetch(`/metadata/entities/editable/progress/?cache_key=${cacheKey}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        updateProgress(data.progress);
-                        
-                        if (data.progress.is_complete) {
-                            clearInterval(progressInterval);
-                            
-                            if (data.progress.error_message) {
-                                showError(data.progress.error_message);
-                            } else {
-                                // Search completed, fetch results
-                                fetchCompletedResults(searchParams, start, count, page);
-                            }
-                        }
-                    } else {
-                        // If no search in progress, it might have completed very quickly
-                        // Try to fetch results directly
-                        clearInterval(progressInterval);
-                        console.log('No progress found, attempting to fetch results directly');
-                        fetchCompletedResults(searchParams, start, count, page);
-                    }
-                })
-                .catch(error => {
-                    clearInterval(progressInterval);
-                    console.error('Error monitoring progress:', error);
-                    // Try to fetch results in case the search completed
-                    fetchCompletedResults(searchParams, start, count, page);
-                });
-        }, 1000); // Check every second
-    }
-    
-    // Update progress display
-    function updateProgress(progress) {
-        const progressText = document.getElementById('progressText');
-        const progressBar = document.getElementById('progressBar');
-        const progressDetails = document.getElementById('progressDetails');
-        
-        if (progressText) {
-            progressText.innerHTML = `<strong>${progress.current_step}</strong>`;
-        }
-        
-        if (progressBar) {
-            const percentage = Math.round(progress.percentage || 0);
-            progressBar.style.width = `${percentage}%`;
-            progressBar.setAttribute('aria-valuenow', percentage);
-            progressBar.textContent = `${percentage}%`;
-        }
-        
-        if (progressDetails) {
-            let details = '';
-            if (progress.current_entity_type && progress.current_platform) {
-                details = `Processing: ${progress.current_entity_type} + ${progress.current_platform}`;
-            } else if (progress.current_entity_type) {
-                details = `Processing: ${progress.current_entity_type}`;
-            }
-            
-            if (progress.completed_combinations && progress.total_combinations) {
-                details += ` (${progress.completed_combinations}/${progress.total_combinations} combinations)`;
-            }
-            
-            if (progress.total_results_found) {
-                details += ` - ${progress.total_results_found} results found`;
-            }
-            
-            progressDetails.textContent = details;
-        }
-        
-        // Update cache status
-        updateCacheStatus(progress.current_step);
-    }
-    
-    // Fetch completed results
-    function fetchCompletedResults(searchParams, start, count, page) {
-        // Don't include refresh_cache when fetching completed results
-        const apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${count}&searchQuery=${encodeURIComponent(searchParams.query)}&entityType=${searchParams.entityType}&platform=${searchParams.platform}&use_platform_pagination=${searchParams.usePlatformPagination}&sortBy=${searchParams.sortBy}&editable_only=${searchParams.editablePropertiesOnly}`;
-        
-        fetch(apiUrl)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && !data.in_progress) {
-                    handleSearchResults(data.data, page);
-                } else if (data.success && data.in_progress) {
-                    // Still in progress, continue monitoring
-                    if (currentCacheKey) {
-                        setTimeout(() => {
-                            monitorProgress(currentCacheKey, searchParams, start, count, page);
-                        }, 1000);
-                    } else {
-                        showError('Search still in progress but no cache key available');
-                    }
-                } else {
-                    showError(data.error || 'Failed to fetch completed results');
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching results:', error);
-                showError(`Failed to fetch results: ${error.message}`);
-            });
-    }
-    
-            // Handle search results
-        function handleSearchResults(data, page) {
-            updateCacheStatus('Results loaded from cache (' + new Date().toLocaleTimeString() + ')');
-            
-            // Store entities for download
-            allEntities = data.searchResults.map(result => result.entity);
-            
-            updateEntitiesTable(data);
-            updatePagination(data.total);
-            
-            // Show entity count
-            const entityCount = document.getElementById('entityCount');
-            if (data.total > 0) {
-                entityCount.textContent = `${data.total} entities`;
-            } else {
-                entityCount.textContent = 'No entities found';
-            }
-        }
-    
-    // Helper function to format search summary
-    function formatSearchSummary(query, entityType, platform, browsePath, platformInstance) {
-        const parts = [];
-        
-        if (query && query !== '*') parts.push(`query "${query}"`);
-        if (entityType) parts.push(`type "${entityType}"`);
-        if (platform) parts.push(`platform "${platform}"`);
-        if (browsePath) parts.push(`path "/${browsePath}"`);
-        if (platformInstance) parts.push(`instance "${platformInstance}"`);
-        
-        return parts.length > 0 ? parts.join(', ') : 'all entities';
-    }
-    
-    // Function to update entities table
-    function updateEntitiesTable(data) {
-        const tbody = document.getElementById('entitiesTableBody');
-        tbody.innerHTML = '';
-        
-        if (data && data.searchResults && data.searchResults.length > 0) {
-            data.searchResults.forEach(result => {
-                const entity = result.entity;
-                if (!entity) return;
-                
-                // Get entity name using helper that checks all possible locations
-                let displayName = getEntityName(entity);
-                
-                // Get entity platform information
-                let platformInfo = getEntityPlatform(entity);
-                
-                // Format editable properties
-                let editablePropertiesHtml = formatEditableProperties(entity);
-                
-                // Format schema metadata
-                let schemaMetadataHtml = formatSchemaMetadata(entity);
-                
-                // Format browse path
-                let browsePath = formatBrowsePath(entity);
-                
-                // Count metadata elements
-                const editablePropsCount = countEditableProperties(entity);
-                const schemaMetadataCount = countSchemaMetadata(entity);
-                const domainsCount = countDomains(entity);
-                const glossaryTermsCount = countGlossaryTerms(entity);
-                const tagsCount = countTags(entity);
-                const structuredPropsCount = countStructuredProperties(entity);
-                
-                // Check if entity is deprecated
-                const isDeprecated = entity.deprecation && entity.deprecation.deprecated;
-                const deprecatedBadge = isDeprecated ? 
-                    '<span class="badge bg-danger">Yes</span>' : 
-                    '<span class="badge bg-success">No</span>';
-                
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>
-                        <div class="fw-bold">${displayName}</div>
-                    </td>
-                    <td><span class="badge ${getEntityTypeBadgeClass(entity.type)}">${entity.type}</span></td>
-                    <td>${platformInfo}</td>
-                    <td>${deprecatedBadge}</td>
-                    <td><span class="badge bg-primary">${editablePropsCount}</span></td>
-                    <td><span class="badge bg-info">${schemaMetadataCount}</span></td>
-                    <td><span class="badge bg-success">${domainsCount}</span></td>
-                    <td><span class="badge bg-warning text-dark">${glossaryTermsCount}</span></td>
-                    <td><span class="badge bg-secondary">${tagsCount}</span></td>
-                    <td><span class="badge bg-dark">${structuredPropsCount}</span></td>
-                    <td>${browsePath}</td>
-                    <td><code class="small text-truncate d-block" style="max-width: 200px;" title="${entity.urn}">${entity.urn}</code></td>
-                    <td>
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-outline-secondary view-entity"
-                                    data-urn="${entity.urn}" data-type="${entity.type}">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-info view-raw-json"
-                                    data-entity='${JSON.stringify(entity).replace(/'/g, "&apos;")}'>
-                                <i class="fas fa-code"></i>
-                            </button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-            
-            // Add event listeners to the view button
-            document.querySelectorAll('.view-entity').forEach(button => {
-                button.addEventListener('click', function() {
-                    const urn = this.getAttribute('data-urn');
-                    const type = this.getAttribute('data-type');
-                    openViewModal(urn, type);
-                });
-            });
-            
-            // Update pagination info if available
-            const paginationInfo = document.getElementById('paginationInfo');
-            if (paginationInfo) {
-                const start = data.start + 1;
-                const end = Math.min(data.start + data.count, data.total);
-                paginationInfo.textContent = `Showing ${start} to ${end} of ${data.total} entities`;
-            }
-        } else {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td colspan="13" class="text-center">
-                    <div class="py-4">
-                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
-                        <h5>No entities found</h5>
-                        <p class="text-muted">Try adjusting your search criteria</p>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        }
-    }
-    
-    // Helper function to get entity name from various locations
-    function getEntityName(entity) {
-        // Priority order for entity name extraction:
-        
-        // First check editableProperties.name
-        if (entity.editableProperties && entity.editableProperties.name) {
-            return entity.editableProperties.name;
-        }
-        
-        // For datasets, extract name from dataset part
-        if (entity.type === 'DATASET') {
-            // Try to extract from URN for datasets
-            try {
-                const urnMatch = entity.urn.match(/urn:li:dataset:\(urn:li:dataPlatform:([^,]+),([^,)]+)/);
-                if (urnMatch && urnMatch[2]) {
-                    return urnMatch[2]; // This is the dataset name part
-                }
-            } catch (e) {
-                console.error("Error extracting dataset name from URN:", e);
-            }
-        }
-        
-        // Check for direct name property
-        if (entity.name) {
-            return entity.name;
-        }
-        
-        // Check for properties.name
-        if (entity.properties && entity.properties.name) {
-            return entity.properties.name;
-        }
-        
-        // Check for displayName in properties
-        if (entity.properties && entity.properties.displayName) {
-            return entity.properties.displayName;
-        }
-        
-        // Check specific entity type structures
-        if (entity.type === 'DATASET' && entity.dataset && entity.dataset.name) {
-            return entity.dataset.name;
-        }
-        
-        if (entity.type === 'CHART' && entity.chart && entity.chart.info && entity.chart.info.name) {
-            return entity.chart.info.name;
-        }
-        
-        if (entity.type === 'DASHBOARD' && entity.dashboard && entity.dashboard.info && entity.dashboard.info.name) {
-            return entity.dashboard.info.name;
-        }
-        
-        // Fallback: extract name from URN
         try {
-            if (entity.type === 'DATASET') {
-                // For datasets, try to get the second part of the URN
-                const parts = entity.urn.split(',');
-                if (parts.length > 1) {
-                    return parts[1].trim();
-                }
-            }
-            
-            // For other entities, try getting the last part of the URN
-            const pathParts = entity.urn.split('/');
-            if (pathParts.length > 0) {
-                return pathParts[pathParts.length - 1].replace(/\)$/, '');
-            }
-        } catch (e) {
-            console.error("Error extracting name from URN:", e);
-        }
-        
-        return 'Unnamed Entity';
-    }
-    
-    // Helper function to get entity description
-    function getEntityDescription(entity) {
-        // Check editableProperties first
-        if (entity.editableProperties && entity.editableProperties.description) {
-            return entity.editableProperties.description;
-        }
-        
-        // Check regular properties
-        if (entity.properties && entity.properties.description) {
-            return entity.properties.description;
-        }
-        
-        return '';
-    }
-    
-    // Helper function to format platform info
-    function getEntityPlatform(entity) {
-        // Priority 1: Check direct platform reference from GraphQL
-        if (entity.platform) {
-            const platformName = entity.platform.name || 
-                                (entity.platform.properties && entity.platform.properties.displayName) || 
-                                'Unknown';
-            let platformHtml = `<span class="badge bg-info">${platformName}</span>`;
-            
-            // Add instance information if available
-            if (entity.dataPlatformInstance && entity.dataPlatformInstance.instanceId) {
-                platformHtml += `<br><small class="text-muted">Instance: ${entity.dataPlatformInstance.instanceId}</small>`;
-            }
-            
-            return platformHtml;
-        }
-        
-        // Priority 2: Check for dataPlatformInstance
-        if (entity.dataPlatformInstance && entity.dataPlatformInstance.platform) {
-            const platformName = entity.dataPlatformInstance.platform.name || 
-                                (entity.dataPlatformInstance.platform.properties && entity.dataPlatformInstance.platform.properties.displayName) || 
-                                'Unknown';
-            const instanceId = entity.dataPlatformInstance.instanceId || '';
-            return `<span class="badge bg-info">${platformName}</span>${instanceId ? `<br><small class="text-muted">Instance: ${instanceId}</small>` : ''}`;
-        }
-        
-        // Priority 3: Check for platform in dataFlow for DataJobs
-        if (entity.type === 'DATA_JOB' && entity.dataFlow && entity.dataFlow.platform) {
-            const platformName = entity.dataFlow.platform.name || 
-                                (entity.dataFlow.platform.properties && entity.dataFlow.platform.properties.displayName) || 
-                                'Unknown';
-            return `<span class="badge bg-info">${platformName}</span>`;
-        }
-        
-        // Priority 4: Try to extract from URN for datasets and similar entities
-        if (entity.urn && entity.urn.includes('urn:li:dataPlatform:')) {
-            try {
-                const matches = entity.urn.match(/urn:li:dataPlatform:([^,)]+)/);
-                if (matches && matches[1]) {
-                    return `<span class="badge bg-info">${matches[1]}</span>`;
-                }
-            } catch (e) {
-                console.error('Error extracting platform from URN:', e);
-            }
-        }
-        
-        return '<span class="text-muted">N/A</span>';
-    }
-    
-    // Function to format editable properties
-    function formatEditableProperties(entity) {
-        // Check for editable properties
-        if (!entity.editableProperties) {
-            return '<span class="text-muted">None</span>';
-        }
-        
-        const properties = entity.editableProperties;
-        let html = '';
-        
-        // Add name if available
-        if (properties.name) {
-            html += `<div class="mb-1"><span class="badge bg-primary me-1">name</span> ${properties.name}</div>`;
-        }
-        
-        // Add description if available
-        if (properties.description) {
-            const shortDesc = properties.description.length > 50 ? 
-                properties.description.substring(0, 50) + '...' : properties.description;
-            html += `<div class="mb-1"><span class="badge bg-info me-1">description</span> ${shortDesc}</div>`;
-        }
-        
-        // Add other properties
-        const otherProps = Object.keys(properties).filter(key => key !== 'name' && key !== 'description');
-        if (otherProps.length > 0) {
-            html += '<div class="mt-1">';
-            otherProps.forEach(key => {
-                const value = properties[key];
-                if (value) {
-                    const shortValue = typeof value === 'string' && value.length > 15 ? 
-                        value.substring(0, 15) + '...' : value;
-                    html += `<span class="badge bg-light text-dark me-1" title="${key}: ${value}">${key}: ${shortValue}</span>`;
-                } else {
-                    html += `<span class="badge bg-light text-dark me-1">${key}</span>`;
-                }
+            // Fetch users, groups, and ownership types in a single request
+            const response = await fetch('/metadata/tags/users-groups/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ type: 'all' })
             });
-            html += '</div>';
-        }
-        
-        return html || '<span class="text-muted">None</span>';
-    }
-    
-    // Function to format schema metadata
-    function formatSchemaMetadata(entity) {
-        if (!entity.editableSchemaMetadata || !entity.editableSchemaMetadata.editableSchemaFieldInfo) {
-            return '<span class="text-muted">None</span>';
-        }
-        
-        const fields = entity.editableSchemaMetadata.editableSchemaFieldInfo;
-        if (!fields.length) {
-            return '<span class="text-muted">None</span>';
-        }
-        
-        // Show count of schema fields with descriptions or tags
-        const fieldsWithDescription = fields.filter(field => field.description).length;
-        const fieldsWithTags = fields.filter(field => field.tags && field.tags.tags && field.tags.tags.length > 0).length;
-        
-        let html = '';
-        if (fieldsWithDescription > 0) {
-            html += `<div><span class="badge bg-success">${fieldsWithDescription} fields with descriptions</span></div>`;
-        }
-        
-        if (fieldsWithTags > 0) {
-            html += `<div class="mt-1"><span class="badge bg-info">${fieldsWithTags} fields with tags</span></div>`;
-        }
-        
-        // Show the first field as an example
-        if (fields.length > 0) {
-            const firstField = fields[0];
-            html += `<div class="small text-muted mt-1">e.g. ${firstField.fieldPath}</div>`;
-        }
-        
-        return html;
-    }
-    
-    // Helper function to extract human-readable name from URN
-    function extractNameFromUrn(urn) {
-        // Handle container URNs - display the ID in shortened form
-        if (urn.startsWith('urn:li:container:')) {
-            return 'container-' + urn.split(':').pop().substring(0, 6);
-        }
-        
-        // Handle dataset URNs in format: urn:li:dataset:(urn:li:dataPlatform:platform,dataset_name,ENV)
-        if (urn.startsWith('urn:li:dataset:')) {
-            try {
-                const matches = urn.match(/urn:li:dataset:\(urn:li:dataPlatform:([^,]+),([^,)]+)/);
-                if (matches && matches[2]) {
-                    return matches[2]; // Return the dataset name part
-                }
-            } catch (e) {
-                console.error("Error extracting dataset name from URN:", e);
-            }
-        }
-        
-        // Handle other entity URNs by extracting the last part
-        const parts = urn.split(':');
-        if (parts.length > 0) {
-            const lastPart = parts[parts.length - 1];
-            if (lastPart.includes('/')) {
-                return lastPart.split('/').pop();
-            }
-            return lastPart;
-        }
-        
-        return urn;
-    }
-    
-    // Update browse path formatting to correctly handle browsePathV2 and extract readable names
-    function formatBrowsePath(entity) {
-        // First priority: extract readable path from browsePathV2
-        if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
-            // Extract names from the path
-            let pathParts = [];
             
-            for (const pathItem of entity.browsePathV2.path) {
-                // Check if it has a container with a name
-                if (pathItem.entity && 
-                    pathItem.entity.container && 
-                    pathItem.entity.container.properties && 
-                    pathItem.entity.container.properties.name) {
-                    
-                    pathParts.push(pathItem.entity.container.properties.name);
-                } 
-                // Fallback to the raw name (usually a URN)
-                else if (pathItem.name) {
-                    // Extract a human-readable name from the URN
-                    const readableName = extractNameFromUrn(pathItem.name);
-                    pathParts.push(readableName);
-                }
-            }
+            const data = await response.json();
             
-            if (pathParts.length > 0) {
-                return `<div class="small">/${pathParts.join('/')}</div>`;
-            }
-        }
-        
-        // Second priority: browsePaths array
-        if (entity.browsePaths && Array.isArray(entity.browsePaths)) {
-            // Process browsePaths that have a path property
-            if (entity.browsePaths.length > 0 && entity.browsePaths[0].path) {
-                const paths = entity.browsePaths.map(bp => {
-                    if (bp.path && Array.isArray(bp.path)) {
-                        return `<div class="small">/${bp.path.join('/')}</div>`;
-                    }
-                    return '';
-                }).filter(p => p);
+            if (data.success) {
+                usersAndGroupsCache.users = data.data.users || [];
+                usersAndGroupsCache.groups = data.data.groups || [];
+                usersAndGroupsCache.ownership_types = data.data.ownership_types || [];
+                usersAndGroupsCache.lastFetched = now;
                 
-                if (paths.length > 0) {
-                    return paths.join('');
-                }
+                console.log(`Loaded ${usersAndGroupsCache.users.length} users, ${usersAndGroupsCache.groups.length} groups, and ${usersAndGroupsCache.ownership_types.length} ownership types${data.cached ? ' (cached)' : ''}`);
+            } else {
+                console.error('Failed to load users, groups, and ownership types:', data.error);
             }
-            // Process string browsePaths
-            else if (entity.browsePaths.length > 0 && typeof entity.browsePaths[0] === 'string') {
-                const paths = entity.browsePaths.map(path => {
-                    if (!path.startsWith('/')) {
-                        path = '/' + path;
-                    }
-                    return `<div class="small">${path}</div>`;
-                });
-                
-                if (paths.length > 0) {
-                    return paths.join('');
-                }
-            }
-        }
-        
-        // If no readable path found
-        return '<span class="text-muted">N/A</span>';
-    }
-    
-    // Helper function to get appropriate badge class for entity type
-    function getEntityTypeBadgeClass(type) {
-        const typeClasses = {
-            'DATASET': 'bg-primary',
-            'CONTAINER': 'bg-secondary',
-            'DASHBOARD': 'bg-success',
-            'CHART': 'bg-info',
-            'DATAFLOW': 'bg-warning',
-            'DATAJOB': 'bg-danger',
-            'GLOSSARY_TERM': 'bg-light text-dark',
-            'GLOSSARY_NODE': 'bg-light text-dark',
-            'DOMAIN': 'bg-dark',
-            'TAG': 'bg-light text-dark'
-        };
-        
-        return typeClasses[type] || 'bg-primary';
-    }
-    
-    // Function to update pagination
-    function updatePagination(total) {
-        const totalPages = Math.ceil(total / itemsPerPage);
-        const pagination = document.getElementById('pagination');
-        pagination.innerHTML = '';
-        
-        if (totalPages > 1) {
-            // Previous button
-            pagination.innerHTML += `
-                <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-                    <a class="page-link" href="#" data-page="${currentPage - 1}" aria-label="Previous">
-                        <span aria-hidden="true">&laquo;</span>
-                    </a>
-                </li>
-            `;
-            
-            // Page numbers
-            for (let i = 1; i <= totalPages; i++) {
-                if (
-                    i === 1 || // First page
-                    i === totalPages || // Last page
-                    (i >= currentPage - 2 && i <= currentPage + 2) // Pages around current
-                ) {
-                    pagination.innerHTML += `
-                        <li class="page-item ${i === currentPage ? 'active' : ''}">
-                            <a class="page-link" href="#" data-page="${i}">${i}</a>
-                        </li>
-                    `;
-                } else if (
-                    i === currentPage - 3 || // Show ellipsis before current page
-                    i === currentPage + 3 // Show ellipsis after current page
-                ) {
-                    pagination.innerHTML += `
-                        <li class="page-item disabled">
-                            <span class="page-link">...</span>
-                        </li>
-                    `;
-                }
-            }
-            
-            // Next button
-            pagination.innerHTML += `
-                <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-                    <a class="page-link" href="#" data-page="${currentPage + 1}" aria-label="Next">
-                        <span aria-hidden="true">&raquo;</span>
-                    </a>
-                </li>
-            `;
-            
-            // Add click handlers
-            document.querySelectorAll('.page-link').forEach(link => {
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    const page = parseInt(link.getAttribute('data-page'));
-                    if (page && page !== currentPage) {
-                        currentPage = page;
-                        loadEntities(page);
-                    }
-                });
-            });
+        } catch (error) {
+            console.error('Error loading users and groups:', error);
         }
     }
-    
-    // Function to open edit modal
-    function openEditModal(urn, type) {
-        const modal = new bootstrap.Modal(document.getElementById('editEntityModal'));
-        document.getElementById('entityUrn').value = urn;
-        document.getElementById('entityType').value = type;
-        
-        // Reset form
-        document.getElementById('editEntityForm').reset();
-        
-        // Show/hide schema fields container based on entity type
-        const schemaFieldsContainer = document.getElementById('schemaFieldsContainer');
-        if (type === 'DATASET') {
-            schemaFieldsContainer.classList.remove('d-none');
-            // Load schema fields
-            loadSchemaFields(urn);
-        } else {
-            schemaFieldsContainer.classList.add('d-none');
-        }
-        
-        // Load entity details
-        fetch(`/metadata/entities/${urn}`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success && data.entity) {
-                    console.log('Entity details:', data.entity);
-                    
-                    // Extract name and description, checking different possible locations
-                    let name = '';
-                    let description = '';
-                    
-                    // First try to get from editableProperties
-                    if (data.entity.editableProperties) {
-                        name = data.entity.editableProperties.name || '';
-                        description = data.entity.editableProperties.description || '';
-                        
-                        // Add additional editable properties
-                        const editablePropertiesFields = document.getElementById('editablePropertiesFields');
-                        editablePropertiesFields.innerHTML = '';
-                        
-                        Object.keys(data.entity.editableProperties).forEach(propKey => {
-                            if (propKey !== 'name' && propKey !== 'description') {
-                                const propValue = data.entity.editableProperties[propKey];
-                                editablePropertiesFields.innerHTML += `
-                                    <div class="mb-3">
-                                        <label class="form-label">${propKey}</label>
-                                        <input type="text" class="form-control" name="properties[${propKey}]" value="${propValue || ''}" />
-                                    </div>
-                                `;
-                            }
-                        });
-                    }
-                    
-                    // If still empty, try other possible locations
-                    if (!name && data.entity.properties && data.entity.properties.name) {
-                        name = data.entity.properties.name;
-                    }
-                    
-                    if (!description && data.entity.properties && data.entity.properties.description) {
-                        description = data.entity.properties.description;
-                    }
-                    
-                    // Last resort: extract name from URN
-                    if (!name) {
-                        const urnParts = urn.split('/');
-                        if (urnParts.length > 0) {
-                            name = urnParts[urnParts.length - 1];
-                        }
-                    }
-                    
-                    document.getElementById('entityName').value = name;
-                    document.getElementById('entityDescription').value = description;
-                    modal.show();
-                } else {
-                    showError(data.error || 'Failed to load entity details');
-                }
-            })
-            .catch(error => {
-                console.error('Error loading entity details:', error);
-                showError(`Failed to load entity details: ${error.message}`);
-            });
-    }
-    
-    // Function to open view modal
-    function openViewModal(urn, type) {
-        console.log(`Opening view modal for entity: ${urn} (${type})`);
-        const modal = new bootstrap.Modal(document.getElementById('viewEntityModal'));
-        
-        // Try to find the entity in our current results first to avoid an extra API call
-        let foundEntity = null;
-        if (allEntities && allEntities.length > 0) {
-            foundEntity = allEntities.find(entity => entity.urn === urn);
-        }
-        
-        if (foundEntity) {
-            console.log('Found entity in current results:', foundEntity);
-            displayEntityInViewModal(foundEntity);
-            modal.show();
-        } else {
-            // Load entity details using the entity details endpoint
-            fetch(`/metadata/entities/${encodeURIComponent(urn)}/`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success && data.entity) {
-                        console.log('Entity details for viewing:', data.entity);
-                        displayEntityInViewModal(data.entity);
-                        modal.show();
-                    } else {
-                        showError(data.error || 'Failed to load entity details');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading entity details:', error);
-                    showError(`Failed to load entity details: ${error.message}`);
-                });
-        }
-    }
-    
-    // Enhanced helper function to display entity in view modal
-    function displayEntityInViewModal(entity) {
-        // Set entity basic details
-        document.getElementById('viewEntityName').textContent = getEntityName(entity);
-        document.getElementById('viewEntityType').innerHTML = `<span class="badge ${getEntityTypeBadgeClass(entity.type)}">${entity.type}</span>`;
-        document.getElementById('viewEntityUrn').textContent = entity.urn;
-        
-        // Set platform information
-        const platformInfo = getEntityPlatform(entity);
-        document.getElementById('viewEntityPlatform').innerHTML = platformInfo || '<span class="text-muted">Not specified</span>';
-        
-        // Set deprecation status
-        const isDeprecated = entity.deprecation && entity.deprecation.deprecated;
-        document.getElementById('viewEntityDeprecated').innerHTML = isDeprecated ? 
-            '<span class="badge bg-danger">Yes</span>' : 
-            '<span class="badge bg-success">No</span>';
-        
-        // Set DataHub link
-        const datahubUrl = `${window.location.protocol}//${window.location.host}/entities/${encodeURIComponent(entity.type.toLowerCase())}/${encodeURIComponent(entity.urn)}`;
-        document.getElementById('viewInDataHubButton').href = datahubUrl;
-        
-        // Display ownership
-        displayOwnership(entity);
-        
-        // Display domain
-        displayDomain(entity);
-        
-        // Display editable properties
-        displayEditableProperties(entity);
-        
-        // Display tags
-        displayTags(entity);
-        
-        // Display glossary terms
-        displayGlossaryTerms(entity);
-        
-        // Display structured properties
-        displayStructuredProperties(entity);
-        
-        // Display browse path
-        displayBrowsePath(entity);
-    }
-    
+
     // Helper function to display ownership
     function displayOwnership(entity) {
         const ownershipContainer = document.getElementById('viewEntityOwnership');
         ownershipContainer.innerHTML = '';
         
         if (entity.ownership && entity.ownership.owners && entity.ownership.owners.length > 0) {
-            const ownersList = document.createElement('div');
-            
-            entity.ownership.owners.forEach(ownerInfo => {
-                const ownerDiv = document.createElement('div');
-                ownerDiv.className = 'mb-2 p-2 border rounded';
-                
-                const ownerUrn = ownerInfo.owner.urn;
-                const ownerType = ownerUrn.includes(':corpuser:') ? 'User' : 'Group';
-                const ownerName = ownerUrn.split(':').pop();
-                const ownershipType = ownerInfo.ownershipType ? ownerInfo.ownershipType.urn.split(':').pop() : 'Unknown';
-                
-                ownerDiv.innerHTML = `
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <strong>${ownerName}</strong>
-                            <span class="badge bg-secondary ms-2">${ownerType}</span>
-                        </div>
-                        <span class="badge bg-primary">${ownershipType}</span>
-                    </div>
-                `;
-                
-                ownersList.appendChild(ownerDiv);
+            // First, check if we need to load users and groups data
+            const usersAndGroupsPromise = new Promise((resolve) => {
+                // Load users, groups, and ownership types from the backend
+                fetch('/metadata/tags/users-groups/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    },
+                    body: JSON.stringify({ type: 'all' })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        resolve({
+                            users: data.data.users || [],
+                            groups: data.data.groups || [],
+                            ownership_types: data.data.ownership_types || []
+                        });
+                    } else {
+                        console.error('Failed to load users and groups:', data.error);
+                        resolve({ users: [], groups: [], ownership_types: [] });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading users and groups:', error);
+                    resolve({ users: [], groups: [], ownership_types: [] });
+                });
             });
             
-            ownershipContainer.appendChild(ownersList);
+            // Process ownership data after loading users and groups
+            usersAndGroupsPromise.then(usersAndGroups => {
+                // Group owners by ownership type
+                const ownersByType = {};
+                
+                entity.ownership.owners.forEach(ownerInfo => {
+                    if (!ownerInfo.owner || !ownerInfo.owner.urn) return;
+                    
+                    const ownerUrn = ownerInfo.owner.urn;
+                    const ownershipTypeUrn = ownerInfo.ownershipType ? ownerInfo.ownershipType.urn : 'unknown';
+                    
+                    // Look up ownership type name from the loaded data
+                    let ownershipTypeName = ownershipTypeUrn.split(':').pop() || 'Unknown';
+                    const ownershipType = usersAndGroups.ownership_types.find(t => t.urn === ownershipTypeUrn);
+                    if (ownershipType) {
+                        ownershipTypeName = ownershipType.name || ownershipTypeName;
+                    }
+                    
+                    // Find or create the group
+                    if (!ownersByType[ownershipTypeName]) {
+                        ownersByType[ownershipTypeName] = [];
+                    }
+                    
+                    // Get display name from properties, cache, or URN
+                    const isUser = ownerUrn.includes(':corpuser:');
+                    let ownerName = ownerUrn.split(':').pop();
+                    
+                    // First check if owner info is already in the entity data
+                    if (ownerInfo.owner.properties) {
+                        ownerName = ownerInfo.owner.properties.displayName || 
+                                   ownerInfo.owner.properties.fullName || 
+                                   ownerInfo.owner.username ||
+                                   ownerName;
+                    } else {
+                        // Look up in the loaded users/groups data
+                        if (isUser) {
+                            const user = usersAndGroups.users.find(u => u.urn === ownerUrn);
+                            if (user) {
+                                ownerName = user.display_name || user.username || ownerName;
+                            }
+                        } else {
+                            const group = usersAndGroups.groups.find(g => g.urn === ownerUrn);
+                            if (group) {
+                                ownerName = group.display_name || ownerName;
+                            }
+                        }
+                    }
+                    
+                    ownersByType[ownershipTypeName].push({
+                        name: ownerName,
+                        urn: ownerUrn,
+                        isUser: isUser
+                    });
+                });
+                
+                // Create ownership HTML grouped by type
+                let ownersHTML = '';
+                
+                Object.keys(ownersByType).forEach(ownershipType => {
+                    const owners = ownersByType[ownershipType];
+                    ownersHTML += `
+                        <div class="mb-3">
+                            <h6 class="text-primary mb-2">
+                                <i class="fas fa-crown me-1"></i>${ownershipType}
+                            </h6>
+                            <div class="ms-3">
+                    `;
+                    
+                    owners.forEach(owner => {
+                        ownersHTML += `
+                            <div class="d-flex align-items-center mb-1">
+                                <i class="fas fa-${owner.isUser ? 'user' : 'users'} text-muted me-2"></i>
+                                <span class="text-break">${owner.name}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    ownersHTML += `
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                ownershipContainer.innerHTML = ownersHTML;
+            });
         } else {
             ownershipContainer.innerHTML = '<p class="text-muted">No owners assigned</p>';
         }
     }
-    
-    // Helper function to display domain
-    function displayDomain(entity) {
-        const domainContainer = document.getElementById('viewEntityDomain');
-        domainContainer.innerHTML = '';
-        
-        if (entity.domain && entity.domain.domain && entity.domain.domain.urn) {
-            const domainUrn = entity.domain.domain.urn;
-            const domainName = domainUrn.split(':').pop();
-            
-            domainContainer.innerHTML = `
-                <div class="p-2 border rounded bg-light">
-                    <strong>${domainName}</strong>
-                    <br><small class="text-muted">${domainUrn}</small>
-                </div>
-            `;
-        } else {
-            domainContainer.innerHTML = '<p class="text-muted">No domain assigned</p>';
-        }
-    }
-    
-    // Helper function to display editable properties
-    function displayEditableProperties(entity) {
-        const propertiesContainer = document.getElementById('viewEntityProperties');
-        propertiesContainer.innerHTML = '';
-        
-        if (entity.editableProperties && Object.keys(entity.editableProperties).length > 0) {
-            const propsList = document.createElement('dl');
-            propsList.className = 'row mb-0';
-            
-            Object.entries(entity.editableProperties).forEach(([key, value]) => {
-                const dt = document.createElement('dt');
-                dt.className = 'col-sm-4';
-                dt.textContent = key.charAt(0).toUpperCase() + key.slice(1);
-                
-                const dd = document.createElement('dd');
-                dd.className = 'col-sm-8';
-                
-                if (value === null || value === undefined || value === '') {
-                    dd.innerHTML = '<span class="text-muted">Not set</span>';
-                } else if (typeof value === 'object') {
-                    try {
-                        dd.innerHTML = `<pre class="small bg-light p-2 rounded">${JSON.stringify(value, null, 2)}</pre>`;
-                    } catch (e) {
-                        dd.textContent = 'Complex value';
-                    }
-                } else {
-                    dd.textContent = value;
-                }
-                
-                propsList.appendChild(dt);
-                propsList.appendChild(dd);
-            });
-            
-            propertiesContainer.appendChild(propsList);
-        } else {
-            propertiesContainer.innerHTML = '<p class="text-muted">No editable properties found</p>';
-        }
-    }
-    
-    // Helper function to display tags
-    function displayTags(entity) {
-        const tagsContainer = document.getElementById('viewEntityTags');
-        tagsContainer.innerHTML = '';
-        
-        const allTags = [];
-        
-        // Entity-level tags
-        if (entity.tags && entity.tags.tags) {
-            entity.tags.tags.forEach(tagInfo => {
-                const tagUrn = tagInfo.tag.urn;
-                const tagName = tagUrn.split(':').pop();
-                allTags.push({ name: tagName, urn: tagUrn, level: 'Entity' });
-            });
-        }
-        
-        // Schema-level tags
-        if (entity.schemaMetadata && entity.schemaMetadata.fields) {
-            entity.schemaMetadata.fields.forEach(field => {
-                if (field.tags && field.tags.tags) {
-                    field.tags.tags.forEach(tagInfo => {
-                        const tagUrn = tagInfo.tag.urn;
-                        const tagName = tagUrn.split(':').pop();
-                        allTags.push({ name: tagName, urn: tagUrn, level: `Field: ${field.fieldPath}` });
-                    });
-                }
-            });
-        }
-        
-        if (allTags.length > 0) {
-            const tagsDiv = document.createElement('div');
-            
-            allTags.forEach(tag => {
-                const tagDiv = document.createElement('div');
-                tagDiv.className = 'mb-2';
-                tagDiv.innerHTML = `
-                    <span class="badge bg-secondary me-2">${tag.name}</span>
-                    <small class="text-muted">${tag.level}</small>
-                `;
-                tagsDiv.appendChild(tagDiv);
-            });
-            
-            tagsContainer.appendChild(tagsDiv);
-        } else {
-            tagsContainer.innerHTML = '<p class="text-muted">No tags assigned</p>';
-        }
-    }
-    
-    // Helper function to display glossary terms
-    function displayGlossaryTerms(entity) {
-        const glossaryContainer = document.getElementById('viewEntityGlossaryTerms');
-        glossaryContainer.innerHTML = '';
-        
-        const allTerms = [];
-        
-        // Entity-level glossary terms
-        if (entity.glossaryTerms && entity.glossaryTerms.terms) {
-            entity.glossaryTerms.terms.forEach(termInfo => {
-                const termUrn = termInfo.term.urn;
-                const termName = termInfo.term.glossaryTermInfo ? 
-                    termInfo.term.glossaryTermInfo.name : 
-                    termUrn.split(':').pop();
-                allTerms.push({ name: termName, urn: termUrn, level: 'Entity' });
-            });
-        }
-        
-        // Schema-level glossary terms
-        if (entity.schemaMetadata && entity.schemaMetadata.fields) {
-            entity.schemaMetadata.fields.forEach(field => {
-                if (field.glossaryTerms && field.glossaryTerms.terms) {
-                    field.glossaryTerms.terms.forEach(termInfo => {
-                        const termUrn = termInfo.term.urn;
-                        const termName = termInfo.term.glossaryTermInfo ? 
-                            termInfo.term.glossaryTermInfo.name : 
-                            termUrn.split(':').pop();
-                        allTerms.push({ name: termName, urn: termUrn, level: `Field: ${field.fieldPath}` });
-                    });
-                }
-            });
-        }
-        
-        if (allTerms.length > 0) {
-            const termsDiv = document.createElement('div');
-            
-            allTerms.forEach(term => {
-                const termDiv = document.createElement('div');
-                termDiv.className = 'mb-2 p-2 border rounded';
-                termDiv.innerHTML = `
-                    <div><strong>${term.name}</strong></div>
-                    <small class="text-muted">${term.level}</small>
-                `;
-                termsDiv.appendChild(termDiv);
-            });
-            
-            glossaryContainer.appendChild(termsDiv);
-        } else {
-            glossaryContainer.innerHTML = '<p class="text-muted">No glossary terms assigned</p>';
-        }
-    }
-    
-    // Helper function to display structured properties
-    function displayStructuredProperties(entity) {
-        const structuredPropsContainer = document.getElementById('viewEntityStructuredProperties');
-        structuredPropsContainer.innerHTML = '';
-        
-        const allProps = [];
-        
-        // Entity-level structured properties
-        if (entity.structuredProperties && entity.structuredProperties.properties) {
-            entity.structuredProperties.properties.forEach(propInfo => {
-                const propUrn = propInfo.structuredProperty.urn;
-                const propName = propUrn.split(':').pop();
-                
-                let value = 'No value';
-                if (propInfo.values && propInfo.values.length > 0) {
-                    const firstValue = propInfo.values[0];
-                    if (firstValue.stringValue) {
-                        value = firstValue.stringValue;
-                    } else if (firstValue.numberValue !== undefined) {
-                        value = firstValue.numberValue.toString();
-                    }
-                }
-                
-                allProps.push({ name: propName, value: value, level: 'Entity' });
-            });
-        }
-        
-        // Schema-level structured properties
-        if (entity.schemaMetadata && entity.schemaMetadata.fields) {
-            entity.schemaMetadata.fields.forEach(field => {
-                if (field.schemaFieldEntity && field.schemaFieldEntity.structuredProperties && 
-                    field.schemaFieldEntity.structuredProperties.properties) {
-                    
-                    field.schemaFieldEntity.structuredProperties.properties.forEach(propInfo => {
-                        const propUrn = propInfo.structuredProperty.urn;
-                        const propName = propUrn.split(':').pop();
-                        
-                        let value = 'No value';
-                        if (propInfo.values && propInfo.values.length > 0) {
-                            const firstValue = propInfo.values[0];
-                            if (firstValue.stringValue) {
-                                value = firstValue.stringValue;
-                            } else if (firstValue.numberValue !== undefined) {
-                                value = firstValue.numberValue.toString();
-                            }
-                        }
-                        
-                        allProps.push({ name: propName, value: value, level: `Field: ${field.fieldPath}` });
-                    });
-                }
-            });
-        }
-        
-        if (allProps.length > 0) {
-            const propsDiv = document.createElement('div');
-            
-            allProps.forEach(prop => {
-                const propDiv = document.createElement('div');
-                propDiv.className = 'mb-2 p-2 border rounded';
-                propDiv.innerHTML = `
-                    <div class="d-flex justify-content-between">
-                        <strong>${prop.name}</strong>
-                        <span class="badge bg-info">${prop.value}</span>
-                    </div>
-                    <small class="text-muted">${prop.level}</small>
-                `;
-                propsDiv.appendChild(propDiv);
-            });
-            
-            structuredPropsContainer.appendChild(propsDiv);
-        } else {
-            structuredPropsContainer.innerHTML = '<p class="text-muted">No structured properties assigned</p>';
-        }
-    }
-    
-    // Helper function to display browse path
-    function displayBrowsePath(entity) {
-        const browsePathContainer = document.getElementById('viewEntityBrowsePath');
-        browsePathContainer.innerHTML = '';
-        
-        const browsePaths = getBrowsePaths(entity);
-        
-        if (browsePaths && browsePaths.length > 0) {
-            const pathList = document.createElement('div');
-            
-            browsePaths.forEach(path => {
-                const pathDiv = document.createElement('div');
-                pathDiv.className = 'mb-2 p-2 bg-light rounded';
-                pathDiv.innerHTML = `<code>${path}</code>`;
-                pathList.appendChild(pathDiv);
-            });
-            
-            browsePathContainer.appendChild(pathList);
-        } else {
-            browsePathContainer.innerHTML = '<p class="text-muted">No browse paths available</p>';
-        }
-    }
-    
-    // Helper function to get browse paths from an entity
-    function getBrowsePaths(entity) {
-        let paths = [];
-        
-        // Try browsePathV2 first (priority)
-        if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
-            const pathNames = [];
-            for (const pathEntry of entity.browsePathV2.path) {
-                if (pathEntry && pathEntry.name) {
-                    pathNames.push(pathEntry.name);
-                }
-            }
-            
-            if (pathNames.length > 0) {
-                paths.push('/' + pathNames.join('/'));
-            }
-        }
-        
-        // Try browsePaths
-        if (entity.browsePaths && Array.isArray(entity.browsePaths)) {
-            entity.browsePaths.forEach(path => {
-                let pathValue = '';
-                if (typeof path === 'string') {
-                    pathValue = path;
-                } else if (path && path.path) {
-                    pathValue = path.path;
-                } else if (path && path.elements && Array.isArray(path.elements)) {
-                    pathValue = '/' + path.elements.join('/');
-                }
-                
-                if (pathValue) {
-                    // Make sure path starts with /
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    paths.push(pathValue);
-                }
-            });
-        }
-        
-        // Try properties.browsePaths
-        if (entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
-            entity.properties.browsePaths.forEach(path => {
-                if (path) {
-                    // Make sure path starts with /
-                    let pathValue = path;
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    paths.push(pathValue);
-                }
-            });
-        }
-        
-        // Check for origin browse paths in datasets
-        if (entity.type === 'DATASET' && entity.dataset && entity.dataset.origin && 
-            entity.dataset.origin.browsePaths && Array.isArray(entity.dataset.origin.browsePaths)) {
-            
-            entity.dataset.origin.browsePaths.forEach(path => {
-                if (path) {
-                    // Make sure path starts with /
-                    let pathValue = path;
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    paths.push(pathValue);
-                }
-            });
-        }
-        
-        // Check for container path
-        if ((entity.type === 'CONTAINER' || entity.type === 'DATASET') && 
-            entity.container && entity.container.path) {
-            
-            let containerPath = entity.container.path;
-            if (!containerPath.startsWith('/')) {
-                containerPath = '/' + containerPath;
-            }
-            paths.push(containerPath);
-        }
-        
-        return paths;
-    }
-    
-    // Function to load schema fields
-    function loadSchemaFields(urn) {
-        const container = document.getElementById('schemaFields');
-        container.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
-        
-        fetch(`/metadata/entities/${urn}/schema`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.schema) {
-                    container.innerHTML = '';
-                    data.schema.fields.forEach((field, index) => {
-                        container.innerHTML += `
-                            <div class="card mb-3">
-                                <div class="card-body">
-                                    <h6 class="card-title">${field.fieldPath}</h6>
-                                    <div class="mb-3">
-                                        <label class="form-label">Description</label>
-                                        <textarea class="form-control" name="schemaFields[${index}][description]" rows="2">${field.description || ''}</textarea>
-                                    </div>
-                                    <div class="mb-0">
-                                        <label class="form-label">Tags</label>
-                                        <input type="text" class="form-control" name="schemaFields[${index}][tags]" value="${field.tags ? field.tags.join(', ') : ''}" placeholder="Comma-separated tags">
-                                    </div>
-                                    <input type="hidden" name="schemaFields[${index}][fieldPath]" value="${field.fieldPath}">
-                                </div>
-                            </div>
-                        `;
-                    });
-                } else {
-                    container.innerHTML = '<div class="alert alert-info">No schema fields found</div>';
-                }
-            })
-            .catch(error => {
-                console.error('Error loading schema fields:', error);
-                container.innerHTML = '<div class="alert alert-danger">Failed to load schema fields</div>';
-            });
-    }
-    
-    // Function to download entity data
-    document.getElementById('downloadButton').addEventListener('click', function() {
-        if (allEntities.length === 0) {
-            showError('No entities to download');
-            return;
-        }
-        
-        // Format the data for download
-        const downloadData = allEntities.map(entity => {
-            const properties = entity.editableProperties || {};
-            const name = properties.name || entity.urn.split('/').pop();
-            
-            return {
-                name: name,
-                urn: entity.urn,
-                type: entity.type,
-                properties: properties,
-                browsePaths: entity.browsePaths || []
-            };
-        });
-        
-        // Create a download link
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(downloadData, null, 2));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "datahub_editable_properties.json");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-    });
-    
-    // Function to save entity changes
-    document.getElementById('saveEntityButton').addEventListener('click', function() {
-        const form = document.getElementById('editEntityForm');
-        const formData = new FormData(form);
-        
-        fetch('/metadata/entities/update/', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                bootstrap.Modal.getInstance(document.getElementById('editEntityModal')).hide();
-                showSuccess('Entity updated successfully');
-                loadEntities(currentPage);
-            } else {
-                showError(data.error || 'Failed to update entity');
-            }
-        })
-        .catch(error => {
-            console.error('Error updating entity:', error);
-            showError('Failed to update entity');
-        });
-    });
-    
-    // Show error message
-    function showError(message) {
-        document.getElementById('entitiesTableBody').innerHTML = `
-            <tr>
-                <td colspan="13" class="text-center py-4">
-                    <div class="alert alert-danger">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
-                        Error: ${message}
-                    </div>
-                    <button class="btn btn-outline-primary mt-3" onclick="loadEntities(currentPage)">
-                        <i class="fas fa-sync me-1"></i> Try Again
-                    </button>
-                </td>
-            </tr>
-        `;
-        updateCacheStatus('Error occurred');
-    }
-    
-    // Update cache status display
-    function updateCacheStatus(status) {
-        const cacheStatus = document.getElementById('cacheStatus');
-        if (cacheStatus) {
-            cacheStatus.textContent = status;
-            cacheStatus.className = 'small text-muted';
-            
-            // Add appropriate styling based on status
-            if (status.includes('Error') || status.includes('error')) {
-                cacheStatus.className = 'small text-danger';
-            } else if (status.includes('cache') || status.includes('completed')) {
-                cacheStatus.className = 'small text-success';
-            } else if (status.includes('Loading') || status.includes('Processing')) {
-                cacheStatus.className = 'small text-info';
-            }
-        }
-    }
-    
-    // Function to show success message
-    function showSuccess(message) {
-        const alert = document.createElement('div');
-        alert.className = 'alert alert-success alert-dismissible fade show';
-        alert.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        `;
-        document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.card'));
-    }
-    
-    // Initialize
-    // Don't load entities automatically on page load - wait for user to search
-    // loadEntities();
-    
-    // Show initial empty state encouraging user to search
-    const tbody = document.querySelector('#entitiesTable tbody');
-    const entityCountBadge = document.getElementById('entityCount');
-    
-    if (tbody && entityCountBadge) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="13" class="text-center py-5">
-                    <div class="mb-3">
-                        <i class="fas fa-search fa-4x text-muted"></i>
-                    </div>
-                    <h4>Ready to Search</h4>
-                    <p class="text-muted">Use the filters above to find entities with editable properties.<br>
-                    Try searching for specific entities, platforms, or use "*" to see all results.</p>
-                </td>
-            </tr>
-        `;
-        entityCountBadge.textContent = 'Ready to search';
-    }
-    
-    updateCacheStatus('Ready to search entities...');
-    
-    // Handle filter form submission
-    document.getElementById('filterForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        // Clear the cache when filters change
-        resultsCache.clear();
-        
-        // Reset to page 1
-        currentPage = 1;
-        
-        // Load entities with the new filters
-        loadEntities();
-    });
-    
-    // Function to show notifications  
-    function showNotification(message, type = 'info') {
-        // Create a toast notification
-        const toast = document.createElement('div');
-        toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
-        toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-        toast.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        `;
-        document.body.appendChild(toast);
-        
-        // Auto remove after 5 seconds
-        setTimeout(() => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
-            }
-        }, 5000);
-    }
-    
-    // Helper function to get CSRF cookie
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue;
-    }
-
-    // Add the Add All to PR functionality
-    document.getElementById('addAllToPrButton').addEventListener('click', function() {
-        // Disable the button and show loading state
-        this.disabled = true;
-        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Processing...';
-        
-        // Show a confirmation dialog
-        if (confirm('This will add all editable properties to a new pull request. This process may take some time. Continue?')) {
-            // Call the API endpoint to create a PR with all editable properties
-            fetch('/metadata/entities/editable/create-pr/', {
-            method: 'POST',
-            headers: {
-                    'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                    // Show success message with PR link if available
-                    let message = 'Successfully created pull request with all editable properties.';
-                    if (data.pr_url) {
-                        message += ` <a href="${data.pr_url}" target="_blank">View PR <i class="fas fa-external-link-alt"></i></a>`;
-                    }
-                    showSuccess(message);
-            } else {
-                    // Show error message
-                    showError(data.error || 'Failed to create pull request');
-            }
-        })
-        .catch(error => {
-                console.error('Error creating pull request:', error);
-                showError('Failed to create pull request: ' + error.message);
-        })
-        .finally(() => {
-                // Reset button state
-            this.disabled = false;
-                this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
-            });
-        } else {
-            // Reset button if user cancels
-            this.disabled = false;
-            this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
-        }
-    });
-
-    // Add the Refresh button
-    document.getElementById('refreshCacheButton').addEventListener('click', function() {
-        const button = this;
-        const originalText = button.innerHTML;
-        
-        // Show loading state
-        button.disabled = true;
-        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Clearing...';
-        
-        // Clear server-side cache
-        fetch('{% url "metadata_manager:clear_editable_entities_cache" %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-                'Content-Type': 'application/json',
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Clear client-side cache and reload data
-                resultsCache.clear();
-                
-                // Force reload by bypassing cache check
-                const currentParams = getCurrentSearchParams();
-                loadEntitiesFromServer(currentParams, 1);
-                
-                // Update cache status
-                updateCacheStatus('Cache cleared - loading fresh data');
-                
-                // Show success message
-                showNotification('Cache cleared successfully!', 'success');
-            } else {
-                throw new Error(data.error || 'Failed to clear cache');
-            }
-        })
-        .catch(error => {
-            console.error('Error clearing cache:', error);
-            showNotification('Error clearing cache: ' + error.message, 'error');
-        })
-        .finally(() => {
-            // Restore button state
-            button.disabled = false;
-            button.innerHTML = originalText;
-        });
-    });
-    
-    // Helper function to get current search parameters
-    function getCurrentSearchParams() {
-        const searchQuery = document.getElementById('searchQuery').value;
-        const entityType = document.getElementById('entityType').value;
-        const platform = document.getElementById('platform').value;
-        const browsePath = document.getElementById('browsePath')?.value || '';
-        const platformInstance = document.getElementById('platformInstance')?.value || '';
-        const hasProperties = document.getElementById('hasProperties')?.value || '';
-        const sortBy = document.getElementById('sortBy')?.value || 'name';
-        const usePlatformPagination = document.getElementById('usePlatformPagination').checked;
-        
-        let query = searchQuery;
-        
-        // Add browse path filter if specified
-        if (browsePath) {
-            if (query && query !== '*') {
-                query += ` AND browsePaths:"/${browsePath}*"`;
-            } else {
-                query = `browsePaths:"/${browsePath}*"`;
-            }
-        }
-        
-        // Add platform instance filter if specified
-        if (platformInstance && platform) {
-            if (query && query !== '*') {
-                query += ` AND instance:${platformInstance}`;
-            } else {
-                query = `instance:${platformInstance}`;
-            }
-        }
-        
-        // Add property existence filters if specified
-        if (hasProperties) {
-            if (query && query !== '*') {
-                query += ` AND has:${hasProperties}`;
-            } else {
-                query = `has:${hasProperties}`;
-            }
-        }
-        
-        return {
-            query: query,
-            entityType: entityType,
-            platform: platform,
-            browsePath: browsePath,
-            platformInstance: platformInstance,
-            hasProperties: hasProperties,
-            sortBy: sortBy,
-            usePlatformPagination: usePlatformPagination,
-            editablePropertiesOnly: true
-        };
-    }
-    
-    // Helper function to force load from server (bypassing cache)
-    function loadEntitiesFromServer(searchParams, page = 1) {
-        const start = (page - 1) * itemsPerPage;
-        
-        // Show loading state
-        document.getElementById('entitiesTableBody').innerHTML = `
-            <tr>
-                <td colspan="13" class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-2 mb-0">Loading fresh data from DataHub...</p>
-                    <p class="text-muted small">This may take longer for comprehensive searches</p>
-                </td>
-            </tr>
-        `;
-        
-        updateCacheStatus('Loading fresh data from DataHub...');
-        
-        // Construct the API URL with all parameters
-        const apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${itemsPerPage * 10}&searchQuery=${encodeURIComponent(searchParams.query)}&entityType=${searchParams.entityType}&platform=${searchParams.platform}&use_platform_pagination=${searchParams.usePlatformPagination}&sortBy=${searchParams.sortBy}&editable_only=${searchParams.editablePropertiesOnly}`;
-        console.log(`Force fetching from API: ${apiUrl}`);
-        
-        fetch(apiUrl)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    updateCacheStatus('Fresh data loaded and cached (' + new Date().toLocaleTimeString() + ')');
-                    
-                    // Store the results in cache
-                    resultsCache.store(searchParams, data.data);
-                    
-                    // Store entities for download
-                    allEntities = data.data.searchResults.map(result => result.entity);
-                    
-                    // Only show the current page
-                    const paginatedData = {
-                        ...data.data,
-                        searchResults: data.data.searchResults.slice(0, itemsPerPage)
-                    };
-                    
-                    updateEntitiesTable(paginatedData);
-                    updatePagination(data.data.total);
-                    
-                    // Show entity count
-                    const entityCount = document.getElementById('entityCount');
-                    if (data.data.total > 0) {
-                        entityCount.textContent = `${data.data.total} entities`;
-                        
-                        // Start background loading
-                        setTimeout(() => {
-                            resultsCache.startBackgroundLoading(searchParams);
-                        }, 500);
-                    } else {
-                        entityCount.textContent = 'No entities found';
-                    }
-                } else {
-                    updateCacheStatus('Error loading data');
-                    showError(data.error || 'Failed to load entities');
-                }
-            })
-            .catch(error => {
-                console.error('Error loading entities:', error);
-                updateCacheStatus('Error loading data');
-                showError(`Failed to load entities: ${error.message}`);
-            });
-    }
-
-    // Counting functions for metadata elements
-    function countEditableProperties(entity) {
-        if (!entity.editableProperties) return 0;
-        let count = 0;
-        if (entity.editableProperties.name) count++;
-        if (entity.editableProperties.description) count++;
-        // Count other editable properties
-        const otherProps = Object.keys(entity.editableProperties).filter(key => key !== 'name' && key !== 'description');
-        count += otherProps.length;
-        return count;
-    }
-
-    function countSchemaMetadata(entity) {
-        let count = 0;
-        
-        // Count editable schema metadata fields
-        if (entity.editableSchemaMetadata && entity.editableSchemaMetadata.editableSchemaFieldInfo) {
-            count += entity.editableSchemaMetadata.editableSchemaFieldInfo.length;
-        }
-        
-        // Count schema metadata fields
-        if (entity.schemaMetadata && entity.schemaMetadata.fields) {
-            count += entity.schemaMetadata.fields.length;
-        }
-        
-        return count;
-    }
-
-    function countDomains(entity) {
-        if (entity.domain && entity.domain.domain && entity.domain.domain.urn) {
-            return 1;
-        }
-        return 0;
-    }
-
-    function countGlossaryTerms(entity) {
-        let count = 0;
-        
-        // Entity-level glossary terms
-        if (entity.glossaryTerms && entity.glossaryTerms.terms) {
-            count += entity.glossaryTerms.terms.length;
-        }
-        
-        // Schema-level glossary terms
-        if (entity.editableSchemaMetadata && entity.editableSchemaMetadata.editableSchemaFieldInfo) {
-            entity.editableSchemaMetadata.editableSchemaFieldInfo.forEach(field => {
-                if (field.glossaryTerms && field.glossaryTerms.terms) {
-                    count += field.glossaryTerms.terms.length;
-                }
-            });
-        }
-        
-        // Schema metadata glossary terms
-        if (entity.schemaMetadata && entity.schemaMetadata.fields) {
-            entity.schemaMetadata.fields.forEach(field => {
-                if (field.glossaryTerms && field.glossaryTerms.terms) {
-                    count += field.glossaryTerms.terms.length;
-                }
-            });
-        }
-        
-        return count;
-    }
-
-    function countTags(entity) {
-        let count = 0;
-        
-        // Entity-level tags
-        if (entity.tags && entity.tags.tags) {
-            count += entity.tags.tags.length;
-        }
-        
-        // Schema-level tags
-        if (entity.editableSchemaMetadata && entity.editableSchemaMetadata.editableSchemaFieldInfo) {
-            entity.editableSchemaMetadata.editableSchemaFieldInfo.forEach(field => {
-                if (field.tags && field.tags.tags) {
-                    count += field.tags.tags.length;
-                }
-            });
-        }
-        
-        // Schema metadata tags
-        if (entity.schemaMetadata && entity.schemaMetadata.fields) {
-            entity.schemaMetadata.fields.forEach(field => {
-                if (field.tags && field.tags.tags) {
-                    count += field.tags.tags.length;
-                }
-            });
-        }
-        
-        return count;
-    }
-
-    function countStructuredProperties(entity) {
-        let count = 0;
-        
-        // Entity-level structured properties
-        if (entity.structuredProperties && entity.structuredProperties.properties) {
-            count += entity.structuredProperties.properties.length;
-        }
-        
-        // Schema-level structured properties
-        if (entity.schemaMetadata && entity.schemaMetadata.fields) {
-            entity.schemaMetadata.fields.forEach(field => {
-                if (field.schemaFieldEntity && 
-                    field.schemaFieldEntity.structuredProperties && 
-                    field.schemaFieldEntity.structuredProperties.properties) {
-                    count += field.schemaFieldEntity.structuredProperties.properties.length;
-                }
-            });
-        }
-        
-        return count;
-    }
-
-    // Add event listener for raw JSON view buttons
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('.view-raw-json')) {
-            const button = e.target.closest('.view-raw-json');
-            const entityData = button.getAttribute('data-entity');
-            try {
-                const entity = JSON.parse(entityData.replace(/&apos;/g, "'"));
-                showRawJsonModal(entity);
-            } catch (error) {
-                console.error('Error parsing entity data:', error);
-                showError('Failed to parse entity data');
-            }
-        }
-    });
-
-    // Function to show raw JSON modal
-    function showRawJsonModal(entity) {
-        // Create modal if it doesn't exist
-        let modal = document.getElementById('rawJsonModal');
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.className = 'modal fade';
-            modal.id = 'rawJsonModal';
-            modal.tabIndex = -1;
-            modal.innerHTML = `
-                <div class="modal-dialog modal-xl">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">Raw Entity JSON</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="mb-3">
-                                <label class="form-label">Entity Type: <span id="jsonEntityType" class="badge bg-primary"></span></label>
-                                <label class="form-label ms-3">URN: <span id="jsonEntityUrn" class="text-muted small"></span></label>
-                            </div>
-                            <pre id="jsonContent" style="max-height: 500px; overflow-y: auto; background: #f8f9fa; padding: 1rem; border-radius: 0.25rem;"></pre>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-outline-secondary" id="copyJsonBtn">
-                                <i class="fas fa-copy me-1"></i> Copy JSON
-                            </button>
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-
-            // Add copy functionality
-            document.getElementById('copyJsonBtn').addEventListener('click', function() {
-                const jsonContent = document.getElementById('jsonContent').textContent;
-                navigator.clipboard.writeText(jsonContent).then(() => {
-                    const btn = this;
-                    const originalText = btn.innerHTML;
-                    btn.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
-                    btn.className = 'btn btn-success';
-                    setTimeout(() => {
-                        btn.innerHTML = originalText;
-                        btn.className = 'btn btn-outline-secondary';
-                    }, 2000);
-                }).catch(err => {
-                    console.error('Failed to copy:', err);
-                    showError('Failed to copy JSON to clipboard');
-                });
-            });
-        }
-
-        // Update modal content
-        document.getElementById('jsonEntityType').textContent = entity.type;
-        document.getElementById('jsonEntityUrn').textContent = entity.urn;
-        document.getElementById('jsonContent').textContent = JSON.stringify(entity, null, 2);
-
-        // Show modal
-        const bsModal = new bootstrap.Modal(modal);
-        bsModal.show();
-    }
-
-    // Refresh cache function
-    window.refreshCache = function() {
-        // Add refresh_cache parameter and reload
-        const searchParams = new URLSearchParams(window.location.search);
-        searchParams.set('refresh_cache', 'true');
-        
-        // Show loading state
-        document.getElementById('entitiesTableBody').innerHTML = `
-            <tr>
-                <td colspan="13" class="text-center py-4">
-                    <div class="d-flex flex-column align-items-center">
-                        <div class="spinner-border text-primary mb-3" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <div class="mb-2">
-                            <strong>Refreshing cache...</strong>
-                        </div>
-                        <div class="small text-muted">
-                            Clearing cached results and starting fresh search...
-                        </div>
-                    </div>
-                </td>
-            </tr>
-        `;
-        
-        updateCacheStatus('Refreshing cache...');
-        
-        // Load entities with refresh flag
-        loadEntitiesWithRefresh();
-    };
-    
-    // Load entities with refresh flag
-    function loadEntitiesWithRefresh() {
-        const searchQuery = document.getElementById('searchQuery').value;
-        const entityType = document.getElementById('entityType').value;
-        const platform = document.getElementById('platform').value;
-        const browsePath = document.getElementById('browsePath')?.value || '';
-        const platformInstance = document.getElementById('platformInstance')?.value || '';
-        const hasProperties = document.getElementById('hasProperties')?.value || '';
-        const sortBy = document.getElementById('sortBy')?.value || 'name';
-        const usePlatformPagination = document.getElementById('usePlatformPagination').checked;
-        
-        const editablePropertiesOnly = true;
-        const start = 0; // Always start from beginning when refreshing
-        
-        // Build query
-        let query = searchQuery;
-        if (browsePath) {
-            if (query && query !== '*') {
-                query += ` AND browsePaths:"/${browsePath}*"`;
-            } else {
-                query = `browsePaths:"/${browsePath}*"`;
-            }
-        }
-        if (platformInstance && platform) {
-            if (query && query !== '*') {
-                query += ` AND instance:${platformInstance}`;
-            } else {
-                query = `instance:${platformInstance}`;
-            }
-        }
-        if (hasProperties) {
-            if (query && query !== '*') {
-                query += ` AND has:${hasProperties}`;
-            } else {
-                query = `has:${hasProperties}`;
-            }
-        }
-        
-        // Create search parameters with refresh flag
-        const searchParams = {
-            query: query,
-            entityType: entityType,
-            platform: platform,
-            browsePath: browsePath,
-            platformInstance: platformInstance,
-            hasProperties: hasProperties,
-            sortBy: sortBy,
-            usePlatformPagination: usePlatformPagination,
-            editablePropertiesOnly: editablePropertiesOnly,
-            refreshCache: true
-        };
-        
-        // Start the search with refresh
-        startSearchWithProgress(searchParams, start, itemsPerPage, null, 1);
-    }
-});
 </script>
 {% endblock %} 

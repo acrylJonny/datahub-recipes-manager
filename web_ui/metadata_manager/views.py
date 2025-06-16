@@ -555,8 +555,11 @@ def _perform_comprehensive_search_with_progress(client, query, entity_type, plat
         platforms_to_query = _discover_platforms(client, query, sort_by)
         logger.info(f"Discovered {len(platforms_to_query)} platforms to search")
 
-    # Calculate total combinations
-    total_combinations = len(entity_types_to_query) * (len(platforms_to_query) + 1)  # +1 for no-platform search
+    # Calculate total combinations - only count platform searches, not the no-platform search
+    total_combinations = len(entity_types_to_query) * len(platforms_to_query)
+    if total_combinations == 0:
+        # If no platforms were discovered, we need to do at least one search
+        total_combinations = len(entity_types_to_query)
     
     SearchProgress.update_progress(
         session_key=session_key,
@@ -571,35 +574,37 @@ def _perform_comprehensive_search_with_progress(client, query, entity_type, plat
     
     # Search by entity type + platform combinations
     for current_entity_type in entity_types_to_query:
-        # Search without platform filter first
-        current_combination += 1
-        SearchProgress.update_progress(
-            session_key=session_key,
-            cache_key=cache_key,
-            current_step=f"Searching {current_entity_type} (no platform filter)",
-            current_entity_type=current_entity_type,
-            current_platform="",
-            completed_combinations=current_combination
-        )
-        
-        results = _search_with_pagination_and_cache(
-            client, query, current_entity_type, None, sort_by, seen_urns, session_key, cache_key
-        )
-        
-        # Then search with each platform
-        for platform_name in platforms_to_query:
+        # Skip the search without platform filter and go directly to platform-specific searches
+        if platforms_to_query:
+            # Search with each platform
+            for platform_name in platforms_to_query:
+                current_combination += 1
+                SearchProgress.update_progress(
+                    session_key=session_key,
+                    cache_key=cache_key,
+                    current_step=f"Searching {current_entity_type} + {platform_name}",
+                    current_entity_type=current_entity_type,
+                    current_platform=platform_name,
+                    completed_combinations=current_combination
+                )
+                
+                results = _search_with_pagination_and_cache(
+                    client, query, current_entity_type, platform_name, sort_by, seen_urns, session_key, cache_key
+                )
+        else:
+            # If no platforms were discovered, we still need to do one search without platform filter
             current_combination += 1
             SearchProgress.update_progress(
                 session_key=session_key,
                 cache_key=cache_key,
-                current_step=f"Searching {current_entity_type} + {platform_name}",
+                current_step=f"Searching {current_entity_type} (all platforms)",
                 current_entity_type=current_entity_type,
-                current_platform=platform_name,
+                current_platform="",
                 completed_combinations=current_combination
             )
             
             results = _search_with_pagination_and_cache(
-                client, query, current_entity_type, platform_name, sort_by, seen_urns, session_key, cache_key
+                client, query, current_entity_type, None, sort_by, seen_urns, session_key, cache_key
             )
 
     # Update final progress
@@ -1969,3 +1974,43 @@ def get_search_progress(request):
     except Exception as e:
         logger.error(f"Error getting search progress: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def get_datahub_url_config(request):
+    """Get the DataHub URL from the system configuration."""
+    try:
+        # Try to get from AppSettings
+        try:
+            from web_ui.models import AppSettings
+            datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", ""))
+            
+            # If URL ends with /api/gms, strip it for frontend use
+            if datahub_url and datahub_url.endswith("/api/gms"):
+                datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
+            
+            if not datahub_url:
+                # Fall back to the default environment in the database
+                environment = ensure_default_environment()
+                if environment and environment.datahub_url:
+                    datahub_url = environment.datahub_url
+                    # Same cleanup
+                    if datahub_url.endswith("/api/gms"):
+                        datahub_url = datahub_url[:-8]
+
+            return JsonResponse({
+                "success": True,
+                "url": datahub_url
+            })
+        except Exception as e:
+            logger.error(f"Error getting DataHub URL: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"Failed to get DataHub URL: {str(e)}"
+            }, status=500)
+    except Exception as e:
+        logger.error(f"Unexpected error in get_datahub_url_config: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": f"Internal server error: {str(e)}"
+        }, status=500)
