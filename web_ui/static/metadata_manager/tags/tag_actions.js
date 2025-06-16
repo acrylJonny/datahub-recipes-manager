@@ -55,34 +55,35 @@ function syncTagToLocal(tag) {
         
         // For remote-only tags, we need to create them locally first
         // This is done by pulling the tag from the remote server
-        const formData = new FormData();
-        formData.append('tag_urn', tagData.urn);
-        formData.append('tag_name', tagData.name);
-        formData.append('tag_description', tagData.description || '');
-        formData.append('tag_color_hex', tagData.properties?.colorHex || '');
-        formData.append('pull_single', 'true');
-        
-        fetch('/metadata_manager/tags/pull/', {
+        fetch('/metadata/tags/pull/', {
             method: 'POST',
             headers: {
+                'Content-Type': 'application/json',
                 'X-CSRFToken': getCsrfToken()
             },
-            body: formData
+            body: JSON.stringify({
+                urn: tagData.urn,
+                pull_single: true
+            })
         })
         .then(response => {
             if (!response.ok) {
                 throw new Error('Failed to pull tag from DataHub');
             }
-            // The response might be a redirect to the tag list page with a success message
-            // So we'll just reload the page to show the newly created tag
-            showNotification('success', 'Tag successfully pulled from DataHub');
-            
-            // Refresh the data to show the newly created tag
-            if (typeof loadTagsData === 'function') {
-                loadTagsData();
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                showNotification('success', 'Tag successfully pulled from DataHub');
+                // Refresh the data to show the newly created tag
+                if (typeof loadTagsData === 'function') {
+                    loadTagsData();
+                } else {
+                    // Fallback to page reload if loadTagsData is not available
+                    window.location.reload();
+                }
             } else {
-                // Fallback to page reload if loadTagsData is not available
-                window.location.reload();
+                throw new Error(data.error || 'Failed to pull tag');
             }
         })
         .catch(error => {
@@ -148,25 +149,8 @@ function addTagToStagedChanges(tag) {
     
     // Get tag data and environment
     const tagData = tag.combined || tag;
-    
-    // Extract the ID from the appropriate location based on tag type
-    let tagId = null;
-    
-    // For synced tags, check multiple locations
-    if (tagData.sync_status === 'SYNCED') {
-        if (tagData.id) {
-            tagId = tagData.id;
-        } else if (tag.combined && tag.combined.id) {
-            tagId = tag.combined.id;
-        } else if (tag.local && tag.local.id) {
-            tagId = tag.local.id;
-        }
-    } else {
-        // For other tags, use the direct ID
-        tagId = tagData.id;
-    }
-    
-    console.log('Using tag ID:', tagId);
+    // IMPORTANT: We must use the UUID (id) for the API endpoint, not the URN
+    const tagId = tagData.id;
     
     // If we don't have an ID, we need to create the tag first
     if (!tagId) {

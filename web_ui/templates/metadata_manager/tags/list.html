@@ -527,6 +527,12 @@
                                         <strong><span id="synced-selected-count">0</span></strong> tag(s) selected
                                     </div>
                                     <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncTags('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTags('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
                                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
                                             <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>

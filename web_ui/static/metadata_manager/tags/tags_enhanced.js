@@ -231,53 +231,30 @@ function setupSearchHandlers() {
 }
 
 function setupBulkActions() {
-    // This will be called once on page load to set up initial handlers
-    // The actual checkbox handlers are attached in displayTabContent after the table is rendered
-    
-    // Setup select-all checkboxes
     ['synced', 'local', 'remote'].forEach(tab => {
-        // We'll attach these handlers after the table is rendered
-        document.addEventListener('click', function(e) {
-            // Check if a checkbox was clicked
-            if (e.target && e.target.classList.contains('item-checkbox')) {
-                updateBulkActionVisibility(tab);
-            }
-            
-            // Check if select-all checkbox was clicked
-            if (e.target && e.target.classList.contains('select-all-checkbox')) {
-                const tabType = e.target.closest('.tab-pane').id.split('-')[0];
-                const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox`);
+        const selectAllCheckbox = document.getElementById(`selectAll${tab.charAt(0).toUpperCase() + tab.slice(1)}`);
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                const checkboxes = document.querySelectorAll(`#${tab}-content .item-checkbox`);
                 checkboxes.forEach(checkbox => {
-                    checkbox.checked = e.target.checked;
+                    checkbox.checked = this.checked;
                 });
-                updateBulkActionVisibility(tabType);
+                updateBulkActionVisibility(tab);
+            });
         }
-        });
     });
 }
 
 function updateBulkActionVisibility(tab) {
-    console.log(`Updating bulk action visibility for ${tab} tab`);
-    
     const checkboxes = document.querySelectorAll(`#${tab}-content .item-checkbox:checked`);
-    console.log(`Found ${checkboxes.length} checked checkboxes`);
-    
     const bulkActions = document.getElementById(`${tab}-bulk-actions`);
     const selectedCount = document.getElementById(`${tab}-selected-count`);
-    
-    if (!bulkActions || !selectedCount) {
-        console.error(`Could not find bulk actions or selected count elements for ${tab} tab`);
-        return;
-    }
     
     if (checkboxes.length > 0) {
         bulkActions.classList.add('show');
         selectedCount.textContent = checkboxes.length;
-        console.log(`Showing bulk actions with ${checkboxes.length} selected items`);
     } else {
         bulkActions.classList.remove('show');
-        selectedCount.textContent = '0';
-        console.log('Hiding bulk actions - no items selected');
     }
 }
 
@@ -577,13 +554,10 @@ function renderTagRow(tag, tabType) {
     // Get custom action buttons
     const customActionButtons = getActionButtons(tagData, tabType);
     
-    // Make sure we have an ID for the checkbox value
-    const checkboxValue = tagData.id || tagData.urn || '';
-    
     return `
         <tr data-item='${safeJsonData}'>
             <td>
-                <input type="checkbox" class="form-check-input item-checkbox" value="${checkboxValue}" id="checkbox-${tabType}-${checkboxValue}">
+                <input type="checkbox" class="form-check-input item-checkbox" value="${tagData.id || tagData.urn}">
             </td>
             <td title="${escapeHtml(name)}">
                 <div class="d-flex align-items-center">
@@ -883,58 +857,17 @@ function sortItems(items, column, direction) {
 }
 
 function showTagDetails(tag) {
-    console.log('Showing tag details:', tag);
-    
-    // For synced tags, we need to check both local and remote data
+    // Reuse existing modal functionality
     const tagData = tag.combined || tag;
     
-    // For remote-only tags, use the remote data directly
-    const isRemoteOnly = tagData.sync_status === 'REMOTE_ONLY';
-    
-    // Log the data structure to help with debugging
-    console.log('Tag data structure:', {
-        name: tagData.name,
-        properties: tagData.properties,
-        sync_status: tagData.sync_status,
-        urn: tagData.urn,
-        hasOwnership: !!(tagData.ownership || tagData.ownership_data)
-    });
-    
     // Update modal with tag data - use original descriptions if available
-    // For remote tags, prioritize properties.name over name
-    let displayName = '';
-    if (isRemoteOnly || tagData.sync_status === 'SYNCED') {
-        // Remote tags store name in properties.name
-        displayName = tagData.properties?.name || tagData.name || 'Unnamed Tag';
-    } else {
-        // Local tags store name directly
-        displayName = tagData.name || tagData.properties?.name || 'Unnamed Tag';
-    }
-    document.getElementById('modal-tag-name').textContent = displayName;
+    document.getElementById('modal-tag-name').textContent = tagData._original?.name || tagData.properties?.name || tagData.name || 'Unnamed Tag';
+    document.getElementById('modal-tag-description').textContent = tagData._originalDescription || tagData._original?.description || tagData.properties?.description || tagData.description || 'No description';
     
-    // Handle description similarly
-    let displayDescription = '';
-    if (isRemoteOnly || tagData.sync_status === 'SYNCED') {
-        // Remote tags store description in properties.description
-        displayDescription = tagData.properties?.description || tagData.description || 'No description';
-    } else {
-        // Local tags store description directly
-        displayDescription = tagData.description || tagData.properties?.description || 'No description';
-    }
-    document.getElementById('modal-tag-description').textContent = displayDescription;
-    
-    // Handle color
     const colorSwatch = document.getElementById('modal-tag-color-swatch');
-    let displayColor = '';
-    if (isRemoteOnly || tagData.sync_status === 'SYNCED') {
-        // Remote tags store color in properties.colorHex
-        displayColor = tagData.properties?.colorHex || tagData.color || '#6c757d';
-    } else {
-        // Local tags store color directly
-        displayColor = tagData.color || tagData.properties?.colorHex || '#6c757d';
-    }
-    colorSwatch.style.backgroundColor = displayColor;
-    document.getElementById('modal-tag-color').textContent = displayColor;
+    const color = tagData.properties?.colorHex || tagData.color || '#6c757d';
+    colorSwatch.style.backgroundColor = color;
+    document.getElementById('modal-tag-color').textContent = color;
     
     // Update deprecation status
     const isDeprecated = tagData.deprecated || tagData.properties?.deprecated || false;
@@ -942,7 +875,6 @@ function showTagDetails(tag) {
     deprecatedElement.textContent = isDeprecated ? 'Yes' : 'No';
     deprecatedElement.className = `badge ${isDeprecated ? 'bg-warning' : 'bg-success'}`;
     
-    // Update URN
     document.getElementById('modal-tag-urn').textContent = tagData.urn || '';
     
     // Update owners information split by ownership type
@@ -955,14 +887,12 @@ function showTagDetails(tag) {
     
     // Check for ownership data from GraphQL (remote tags) or local storage
     const ownershipData = tagData.ownership || tagData.ownership_data;
-    console.log('Ownership data:', ownershipData);
     
     if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
         // Group owners by ownership type
         const ownersByType = {};
         
         ownershipData.owners.forEach(ownerInfo => {
-            console.log('Processing owner info:', ownerInfo);
             let ownerUrn, ownershipTypeUrn, ownershipTypeName;
             
             // Handle different data structures
@@ -983,7 +913,6 @@ function showTagDetails(tag) {
                 ownershipTypeUrn = ownerInfo.ownershipType.urn;
                 ownershipTypeName = ownerInfo.ownershipType.info?.name || 'Unknown Type';
             } else {
-                console.log('Skipping invalid owner entry:', ownerInfo);
                 return; // Skip invalid entries
             }
             
@@ -1050,23 +979,6 @@ function showTagDetails(tag) {
         ownersListElement.innerHTML = ownersHTML;
     } else {
         ownersListElement.innerHTML = '<p class="text-muted">No ownership information available</p>';
-    }
-    
-    // Update last modified info if available
-    const lastModifiedElement = document.getElementById('modal-last-modified');
-    if (lastModifiedElement) {
-        if (tagData.last_synced || tagData.last_modified) {
-            const lastModified = tagData.last_modified || tagData.last_synced;
-            const formattedDate = new Date(lastModified).toLocaleString();
-            lastModifiedElement.innerHTML = `
-                <div class="text-muted small">
-                    <i class="fas fa-clock me-1"></i>
-                    Last modified: ${formattedDate}
-                </div>
-            `;
-        } else {
-            lastModifiedElement.innerHTML = '';
-        }
     }
     
     // Update DataHub link with proper URL from configuration
@@ -1160,23 +1072,8 @@ function bulkAddToPR(tabType) {
             
             const tag = selectedTags[index];
             
-            // For synced tags, get ID from the combined or local property
-            let tagId = null;
-            if (tabType === 'synced') {
-                if (tag.combined && tag.combined.id) {
-                    tagId = tag.combined.id;
-                } else if (tag.local && tag.local.id) {
-                    tagId = tag.local.id;
-                } else {
-                    tagId = tag.id;
-                }
-            } else {
-                // For other tabs, use the direct ID
-                tagId = tag.id;
-            }
-            
-            console.log(`Processing tag with ID: ${tagId}, name: ${tag.name || tag.combined?.name || 'Unknown'}`);
-            
+            // We need the ID for the API call
+            const tagId = tag.id;
             if (!tagId) {
                 console.error('Cannot add tag to staged changes without an ID:', tag);
                 errorCount++;
@@ -1199,13 +1096,12 @@ function bulkAddToPR(tabType) {
             })
             .then(response => {
                 if (!response.ok) {
-                    throw new Error(`Failed to add tag ${tag.name || tag.combined?.name || tag.urn} to staged changes`);
+                    throw new Error(`Failed to add tag ${tag.name || tag.urn} to staged changes`);
                 }
                 return response.json();
             })
             .then(data => {
-                const tagName = tag.name || tag.combined?.name || tag.urn;
-                console.log(`Successfully added tag to staged changes: ${tagName}`);
+                console.log(`Successfully added tag to staged changes: ${tag.name || tag.urn}`);
                 successCount++;
                 processedCount++;
                 
@@ -1223,8 +1119,7 @@ function bulkAddToPR(tabType) {
                 processNextTag(index + 1);
             })
             .catch(error => {
-                const tagName = tag.name || tag.combined?.name || tag.urn;
-                console.error(`Error adding tag ${tagName} to staged changes:`, error);
+                console.error(`Error adding tag ${tag.name || tag.urn} to staged changes:`, error);
                 errorCount++;
                 processedCount++;
                 
@@ -1317,25 +1212,8 @@ function bulkDeleteLocal(tabType) {
             
             const tag = selectedTags[index];
             
-            // Extract the ID from the appropriate location based on tag type
-            let tagId = null;
-            
-            // For synced tags, check multiple locations
-            if (tabType === 'synced') {
-                if (tag.combined && tag.combined.id) {
-                    tagId = tag.combined.id;
-                } else if (tag.local && tag.local.id) {
-                    tagId = tag.local.id;
-                } else {
-                    tagId = tag.id;
-                }
-            } else {
-                // For other tags, use the direct ID
-                tagId = tag.id;
-            }
-            
-            console.log(`Deleting tag with ID: ${tagId}, name: ${tag.name || tag.combined?.name || 'Unknown'}`);
-            
+            // We need the ID for the API call
+            const tagId = tag.id;
             if (!tagId) {
                 console.error('Cannot delete tag without an ID:', tag);
                 errorCount++;
@@ -1344,12 +1222,12 @@ function bulkDeleteLocal(tabType) {
                 return;
             }
             
-            // Make the API call to delete this tag using DELETE method
+            // Make the API call to delete this tag
             fetch(`/metadata/tags/${tagId}/delete/`, {
-                method: 'DELETE',
+                method: 'POST',
                 headers: {
-                    'X-CSRFToken': getCsrfToken(),
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
                 }
             })
             .then(response => {
@@ -1513,10 +1391,7 @@ function updateBulkActionVisibility(tabType) {
 }
 
 function getSelectedTags(tabType) {
-    // First check if there are any checked checkboxes
     const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
-    console.log(`Found ${checkboxes.length} checked checkboxes for ${tabType}`);
-    
     const selectedTags = [];
     
     checkboxes.forEach(checkbox => {
@@ -1524,30 +1399,13 @@ function getSelectedTags(tabType) {
         if (row && row.dataset.item) {
             try {
                 const tagData = JSON.parse(row.dataset.item);
-                console.log(`Selected tag:`, tagData);
-                
-                // For synced tags, ensure we have the correct ID
-                if (tabType === 'synced' && tagData.combined) {
-                    // Make sure the ID is properly extracted from the combined data
-                    if (!tagData.id && tagData.combined && tagData.combined.id) {
-                        tagData.id = tagData.combined.id;
-                    }
-                    // Also ensure the local data has the ID
-                    if (tagData.local && !tagData.local.id && tagData.combined && tagData.combined.id) {
-                        tagData.local.id = tagData.combined.id;
-                    }
-                }
-                
                 selectedTags.push(tagData);
             } catch (e) {
                 console.error('Error parsing tag data:', e);
             }
-        } else {
-            console.error('Could not find row or row.dataset.item for checkbox', checkbox);
         }
     });
     
-    console.log(`Total selected tags: ${selectedTags.length}`);
     return selectedTags;
 }
 
