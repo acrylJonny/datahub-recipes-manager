@@ -22,8 +22,7 @@ class BaseMetadataModel(models.Model):
     description = models.TextField(blank=True, null=True)
 
     # URN handling
-    deterministic_urn = models.CharField(max_length=255, unique=True)
-    original_urn = models.CharField(max_length=255, blank=True, null=True)
+    urn = models.CharField(max_length=255, unique=True)
 
     # Status tracking
     datahub_id = models.CharField(
@@ -73,7 +72,6 @@ class Tag(BaseMetadataModel):
     
     # Store ownership data
     ownership_data = models.JSONField(blank=True, null=True)
-    owners_count = models.IntegerField(default=0)
 
     class Meta:
         ordering = ["name"]
@@ -86,14 +84,12 @@ class Tag(BaseMetadataModel):
             "name": self.name,
             "description": self.description,
             "color": self.color,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
         }
         
         # Add ownership information if available
         if self.ownership_data:
             data["ownership_data"] = self.ownership_data
-            data["owners_count"] = self.owners_count
         
         return data
 
@@ -144,8 +140,7 @@ class GlossaryNode(BaseMetadataModel):
         data = {
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
         }
 
         # Add color_hex if it exists
@@ -156,7 +151,7 @@ class GlossaryNode(BaseMetadataModel):
             pass
 
         if self.parent:
-            data["parent_urn"] = self.parent.deterministic_urn
+            data["parent_urn"] = self.parent.urn
 
         return data
 
@@ -188,13 +183,12 @@ class GlossaryTerm(BaseMetadataModel):
         data = {
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "term_source": self.term_source,
         }
 
         if self.parent_node:
-            data["parent_node_urn"] = self.parent_node.deterministic_urn
+            data["parent_node_urn"] = self.parent_node.urn
 
         if self.domain_urn:
             data["domain_urn"] = self.domain_urn
@@ -220,7 +214,6 @@ class Domain(BaseMetadataModel):
     icon_library = models.CharField(max_length=50, blank=True, null=True, default="font-awesome")
     
     # Ownership and relationship counts for quick access
-    owners_count = models.IntegerField(default=0)
     relationships_count = models.IntegerField(default=0)
     entities_count = models.IntegerField(default=0)
     
@@ -237,8 +230,7 @@ class Domain(BaseMetadataModel):
             "id": str(self.id),  # Include the ID for frontend action buttons
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
         }
         
         # Add parent domain if exists
@@ -304,11 +296,9 @@ class Assertion(BaseMetadataModel):
     
     # Store ownership data
     ownership_data = models.JSONField(blank=True, null=True)
-    owners_count = models.IntegerField(default=0)
     
     # Store relationships data
     relationships_data = models.JSONField(blank=True, null=True)
-    relationships_count = models.IntegerField(default=0)
     
     # Store run events data
     run_events_data = models.JSONField(blank=True, null=True)
@@ -336,8 +326,7 @@ class Assertion(BaseMetadataModel):
             "id": str(self.id),  # Include the ID for frontend action buttons
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "assertion_type": self.assertion_type,
             "entity_urn": self.entity_urn,
             "platform_name": self.platform_name,
@@ -450,8 +439,7 @@ class StructuredProperty(BaseMetadataModel):
         return {
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "qualified_name": self.qualified_name,
             "value_type": self.value_type,
             "cardinality": self.cardinality,
@@ -496,15 +484,12 @@ class DataProduct(BaseMetadataModel):
     
     # Store ownership data
     ownership_data = models.JSONField(blank=True, null=True)
-    owners_count = models.IntegerField(default=0)
     
     # Store relationships data
     relationships_data = models.JSONField(blank=True, null=True)
-    relationships_count = models.IntegerField(default=0)
     
     # Store entities data
     entities_data = models.JSONField(blank=True, null=True)
-    entities_count = models.IntegerField(default=0)
     
     # Store tags data
     tags_data = models.JSONField(blank=True, null=True)
@@ -529,8 +514,7 @@ class DataProduct(BaseMetadataModel):
             "id": str(self.id),  # Include the ID for frontend action buttons
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "external_url": self.external_url,
             "entity_urns": self.entity_urns,
             "domain_urn": self.domain_urn,
@@ -678,8 +662,7 @@ class Test(BaseMetadataModel):
             "name": self.name,
             "description": self.description,
             "category": self.category,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "definition_json": self.definition_json,
             "yaml_definition": self.yaml_definition,
             "results": {

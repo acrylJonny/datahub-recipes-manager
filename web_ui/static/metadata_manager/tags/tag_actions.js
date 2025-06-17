@@ -4,6 +4,38 @@
  */
 
 /**
+ * Get the actual database ID from a tag object
+ * This is needed because the tag data might contain datahub_id instead of the actual database id
+ * @param {Object} tagData - The tag data object
+ * @returns {string|null} - The database ID or null if not found
+ */
+function getDatabaseId(tagData) {
+    // First, check if we have an explicit database_id field
+    if (tagData.database_id) {
+        return tagData.database_id;
+    }
+    
+    // For combined objects (synced tags), check if local has database_id or id
+    if (tagData.local) {
+        if (tagData.local.database_id) {
+            return tagData.local.database_id;
+        }
+        if (tagData.local.id) {
+            return tagData.local.id;
+        }
+    }
+    
+    // For remote-only tags or as a fallback, use the id property
+    if (tagData.id) {
+        return tagData.id;
+    }
+    
+    // Log warning if we couldn't find an ID
+    console.warn('Could not find database ID for tag:', tagData);
+    return null;
+}
+
+/**
  * Download tag JSON data
  * @param {Object} tag - The tag object
  */
@@ -47,11 +79,12 @@ function syncTagToLocal(tag) {
     // Get tag data
     const tagData = tag.combined || tag;
     // IMPORTANT: We must use the UUID (id) for the API endpoint, not the URN
-    const tagId = tagData.id;
+    const tagId = getDatabaseId(tagData);
     
     // Special handling for remote-only tags
     if (tagData.sync_status === 'REMOTE_ONLY') {
         console.log('Remote-only tag detected:', tagData);
+        console.log('Tag URN:', tagData.urn);
         
         // For remote-only tags, we need to create them locally first
         // This is done by pulling the tag from the remote server
@@ -62,17 +95,39 @@ function syncTagToLocal(tag) {
                 'X-CSRFToken': getCsrfToken()
             },
             body: JSON.stringify({
-                urn: tagData.urn,
-                pull_single: true
+                urns: [tagData.urn],  // Send as array for specific tag(s)
+                pull_specific: true,
+                debug_info: true  // Add debugging info
             })
         })
         .then(response => {
-            if (!response.ok) {
-                throw new Error('Failed to pull tag from DataHub');
+            // Log detailed response information
+            console.log('Pull response status:', response.status);
+            console.log('Pull response headers:', Array.from(response.headers.entries()));
+            
+            // Check for non-JSON responses that might be returning HTML error pages
+            const contentType = response.headers.get('content-type');
+            console.log('Pull response content type:', contentType);
+            
+            if (contentType && contentType.indexOf('application/json') !== -1) {
+                // This is a JSON response, proceed normally
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.error || 'Failed to pull tag from DataHub');
+                    });
+                }
+                return response.json();
+            } else {
+                // This is likely an HTML error page or unexpected response
+                console.error('Received non-JSON response:', contentType);
+                return response.text().then(text => {
+                    console.error('Pull response content (first 500 chars):', text.substring(0, 500) + '...');
+                    throw new Error('Server returned an unexpected response format. See console for details.');
+                });
             }
-            return response.json();
         })
         .then(data => {
+            console.log('Pull success response data:', data);
             if (data.success) {
                 showNotification('success', 'Tag successfully pulled from DataHub');
                 // Refresh the data to show the newly created tag
@@ -99,28 +154,60 @@ function syncTagToLocal(tag) {
     
     // Handle missing ID case
     if (!tagId) {
-        console.error('Cannot sync tag without an ID:', tagData);
-        showNotification('error', 'Error syncing tag: Missing tag ID.');
+        console.error('Cannot sync tag without a database ID:', tagData);
+        showNotification('error', 'Error syncing tag: Missing tag database ID.');
         hideActionLoading('sync');
         return;
     }
     
+    // Debug info
+    console.log('Attempting to sync tag with database ID:', tagId);
+    
+    // Format the tag ID as a UUID with dashes if needed
+    const formattedTagId = formatTagId(tagId);
+    console.log(`Formatted tag ID for sync: ${formattedTagId}`);
+    
     // Make API call to sync tag to local
-    fetch(`/api/metadata_manager/tags/${tagId}/sync_to_local/`, {
+    // Use the API endpoint that's decorated with csrf_exempt
+    fetch(`/metadata/api/tags/${formattedTagId}/sync_to_local/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCsrfToken()
-        }
+        },
+        // Add debugging info to the request body
+        body: JSON.stringify({
+            debug_info: true
+        })
     })
     .then(response => {
-        if (!response.ok) {
-            throw new Error('Failed to sync tag to local database');
+        console.log('Sync response status:', response.status);
+        console.log('Sync response headers:', Array.from(response.headers.entries()));
+        
+        // Check for non-JSON responses that might be returning HTML error pages
+        const contentType = response.headers.get('content-type');
+        console.log('Response content type:', contentType);
+        
+        if (contentType && contentType.indexOf('application/json') !== -1) {
+            // This is a JSON response, proceed normally
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Failed to sync tag to local database');
+                });
+            }
+            return response.json();
+        } else {
+            // This is likely an HTML error page or unexpected response
+            console.error('Received non-JSON response:', contentType);
+            return response.text().then(text => {
+                console.error('Response content (first 500 chars):', text.substring(0, 500) + '...');
+                throw new Error('Server returned an unexpected response format. See console for details.');
+            });
         }
-        return response.json();
     })
     .then(data => {
         // Show success notification
+        console.log('Sync success response data:', data);
         showNotification('success', 'Tag successfully synced to local database');
         
         // Refresh tag list if needed
@@ -138,6 +225,26 @@ function syncTagToLocal(tag) {
 }
 
 /**
+ * Format a tag ID as a UUID with dashes if needed
+ * @param {string} id - The tag ID to format
+ * @returns {string} - The formatted UUID
+ */
+function formatTagId(id) {
+    if (!id) return id;
+    
+    // If the ID already has dashes, return it as is
+    if (id.includes('-')) return id;
+    
+    // If it's a 32-character hex string, format it as UUID
+    if (id.length === 32 && /^[0-9a-f]+$/i.test(id)) {
+        return `${id.substring(0, 8)}-${id.substring(8, 12)}-${id.substring(12, 16)}-${id.substring(16, 20)}-${id.substring(20)}`;
+    }
+    
+    // Otherwise return as is
+    return id;
+}
+
+/**
  * Add tag to staged changes
  * @param {Object} tag - The tag object
  */
@@ -149,25 +256,31 @@ function addTagToStagedChanges(tag) {
     
     // Get tag data and environment
     const tagData = tag.combined || tag;
-    // IMPORTANT: We must use the UUID (id) for the API endpoint, not the URN
-    const tagId = tagData.id;
+    // IMPORTANT: We must use the database ID for the API endpoint, not the URN or datahub_id
+    const tagId = getDatabaseId(tagData);
     
     // If we don't have an ID, we need to create the tag first
     if (!tagId) {
-        console.error('Cannot add tag to staged changes without an ID:', tagData);
-        showNotification('error', 'Error adding tag to staged changes: Missing tag ID. This tag needs to be created locally first.');
+        console.error('Cannot add tag to staged changes without a database ID:', tagData);
+        showNotification('error', 'Error adding tag to staged changes: Missing tag database ID. This tag needs to be created locally first.');
         hideActionLoading('stage');
         return;
     }
+    
+    console.log('Using database ID for staged changes:', tagId);
+    
+    // Format the tag ID as a UUID with dashes if needed
+    const formattedTagId = formatTagId(tagId);
+    console.log(`Formatted tag ID for staged changes: ${formattedTagId}`);
     
     // Get current environment and mutation from global state or settings
     const currentEnvironment = window.currentEnvironment || { name: 'dev' };
     const mutationName = currentEnvironment.mutation_name || null;
     
-    console.log('Making API call to:', `/api/metadata_manager/tags/${tagId}/stage_changes/`);
+    console.log('Making API call to:', `/metadata/api/tags/${formattedTagId}/stage_changes/`);
     
     // Make API call to create MCP files
-    fetch(`/api/metadata_manager/tags/${tagId}/stage_changes/`, {
+    fetch(`/metadata/api/tags/${formattedTagId}/stage_changes/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

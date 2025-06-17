@@ -547,19 +547,19 @@ class GlossaryListView(View):
                         messages.error(request, "Parent node not found")
                         return redirect("metadata_manager:glossary_list")
                 
-                # Generate deterministic URN
+                # Generate URN
                 # For nodes with a parent, include the parent path in the URN
                 if parent:
                     parent_path = get_parent_path(parent)
-                    deterministic_urn = get_full_urn_from_name(
+                    urn = get_full_urn_from_name(
                         "glossaryNode", name, parent_path=parent_path
                     )
                 else:
-                    deterministic_urn = get_full_urn_from_name("glossaryNode", name)
+                    urn = get_full_urn_from_name("glossaryNode", name)
                 
                 # Check if node with this URN already exists
                 if GlossaryNode.objects.filter(
-                    deterministic_urn=deterministic_urn
+                    urn=urn
                 ).exists():
                     messages.error(
                         request, f"Glossary node with name '{name}' already exists"
@@ -571,7 +571,7 @@ class GlossaryListView(View):
                     name=name,
                     description=description,
                     parent=parent,
-                    deterministic_urn=deterministic_urn,
+                    urn=urn,
                 )
 
                 messages.success(
@@ -1522,12 +1522,12 @@ def get_remote_glossary_data(request):
         remote_only_items = []
         
         # Extract local URNs
-        local_node_urns = set(local_nodes.values_list("deterministic_urn", flat=True))
-        local_term_urns = set(local_terms.values_list("deterministic_urn", flat=True))
+        local_node_urns = set(local_nodes.values_list("urn", flat=True))
+        local_term_urns = set(local_terms.values_list("urn", flat=True))
         
         # Process local nodes and match with remote
         for local_node in local_nodes:
-            node_urn = str(local_node.deterministic_urn)
+            node_urn = str(local_node.urn)
             remote_match = remote_nodes_dict.get(node_urn)
             
             local_item_data = {
@@ -1538,7 +1538,7 @@ def get_remote_glossary_data(request):
                 "type": "node",
                 "sync_status": local_node.sync_status,
                 "sync_status_display": local_node.get_sync_status_display(),
-                "parent_urn": str(local_node.parent.deterministic_urn) if local_node.parent else None,
+                "parent_urn": str(local_node.parent.urn) if local_node.parent else None,
                 "has_children": local_node.children.exists() or local_node.terms.exists(),
                 # Initialize empty ownership and relationships for local-only items
                 "owners_count": 0,
@@ -1618,7 +1618,7 @@ def get_remote_glossary_data(request):
         
         # Process local terms and match with remote
         for local_term in local_terms:
-            term_urn = str(local_term.deterministic_urn)
+            term_urn = str(local_term.urn)
             remote_match = remote_terms_dict.get(term_urn)
             
             local_item_data = {
@@ -1629,7 +1629,7 @@ def get_remote_glossary_data(request):
                 "type": "term",
                 "sync_status": local_term.sync_status,
                 "sync_status_display": local_term.get_sync_status_display(),
-                "parent_node_urn": str(local_term.parent_node.deterministic_urn) if local_term.parent_node else None,
+                "parent_node_urn": str(local_term.parent_node.urn) if local_term.parent_node else None,
                 "term_source": getattr(local_term, 'term_source', '') or "",
                 # Initialize empty ownership and relationships for local-only items
                 "owners_count": 0,

@@ -131,7 +131,13 @@
         min-width: 100px;
     }
     
-    .table th:nth-child(8), .table td:nth-child(8) { /* Actions */
+    .table th:nth-child(8), .table td:nth-child(8) { /* Sync Status */
+        width: 120px;
+        max-width: 120px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(9), .table td:nth-child(9) { /* Actions */
         width: 180px;
         max-width: 180px;
     }
@@ -293,7 +299,7 @@
     }
     
     /* Ensure action buttons don't wrap */
-    .table td:nth-child(8) .btn-group {
+    .table td:nth-child(9) .btn-group {
         white-space: nowrap;
     }
     
@@ -795,4 +801,26 @@
 
 <!-- Tags Enhanced JavaScript -->
 <script src="{% static 'metadata_manager/tags/tags_enhanced.js' %}"></script>
+
+<!-- Modal cleanup script -->
+<script>
+    // Fix for modal backdrop issue
+    document.addEventListener('DOMContentLoaded', function() {
+        const tagViewModal = document.getElementById('tagViewModal');
+        if (tagViewModal) {
+            tagViewModal.addEventListener('hidden.bs.modal', function() {
+                // Remove any leftover modal-backdrop elements
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => {
+                    backdrop.remove();
+                });
+                // Remove modal-open class from body
+                document.body.classList.remove('modal-open');
+                // Remove inline styles from body
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
+            });
+        }
+    });
+</script>
 {% endblock %} 

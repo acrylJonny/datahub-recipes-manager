@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     "template_manager",
     "test_runner",
     "metadata_manager",
+    # Third-party apps
+    "django_extensions",
 ]
 
 MIDDLEWARE = [

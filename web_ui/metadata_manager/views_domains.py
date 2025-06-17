@@ -98,10 +98,10 @@ class DomainListView(View):
                 return redirect("metadata_manager:domain_list")
             
             # Generate deterministic URN
-            deterministic_urn = get_full_urn_from_name("domain", name)
+            urn = get_full_urn_from_name("domain", name)
             
             # Check if domain with this URN already exists
-            if Domain.objects.filter(deterministic_urn=deterministic_urn).exists():
+            if Domain.objects.filter(urn=urn).exists():
                 messages.error(request, f"Domain with name '{name}' already exists")
                 return redirect("metadata_manager:domain_list")
             
@@ -109,7 +109,7 @@ class DomainListView(View):
             Domain.objects.create(
                 name=name,
                 description=description,
-                deterministic_urn=deterministic_urn,
+                urn=urn,
                 sync_status="LOCAL_ONLY",
             )
             
@@ -148,7 +148,7 @@ class DomainDetailView(View):
             # Get related entities if DataHub connection is available
             client = get_datahub_client()
             if client and client.test_connection():
-                domain_urn = domain.deterministic_urn
+                domain_urn = domain.urn
                 
                 # Find entities with this domain, limit to 50 for performance
                 try:
@@ -479,7 +479,7 @@ class DomainImportExportView(View):
                     
                     for domain_data in import_data.get("domains", []):
                         domain, created = Domain.objects.get_or_create(
-                            deterministic_urn=domain_data.get("urn"),
+                            urn=domain_data.get("urn"),
                             defaults={
                                 "name": domain_data.get("name"),
                                 "description": domain_data.get("description", ""),

@@ -48,9 +48,20 @@ const DataUtils = {
         };
     },
     
-    safeJsonStringify: function(obj, maxLength = 1000) {
+    safeJsonStringify: function(obj, maxLength = 5000) {
         try {
-            const jsonString = JSON.stringify(obj);
+            // Handle circular references and special characters
+            const seen = new WeakSet();
+            const jsonString = JSON.stringify(obj, (key, value) => {
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) {
+                        return '[Circular Reference]';
+                    }
+                    seen.add(value);
+                }
+                // Convert undefined values to null for valid JSON
+                return value === undefined ? null : value;
+            }, 2);
             return jsonString.length > maxLength ? jsonString.substring(0, maxLength) + '...' : jsonString;
         } catch (error) {
             console.error('Error stringifying object:', error);
@@ -60,9 +71,37 @@ const DataUtils = {
     
     safeJsonParse: function(jsonString) {
         try {
-            return JSON.parse(jsonString);
+            if (!jsonString || typeof jsonString !== 'string') {
+                console.error('Invalid JSON string:', jsonString);
+                return {};
+            }
+            
+            // Fix common JSON string issues
+            // 1. Replace unescaped quotes within strings
+            let fixedString = jsonString;
+            
+            // Log detailed info for debugging
+            if (jsonString.length > 900 && jsonString.length < 1100) {
+                console.log('Parsing potentially problematic JSON string around position 1000:', 
+                    jsonString.substring(990, 1010));
+            }
+            
+            return JSON.parse(fixedString);
         } catch (error) {
             console.error('Error parsing JSON:', error);
+            console.error('JSON string (first 100 chars):', jsonString ? jsonString.substring(0, 100) : 'undefined');
+            
+            if (error instanceof SyntaxError && error.message.includes('position')) {
+                const match = error.message.match(/position (\d+)/);
+                if (match && match[1]) {
+                    const position = parseInt(match[1]);
+                    const start = Math.max(0, position - 20);
+                    const end = Math.min(jsonString.length, position + 20);
+                    console.error(`JSON error near position ${position}:`, 
+                        jsonString.substring(start, position) + '→HERE→' + jsonString.substring(position, end));
+                }
+            }
+            
             return {};
         }
     },
@@ -291,7 +330,14 @@ function filterTags(tags) {
             for (const filter of currentFilters) {
                 switch (filter) {
                     case 'owned':
-                        if ((tagData.owners_count || 0) > 0) passesFilter = true;
+                        // Calculate owners count
+                        let hasOwners = false;
+                        if (tagData.ownership_data && tagData.ownership_data.owners && tagData.ownership_data.owners.length > 0) {
+                            hasOwners = true;
+                        } else if (tagData.owner_names && tagData.owner_names.length > 0) {
+                            hasOwners = true;
+                        }
+                        if (hasOwners) passesFilter = true;
                         break;
                     case 'deprecated':
                         if (tagData.deprecated || tagData.properties?.deprecated) passesFilter = true;
@@ -315,12 +361,33 @@ function renderAllTabs() {
 function loadTagsData() {
     showLoading(true);
     
+    // Reset the tag data cache
+    window.tagDataCache = {};
+    
     fetch('/metadata/tags/remote-data/')
     .then(response => response.json())
     .then(data => {
         if (data.success) {
             // Apply global sanitization to prevent issues with long descriptions and malformed data
             tagsData = DataUtils.sanitizeApiResponse(data.data);
+            
+            // Pre-populate the tag data cache with all tags
+            const allTags = [
+                ...(tagsData.synced_tags || []),
+                ...(tagsData.local_only_tags || []),
+                ...(tagsData.remote_only_tags || [])
+            ];
+            
+            allTags.forEach(tag => {
+                const tagData = tag.combined || tag;
+                const cacheKey = tagData.urn || tagData.id;
+                if (cacheKey) {
+                    window.tagDataCache[cacheKey] = tagData;
+                }
+            });
+            
+            console.log(`Cached ${Object.keys(window.tagDataCache).length} tags for quick access`);
+            
             updateStatistics(data.data.statistics);
             updateTabBadges();
             displayAllTabs();
@@ -431,17 +498,30 @@ function displayTabContent(tabType) {
         content.querySelectorAll('.view-item').forEach(button => {
             button.addEventListener('click', function() {
                 const row = this.closest('tr');
-                // Use safe JSON parsing
-                const itemData = DataUtils.safeJsonParse(row.dataset.item);
-                if (itemData) {
-                    // Ensure cache is loaded before showing details
-                    if (usersAndGroupsCache.users.length === 0) {
-                        loadUsersAndGroups().then(() => showTagDetails(itemData));
+                try {
+                    // Parse the minimal reference data
+                    const rawData = row.dataset.item
+                        .replace(/&quot;/g, '"')
+                        .replace(/&apos;/g, "'");
+                    const minimalData = JSON.parse(rawData);
+                    
+                    // Look up the full tag data from the cache
+                    const cacheKey = minimalData.urn || minimalData.id;
+                    const fullTagData = window.tagDataCache[cacheKey];
+                    
+                    if (fullTagData) {
+                        // Ensure cache is loaded before showing details
+                        if (usersAndGroupsCache.users.length === 0) {
+                            loadUsersAndGroups().then(() => showTagDetails(fullTagData));
+                        } else {
+                            showTagDetails(fullTagData);
+                        }
                     } else {
-                        showTagDetails(itemData);
+                        console.error('Tag data not found in cache:', minimalData);
+                        alert('Error: Tag data not found. Please refresh the page and try again.');
                     }
-                } else {
-                    console.error('Failed to parse item data from row');
+                } catch (error) {
+                    console.error('Failed to parse item data from row:', error);
                 }
             });
         });
@@ -501,21 +581,30 @@ function generateTableHTML(items, tabType) {
     
     const totalPages = Math.ceil(items.length / pagination.itemsPerPage);
     
+    // Determine if we should show the sync status column
+    const showSyncStatus = tabType === 'synced';
+    // Adjust column widths based on table type
+    const nameWidth = showSyncStatus ? '120' : '100';        // More room for name on synced
+    const descriptionWidth = showSyncStatus ? '180' : '150'; // More room for description on synced
+    const deprecatedWidth = showSyncStatus ? '40' : '50';    // Less room for deprecated on synced
+    const urnWidth = showSyncStatus ? '200' : '280';         // More space for URN when no sync status
+    
     return `
         <div class="table-responsive">
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        <th width="40">
-                                                         <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
+                        <th width="30">
+                            <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th class="sortable-header" data-sort="name">Name</th>
-                        <th>Description</th>
-                        <th class="sortable-header" data-sort="color">Color</th>
-                        <th class="sortable-header" data-sort="owners">Owners</th>
-                        <th class="sortable-header" data-sort="deprecated">Deprecated</th>
-                                                        <th>URN</th>
-                        <th>Actions</th>
+                        <th class="sortable-header" data-sort="name" width="${nameWidth}">Name</th>
+                        <th width="${descriptionWidth}">Description</th>
+                        <th class="sortable-header" data-sort="color" width="80">Color</th>
+                        <th class="sortable-header" data-sort="owners" width="60">Owners</th>
+                        <th class="sortable-header" data-sort="deprecated" width="${deprecatedWidth}">Deprecated</th>
+                        <th width="${urnWidth}">URN</th>
+                        ${showSyncStatus ? '<th width="80">Sync Status</th>' : ''}
+                        <th width="120">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -535,29 +624,81 @@ function renderTagRow(tag, tabType) {
     // Sanitize tag data for the data-item attribute using global utilities
     const sanitizedTag = sanitizeDataForAttribute(tag);
     
-    const name = tagData.properties?.name || tagData.name || 'Unnamed Tag';
+    // Enhanced name extraction: first check tag properties, then direct name property,
+    // then try to extract from URN before falling back to 'Unnamed Tag'
+    let name = tagData.properties?.name;
+    if (!name) name = tagData.name;
+    if (!name && tagData.urn) {
+        // Extract name from URN (e.g., "DBDATE" from "urn:li:tag:DBDATE")
+        const urnParts = tagData.urn.split(':');
+        if (urnParts.length > 0) {
+            name = urnParts[urnParts.length - 1];
+        }
+    }
+    if (!name) name = 'Unnamed Tag';
+    
     const description = tagData.properties?.description || tagData.description || '';
     const color = tagData.properties?.colorHex || tagData.color || '#6c757d';
     const urn = tagData.urn || '';
     
     // Get owners information
     const owners = tagData.owner_names || [];
-    const ownersCount = tagData.owners_count || owners.length || 0;
+    let ownersCount = 0;
+    
+    // Calculate owners count from ownership_data if available
+    if (tagData.ownership_data && tagData.ownership_data.owners) {
+        ownersCount = tagData.ownership_data.owners.length;
+    } else if (owners.length) {
+        ownersCount = owners.length;
+    }
+    
     const ownersTitle = owners.length > 0 ? owners.join(', ') : 'No owners';
     
     // Check if deprecated (this would come from DataHub deprecation info)
     const isDeprecated = tagData.deprecated || tagData.properties?.deprecated || false;
     
-    // Use safe JSON stringify for data attributes
-    const safeJsonData = DataUtils.safeJsonStringify(sanitizedTag);
+    // Get sync status (only needed for synced tab)
+    const syncStatus = tagData.sync_status || 'UNKNOWN';
+    const syncStatusClass = getStatusBadgeClass(syncStatus);
+    const syncStatusText = syncStatus.replace('_', ' ');
+    
+    // Determine if we should show the sync status column
+    const showSyncStatus = tabType === 'synced';
+    
+    // Instead of storing the full JSON data in the HTML attribute, 
+    // just store the minimal data needed to identify the tag
+    const minimalTagData = {
+        id: sanitizedTag.id || sanitizedTag.datahub_id,
+        urn: sanitizedTag.urn,
+        sync_status: sanitizedTag.sync_status
+    };
+    
+    // Store the full tag data in a global object for lookup
+    if (!window.tagDataCache) {
+        window.tagDataCache = {};
+    }
+    
+    // Use the URN as a unique key for the cache
+    const cacheKey = sanitizedTag.urn || sanitizedTag.id;
+    if (cacheKey) {
+        window.tagDataCache[cacheKey] = sanitizedTag;
+    }
+    
+    // Use safe JSON stringify for minimal data attributes
+    const safeJsonData = JSON.stringify(minimalTagData)
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
     
     // Get custom action buttons
     const customActionButtons = getActionButtons(tagData, tabType);
     
+    // Get the proper database ID for this tag
+    const databaseId = getDatabaseId(tagData);
+    
     return `
         <tr data-item='${safeJsonData}'>
             <td>
-                <input type="checkbox" class="form-check-input item-checkbox" value="${tagData.id || tagData.urn}">
+                <input type="checkbox" class="form-check-input item-checkbox" value="${databaseId || tagData.urn}">
             </td>
             <td title="${escapeHtml(name)}">
                 <div class="d-flex align-items-center">
@@ -583,6 +724,11 @@ function renderTagRow(tag, tabType) {
             <td title="${escapeHtml(urn)}">
                 <code class="small">${escapeHtml(urn)}</code>
             </td>
+            ${showSyncStatus ? `
+            <td>
+                <span class="badge ${syncStatusClass}">${syncStatusText}</span>
+            </td>
+            ` : ''}
             <td>
                 <div class="btn-group action-buttons" role="group">
                     <!-- View entity button -->
@@ -609,10 +755,15 @@ function renderTagRow(tag, tabType) {
 }
 
 function getEmptyStateHTML(tabType, hasSearch) {
+    // Determine the correct colspan based on the number of columns shown
+    // Synced: checkbox + name + description + color + owners + deprecated + urn + sync status + actions = 9
+    // Local/Remote: checkbox + name + description + color + owners + deprecated + urn + actions = 8
+    const colspan = tabType === 'synced' ? '9' : '8';
+    
     if (hasSearch) {
     return `
             <tr>
-                <td colspan="8" class="text-center py-4 text-muted">
+                <td colspan="${colspan}" class="text-center py-4 text-muted">
                     <i class="fas fa-search fa-2x mb-2"></i><br>
                     No tags found matching your search criteria.
                 </td>
@@ -628,7 +779,7 @@ function getEmptyStateHTML(tabType, hasSearch) {
     
     return `
         <tr>
-            <td colspan="8" class="text-center py-4 text-muted">
+            <td colspan="${colspan}" class="text-center py-4 text-muted">
                 <i class="fas fa-tag fa-2x mb-2"></i><br>
                 ${emptyStates[tabType]}
             </td>
@@ -637,8 +788,31 @@ function getEmptyStateHTML(tabType, hasSearch) {
 }
 
 function sanitizeDataForAttribute(item, maxDescriptionLength = 200) {
+    // First ensure we have a valid name property
+    const tagData = item.combined || item;
+    
+    // Make a copy of the item to avoid modifying the original
+    const sanitizedItem = {...tagData};
+    
+    // Ensure name is properly set
+    if (!sanitizedItem.name) {
+        if (sanitizedItem.properties?.name) {
+            sanitizedItem.name = sanitizedItem.properties.name;
+        } else if (sanitizedItem.urn) {
+            // Extract name from URN as fallback
+            const urnParts = sanitizedItem.urn.split(':');
+            if (urnParts.length > 0) {
+                sanitizedItem.name = urnParts[urnParts.length - 1];
+            }
+        }
+        
+        if (!sanitizedItem.name) {
+            sanitizedItem.name = 'Unnamed Tag';
+        }
+    }
+    
     // Use global utility for consistent data sanitization
-    return DataUtils.createDisplaySafeItem(item, {
+    return DataUtils.createDisplaySafeItem(sanitizedItem, {
         descriptionLength: maxDescriptionLength,
         nameLength: 100,
         urnLength: 500
@@ -664,6 +838,9 @@ function getActionButtons(tag, tabType) {
     // Get tag data
     const tagData = tag.combined || tag;
     const urn = tagData.urn || '';
+    
+    // Get the proper database ID for this tag
+    const databaseId = getDatabaseId(tagData);
     
     let actionButtons = '';
     
@@ -692,6 +869,23 @@ function getActionButtons(tag, tabType) {
             <i class="fab fa-github"></i>
         </button>
     `;
+    
+    // 6. Delete Local Tag - Only for synced and local tags
+    if (tabType === 'synced' || tabType === 'local') {
+        // Use a simple form with a POST action for direct deletion
+        // This avoids all the complex JavaScript ID handling
+        actionButtons += `
+            <form method="POST" action="/metadata/api/tags/${tagData.id}/delete/" 
+                  style="display:inline;" 
+                  onsubmit="return confirm('Are you sure you want to delete this tag? This action cannot be undone.');">
+                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        title="Delete Local Tag">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </form>
+        `;
+    }
     
     return actionButtons;
 }
@@ -830,7 +1024,14 @@ function getSortValue(tag, column) {
         case 'color':
             return (tagData.properties?.colorHex || tagData.color || '').toLowerCase();
         case 'owners':
-            return tagData.owners_count || (tagData.owner_names || []).length || 0;
+            // Calculate owners count from ownership_data if available
+            let ownersCount = 0;
+            if (tagData.ownership_data && tagData.ownership_data.owners) {
+                ownersCount = tagData.ownership_data.owners.length;
+            } else if (tagData.owner_names) {
+                ownersCount = tagData.owner_names.length;
+            }
+            return ownersCount;
         case 'deprecated':
             return tagData.deprecated || tagData.properties?.deprecated ? 1 : 0;
         case 'urn':
@@ -860,8 +1061,23 @@ function showTagDetails(tag) {
     // Reuse existing modal functionality
     const tagData = tag.combined || tag;
     
+    // Enhanced name extraction: check in different places and finally extract from URN if needed
+    let tagName = tagData._original?.name;
+    if (!tagName) tagName = tagData.properties?.name;
+    if (!tagName) tagName = tagData.name;
+    if (!tagName && tagData.urn) {
+        // Extract name from URN (e.g., "DBDATE" from "urn:li:tag:DBDATE")
+        const urnParts = tagData.urn.split(':');
+        if (urnParts.length > 0) {
+            tagName = urnParts[urnParts.length - 1];
+        }
+    }
+    if (!tagName) tagName = 'Unnamed Tag';
+    
+    console.log("Showing tag details for:", tagData);
+    
     // Update modal with tag data - use original descriptions if available
-    document.getElementById('modal-tag-name').textContent = tagData._original?.name || tagData.properties?.name || tagData.name || 'Unnamed Tag';
+    document.getElementById('modal-tag-name').textContent = tagName;
     document.getElementById('modal-tag-description').textContent = tagData._originalDescription || tagData._original?.description || tagData.properties?.description || tagData.description || 'No description';
     
     const colorSwatch = document.getElementById('modal-tag-color-swatch');
@@ -886,7 +1102,7 @@ function showTagDetails(tag) {
     }
     
     // Check for ownership data from GraphQL (remote tags) or local storage
-    const ownershipData = tagData.ownership || tagData.ownership_data;
+    const ownershipData = tagData.ownership || tagData.ownership_data || tagData.relationships?.ownership;
     
     if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
         // Group owners by ownership type
@@ -912,6 +1128,17 @@ function showTagDetails(tag) {
                 ownerUrn = ownerInfo.owner.urn;
                 ownershipTypeUrn = ownerInfo.ownershipType.urn;
                 ownershipTypeName = ownerInfo.ownershipType.info?.name || 'Unknown Type';
+            } else if (ownerInfo.ownerUrn && ownerInfo.type) {
+                // Remote-only format
+                ownerUrn = ownerInfo.ownerUrn;
+                ownershipTypeUrn = ownerInfo.type;
+                ownershipTypeName = 'Unknown Type';
+                
+                // Find the ownership type name from cache
+                const ownershipType = usersAndGroupsCache.ownership_types.find(ot => ot.urn === ownershipTypeUrn);
+                if (ownershipType) {
+                    ownershipTypeName = ownershipType.name;
+                }
             } else {
                 return; // Skip invalid entries
             }
@@ -993,13 +1220,30 @@ function showTagDetails(tag) {
         datahubLink.style.display = 'none';
     }
     
-    // Update raw JSON data using safe JSON handling
+    // Update raw JSON data - directly use the tag data object
     const rawJsonElement = document.getElementById('modal-raw-json');
-    const safeJsonString = DataUtils.safeJsonStringify(tagData, 1000); // Allow longer strings for raw display
-    rawJsonElement.innerHTML = `<code>${escapeHtml(JSON.stringify(DataUtils.safeJsonParse(safeJsonString), null, 2))}</code>`;
+    try {
+        // Create a clean copy of the tag data to display
+        const displayData = JSON.parse(JSON.stringify(tagData));
+        rawJsonElement.innerHTML = `<code>${escapeHtml(JSON.stringify(displayData, null, 2))}</code>`;
+    } catch (error) {
+        console.error("Error preparing JSON for display:", error);
+        rawJsonElement.innerHTML = `<code>Error preparing JSON for display: ${error.message}</code>`;
+    }
+    
+    // Get modal element
+    const modalElement = document.getElementById('tagViewModal');
+    
+    // Add event listener for when modal is hidden
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        // Clean up any resources
+        console.log('Modal hidden, cleaning up resources');
+        // Remove the event listener to prevent memory leaks
+        modalElement.removeEventListener('hidden.bs.modal', arguments.callee);
+    }, { once: true });
     
     // Show modal
-    const modal = new bootstrap.Modal(document.getElementById('tagViewModal'));
+    const modal = new bootstrap.Modal(modalElement);
     modal.show();
 }
 
@@ -1083,7 +1327,7 @@ function bulkAddToPR(tabType) {
             }
             
             // Make the API call to add this tag to staged changes
-            fetch(`/api/metadata_manager/tags/${tagId}/stage_changes/`, {
+            fetch(`/metadata/api/tags/${tagId}/stage_changes/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1212,51 +1456,115 @@ function bulkDeleteLocal(tabType) {
             
             const tag = selectedTags[index];
             
-            // We need the ID for the API call
-            const tagId = tag.id;
+            // We need the database ID for the API call
+            const tagId = getDatabaseId(tag);
             if (!tagId) {
-                console.error('Cannot delete tag without an ID:', tag);
+                console.error('Cannot delete tag without a database ID:', tag);
                 errorCount++;
                 processedCount++;
                 processNextTag(index + 1);
                 return;
             }
             
+            console.log('Using database ID for deletion:', tagId);
+            
+            // Get a proper name for the tag
+            let tagName = tag.name;
+            if (!tagName) {
+                if (tag.properties?.name) {
+                    tagName = tag.properties.name;
+                } else if (tag.urn) {
+                    // Extract name from URN as fallback
+                    const urnParts = tag.urn.split(':');
+                    if (urnParts.length > 0) {
+                        tagName = urnParts[urnParts.length - 1];
+                    }
+                }
+                
+                if (!tagName) {
+                    tagName = 'Unnamed Tag';
+                }
+            }
+            
             // Make the API call to delete this tag
-            fetch(`/metadata/tags/${tagId}/delete/`, {
+            console.log(`Deleting tag with ID: ${tagId}, name: ${tagName}`);
+            
+            // Format the tag ID as a UUID with dashes if needed
+            const formattedTagId = formatTagId(tagId);
+            console.log(`Formatted tag ID for deletion: ${formattedTagId}`);
+            
+            const csrfToken = getCsrfToken();
+            
+            fetch(`/metadata/api/tags/${formattedTagId}/delete/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': getCsrfToken()
-                }
+                    'Accept': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                // Include a body to ensure proper POST handling
+                body: JSON.stringify({
+                    confirm: true
+                })
             })
             .then(response => {
+                // Log response status for debugging
+                console.log(`Delete response status for tag ${tagName}:`, response.status);
+                
+                // Check if the response is ok (status in 200-299 range)
                 if (!response.ok) {
-                    throw new Error(`Failed to delete tag ${tag.name || tag.urn}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log(`Successfully deleted tag: ${tag.name || tag.urn}`);
-                successCount++;
-                processedCount++;
-                
-                // Update progress
-                if (processedCount % 5 === 0 || processedCount === selectedTags.length) {
-                    showNotification('success', `Progress: ${processedCount}/${selectedTags.length} tags processed`);
+                    if (response.status === 404) {
+                        // If tag not found, consider it a success (it's already gone)
+                        console.log(`Tag ${tagName} not found (404), considering as successfully deleted`);
+                        return { success: true, message: `Tag ${tagName} already deleted` };
+                    } else {
+                        // For other error statuses, throw an error
+                        throw new Error(`Server returned status ${response.status}`);
+                    }
                 }
                 
-                // Process the next tag
-                processNextTag(index + 1);
-            })
-            .catch(error => {
-                console.error(`Error deleting tag ${tag.name || tag.urn}:`, error);
+                // Check for non-JSON responses that might be returning HTML error pages
+                const contentType = response.headers.get('content-type');
+                console.log('Delete response content type:', contentType);
+                
+                if (contentType && contentType.indexOf('application/json') !== -1) {
+                    // This is a JSON response, proceed normally
+                    return response.json();
+                } else {
+                    // This is likely an HTML error page or unexpected response
+                    console.error('Received non-JSON response:', contentType);
+                    return response.text().then(text => {
+                        console.error('Delete response content (first 500 chars):', text.substring(0, 500) + '...');
+                        throw new Error('Server returned an unexpected response format. See console for details.');
+                    });
+                }
+                          })
+              .then(data => {
+                  console.log(`Successfully deleted tag: ${tagName}`);
+                  successCount++;
+                  processedCount++;
+                  
+                  // Update progress
+                  if (processedCount % 5 === 0 || processedCount === selectedTags.length) {
+                      showNotification('success', `Progress: ${processedCount}/${selectedTags.length} tags processed`);
+                  }
+                  
+                  // Process the next tag
+                  processNextTag(index + 1);
+              })
+                            .catch(error => {
+                console.error(`Error deleting tag ${tagName}:`, error);
                 errorCount++;
                 processedCount++;
                 
+                // Show error notification for significant errors
+                if (processedCount % 5 === 0 || processedCount === 1) {
+                    showNotification('error', `Error deleting tag: ${error.message || 'Unknown error'}`);
+                }
+                
                 // Process the next tag despite the error
-                processNextTag(index + 1);
-            });
+                setTimeout(() => processNextTag(index + 1), 100); // Small delay to prevent overwhelming the server
+              });
         }
         
         // Start processing tags
@@ -1308,18 +1616,42 @@ function bulkSyncToLocal(tabType) {
                 return;
             }
             
-            // We need the ID for the API call
-            const tagId = tag.id;
+            // We need the database ID for the API call
+            const tagId = getDatabaseId(tag);
             if (!tagId) {
-                console.error('Cannot sync tag without an ID:', tag);
+                console.error('Cannot sync tag without a database ID:', tag);
                 errorCount++;
                 processedCount++;
                 processNextTag(index + 1);
                 return;
             }
             
+            console.log('Using database ID for sync to local:', tagId);
+            
+            // Format the tag ID as a UUID with dashes if needed
+            const formattedTagId = formatTagId(tagId);
+            console.log(`Formatted tag ID for sync: ${formattedTagId}`);
+            
+            // Get a proper name for the tag
+            let tagName = tag.name;
+            if (!tagName) {
+                if (tag.properties?.name) {
+                    tagName = tag.properties.name;
+                } else if (tag.urn) {
+                    // Extract name from URN as fallback
+                    const urnParts = tag.urn.split(':');
+                    if (urnParts.length > 0) {
+                        tagName = urnParts[urnParts.length - 1];
+                    }
+                }
+                
+                if (!tagName) {
+                    tagName = 'Unnamed Tag';
+                }
+            }
+            
             // Make the API call to sync this tag
-            fetch(`/api/metadata_manager/tags/${tagId}/sync_to_local/`, {
+            fetch(`/metadata/api/tags/${formattedTagId}/sync_to_local/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1328,12 +1660,12 @@ function bulkSyncToLocal(tabType) {
             })
             .then(response => {
                 if (!response.ok) {
-                    throw new Error(`Failed to sync tag ${tag.name || tag.urn}`);
+                    throw new Error(`Failed to sync tag ${tagName}`);
                 }
                 return response.json();
             })
             .then(data => {
-                console.log(`Successfully synced tag: ${tag.name || tag.urn}`);
+                console.log(`Successfully synced tag: ${tagName}`);
                 successCount++;
                 processedCount++;
                 
@@ -1346,7 +1678,7 @@ function bulkSyncToLocal(tabType) {
                 processNextTag(index + 1);
             })
             .catch(error => {
-                console.error(`Error syncing tag ${tag.name || tag.urn}:`, error);
+                console.error(`Error syncing tag ${tagName}:`, error);
                 errorCount++;
                 processedCount++;
                 
@@ -1462,27 +1794,46 @@ async function loadUsersAndGroups() {
     
     try {
         // Fetch users, groups, and ownership types in a single request
+        const csrfToken = getCsrfToken();
+        console.log('Using CSRF token for users-groups:', csrfToken);
+        
         const response = await fetch('/metadata/tags/users-groups/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify({ type: 'all' })
         });
         
         const data = await response.json();
         
+        console.log('Users and groups API response:', data);
+        
         if (data.success) {
-            usersAndGroupsCache.users = data.data.users || [];
-            usersAndGroupsCache.groups = data.data.groups || [];
-            usersAndGroupsCache.ownership_types = data.data.ownership_types || [];
-            usersAndGroupsCache.lastFetched = now;
-            
-            console.log(`Loaded ${usersAndGroupsCache.users.length} users, ${usersAndGroupsCache.groups.length} groups, and ${usersAndGroupsCache.ownership_types.length} ownership types${data.cached ? ' (cached)' : ''}`);
-            populateSimpleDropdowns();
+            // Check if data.data exists before accessing its properties
+            if (data.data) {
+                usersAndGroupsCache.users = data.data.users || [];
+                usersAndGroupsCache.groups = data.data.groups || [];
+                usersAndGroupsCache.ownership_types = data.data.ownership_types || [];
+                usersAndGroupsCache.lastFetched = now;
+                
+                console.log(`Loaded ${usersAndGroupsCache.users.length} users, ${usersAndGroupsCache.groups.length} groups, and ${usersAndGroupsCache.ownership_types.length} ownership types${data.cached ? ' (cached)' : ''}`);
+                populateSimpleDropdowns();
+            } else {
+                console.error('API returned success but no data object');
+                // Initialize with empty arrays to prevent errors
+                usersAndGroupsCache.users = [];
+                usersAndGroupsCache.groups = [];
+                usersAndGroupsCache.ownership_types = [];
+                showOwnersError();
+            }
         } else {
             console.error('Failed to load users, groups, and ownership types:', data.error);
+            // Initialize with empty arrays to prevent errors
+            usersAndGroupsCache.users = [];
+            usersAndGroupsCache.groups = [];
+            usersAndGroupsCache.ownership_types = [];
             showOwnersError();
         }
     } catch (error) {
@@ -1535,6 +1886,7 @@ function addOwnerEntry() {
     // Populate ownership types dropdown
     const ownershipTypeSelectElement = newEntry.querySelector('.ownership-type-select');
     populateOwnershipTypeSelect(ownershipTypeSelectElement);
+    
     
     // Populate owners dropdown
     const ownerSelectElement = newEntry.querySelector('.owner-select');
@@ -2035,6 +2387,16 @@ function showOwnersError() {
 /**
  * Setup event listeners for tag action buttons
  */
+/**
+ * Get CSRF token from cookies or from hidden input field
+ */
+function getCsrfToken() {
+    return document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+           document.cookie.split('; ')
+               .find(row => row.startsWith('csrftoken='))
+               ?.split('=')[1];
+}
+
 function setupActionButtonListeners() {
     // Use event delegation since rows are dynamically created
     document.addEventListener('click', function(e) {
@@ -2042,9 +2404,21 @@ function setupActionButtonListeners() {
         const row = e.target.closest('tr[data-item]');
         if (!row) return;
         
-        // Parse the tag data from the row
-        const tagData = DataUtils.safeJsonParse(row.dataset.item);
-        if (!tagData) return;
+        // Parse the minimal tag data from the row
+        // First unescape any HTML entities we used to protect the JSON
+        const rawData = row.dataset.item
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'");
+        const minimalTagData = JSON.parse(rawData);
+        if (!minimalTagData) return;
+        
+        // Look up the full tag data from the cache
+        const cacheKey = minimalTagData.urn || minimalTagData.id;
+        const tagData = window.tagDataCache[cacheKey];
+        if (!tagData) {
+            console.error("Could not find tag data in cache for:", minimalTagData);
+            return;
+        }
         
         // Check which button was clicked
         const clickedElement = e.target.closest('button');
@@ -2083,6 +2457,60 @@ function setupActionButtonListeners() {
             showTagDetails(tagData);
             e.preventDefault();
             e.stopPropagation();
+        // Delete Local Tag button is now handled by the form's native submission
+        // No need for JavaScript handling here
         }
     });
+}
+
+/**
+ * Format a tag ID as a UUID with dashes if needed
+ * @param {string} id - The tag ID to format
+ * @returns {string} - The formatted UUID
+ */
+function formatTagId(id) {
+    if (!id) return id;
+    
+    // If the ID already has dashes, return it as is
+    if (id.includes('-')) return id;
+    
+    // If it's a 32-character hex string, format it as UUID
+    if (id.length === 32 && /^[0-9a-f]+$/i.test(id)) {
+        return `${id.substring(0, 8)}-${id.substring(8, 12)}-${id.substring(12, 16)}-${id.substring(16, 20)}-${id.substring(20)}`;
+    }
+    
+    // Otherwise return as is
+    return id;
+}
+
+/**
+ * Get the actual database ID from a tag object
+ * This is needed because the tag data might contain datahub_id instead of the actual database id
+ * @param {Object} tagData - The tag data object
+ * @returns {string|null} - The database ID or null if not found
+ */
+function getDatabaseId(tagData) {
+    // First, check if we have an explicit database_id field
+    if (tagData.database_id) {
+        return tagData.database_id;
+    }
+    
+    // For combined objects (synced tags), check if local has database_id or id
+    if (tagData.local) {
+        if (tagData.local.database_id) {
+            return tagData.local.database_id;
+        }
+        if (tagData.local.id) {
+            return tagData.local.id;
+        }
+    }
+    
+    // For remote-only tags or as a fallback, use the id property
+    if (tagData.id) {
+        return tagData.id;
+    }
+    
+    // Log warning if we couldn't find an ID
+    console.warn('Could not find database ID for tag:', tagData);
+    return null;
 }
