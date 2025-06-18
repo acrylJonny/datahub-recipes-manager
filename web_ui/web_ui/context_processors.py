@@ -43,3 +43,30 @@ def default_environment(request):
         return {
             "default_environment": None,
         }
+
+
+def connections_context(request):
+    """
+    Add connection-related data to all template contexts.
+    """
+    try:
+        from web_ui.models import Connection
+        from web_ui.views import get_current_connection
+        
+        # Get all active connections
+        connections = Connection.get_active_connections()
+        
+        # Get current connection for this session
+        current_connection = get_current_connection(request)
+        
+        return {
+            'connections': connections,
+            'current_connection': current_connection,
+        }
+        
+    except Exception:
+        # Return empty context if there's any error (e.g., during migrations)
+        return {
+            'connections': [],
+            'current_connection': None,
+        }

@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}DataHub Connections{% endblock %}
+
+{% block extra_css %}
+<style>
+    .connection-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .connection-card.default {
+        border-left: 4px solid #28a745;
+    }
+    
+    .connection-card.inactive {
+        background-color: #f8f9fa;
+        opacity: 0.7;
+    }
+    
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+    
+    .status-connected {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    
+    .status-failed {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+    
+    .status-unknown {
+        background-color: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+    }
+    
+    .btn-group-sm .btn {
+        margin-right: 0.25rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>DataHub Connections</h1>
+                <div>
+                    <a href="{% url 'connection_create' %}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add Connection
+                    </a>
+                    <a href="{% url 'settings' %}" class="btn btn-secondary">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            </div>
+
+            {% if not connections %}
+                <div class="alert alert-info">
+                    <h4>No Connections Found</h4>
+                    <p>You haven't configured any DataHub connections yet. Create your first connection to get started.</p>
+                    <a href="{% url 'connection_create' %}" class="btn btn-primary">Create Connection</a>
+                </div>
+            {% else %}
+                <div class="row">
+                    {% for connection in connections %}
+                        <div class="col-md-6 col-lg-4">
+                            <div class="connection-card {% if connection.is_default %}default{% endif %} {% if not connection.is_active %}inactive{% endif %}">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <h5 class="mb-0">
+                                        {{ connection.name }}
+                                        {% if connection.is_default %}
+                                            <span class="badge badge-success">Default</span>
+                                        {% endif %}
+                                        {% if not connection.is_active %}
+                                            <span class="badge badge-secondary">Inactive</span>
+                                        {% endif %}
+                                    </h5>
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-toggle="dropdown">
+                                            <i class="fas fa-ellipsis-v"></i>
+                                        </button>
+                                        <div class="dropdown-menu dropdown-menu-right">
+                                            <a class="dropdown-item" href="{% url 'connection_edit' connection.id %}">
+                                                <i class="fas fa-edit"></i> Edit
+                                            </a>
+                                            <a class="dropdown-item" href="{% url 'connection_test' connection.id %}">
+                                                <i class="fas fa-plug"></i> Test Connection
+                                            </a>
+                                            {% if not connection.is_default %}
+                                                <a class="dropdown-item" href="{% url 'connection_set_default' connection.id %}">
+                                                    <i class="fas fa-star"></i> Set as Default
+                                                </a>
+                                            {% endif %}
+                                            <div class="dropdown-divider"></div>
+                                            <a class="dropdown-item text-danger" href="{% url 'connection_delete' connection.id %}">
+                                                <i class="fas fa-trash"></i> Delete
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {% if connection.description %}
+                                    <p class="text-muted mb-3">{{ connection.description }}</p>
+                                {% endif %}
+                                
+                                <div class="mb-3">
+                                    <strong>URL:</strong><br>
+                                    <code>{{ connection.datahub_url }}</code>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <strong>Status:</strong>
+                                    <span class="status-badge status-{{ connection.connection_status }}">
+                                        {% if connection.connection_status == 'connected' %}
+                                            <i class="fas fa-check-circle"></i> Connected
+                                        {% elif connection.connection_status == 'failed' %}
+                                            <i class="fas fa-times-circle"></i> Failed
+                                        {% else %}
+                                            <i class="fas fa-question-circle"></i> Unknown
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                
+                                {% if connection.last_tested %}
+                                    <div class="mb-3">
+                                        <small class="text-muted">
+                                            Last tested: {{ connection.last_tested|date:"M d, Y H:i" }}
+                                        </small>
+                                    </div>
+                                {% endif %}
+                                
+                                {% if connection.error_message %}
+                                    <div class="alert alert-danger alert-sm">
+                                        <small>{{ connection.error_message }}</small>
+                                    </div>
+                                {% endif %}
+                                
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{% url 'connection_edit' connection.id %}" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </a>
+                                    <a href="{% url 'connection_test' connection.id %}" class="btn btn-outline-info btn-sm">
+                                        <i class="fas fa-plug"></i> Test
+                                    </a>
+                                    {% if connection.is_active and not connection.is_default %}
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="switchConnection('{{ connection.id }}', '{{ connection.name }}')">
+                                            <i class="fas fa-exchange-alt"></i> Switch
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function switchConnection(connectionId, connectionName) {
+    if (!confirm(`Switch to connection "${connectionName}"?`)) {
+        return;
+    }
+    
+    fetch('{% url "api_switch_connection" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: `connection_id=${connectionId}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`Switched to connection "${data.connection_name}"`);
+            location.reload();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error switching connection');
+    });
+}
+</script>
+{% endblock %} 

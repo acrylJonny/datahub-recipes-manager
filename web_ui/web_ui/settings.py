@@ -84,6 +84,8 @@ TEMPLATES = [
                 "web_ui.context_processors.datahub_config",
                 # Make default environment available in all templates
                 "web_ui.context_processors.default_environment",
+                # Make connections available in all templates
+                "web_ui.context_processors.connections_context",
             ],
         },
     },

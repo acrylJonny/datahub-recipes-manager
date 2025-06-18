@@ -23,14 +23,54 @@ let currentPagination = {
 let currentOverviewFilter = 'synced'; // Default to synced tab
 let currentFilters = new Set();
 
-// User, group, and ownership type cache
-let usersAndGroupsCache = {
-    users: [],
-    groups: [],
-    ownership_types: [],
-    lastFetched: null,
-    cacheExpiry: 5 * 60 * 1000 // 5 minutes
-};
+// Connection-specific cache for users, groups, and ownership types
+let usersAndGroupsCacheByConnection = {};
+let currentConnectionId = null;
+
+// Proxy object to maintain backward compatibility
+let usersAndGroupsCache = new Proxy({}, {
+    get(target, prop) {
+        const connectionCache = getCurrentConnectionCache();
+        return connectionCache[prop];
+    },
+    set(target, prop, value) {
+        const connectionCache = getCurrentConnectionCache();
+        connectionCache[prop] = value;
+        return true;
+    }
+});
+
+// Get or create cache for current connection
+function getCurrentConnectionCache() {
+    if (!currentConnectionId) {
+        // Try to get connection ID from the page
+        const connectionElement = document.getElementById('current-connection-name');
+        if (connectionElement && connectionElement.dataset.connectionId) {
+            currentConnectionId = connectionElement.dataset.connectionId;
+        } else {
+            // Fallback to default connection
+            currentConnectionId = 'default';
+        }
+    }
+    
+    if (!usersAndGroupsCacheByConnection[currentConnectionId]) {
+        usersAndGroupsCacheByConnection[currentConnectionId] = {
+            users: [],
+            groups: [],
+            ownership_types: [],
+            lastFetched: null,
+            cacheExpiry: 5 * 60 * 1000 // 5 minutes
+        };
+    }
+    
+    return usersAndGroupsCacheByConnection[currentConnectionId];
+}
+
+// Make cache globally accessible for connection switching
+if (!window.usersAndGroupsCache) {
+    window.usersAndGroupsCache = usersAndGroupsCache;
+    window.usersAndGroupsCacheByConnection = usersAndGroupsCacheByConnection;
+}
 
 // DataUtils object for safe data handling
 const DataUtils = {
@@ -77,6 +117,8 @@ const DataUtils = {
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, starting glossary initialization...');
+    // Initialize connection cache
+    getCurrentConnectionCache();
     loadGlossaryData();
     loadUsersAndGroups(); // Load users and groups cache for owner lookup
     
@@ -1245,16 +1287,17 @@ function formatDate(timestamp) {
 
 async function loadUsersAndGroups() {
     const now = Date.now();
+    const connectionCache = getCurrentConnectionCache();
     
-    // Check if cache is still valid
-    if (usersAndGroupsCache.lastFetched && 
-        (now - usersAndGroupsCache.lastFetched) < usersAndGroupsCache.cacheExpiry &&
-        usersAndGroupsCache.users.length > 0) {
-        console.log('Using cached users and groups');
+    // Check if cache is still valid for current connection
+    if (connectionCache.lastFetched && 
+        (now - connectionCache.lastFetched) < connectionCache.cacheExpiry &&
+        connectionCache.users.length > 0) {
+        console.log(`Using cached users and groups for connection: ${currentConnectionId}`);
         return;
     }
     
-    console.log('Fetching fresh users and groups data');
+    console.log(`Fetching fresh users and groups data for connection: ${currentConnectionId}`);
     
     try {
         // Fetch users, groups, and ownership types in a single request
@@ -1270,12 +1313,12 @@ async function loadUsersAndGroups() {
         const data = await response.json();
         
         if (data.success) {
-            usersAndGroupsCache.users = data.data.users || [];
-            usersAndGroupsCache.groups = data.data.groups || [];
-            usersAndGroupsCache.ownership_types = data.data.ownership_types || [];
-            usersAndGroupsCache.lastFetched = now;
+            connectionCache.users = data.data.users || [];
+            connectionCache.groups = data.data.groups || [];
+            connectionCache.ownership_types = data.data.ownership_types || [];
+            connectionCache.lastFetched = now;
             
-            console.log(`Loaded ${usersAndGroupsCache.users.length} users, ${usersAndGroupsCache.groups.length} groups, and ${usersAndGroupsCache.ownership_types.length} ownership types${data.cached ? ' (cached)' : ''}`);
+            console.log(`Loaded ${connectionCache.users.length} users, ${connectionCache.groups.length} groups, and ${connectionCache.ownership_types.length} ownership types for connection ${currentConnectionId}${data.cached ? ' (cached)' : ''}`);
         } else {
             console.error('Failed to load users, groups, and ownership types:', data.error);
         }

@@ -36,7 +36,7 @@ class DataProductListView(View):
 
             # Get DataHub connection info (quick test only)
             logger.debug("Testing DataHub connection from DataProductListView")
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             logger.debug(f"DataHub connection test result: {connected}")
 
             # Get local data products
@@ -109,10 +109,11 @@ def get_remote_data_products_data(request):
     try:
         logger.info("Loading remote data products data via AJAX")
 
-        # Get DataHub connection
-        connected, client = test_datahub_connection()
+        # Get DataHub connection using connection system
+        from utils.datahub_utils import test_datahub_connection
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
-            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+            return JsonResponse({"success": False, "error": "No active DataHub connection configured"})
 
         # Get local data products for comparison
         local_data_products = list(DataProduct.objects.all())
@@ -776,7 +777,7 @@ def sync_data_product_to_local(request, data_product_id=None):
         logger.info(f"Syncing data product {product_urn} to local storage")
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -941,7 +942,7 @@ def push_data_product_to_datahub(request, data_product_id):
         logger.info(f"Pushing data product {data_product.name} to DataHub")
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1011,7 +1012,7 @@ def resync_data_product(request, data_product_id):
         logger.info(f"Resyncing data product {data_product.name} with DataHub")
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1106,7 +1107,7 @@ def delete_remote_data_product(request):
         logger.info(f"Deleting remote data product {product_urn}")
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1163,7 +1164,7 @@ def add_remote_data_product_to_pr(request):
         logger.info(f"Adding remote data product {product_urn} to PR workflow")
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1441,12 +1442,13 @@ def get_data_products(request):
         
         logger.info(f"Getting Data Products: query='{query}', start={start}, count={count}")
         
-        # Get client using standard configuration
-        client = get_datahub_client()
+        # Get client using connection system
+        from utils.datahub_utils import get_datahub_client_from_request
+        client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse({
                 "success": False,
-                "error": "Not connected to DataHub"
+                "error": "No active DataHub connection configured"
             }, status=400)
             
         # Get data products from DataHub

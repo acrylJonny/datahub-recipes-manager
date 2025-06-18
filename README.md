@@ -169,7 +169,14 @@ This structure separates configuration from implementation and organizes everyth
    pip install -r requirements.txt
    ```
 
-3. Initialize the repository structure:
+3. Apply database migrations:
+   ```bash
+   cd web_ui
+   python manage.py migrate
+   cd ..
+   ```
+   
+4. Initialize the repository structure:
    ```bash
    python web_ui/manage.py init_repo_structure
    ```

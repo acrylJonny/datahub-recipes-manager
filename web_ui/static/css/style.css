@@ -78,6 +78,37 @@ pre.json-content {
     background-color: rgba(0, 114, 177, 0.075);
 }
 
+/* Sortable Table Headers */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+}
+
+.sortable-header:hover {
+    background-color: rgba(0, 114, 177, 0.1);
+}
+
+.sortable-header::after {
+    content: '↕';
+    position: absolute;
+    right: 8px;
+    opacity: 0.5;
+    font-size: 0.8em;
+}
+
+.sortable-header.sort-asc::after {
+    content: '↑';
+    opacity: 1;
+    color: var(--datahub-primary);
+}
+
+.sortable-header.sort-desc::after {
+    content: '↓';
+    opacity: 1;
+    color: var(--datahub-primary);
+}
+
 /* Breadcrumb Styles */
 .breadcrumb {
     padding: 0.5rem 1rem;
@@ -115,4 +146,25 @@ pre.json-content {
 /* Hide original textarea */
 #original-textarea {
     display: none;
+}
+
+/* Pagination Styles */
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    padding: 0.5rem 0;
+}
+
+.pagination-info {
+    font-size: 0.875rem;
+    color: var(--datahub-secondary);
+}
+
+@media (max-width: 768px) {
+    .pagination-container {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
 } 

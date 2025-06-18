@@ -27,14 +27,68 @@ let currentSort = {
     tabType: null
 };
 
-// User, group, and ownership type cache
-let usersAndGroupsCache = {
-    users: [],
-    groups: [],
-    ownership_types: [],
-    lastFetched: null,
-    cacheExpiry: 5 * 60 * 1000 // 5 minutes
-};
+// Connection-specific cache for users, groups, and ownership types
+let usersAndGroupsCacheByConnection = {};
+let currentConnectionId = null;
+
+// Proxy object to maintain backward compatibility
+let usersAndGroupsCache = new Proxy({}, {
+    get(target, prop) {
+        const connectionCache = getCurrentConnectionCache();
+        return connectionCache[prop];
+    },
+    set(target, prop, value) {
+        const connectionCache = getCurrentConnectionCache();
+        connectionCache[prop] = value;
+        return true;
+    }
+});
+
+// Get or create cache for current connection
+function getCurrentConnectionCache() {
+    if (!currentConnectionId) {
+        // Try to get connection ID from the page
+        const connectionElement = document.getElementById('current-connection-name');
+        if (connectionElement && connectionElement.dataset.connectionId) {
+            currentConnectionId = connectionElement.dataset.connectionId;
+        } else {
+            // Fallback to default connection
+            currentConnectionId = 'default';
+        }
+    }
+    
+    if (!usersAndGroupsCacheByConnection[currentConnectionId]) {
+        usersAndGroupsCacheByConnection[currentConnectionId] = {
+            users: [],
+            groups: [],
+            ownership_types: [],
+            lastFetched: null,
+            cacheExpiry: 5 * 60 * 1000 // 5 minutes
+        };
+    }
+    
+    return usersAndGroupsCacheByConnection[currentConnectionId];
+}
+
+// Function to switch to a specific connection cache
+function switchConnectionCache(connectionId) {
+    currentConnectionId = connectionId;
+    console.log(`Switched to cache for connection: ${connectionId}`);
+}
+
+// Function to clear cache for a specific connection
+function clearConnectionCache(connectionId) {
+    if (usersAndGroupsCacheByConnection[connectionId]) {
+        delete usersAndGroupsCacheByConnection[connectionId];
+        console.log(`Cleared cache for connection: ${connectionId}`);
+    }
+}
+
+// Make cache globally accessible for connection switching
+window.usersAndGroupsCache = usersAndGroupsCache;
+window.usersAndGroupsCacheByConnection = usersAndGroupsCacheByConnection;
+window.switchConnectionCache = switchConnectionCache;
+window.clearConnectionCache = clearConnectionCache;
 
 // DataUtils object for safe data handling
 const DataUtils = {
@@ -130,6 +184,10 @@ const DataUtils = {
 };
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize connection cache and load users and groups immediately on page load
+    getCurrentConnectionCache(); // This initializes the connection ID and cache
+    loadUsersAndGroups();
+    
     loadTagsData();
     setupFilterListeners();
     setupSearchHandlers();
@@ -158,31 +216,35 @@ document.addEventListener('DOMContentLoaded', function() {
         loadTagsData();
     });
     
+    // Setup form submission handler
+    const tagForm = document.getElementById('tag-form');
+    if (tagForm) {
+        tagForm.addEventListener('submit', handleTagFormSubmission);
+    }
+    
     // Load users and groups when create modal is opened
     document.getElementById('createTagModal').addEventListener('show.bs.modal', function() {
-        loadUsersAndGroups().then(() => {
-            // Clear container - don't add any initial sections
-            const container = document.getElementById('ownership-sections-container');
-            container.innerHTML = '';
-        });
-    });
-    
-    // Clean up Select2 when modal is closed
-    document.getElementById('createTagModal').addEventListener('hidden.bs.modal', function() {
-        const container = document.getElementById('ownership-sections-container');
-        const select2Elements = container.querySelectorAll('.select2-hidden-accessible');
-        select2Elements.forEach(element => {
-            $(element).select2('destroy');
-        });
-    });
-    
-    // Setup add button listener
-    document.addEventListener('click', function(e) {
-        if (e.target && (e.target.id === 'add-ownership-section' || e.target.closest('#add-ownership-section'))) {
-            e.preventDefault();
-            addOwnershipSection();
+        // Ensure users and groups are loaded
+        if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
+            loadUsersAndGroups();
         }
+        
+        // Only reset if not in edit mode (edit mode sets data attributes)
+        const form = document.getElementById('tag-form');
+        if (!form.dataset.editMode) {
+            resetTagModal();
+        }
+        
+        // Hide ownership section by default unless in edit mode with existing owners
+        hideOwnershipSectionIfEmpty();
     });
+    
+    // Clean up when modal is closed
+    document.getElementById('createTagModal').addEventListener('hidden.bs.modal', function() {
+        resetTagModal();
+    });
+    
+
 });
 
 function setupFilterListeners() {
@@ -339,9 +401,7 @@ function filterTags(tags) {
                         }
                         if (hasOwners) passesFilter = true;
                         break;
-                    case 'deprecated':
-                        if (tagData.deprecated || tagData.properties?.deprecated) passesFilter = true;
-                        break;
+
                 }
             }
             
@@ -363,6 +423,9 @@ function loadTagsData() {
     
     // Reset the tag data cache
     window.tagDataCache = {};
+    
+    // Clear any existing selections to prevent stale data issues
+    clearAllSelections();
     
     fetch('/metadata/tags/remote-data/')
     .then(response => response.json())
@@ -404,6 +467,21 @@ function loadTagsData() {
     });
 }
 
+// Function to clear all selections when data is refreshed
+function clearAllSelections() {
+    const checkboxes = document.querySelectorAll('.item-checkbox, .select-all-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    
+    // Update bulk action visibility for all tabs
+    ['synced', 'local', 'remote'].forEach(tab => {
+        updateBulkActionVisibility(tab);
+    });
+    
+    console.log('Cleared all tag selections due to data refresh');
+}
+
 function showError(message) {
     // Show error in a user-friendly way
     const contentAreas = ['synced-content', 'local-content', 'remote-content'];
@@ -431,7 +509,7 @@ function updateStatistics(stats) {
     document.getElementById('local-only-count').textContent = stats.local_count || 0;
     document.getElementById('remote-only-count').textContent = stats.remote_count || 0;
     document.getElementById('owned-tags').textContent = stats.owned_tags || 0;
-    document.getElementById('deprecated-tags').textContent = stats.deprecated_tags || 0;
+
 }
 
 function updateTabBadges() {
@@ -538,17 +616,7 @@ function displayTabContent(tabType) {
         restoreSortState(content, tabType);
         
         // Attach pagination handlers
-        content.querySelectorAll('.page-link[data-page]').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                const page = parseInt(this.dataset.page);
-                const tab = this.dataset.tab;
-                if (page && tab && currentPagination[tab]) {
-                    currentPagination[tab].page = page;
-                    displayTabContent(tab);
-                }
-            });
-        });
+        attachPaginationHandlers(content, tabType);
         
         // Attach select-all checkbox handler
         const selectAllCheckbox = content.querySelector('.select-all-checkbox');
@@ -583,11 +651,11 @@ function generateTableHTML(items, tabType) {
     
     // Determine if we should show the sync status column
     const showSyncStatus = tabType === 'synced';
-    // Adjust column widths based on table type
-    const nameWidth = showSyncStatus ? '120' : '100';        // More room for name on synced
-    const descriptionWidth = showSyncStatus ? '180' : '150'; // More room for description on synced
-    const deprecatedWidth = showSyncStatus ? '40' : '50';    // Less room for deprecated on synced
-    const urnWidth = showSyncStatus ? '200' : '280';         // More space for URN when no sync status
+    // Adjust column widths based on table type - give more room for actions
+    const nameWidth = showSyncStatus ? '110' : '100';        // Slightly less room for name on synced
+    const descriptionWidth = showSyncStatus ? '160' : '150'; // Slightly less room for description on synced
+    const urnWidth = showSyncStatus ? '180' : '260';         // Less space for URN to make room for actions
+    const actionsWidth = showSyncStatus ? '150' : '140';     // More space for actions, especially on synced
     
     return `
         <div class="table-responsive">
@@ -601,10 +669,9 @@ function generateTableHTML(items, tabType) {
                         <th width="${descriptionWidth}">Description</th>
                         <th class="sortable-header" data-sort="color" width="80">Color</th>
                         <th class="sortable-header" data-sort="owners" width="60">Owners</th>
-                        <th class="sortable-header" data-sort="deprecated" width="${deprecatedWidth}">Deprecated</th>
                         <th width="${urnWidth}">URN</th>
-                        ${showSyncStatus ? '<th width="80">Sync Status</th>' : ''}
-                        <th width="120">Actions</th>
+                        ${showSyncStatus ? '<th class="sortable-header" data-sort="sync_status" width="80">Sync Status</th>' : ''}
+                        <th width="${actionsWidth}">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -638,7 +705,9 @@ function renderTagRow(tag, tabType) {
     if (!name) name = 'Unnamed Tag';
     
     const description = tagData.properties?.description || tagData.description || '';
-    const color = tagData.properties?.colorHex || tagData.color || '#6c757d';
+    const originalColor = tagData.properties?.colorHex || tagData.color;
+    const color = originalColor || '#6c757d'; // For display purposes (background)
+    const displayColor = originalColor || 'null'; // For text display
     const urn = tagData.urn || '';
     
     // Get owners information
@@ -654,8 +723,7 @@ function renderTagRow(tag, tabType) {
     
     const ownersTitle = owners.length > 0 ? owners.join(', ') : 'No owners';
     
-    // Check if deprecated (this would come from DataHub deprecation info)
-    const isDeprecated = tagData.deprecated || tagData.properties?.deprecated || false;
+
     
     // Get sync status (only needed for synced tab)
     const syncStatus = tagData.sync_status || 'UNKNOWN';
@@ -712,14 +780,11 @@ function renderTagRow(tag, tabType) {
             <td>
                 <div class="d-flex align-items-center">
                     <div class="color-swatch me-2" style="background-color: ${color}"></div>
-                    <code class="small">${color}</code>
+                    <code class="small">${displayColor}</code>
                 </div>
             </td>
             <td title="${ownersTitle}" class="text-center">
                 ${ownersCount > 0 ? `<i class="fas fa-users text-info me-1"></i><span class="badge bg-info">${ownersCount}</span>` : '<span class="text-muted">None</span>'}
-            </td>
-            <td>
-                ${isDeprecated ? '<span class="badge bg-warning">Yes</span>' : '<span class="badge bg-success">No</span>'}
             </td>
             <td title="${escapeHtml(urn)}">
                 <code class="small">${escapeHtml(urn)}</code>
@@ -737,8 +802,8 @@ function renderTagRow(tag, tabType) {
                         <i class="fas fa-eye"></i>
                     </button>
                     
-                    <!-- View in DataHub button if applicable -->
-                    ${urn && !urn.includes('local:') ? `
+                    <!-- View in DataHub button if applicable (only for synced/remote tags) -->
+                    ${urn && !urn.includes('local:') && tagData.sync_status !== 'LOCAL_ONLY' ? `
                         <a href="${getDataHubUrl(urn, 'tag')}" 
                            class="btn btn-sm btn-outline-info" 
                            target="_blank" title="View in DataHub">
@@ -756,9 +821,9 @@ function renderTagRow(tag, tabType) {
 
 function getEmptyStateHTML(tabType, hasSearch) {
     // Determine the correct colspan based on the number of columns shown
-    // Synced: checkbox + name + description + color + owners + deprecated + urn + sync status + actions = 9
-    // Local/Remote: checkbox + name + description + color + owners + deprecated + urn + actions = 8
-    const colspan = tabType === 'synced' ? '9' : '8';
+    // Synced: checkbox + name + description + color + owners + urn + sync status + actions = 8
+    // Local/Remote: checkbox + name + description + color + owners + urn + actions = 7
+    const colspan = tabType === 'synced' ? '8' : '7';
     
     if (hasSearch) {
     return `
@@ -844,6 +909,36 @@ function getActionButtons(tag, tabType) {
     
     let actionButtons = '';
     
+    // 1. Edit Tag - For local and synced tags
+    if (tabType === 'local' || tabType === 'synced') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-warning edit-tag" 
+                    title="Edit Tag">
+                <i class="fas fa-edit"></i>
+            </button>
+        `;
+    }
+
+    // 2. Sync to DataHub - Only for local-only tags
+    if (tabType === 'local' && tagData.sync_status === 'LOCAL_ONLY') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success sync-to-datahub" 
+                    title="Sync to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
+    }
+    
+    // 2b. Resync - Only for synced tags that are modified or synced
+    if (tabType === 'synced' && (tagData.sync_status === 'MODIFIED' || tagData.sync_status === 'SYNCED')) {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-info resync-tag" 
+                    title="Resync from DataHub">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        `;
+    }
+    
     // 3. Sync to Local - Only for remote/synced tags
     if (tabType === 'remote' || (tabType === 'synced' && tagData.is_remote)) {
         actionButtons += `
@@ -854,14 +949,14 @@ function getActionButtons(tag, tabType) {
         `;
     }
     
-    // 4. Download JSON - Available for all tags
+        // 4. Download JSON - Available for all tags
     actionButtons += `
         <button type="button" class="btn btn-sm btn-outline-secondary download-json"
                 title="Download JSON">
             <i class="fas fa-file-download"></i>
         </button>
     `;
-    
+
     // 5. Add to Staged Changes - Available for all tags
     actionButtons += `
         <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
@@ -869,7 +964,7 @@ function getActionButtons(tag, tabType) {
             <i class="fab fa-github"></i>
         </button>
     `;
-    
+
     // 6. Delete Local Tag - Only for synced and local tags
     if (tabType === 'synced' || tabType === 'local') {
         // Use a simple form with a POST action for direct deletion
@@ -884,6 +979,16 @@ function getActionButtons(tag, tabType) {
                     <i class="fas fa-trash"></i>
                 </button>
             </form>
+        `;
+    }
+    
+    // 7. Delete Remote Tag - Only for remote-only tags
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-danger delete-remote-tag" 
+                    title="Delete from DataHub">
+                <i class="fas fa-trash"></i>
+            </button>
         `;
     }
     
@@ -970,10 +1075,44 @@ function generatePaginationHTML(totalItems, tabType) {
     paginationHTML += `
                 </ul>
             </nav>
+            <div class="d-flex align-items-center">
+                <label for="itemsPerPage-${tabType}" class="form-label me-2 mb-0">Items per page:</label>
+                <select class="form-select form-select-sm" id="itemsPerPage-${tabType}" style="width: auto;">
+                    <option value="10" ${pagination.itemsPerPage === 10 ? 'selected' : ''}>10</option>
+                    <option value="25" ${pagination.itemsPerPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${pagination.itemsPerPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${pagination.itemsPerPage === 100 ? 'selected' : ''}>100</option>
+                </select>
+            </div>
         </div>
     `;
     
     return paginationHTML;
+}
+
+function attachPaginationHandlers(content, tabType) {
+    // Attach pagination click handlers
+    content.querySelectorAll('.page-link[data-page]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const page = parseInt(this.dataset.page);
+            const tab = this.dataset.tab;
+            if (page && tab && currentPagination[tab]) {
+                currentPagination[tab].page = page;
+                displayTabContent(tab);
+            }
+        });
+    });
+    
+    // Attach items per page change handler
+    const itemsPerPageSelect = content.querySelector(`#itemsPerPage-${tabType}`);
+    if (itemsPerPageSelect) {
+        itemsPerPageSelect.addEventListener('change', function() {
+            currentPagination[tabType].itemsPerPage = parseInt(this.value);
+            currentPagination[tabType].page = 1; // Reset to first page
+            displayTabContent(tabType);
+        });
+    }
 }
 
 // Attach sorting handlers to table headers
@@ -1022,7 +1161,8 @@ function getSortValue(tag, column) {
         case 'description':
             return (tagData.properties?.description || tagData.description || '').toLowerCase();
         case 'color':
-            return (tagData.properties?.colorHex || tagData.color || '').toLowerCase();
+            const colorValue = tagData.properties?.colorHex || tagData.color;
+            return (colorValue || 'null').toLowerCase();
         case 'owners':
             // Calculate owners count from ownership_data if available
             let ownersCount = 0;
@@ -1032,8 +1172,18 @@ function getSortValue(tag, column) {
                 ownersCount = tagData.owner_names.length;
             }
             return ownersCount;
-        case 'deprecated':
-            return tagData.deprecated || tagData.properties?.deprecated ? 1 : 0;
+
+        case 'sync_status':
+            const syncStatus = tagData.sync_status || 'UNKNOWN';
+            // Define sort order: SYNCED -> MODIFIED -> LOCAL_ONLY -> REMOTE_ONLY -> UNKNOWN
+            const statusOrder = {
+                'SYNCED': 1,
+                'MODIFIED': 2,
+                'LOCAL_ONLY': 3,
+                'REMOTE_ONLY': 4,
+                'UNKNOWN': 5
+            };
+            return statusOrder[syncStatus] || 5;
         case 'urn':
             return (tagData.urn || '').toLowerCase();
         default:
@@ -1081,15 +1231,13 @@ function showTagDetails(tag) {
     document.getElementById('modal-tag-description').textContent = tagData._originalDescription || tagData._original?.description || tagData.properties?.description || tagData.description || 'No description';
     
     const colorSwatch = document.getElementById('modal-tag-color-swatch');
-    const color = tagData.properties?.colorHex || tagData.color || '#6c757d';
+    const originalColor = tagData.properties?.colorHex || tagData.color;
+    const color = originalColor || '#6c757d'; // For display purposes (background)
+    const displayColor = originalColor || 'null'; // For text display
     colorSwatch.style.backgroundColor = color;
-    document.getElementById('modal-tag-color').textContent = color;
+    document.getElementById('modal-tag-color').textContent = displayColor;
     
-    // Update deprecation status
-    const isDeprecated = tagData.deprecated || tagData.properties?.deprecated || false;
-    const deprecatedElement = document.getElementById('modal-tag-deprecated');
-    deprecatedElement.textContent = isDeprecated ? 'Yes' : 'No';
-    deprecatedElement.className = `badge ${isDeprecated ? 'bg-warning' : 'bg-success'}`;
+
     
     document.getElementById('modal-tag-urn').textContent = tagData.urn || '';
     
@@ -1251,29 +1399,130 @@ function showTagDetails(tag) {
 function bulkResyncTags(tabType) {
     const selectedTags = getSelectedTags(tabType);
     if (selectedTags.length === 0) {
-        alert('Please select tags to resync.');
+        showNotification('error', 'Please select tags to resync.');
         return;
     }
     
-    if (confirm(`Are you sure you want to resync ${selectedTags.length} tag(s)?`)) {
+    if (confirm(`Are you sure you want to resync ${selectedTags.length} tag(s) from DataHub? This will update local data with current remote data.`)) {
         console.log(`Bulk resync ${selectedTags.length} tags for ${tabType}:`, selectedTags);
-        // TODO: Implement bulk resync API call
-        alert('Bulk resync functionality will be implemented soon.');
+        
+        // Show loading indicator
+        showNotification('success', `Starting resync of ${selectedTags.length} tags from DataHub...`);
+        
+        // Get tag IDs/URNs
+        const tagIds = selectedTags.map(tag => getDatabaseId(tag) || tag.urn).filter(id => id);
+        
+        if (tagIds.length === 0) {
+            showNotification('error', 'No valid tag IDs found for resync.');
+            return;
+        }
+        
+        // Make bulk resync API call
+        fetch('/metadata/api/tags/bulk_resync/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                tag_ids: tagIds
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Bulk resync response:', data);
+            if (data.success) {
+                showNotification('success', data.message);
+                // Add a small delay before refreshing to ensure backend processing is complete
+                setTimeout(() => {
+                    // Refresh the data to show updated sync status
+                    if (typeof loadTagsData === 'function') {
+                        loadTagsData();
+                    } else {
+                        window.location.reload();
+                    }
+                }, 1000); // 1 second delay
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error in bulk resync:', error);
+            showNotification('error', `Error resyncing tags: ${error.message}`);
+        });
+    }
+}
+
+function bulkSyncToDataHub(tabType) {
+    const selectedTags = getSelectedTags(tabType);
+    if (selectedTags.length === 0) {
+        showNotification('error', 'Please select tags to sync to DataHub.');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to sync ${selectedTags.length} tag(s) to DataHub?`)) {
+        console.log(`Bulk sync ${selectedTags.length} tags to DataHub for ${tabType}:`, selectedTags);
+        
+        // Show loading indicator
+        showNotification('success', `Starting sync of ${selectedTags.length} tags to DataHub...`);
+        
+        // Get tag IDs
+        const tagIds = selectedTags.map(tag => getDatabaseId(tag)).filter(id => id);
+        
+        if (tagIds.length === 0) {
+            showNotification('error', 'No valid tag IDs found for sync.');
+            return;
+        }
+        
+        // Make bulk sync API call
+        fetch('/metadata/api/tags/bulk_sync_to_datahub/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                tag_ids: tagIds
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Bulk sync response:', data);
+            if (data.success) {
+                showNotification('success', data.message);
+                // Add a small delay before refreshing to ensure backend processing is complete
+                setTimeout(() => {
+                    // Refresh the data to show updated sync status
+                    if (typeof loadTagsData === 'function') {
+                        loadTagsData();
+                    } else {
+                        window.location.reload();
+                    }
+                }, 1000); // 1 second delay
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error in bulk sync:', error);
+            showNotification('error', `Error syncing tags: ${error.message}`);
+        });
     }
 }
 
 function bulkPushTags(tabType) {
-    const selectedTags = getSelectedTags(tabType);
-    if (selectedTags.length === 0) {
-        alert('Please select tags to push.');
-        return;
-    }
-    
-    if (confirm(`Are you sure you want to push ${selectedTags.length} tag(s) to DataHub?`)) {
-        console.log(`Bulk push ${selectedTags.length} tags for ${tabType}:`, selectedTags);
-        // TODO: Implement bulk push API call
-        alert('Bulk push functionality will be implemented soon.');
-    }
+    // Legacy function - redirect to new sync function
+    bulkSyncToDataHub(tabType);
 }
 
 function bulkAddToPR(tabType) {
@@ -1283,11 +1532,43 @@ function bulkAddToPR(tabType) {
         return;
     }
     
-    if (confirm(`Are you sure you want to add ${selectedTags.length} tag(s) to staged changes?`)) {
-        console.log(`Bulk add ${selectedTags.length} tags to staged changes for ${tabType}:`, selectedTags);
+    // Validate all selected tags have valid IDs and exist in current data
+    const validatedTags = [];
+    const invalidTags = [];
+    
+    selectedTags.forEach(tag => {
+        const tagId = getDatabaseId(tag);
+        if (!tagId) {
+            invalidTags.push(tag);
+            return;
+        }
+        
+        // Check if the tag exists in current cached data
+        const cacheKey = tag.urn || tag.id;
+        const cachedTag = window.tagDataCache[cacheKey];
+        if (!cachedTag) {
+            console.warn('Tag not found in current cache, may be stale:', tag);
+            invalidTags.push(tag);
+            return;
+        }
+        
+        validatedTags.push(tag);
+    });
+    
+    if (invalidTags.length > 0) {
+        console.error('Found invalid or stale tags:', invalidTags);
+        showNotification('error', `${invalidTags.length} selected tags are invalid or from stale data. Please refresh the page and try again.`);
+        
+        // Clear selections to prevent further issues
+        clearAllSelections();
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to add ${validatedTags.length} tag(s) to staged changes?`)) {
+        console.log(`Bulk add ${validatedTags.length} validated tags to staged changes for ${tabType}:`, validatedTags);
         
         // Show loading indicator
-        showNotification('success', `Starting to add ${selectedTags.length} tags to staged changes...`);
+        showNotification('success', `Starting to add ${validatedTags.length} tags to staged changes...`);
         
         // Get current environment and mutation from global state or settings
         const currentEnvironment = window.currentEnvironment || { name: 'dev' };
@@ -1301,7 +1582,7 @@ function bulkAddToPR(tabType) {
         
         // Create a function to process tags one by one
         function processNextTag(index) {
-            if (index >= selectedTags.length) {
+            if (index >= validatedTags.length) {
                 // All tags processed
                 if (successCount > 0) {
                     showNotification('success', `Completed: ${successCount} tags added to staged changes, ${errorCount} failed.`);
@@ -1314,10 +1595,10 @@ function bulkAddToPR(tabType) {
                 return;
             }
             
-            const tag = selectedTags[index];
+            const tag = validatedTags[index];
             
-            // We need the ID for the API call
-            const tagId = tag.id;
+            // We need the ID for the API call - use the validated database ID
+            const tagId = getDatabaseId(tag);
             if (!tagId) {
                 console.error('Cannot add tag to staged changes without an ID:', tag);
                 errorCount++;
@@ -1355,8 +1636,8 @@ function bulkAddToPR(tabType) {
                 }
                 
                 // Update progress
-                if (processedCount % 5 === 0 || processedCount === selectedTags.length) {
-                    showNotification('success', `Progress: ${processedCount}/${selectedTags.length} tags processed`);
+                if (processedCount % 5 === 0 || processedCount === validatedTags.length) {
+                    showNotification('success', `Progress: ${processedCount}/${validatedTags.length} tags processed`);
                 }
                 
                 // Process the next tag
@@ -1777,20 +2058,20 @@ function switchToTab(tabType) {
     }
 }
 
-// Load users and groups with caching
+// Load users and groups with connection-specific caching
 async function loadUsersAndGroups() {
     const now = Date.now();
+    const connectionCache = getCurrentConnectionCache();
     
-    // Check if cache is still valid
-    if (usersAndGroupsCache.lastFetched && 
-        (now - usersAndGroupsCache.lastFetched) < usersAndGroupsCache.cacheExpiry &&
-        usersAndGroupsCache.users.length > 0) {
-        console.log('Using cached users and groups');
-        populateOwnersSelect();
+    // Check if cache is still valid for current connection
+    if (connectionCache.lastFetched && 
+        (now - connectionCache.lastFetched) < connectionCache.cacheExpiry &&
+        connectionCache.users.length > 0) {
+        console.log(`Using cached users and groups for connection: ${currentConnectionId}`);
         return;
     }
     
-    console.log('Fetching fresh users and groups data');
+    console.log(`Fetching fresh users and groups data for connection: ${currentConnectionId}`);
     
     try {
         // Fetch users, groups, and ownership types in a single request
@@ -1813,27 +2094,27 @@ async function loadUsersAndGroups() {
         if (data.success) {
             // Check if data.data exists before accessing its properties
             if (data.data) {
-                usersAndGroupsCache.users = data.data.users || [];
-                usersAndGroupsCache.groups = data.data.groups || [];
-                usersAndGroupsCache.ownership_types = data.data.ownership_types || [];
-                usersAndGroupsCache.lastFetched = now;
+                connectionCache.users = data.data.users || [];
+                connectionCache.groups = data.data.groups || [];
+                connectionCache.ownership_types = data.data.ownership_types || [];
+                connectionCache.lastFetched = now;
                 
-                console.log(`Loaded ${usersAndGroupsCache.users.length} users, ${usersAndGroupsCache.groups.length} groups, and ${usersAndGroupsCache.ownership_types.length} ownership types${data.cached ? ' (cached)' : ''}`);
+                console.log(`Loaded ${connectionCache.users.length} users, ${connectionCache.groups.length} groups, and ${connectionCache.ownership_types.length} ownership types for connection ${currentConnectionId}${data.cached ? ' (cached)' : ''}`);
                 populateSimpleDropdowns();
             } else {
                 console.error('API returned success but no data object');
                 // Initialize with empty arrays to prevent errors
-                usersAndGroupsCache.users = [];
-                usersAndGroupsCache.groups = [];
-                usersAndGroupsCache.ownership_types = [];
+                connectionCache.users = [];
+                connectionCache.groups = [];
+                connectionCache.ownership_types = [];
                 showOwnersError();
             }
         } else {
             console.error('Failed to load users, groups, and ownership types:', data.error);
             // Initialize with empty arrays to prevent errors
-            usersAndGroupsCache.users = [];
-            usersAndGroupsCache.groups = [];
-            usersAndGroupsCache.ownership_types = [];
+            connectionCache.users = [];
+            connectionCache.groups = [];
+            connectionCache.ownership_types = [];
             showOwnersError();
         }
     } catch (error) {
@@ -1844,152 +2125,40 @@ async function loadUsersAndGroups() {
 
 // Setup the ownership interface with dynamic owner entries
 function setupOwnershipInterface() {
-    const container = document.getElementById('owners-container');
-    const addButton = document.getElementById('add-owner');
+    const container = document.getElementById('ownership-sections-container');
+    const addButton = document.getElementById('add-ownership-section');
     
     if (!container || !addButton) return;
     
-    // Clear existing entries (except template)
-    const existingEntries = container.querySelectorAll('.owner-entry:not(#owner-template)');
-    existingEntries.forEach(entry => entry.remove());
+    // Clear existing sections
+    container.innerHTML = '';
     
-    // Setup add owner button with enhanced interaction
-    addButton.onclick = () => {
-        addOwnerEntry();
+    // Remove any existing event listeners to prevent multiple handlers
+    const newAddButton = addButton.cloneNode(true);
+    addButton.parentNode.replaceChild(newAddButton, addButton);
+    
+    // Setup add ownership section button with enhanced interaction
+    newAddButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        addOwnershipSection();
         // Add a subtle animation to the button
-        addButton.style.transform = 'scale(0.95)';
+        newAddButton.style.transform = 'scale(0.95)';
         setTimeout(() => {
-            addButton.style.transform = 'scale(1)';
+            newAddButton.style.transform = 'scale(1)';
         }, 150);
-    };
-    
-    // Add one initial entry
-    addOwnerEntry();
-}
-
-// Add a new owner entry
-function addOwnerEntry() {
-    const container = document.getElementById('owners-container');
-    const template = document.getElementById('owner-template');
-    
-    if (!container || !template) return;
-    
-    // Clone the template
-    const newEntry = template.cloneNode(true);
-    newEntry.id = `owner-entry-${Date.now()}`;
-    newEntry.style.display = 'block';
-    
-    // Add entry animation
-    newEntry.style.opacity = '0';
-    newEntry.style.transform = 'translateY(-20px)';
-    
-    // Populate ownership types dropdown
-    const ownershipTypeSelectElement = newEntry.querySelector('.ownership-type-select');
-    populateOwnershipTypeSelect(ownershipTypeSelectElement);
-    
-    
-    // Populate owners dropdown
-    const ownerSelectElement = newEntry.querySelector('.owner-select');
-    populateOwnerSelect(ownerSelectElement);
-    
-    // Setup remove button with enhanced interaction
-    const removeButton = newEntry.querySelector('.remove-owner');
-    removeButton.onclick = () => {
-        // Add removal animation
-        newEntry.style.transform = 'translateX(-100%)';
-        newEntry.style.opacity = '0';
-        setTimeout(() => {
-            removeOwnerEntry(newEntry);
-        }, 300);
-    };
-    
-    // Setup filtering for ownership types with enhanced UX
-    const ownershipTypeFilter = newEntry.querySelector('.ownership-type-filter');
-    setupEnhancedSelectFilter(ownershipTypeFilter, ownershipTypeSelectElement, 'ownership types');
-    
-    // Setup filtering for owners with enhanced UX
-    const ownerFilter = newEntry.querySelector('.owner-filter');
-    setupEnhancedSelectFilter(ownerFilter, ownerSelectElement, 'users and groups');
-    
-    // Add selection change handlers for visual feedback
-    ownerSelectElement.addEventListener('change', function() {
-        if (this.value) {
-            this.style.borderColor = '#28a745';
-            this.style.backgroundColor = '#f8fff9';
-        } else {
-            this.style.borderColor = '#e9ecef';
-            this.style.backgroundColor = '#ffffff';
-        }
     });
     
-    ownershipTypeSelectElement.addEventListener('change', function() {
-        if (this.value) {
-            this.style.borderColor = '#28a745';
-            this.style.backgroundColor = '#f8fff9';
-        } else {
-            this.style.borderColor = '#e9ecef';
-            this.style.backgroundColor = '#ffffff';
-        }
-    });
-    
-    // Add to container
-    container.appendChild(newEntry);
-    
-    // Animate in
-    setTimeout(() => {
-        newEntry.style.transition = 'all 0.3s ease';
-        newEntry.style.opacity = '1';
-        newEntry.style.transform = 'translateY(0)';
-    }, 50);
-    
-    // Update remove button visibility
-    updateRemoveButtonsVisibility();
+    // Add one initial ownership section
+    addOwnershipSection();
 }
 
-// Remove an owner entry
-function removeOwnerEntry(entry) {
-    entry.remove();
-    updateRemoveButtonsVisibility();
-}
 
-// Update visibility of remove buttons (hide if only one entry)
-function updateRemoveButtonsVisibility() {
-    const container = document.getElementById('owners-container');
-    const entries = container.querySelectorAll('.owner-entry:not(#owner-template)');
-    
-    entries.forEach((entry, index) => {
-        const removeButton = entry.querySelector('.remove-owner');
-        removeButton.style.display = entries.length > 1 ? 'block' : 'none';
-    });
-}
 
-// Populate ownership type select dropdown
-function populateOwnershipTypeSelect(select) {
+// Populate owners select dropdown (for individual entries)
+function populateOwnersSelect(select) {
     if (!select) return;
     
-    select.innerHTML = '<option value="">Choose ownership type...</option>';
-    
-    if (usersAndGroupsCache.ownership_types.length > 0) {
-        usersAndGroupsCache.ownership_types.forEach(ownershipType => {
-            const option = document.createElement('option');
-            option.value = ownershipType.urn;
-            option.textContent = `👑 ${ownershipType.name || ownershipType.urn}`;
-            select.appendChild(option);
-        });
-    } else {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = '⚠️ No ownership types available';
-        option.disabled = true;
-        select.appendChild(option);
-    }
-}
-
-// Populate owner select dropdown
-function populateOwnerSelect(select) {
-    if (!select) return;
-    
-    select.innerHTML = '<option value="">Choose an owner...</option>';
+    select.innerHTML = '';
     
     // Add users
     if (usersAndGroupsCache.users.length > 0) {
@@ -1999,8 +2168,20 @@ function populateOwnerSelect(select) {
         usersAndGroupsCache.users.forEach(user => {
             const option = document.createElement('option');
             option.value = user.urn;
-            option.textContent = `👤 ${user.display_name || user.username || user.urn}`;
+            
+            // Show display name, username, or URN as fallback
+            let displayText = user.display_name || user.username;
+            if (!displayText) {
+                // Extract username from URN as fallback
+                const urnParts = user.urn.split(':');
+                displayText = urnParts[urnParts.length - 1] || user.urn;
+                option.className = 'text-warning'; // Indicate missing name
+                option.title = `⚠️ Name not available in current DataHub. URN: ${user.urn}`;
+            }
+            
+            option.textContent = displayText;
             option.dataset.type = 'user';
+            option.dataset.urn = user.urn;
             usersGroup.appendChild(option);
         });
         
@@ -2015,8 +2196,20 @@ function populateOwnerSelect(select) {
         usersAndGroupsCache.groups.forEach(group => {
             const option = document.createElement('option');
             option.value = group.urn;
-            option.textContent = `👥 ${group.display_name || group.urn}`;
+            
+            // Show display name or URN as fallback
+            let displayText = group.display_name;
+            if (!displayText) {
+                // Extract group name from URN as fallback
+                const urnParts = group.urn.split(':');
+                displayText = urnParts[urnParts.length - 1] || group.urn;
+                option.className = 'text-warning'; // Indicate missing name
+                option.title = `⚠️ Name not available in current DataHub. URN: ${group.urn}`;
+            }
+            
+            option.textContent = displayText;
             option.dataset.type = 'group';
+            option.dataset.urn = group.urn;
             groupsGroup.appendChild(option);
         });
         
@@ -2026,10 +2219,155 @@ function populateOwnerSelect(select) {
     if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
         const option = document.createElement('option');
         option.value = '';
-        option.textContent = '⚠️ No users or groups available';
+        option.textContent = '⚠️ No users or groups available from current DataHub connection';
         option.disabled = true;
+        option.className = 'text-warning';
         select.appendChild(option);
     }
+}
+
+// Format owner option for Select2
+function formatOwnerOption(option) {
+    if (!option.id) {
+        return option.text;
+    }
+    
+    const type = option.element.dataset.type;
+    const icon = type === 'user' ? '👤' : '👥';
+    const hasWarning = option.element.className.includes('text-warning');
+    const warningIcon = hasWarning ? '⚠️ ' : '';
+    
+    return $(`<span class="${hasWarning ? 'text-warning' : ''}" title="${option.element.title || ''}">${warningIcon}${icon} ${option.text}</span>`);
+}
+
+// Format owner selection for Select2
+function formatOwnerSelection(option) {
+    if (!option.id) {
+        return option.text;
+    }
+    
+    const type = option.element.dataset.type;
+    const icon = type === 'user' ? '👤' : '👥';
+    const hasWarning = option.element.className.includes('text-warning');
+    const warningIcon = hasWarning ? '⚠️ ' : '';
+    
+    return `${warningIcon}${icon} ${option.text}`;
+}
+
+
+
+// Populate ownership type select dropdown
+function populateOwnershipTypeSelect(select) {
+    if (!select) return;
+    
+    // Get already selected ownership types from other sections
+    const selectedOwnershipTypes = getSelectedOwnershipTypes(select);
+    
+    // Clear existing options
+    select.innerHTML = '';
+    
+    // Add default option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = 'Select ownership type...';
+    select.appendChild(defaultOption);
+    
+    if (usersAndGroupsCache.ownership_types.length > 0) {
+        // Add all available ownership types (excluding already selected ones)
+        usersAndGroupsCache.ownership_types.forEach(ownershipType => {
+            // Skip if this ownership type is already selected in another section
+            if (selectedOwnershipTypes.includes(ownershipType.urn)) {
+                return;
+            }
+            
+            const option = document.createElement('option');
+            option.value = ownershipType.urn;
+            option.textContent = `👑 ${ownershipType.name || ownershipType.urn.split(':').pop()}`;
+            
+            // Pre-select technical owner if available and not already selected
+            if (ownershipType.urn === 'urn:li:ownershipType:__system__technical_owner' && 
+                !selectedOwnershipTypes.includes(ownershipType.urn)) {
+                option.selected = true;
+            }
+            
+            select.appendChild(option);
+        });
+    } else {
+        // Fallback - add common ownership types manually if cache is empty
+        const commonTypes = [
+            { urn: 'urn:li:ownershipType:__system__technical_owner', name: 'Technical Owner' },
+            { urn: 'urn:li:ownershipType:__system__business_owner', name: 'Business Owner' },
+            { urn: 'urn:li:ownershipType:__system__data_steward', name: 'Data Steward' }
+        ];
+        
+        commonTypes.forEach(ownershipType => {
+            // Skip if this ownership type is already selected in another section
+            if (selectedOwnershipTypes.includes(ownershipType.urn)) {
+                return;
+            }
+            
+            const option = document.createElement('option');
+            option.value = ownershipType.urn;
+            option.textContent = `👑 ${ownershipType.name}`;
+            option.className = 'text-warning'; // Indicate these are fallback options
+            
+            // Pre-select technical owner if not already selected
+            if (ownershipType.urn === 'urn:li:ownershipType:__system__technical_owner' && 
+                !selectedOwnershipTypes.includes(ownershipType.urn)) {
+                option.selected = true;
+            }
+            
+            select.appendChild(option);
+        });
+        
+        // Add warning message
+        const warningOption = document.createElement('option');
+        warningOption.disabled = true;
+        warningOption.textContent = '⚠️ Ownership types not loaded from current DataHub';
+        warningOption.className = 'text-warning';
+        select.appendChild(warningOption);
+    }
+}
+
+// Helper function to get already selected ownership types from other sections
+function getSelectedOwnershipTypes(currentSelect) {
+    const selectedTypes = [];
+    const allOwnershipTypeSelects = document.querySelectorAll('#ownership-sections-container .ownership-type-select');
+    
+    allOwnershipTypeSelects.forEach(select => {
+        // Skip the current select element
+        if (select === currentSelect) return;
+        
+        // Add the selected value if it exists
+        if (select.value) {
+            selectedTypes.push(select.value);
+        }
+    });
+    
+    return selectedTypes;
+}
+
+// Refresh all ownership type dropdowns to update available options
+function refreshAllOwnershipTypeDropdowns() {
+    const allOwnershipTypeSelects = document.querySelectorAll('#ownership-sections-container .ownership-type-select');
+    
+    allOwnershipTypeSelects.forEach(select => {
+        // Store the current value
+        const currentValue = select.value;
+        
+        // Repopulate the dropdown
+        populateOwnershipTypeSelect(select);
+        
+        // Restore the current value if it's still available
+        if (currentValue && select.querySelector(`option[value="${currentValue}"]`)) {
+            select.value = currentValue;
+        }
+    });
+}
+
+// Legacy function - kept for compatibility but redirects to new function
+function populateOwnerSelect(select) {
+    populateOwnersSelect(select);
 }
 
 // Setup filtering for select dropdowns
@@ -2281,6 +2619,15 @@ function removeSection(sectionId) {
         
         section.remove();
         updateRemoveButtons();
+        
+        // Check if container is now empty and hide ownership section if so
+        const container = document.getElementById('ownership-sections-container');
+        if (container && container.children.length === 0) {
+            hideOwnershipSectionIfEmpty();
+        }
+        
+        // Refresh all ownership type dropdowns to make removed options available again
+        refreshAllOwnershipTypeDropdowns();
     }
 }
 
@@ -2289,28 +2636,10 @@ function addOwnershipSection() {
     const container = document.getElementById('ownership-sections-container');
     if (!container) return;
     
+    // Show the ownership section when adding the first owner
+    showOwnershipSection();
+    
     const sectionId = 'section-' + Date.now();
-    
-    // Create ownership type options
-    let ownershipTypeOptions = '<option value="">Select ownership type...</option>';
-    if (usersAndGroupsCache.ownership_types) {
-        usersAndGroupsCache.ownership_types.forEach(type => {
-            ownershipTypeOptions += `<option value="${type.urn}">${type.name || type.urn}</option>`;
-        });
-    }
-    
-    // Create owners options with icons
-    let ownersOptions = '';
-    if (usersAndGroupsCache.users) {
-        usersAndGroupsCache.users.forEach(user => {
-            ownersOptions += `<option value="${user.urn}" data-type="user">👤 ${user.display_name || user.username || user.urn}</option>`;
-        });
-    }
-    if (usersAndGroupsCache.groups) {
-        usersAndGroupsCache.groups.forEach(group => {
-            ownersOptions += `<option value="${group.urn}" data-type="group">👥 ${group.display_name || group.urn}</option>`;
-        });
-    }
     
     const sectionHTML = `
         <div class="card mb-3" id="${sectionId}">
@@ -2323,36 +2652,50 @@ function addOwnershipSection() {
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-                         <div class="card-body">
-                 <div class="mb-3">
-                     <label class="form-label">Owners <span class="text-danger">*</span></label>
-                     <select class="form-select owners-select" name="owners[]" multiple required>
-                         ${ownersOptions}
-                     </select>
-                     <div class="form-text">Search and select multiple owners</div>
-                 </div>
-                 <div class="mb-3">
-                     <label class="form-label">Ownership Type <span class="text-danger">*</span></label>
-                     <select class="form-select ownership-type-select" name="ownership_types[]" required>
-                         ${ownershipTypeOptions}
-                     </select>
-                 </div>
-             </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Owners <span class="text-danger">*</span></label>
+                    <select class="form-select owners-select" name="owners[]" multiple required>
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                    <div class="form-text">Search and select multiple owners</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Ownership Type <span class="text-danger">*</span></label>
+                    <select class="form-select ownership-type-select" name="ownership_types[]" required>
+                        <option value="">Select ownership type...</option>
+                    </select>
+                    <div class="form-text">Select the ownership type for these owners</div>
+                </div>
+            </div>
         </div>
     `;
     
     container.insertAdjacentHTML('beforeend', sectionHTML);
     
-    // Initialize Select2 for the owners dropdown in the new section
+    // Get the new section elements
     const newSection = document.getElementById(sectionId);
     const ownersSelect = newSection.querySelector('.owners-select');
+    const ownershipTypeSelect = newSection.querySelector('.ownership-type-select');
     
+    // Populate the dropdowns
+    populateOwnersSelect(ownersSelect);
+    populateOwnershipTypeSelect(ownershipTypeSelect);
+    
+    // Initialize Select2 for the owners dropdown
     $(ownersSelect).select2({
         theme: 'bootstrap-5',
         width: '100%',
         placeholder: 'Search and select owners...',
         allowClear: true,
-        dropdownParent: $('#createTagModal')
+        dropdownParent: $(newSection),
+        templateResult: formatOwnerOption,
+        templateSelection: formatOwnerSelection
+    });
+    
+    // Add change listener to ownership type select to refresh other dropdowns
+    ownershipTypeSelect.addEventListener('change', function() {
+        refreshAllOwnershipTypeDropdowns();
     });
     
     updateRemoveButtons();
@@ -2361,6 +2704,8 @@ function addOwnershipSection() {
 // Update visibility of remove buttons (hide if only one section)
 function updateRemoveButtons() {
     const container = document.getElementById('ownership-sections-container');
+    if (!container) return;
+    
     const sections = container.querySelectorAll('.card');
     
     sections.forEach(section => {
@@ -2369,6 +2714,62 @@ function updateRemoveButtons() {
             removeButton.style.display = sections.length > 1 ? 'block' : 'none';
         }
     });
+}
+
+/**
+ * Hide the ownership section if it's empty, show it if it has content
+ */
+function hideOwnershipSectionIfEmpty() {
+    const container = document.getElementById('ownership-sections-container');
+    const addButton = document.getElementById('add-ownership-section');
+    const label = document.getElementById('ownership-label');
+    const helpText = document.getElementById('ownership-help-text');
+    
+    if (!container || !addButton) return;
+    
+    const hasSections = container.children.length > 0;
+    
+    if (hasSections) {
+        // Show the full ownership section
+        if (label) label.style.display = 'block';
+        container.style.display = 'block';
+        if (helpText) helpText.style.display = 'block';
+        
+        // Update button text and style to normal
+        addButton.innerHTML = '<i class="fas fa-plus me-1"></i> Add Owner';
+        addButton.className = 'btn btn-sm btn-outline-primary mt-2';
+    } else {
+        // Hide everything except the "Add Owner" button
+        if (label) label.style.display = 'none';
+        container.style.display = 'none';
+        if (helpText) helpText.style.display = 'none';
+        
+        // Show only the "Add Owner" button with simplified style
+        addButton.style.display = 'block';
+        addButton.textContent = '+ Add Owner';
+        addButton.className = 'btn btn-sm btn-outline-primary';
+    }
+}
+
+/**
+ * Show the ownership section when adding owners
+ */
+function showOwnershipSection() {
+    const container = document.getElementById('ownership-sections-container');
+    const addButton = document.getElementById('add-ownership-section');
+    const label = document.getElementById('ownership-label');
+    const helpText = document.getElementById('ownership-help-text');
+    
+    if (!container || !addButton) return;
+    
+    // Show all elements
+    if (label) label.style.display = 'block';
+    container.style.display = 'block';
+    if (helpText) helpText.style.display = 'block';
+    
+    // Update button text and style
+    addButton.innerHTML = '<i class="fas fa-plus me-1"></i> Add Owner';
+    addButton.className = 'btn btn-sm btn-outline-primary mt-2';
 }
 
 // Show error in owners interface
@@ -2424,7 +2825,21 @@ function setupActionButtonListeners() {
         const clickedElement = e.target.closest('button');
         if (!clickedElement) return;
 
-        if (clickedElement.classList.contains('sync-to-local') || clickedElement.closest('.sync-to-local')) {
+        if (clickedElement.classList.contains('edit-tag') || clickedElement.closest('.edit-tag')) {
+            // Edit Tag button clicked
+            console.log('Edit Tag clicked for tag:', tagData);
+            editTag(tagData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('sync-to-datahub') || clickedElement.closest('.sync-to-datahub')) {
+            // Sync to DataHub button clicked
+            console.log('Sync to DataHub clicked for tag:', tagData);
+            
+            // Call the sync function
+            syncTagToDataHub(tagData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('sync-to-local') || clickedElement.closest('.sync-to-local')) {
             // Sync to Local button clicked
             console.log('Sync to Local clicked for tag:', tagData);
             
@@ -2455,6 +2870,18 @@ function setupActionButtonListeners() {
             // View Details button clicked
             console.log('View Details clicked for tag:', tagData);
             showTagDetails(tagData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('resync-tag') || clickedElement.closest('.resync-tag')) {
+            // Resync Tag button clicked
+            console.log('Resync Tag clicked for tag:', tagData);
+            resyncTag(tagData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('delete-remote-tag') || clickedElement.closest('.delete-remote-tag')) {
+            // Delete Remote Tag button clicked
+            console.log('Delete Remote Tag clicked for tag:', tagData);
+            deleteRemoteTag(tagData);
             e.preventDefault();
             e.stopPropagation();
         // Delete Local Tag button is now handled by the form's native submission
@@ -2489,6 +2916,188 @@ function formatTagId(id) {
  * @param {Object} tagData - The tag data object
  * @returns {string|null} - The database ID or null if not found
  */
+/**
+ * Sync tag to DataHub
+ * @param {Object} tag - The tag object
+ */
+function syncTagToDataHub(tag) {
+    console.log('syncTagToDataHub called with:', tag);
+    
+    // Get tag data
+    const tagData = tag.combined || tag;
+    const tagId = getDatabaseId(tagData);
+    
+    if (!tagId) {
+        console.error('Cannot sync tag without a database ID:', tagData);
+        showNotification('error', 'Error syncing tag: Missing tag database ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('success', `Syncing tag "${tagData.name}" to DataHub...`);
+    
+    // Make the API call to sync this tag to DataHub
+    fetch(`/metadata/api/tags/${tagId}/sync_to_datahub/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Sync to DataHub response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Add a small delay before refreshing to ensure backend processing is complete
+            setTimeout(() => {
+                // Refresh the data to show updated sync status
+                if (typeof loadTagsData === 'function') {
+                    loadTagsData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000); // 1 second delay
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error syncing tag to DataHub:', error);
+        showNotification('error', `Error syncing tag: ${error.message}`);
+    });
+}
+
+/**
+ * Resync a single tag from DataHub
+ * @param {Object} tag - The tag object
+ */
+function resyncTag(tag) {
+    console.log('resyncTag called with:', tag);
+    
+    // Get tag data
+    const tagData = tag.combined || tag;
+    const tagId = getDatabaseId(tagData);
+    
+    if (!tagId) {
+        console.error('Cannot resync tag without a database ID:', tagData);
+        showNotification('error', 'Error resyncing tag: Missing tag database ID.');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to resync "${tagData.name}" from DataHub? This will overwrite any local changes.`)) {
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('info', `Resyncing tag "${tagData.name}" from DataHub...`);
+    
+    // Make the API call to resync this tag from DataHub
+    fetch(`/metadata/api/tags/${tagId}/resync/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Resync response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Add a small delay before refreshing to ensure backend processing is complete
+            setTimeout(() => {
+                // Refresh the data to show updated sync status
+                if (typeof loadTagsData === 'function') {
+                    loadTagsData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000); // 1 second delay
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error resyncing tag:', error);
+        showNotification('error', `Error resyncing tag: ${error.message}`);
+    });
+}
+
+/**
+ * Delete a remote-only tag from DataHub
+ * @param {Object} tag - The tag object
+ */
+function deleteRemoteTag(tag) {
+    console.log('deleteRemoteTag called with:', tag);
+    
+    // Get tag data
+    const tagData = tag.combined || tag;
+    const tagUrn = tagData.urn;
+    
+    if (!tagUrn) {
+        console.error('Cannot delete tag without a URN:', tagData);
+        showNotification('error', 'Error deleting tag: Missing tag URN.');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete "${tagData.name}" from DataHub? This action cannot be undone.`)) {
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('info', `Deleting tag "${tagData.name}" from DataHub...`);
+    
+    // Make the API call to delete this tag from DataHub
+    fetch(`/metadata/api/tags/delete_remote/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            urn: tagUrn
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Delete remote tag response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Add a small delay before refreshing to ensure backend processing is complete
+            setTimeout(() => {
+                // Refresh the data to show updated list
+                if (typeof loadTagsData === 'function') {
+                    loadTagsData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000); // 1 second delay
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting remote tag:', error);
+        showNotification('error', `Error deleting tag: ${error.message}`);
+    });
+}
+
 function getDatabaseId(tagData) {
     // First, check if we have an explicit database_id field
     if (tagData.database_id) {
@@ -2514,3 +3123,575 @@ function getDatabaseId(tagData) {
     console.warn('Could not find database ID for tag:', tagData);
     return null;
 }
+
+/**
+ * Edit an existing tag
+ * @param {Object} tag - The tag object to edit
+ */
+function editTag(tag) {
+    console.log('editTag called with:', tag);
+    
+    // Get tag data
+    const tagData = tag.combined || tag;
+    const tagId = getDatabaseId(tagData);
+    
+    if (!tagId) {
+        console.error('Cannot edit tag without a database ID:', tagData);
+        showNotification('error', 'Error editing tag: Missing tag database ID.');
+        return;
+    }
+    
+    // Ensure users and groups are loaded
+    if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
+        loadUsersAndGroups();
+    }
+    
+    // Populate the form with existing data
+    document.getElementById('tag-name').value = tagData.name || '';
+    document.getElementById('tag-description').value = tagData.description || '';
+    document.getElementById('tag-color').value = tagData.color || '#0d6efd';
+    
+
+    
+    // Clear existing ownership sections and setup interface
+    setupOwnershipInterface();
+    
+    // Wait for users/groups to load if not already loaded, then populate ownership data
+    const populateOwnership = () => {
+        const ownershipData = tagData.ownership_data || tagData.ownership;
+        console.log('Populating ownership for edit mode:', ownershipData);
+        
+        // Clear existing ownership sections
+        const ownershipContainer = document.getElementById('ownership-sections-container');
+        if (ownershipContainer) {
+            ownershipContainer.innerHTML = '';
+        }
+        
+        if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
+            // Group owners by ownership type to create separate sections
+            const ownersByType = {};
+            
+            ownershipData.owners.forEach(ownerInfo => {
+                let ownerUrn, ownershipTypeUrn;
+                
+                // Handle different data structures
+                if (ownerInfo.owner_urn && ownerInfo.ownership_type_urn) {
+                    // Local storage format
+                    ownerUrn = ownerInfo.owner_urn;
+                    ownershipTypeUrn = ownerInfo.ownership_type_urn;
+                } else if (ownerInfo.owner && ownerInfo.ownershipType) {
+                    // GraphQL format
+                    ownerUrn = ownerInfo.owner.urn;
+                    ownershipTypeUrn = ownerInfo.ownershipType.urn;
+                } else if (ownerInfo.ownerUrn && ownerInfo.type) {
+                    // Remote-only format
+                    ownerUrn = ownerInfo.ownerUrn;
+                    ownershipTypeUrn = ownerInfo.type;
+                } else {
+                    console.warn('Unrecognized owner info format:', ownerInfo);
+                    return;
+                }
+                
+                if (!ownersByType[ownershipTypeUrn]) {
+                    ownersByType[ownershipTypeUrn] = [];
+                }
+                ownersByType[ownershipTypeUrn].push(ownerUrn);
+            });
+            
+            // Create ownership sections for each type
+            Object.entries(ownersByType).forEach(([ownershipTypeUrn, ownerUrns]) => {
+                console.log(`Creating ownership section for type ${ownershipTypeUrn} with owners:`, ownerUrns);
+                
+                // Add a new ownership section
+                addOwnershipSection();
+                
+                // Get the last added section (the one we just created)
+                const sections = document.querySelectorAll('#ownership-sections-container .card');
+                const section = sections[sections.length - 1];
+                
+                if (section) {
+                    // Set the ownership type
+                    const ownershipTypeSelect = section.querySelector('.ownership-type-select');
+                    if (ownershipTypeSelect) {
+                        ownershipTypeSelect.value = ownershipTypeUrn;
+                        
+                        // If the ownership type is not in the current list, add it with a warning
+                        if (!ownershipTypeSelect.querySelector(`option[value="${ownershipTypeUrn}"]`)) {
+                            const missingOption = document.createElement('option');
+                            missingOption.value = ownershipTypeUrn;
+                            const typeName = ownershipTypeUrn.split(':').pop() || 'Unknown Type';
+                            missingOption.textContent = `⚠️ ${typeName} (not in current DataHub)`;
+                            missingOption.className = 'text-warning';
+                            missingOption.selected = true;
+                            ownershipTypeSelect.appendChild(missingOption);
+                            console.log('Added missing ownership type:', ownershipTypeUrn);
+                        }
+                    }
+                    
+                    // Set the owners using Select2
+                    const ownersSelect = section.querySelector('.owners-select');
+                    if (ownersSelect && ownerUrns.length > 0) {
+                        console.log('Setting owners in Select2:', ownerUrns);
+                        
+                        // Check for missing owners and add them to the dropdown
+                        ownerUrns.forEach(ownerUrn => {
+                            const existingOption = ownersSelect.querySelector(`option[value="${ownerUrn}"]`);
+                            if (!existingOption) {
+                                // Add missing owner with warning
+                                const missingOption = document.createElement('option');
+                                missingOption.value = ownerUrn;
+                                const ownerName = ownerUrn.split(':').pop() || ownerUrn;
+                                const isUser = ownerUrn.includes(':corpuser:');
+                                const icon = isUser ? '👤' : '👥';
+                                missingOption.textContent = `⚠️ ${icon} ${ownerName} (not in current DataHub)`;
+                                missingOption.className = 'text-warning';
+                                missingOption.dataset.type = isUser ? 'user' : 'group';
+                                missingOption.dataset.urn = ownerUrn;
+                                missingOption.title = `⚠️ This ${isUser ? 'user' : 'group'} is not available in the current DataHub connection. URN: ${ownerUrn}`;
+                                ownersSelect.appendChild(missingOption);
+                                console.log('Added missing owner:', ownerUrn);
+                            }
+                        });
+                        
+                        // Ensure Select2 is initialized first
+                        if (!$(ownersSelect).hasClass('select2-hidden-accessible')) {
+                            console.log('Select2 not initialized yet, waiting...');
+                            // Select2 not initialized yet, wait a bit
+                            setTimeout(() => {
+                                console.log('Setting owners after delay');
+                                $(ownersSelect).val(ownerUrns).trigger('change');
+                            }, 100);
+                        } else {
+                            console.log('Select2 already initialized, setting owners immediately');
+                            $(ownersSelect).val(ownerUrns).trigger('change');
+                        }
+                    }
+                }
+            });
+        } else {
+            // No ownership data, hide the ownership section
+            hideOwnershipSectionIfEmpty();
+        }
+    };
+    
+    // If users/groups are already loaded, populate immediately
+    if (usersAndGroupsCache.users.length > 0 || usersAndGroupsCache.groups.length > 0) {
+        setTimeout(populateOwnership, 100); // Small delay to ensure Select2 is initialized
+    } else {
+        // Wait for users/groups to load
+        const checkAndPopulate = () => {
+            if (usersAndGroupsCache.users.length > 0 || usersAndGroupsCache.groups.length > 0) {
+                setTimeout(populateOwnership, 100);
+            } else {
+                setTimeout(checkAndPopulate, 100);
+            }
+        };
+        checkAndPopulate();
+    }
+    
+    // Update the form to be in edit mode
+    const form = document.getElementById('tag-form');
+    form.dataset.editMode = 'true';
+    form.dataset.tagId = tagId;
+    
+    // Update modal title and button text
+    document.querySelector('#createTagModal .modal-title').textContent = 'Edit Tag';
+    document.querySelector('#createTagModal .btn-primary').textContent = 'Update Tag';
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('createTagModal'));
+    modal.show();
+}
+
+/**
+ * Reset the create/edit tag modal to default state
+ */
+function resetTagModal() {
+    // Reset form
+    const form = document.getElementById('tag-form');
+    form.reset();
+    form.removeAttribute('data-edit-mode');
+    form.removeAttribute('data-tag-id');
+    
+
+    
+    // Reset modal title and button text
+    document.querySelector('#createTagModal .modal-title').textContent = 'Create New Tag';
+    document.querySelector('#createTagModal .btn-primary').textContent = 'Create Tag';
+    
+    // Clear ownership sections container
+    const ownershipContainer = document.getElementById('ownership-sections-container');
+    if (ownershipContainer) {
+        ownershipContainer.innerHTML = '';
+    }
+    
+    // Hide ownership section by default
+    hideOwnershipSectionIfEmpty();
+}
+
+/**
+ * Handle form submission for both create and edit modes
+ */
+function handleTagFormSubmission(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const isEditMode = form.dataset.editMode === 'true';
+    const tagId = form.dataset.tagId;
+    
+    // Collect form data
+    const formData = new FormData(form);
+    
+    // Collect ownership data from multiple sections
+    const ownershipSections = document.querySelectorAll('#ownership-sections-container .card');
+    const owners = [];
+    
+    console.log('Found ownership sections:', ownershipSections.length);
+    
+    ownershipSections.forEach((section, sectionIndex) => {
+        const ownersSelect = section.querySelector('.owners-select');
+        const ownershipTypeSelect = section.querySelector('.ownership-type-select');
+        
+        console.log(`Section ${sectionIndex}:`, {
+            ownersSelect: ownersSelect ? 'found' : 'not found',
+            ownershipTypeSelect: ownershipTypeSelect ? 'found' : 'not found',
+            ownershipTypeValue: ownershipTypeSelect ? ownershipTypeSelect.value : 'N/A'
+        });
+        
+        if (ownersSelect && ownershipTypeSelect && ownershipTypeSelect.value) {
+            // Get selected owners from Select2
+            const selectedOwners = $(ownersSelect).val() || [];
+            console.log(`Section ${sectionIndex} selected owners:`, selectedOwners);
+            
+            selectedOwners.forEach(ownerUrn => {
+                if (ownerUrn) {
+                    owners.push({
+                        owner_urn: ownerUrn,
+                        ownership_type_urn: ownershipTypeSelect.value
+                    });
+                    console.log(`Added owner: ${ownerUrn} with type: ${ownershipTypeSelect.value}`);
+                }
+            });
+        }
+    });
+    
+    console.log('Total owners collected:', owners);
+    
+    // Add ownership data to form
+    owners.forEach((owner, index) => {
+        formData.append(`owners[${index}]`, owner.owner_urn);
+        formData.append(`ownership_types[${index}]`, owner.ownership_type_urn);
+        console.log(`Added to form: owners[${index}]=${owner.owner_urn}, ownership_types[${index}]=${owner.ownership_type_urn}`);
+    });
+    
+    // Determine the URL based on mode
+    const url = isEditMode ? `/metadata/tags/${tagId}/` : '/metadata/tags/';
+    const method = isEditMode ? 'POST' : 'POST'; // Both use POST, but edit will be handled differently
+    
+    if (isEditMode) {
+        // For edit mode, add a hidden field to indicate this is an update
+        formData.append('_method', 'PUT');
+        
+        // If this is a synced tag being edited, update sync status to MODIFIED
+        const originalTagData = window.tagDataCache[Object.keys(window.tagDataCache).find(key => 
+            window.tagDataCache[key].id == tagId || window.tagDataCache[key].datahub_id == tagId
+        )];
+        
+        if (originalTagData && originalTagData.sync_status === 'SYNCED') {
+            formData.append('sync_status', 'MODIFIED');
+            console.log('Updating sync status to MODIFIED for synced tag');
+        }
+    }
+    
+    // Show loading state
+    const submitButton = form.querySelector('.btn-primary');
+    const originalText = submitButton.textContent;
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+    
+    // Debug: Log form data
+    console.log('Form submission details:');
+    console.log('URL:', url);
+    console.log('Method:', method);
+    console.log('Form data:');
+    for (let [key, value] of formData.entries()) {
+        console.log(`  ${key}: ${value}`);
+    }
+    
+    // Submit the form
+    fetch(url, {
+        method: method,
+        body: formData,
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        // Check if response is JSON (for AJAX responses) or HTML (for form redirects)
+        const contentType = response.headers.get('content-type');
+        
+        if (!response.ok) {
+            // For error responses, try to get the error message
+            if (contentType && contentType.includes('application/json')) {
+                return response.json().then(errorData => {
+                    throw new Error(errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+                });
+            } else {
+                // Try to parse as text to get any error message
+                return response.text().then(errorText => {
+                    throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
+                });
+            }
+        }
+        
+        // For successful responses, handle JSON or HTML
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            return response.text();
+        }
+    })
+    .then(data => {
+        // Handle the response data
+        if (typeof data === 'object' && data.success !== undefined) {
+            // JSON response
+            if (data.success) {
+                // Success - close modal and refresh data
+                const modal = bootstrap.Modal.getInstance(document.getElementById('createTagModal'));
+                modal.hide();
+                
+                showNotification('success', data.message || `Tag ${isEditMode ? 'updated' : 'created'} successfully!`);
+                
+                // Refresh the data
+                if (typeof loadTagsData === 'function') {
+                    loadTagsData();
+                } else {
+                    window.location.reload();
+                }
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        } else {
+            // HTML response (redirect) - assume success
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createTagModal'));
+            modal.hide();
+            
+            showNotification('success', `Tag ${isEditMode ? 'updated' : 'created'} successfully!`);
+            
+            // Refresh the data
+            if (typeof loadTagsData === 'function') {
+                loadTagsData();
+            } else {
+                window.location.reload();
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error saving tag:', error);
+        showNotification('error', `Error ${isEditMode ? 'updating' : 'creating'} tag: ${error.message}`);
+    })
+    .finally(() => {
+        // Reset button state
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
+    });
+}
+// Global action functions
+function resyncAll() {
+    if (confirm('Are you sure you want to resync ALL tags from DataHub? This will update all local data with current remote data.')) {
+        showNotification('success', 'Starting resync of all tags from DataHub...');
+        
+        fetch('/metadata/api/tags/resync_all/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Resync all response:', data);
+            if (data.success) {
+                showNotification('success', data.message);
+                setTimeout(() => {
+                    if (typeof loadTagsData === 'function') {
+                        loadTagsData();
+                    } else {
+                        window.location.reload();
+                    }
+                }, 2000); // 2 second delay for all tags
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error in resync all:', error);
+            showNotification('error', `Error resyncing all tags: ${error.message}`);
+        });
+    }
+}
+
+function exportAll() {
+    showNotification('success', 'Starting export of all tags...');
+    
+    fetch('/metadata/api/tags/export_all/', {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        // Get filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'all_tags_export.json';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+            if (filenameMatch) {
+                filename = filenameMatch[1];
+            }
+        }
+        
+        return response.blob().then(blob => ({ blob, filename }));
+    })
+    .then(({ blob, filename }) => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showNotification('success', 'All tags exported successfully!');
+    })
+    .catch(error => {
+        console.error('Error exporting all tags:', error);
+        showNotification('error', `Error exporting tags: ${error.message}`);
+    });
+}
+
+function addAllToStagedChanges() {
+    if (confirm('Are you sure you want to add ALL tags to staged changes? This will create MCP files for all tags in the current environment.')) {
+        showNotification('success', 'Starting to add all tags to staged changes...');
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        fetch('/metadata/api/tags/add_all_to_staged_changes/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                environment: currentEnvironment.name,
+                mutation_name: mutationName
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Add all to staged changes response:', data);
+            if (data.success) {
+                showNotification('success', data.message);
+                if (data.files_created && data.files_created.length > 0) {
+                    console.log('Created files:', data.files_created);
+                }
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding all tags to staged changes:', error);
+            showNotification('error', `Error adding tags to staged changes: ${error.message}`);
+        });
+    }
+}
+
+function showImportModal() {
+    const modal = new bootstrap.Modal(document.getElementById('importJsonModal'));
+    modal.show();
+}
+
+function handleImportFormSubmission(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalText = submitButton.textContent;
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Importing...';
+    
+    fetch('/metadata/api/tags/import_json/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Import response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('importJsonModal'));
+            modal.hide();
+            
+            // Reset form
+            form.reset();
+            
+            // Refresh data
+            setTimeout(() => {
+                if (typeof loadTagsData === 'function') {
+                    loadTagsData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error importing tags:', error);
+        showNotification('error', `Error importing tags: ${error.message}`);
+    })
+    .finally(() => {
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
+    });
+}
+
+// Setup event listeners for import form
+document.addEventListener('DOMContentLoaded', function() {
+    const importForm = document.getElementById('import-json-form');
+    if (importForm) {
+        importForm.addEventListener('submit', handleImportFormSubmission);
+    }
+}); 

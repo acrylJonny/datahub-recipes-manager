@@ -137,11 +137,7 @@ urlpatterns = [
         views_tags.TagSyncToLocalView.as_view(),
         name="tag_sync_to_local_direct"
     ),
-    path(
-        "tags/import-export/",
-        views_tags.TagImportExportView.as_view(),
-        name="tag_import_export",
-    ),
+
     path(
         "tags/pull/", views_tags.TagPullView.as_view(), name="tag_pull"
     ),  # Support both GET and POST for pulling tags
@@ -168,6 +164,52 @@ urlpatterns = [
         "api/tags/<str:tag_id>/delete/",
         views_tags.TagDeleteView.as_view(),
         name="tag_delete_api"
+    ),
+    path(
+        "api/tags/<str:tag_id>/sync_to_datahub/",
+        views_tags.TagSyncToDataHubView.as_view(),
+        name="tag_sync_to_datahub_api"
+    ),
+    path(
+        "api/tags/<str:tag_id>/resync/",
+        views_tags.TagResyncView.as_view(),
+        name="tag_resync_api"
+    ),
+    path(
+        "api/tags/bulk_sync_to_datahub/",
+        views_tags.TagBulkSyncToDataHubView.as_view(),
+        name="tag_bulk_sync_to_datahub_api"
+    ),
+    # New bulk operation endpoints
+    path(
+        "api/tags/bulk_resync/",
+        views_tags.TagBulkResyncView.as_view(),
+        name="tag_bulk_resync_api"
+    ),
+    path(
+        "api/tags/resync_all/",
+        views_tags.TagResyncAllView.as_view(),
+        name="tag_resync_all_api"
+    ),
+    path(
+        "api/tags/export_all/",
+        views_tags.TagExportAllView.as_view(),
+        name="tag_export_all_api"
+    ),
+    path(
+        "api/tags/import_json/",
+        views_tags.TagImportJsonView.as_view(),
+        name="tag_import_json_api"
+    ),
+    path(
+        "api/tags/add_all_to_staged_changes/",
+        views_tags.TagAddAllToStagedChangesView.as_view(),
+        name="tag_add_all_to_staged_changes_api"
+    ),
+    path(
+        "api/tags/delete_remote/",
+        views_tags.TagDeleteRemoteView.as_view(),
+        name="tag_delete_remote_api"
     ),
     # Glossary
     path("glossary/", views_glossary.GlossaryListView.as_view(), name="glossary_list"),

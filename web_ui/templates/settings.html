@@ -15,11 +15,34 @@
         {% endfor %}
     {% endif %}
 
+    <!-- Connection Management Banner -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="alert-heading mb-1">
+                        <i class="fas fa-database me-2"></i>Multi-Connection Support Available!
+                    </h5>
+                    <p class="mb-0">
+                        You can now manage multiple DataHub connections and switch between them easily. 
+                        The connection management system provides better organization and context switching.
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'connections_list' %}" class="btn btn-primary">
+                        <i class="fas fa-cog me-1"></i> Manage Connections
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-md-6 mb-4">
             <div class="card">
-                <div class="card-header bg-light">
-                    <h5 class="card-title mb-0">DataHub Connection</h5>
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">DataHub Connection (Legacy)</h5>
+                    <span class="badge bg-warning">Legacy</span>
                 </div>
                 <div class="card-body">
                     <form method="POST" action="{% url 'settings' %}">

@@ -197,7 +197,46 @@
                             </a>
                         </li>
                     </ul>
-                    <div class="d-flex">
+                    <div class="d-flex align-items-center">
+                        <!-- Connection Dropdown -->
+                        <div class="dropdown me-3">
+                            <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="connectionDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-database me-1"></i>
+                                <span id="current-connection-name" data-connection-id="{% if current_connection %}{{ current_connection.id }}{% else %}default{% endif %}">
+                                    {% if current_connection %}{{ current_connection.name }}{% else %}No Connection{% endif %}
+                                </span>
+                            </button>
+                            <ul class="dropdown-menu" aria-labelledby="connectionDropdown">
+                                {% if connections %}
+                                    {% for connection in connections %}
+                                        <li>
+                                            <a class="dropdown-item{% if current_connection.id == connection.id %} active{% endif %}" 
+                                               href="javascript:void(0)" onclick="switchConnection('{{ connection.id }}', '{{ connection.name }}')">
+                                                <i class="fas fa-database me-2"></i>
+                                                {{ connection.name }}
+                                                {% if connection.is_default %}
+                                                    <span class="badge bg-success ms-1">Default</span>
+                                                {% endif %}
+                                                <br>
+                                                <small class="text-muted">{{ connection.datahub_url }}</small>
+                                            </a>
+                                        </li>
+                                    {% endfor %}
+                                    <li><hr class="dropdown-divider"></li>
+                                {% endif %}
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'connections_list' %}">
+                                        <i class="fas fa-cog me-2"></i> Manage Connections
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'connection_create' %}">
+                                        <i class="fas fa-plus me-2"></i> Add Connection
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                        
                         <span class="navbar-text me-3">
                             {% if request.session.datahub_connected %}
                                 <span class="badge bg-success d-inline-flex align-items-center"><i class="fas fa-check-circle me-1"></i> Connected</span>
@@ -264,6 +303,62 @@
                 });
             });
         });
+        
+        // Connection switching function
+        function switchConnection(connectionId, connectionName) {
+            fetch('{% url "api_switch_connection" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}'
+                },
+                body: `connection_id=${connectionId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update the dropdown text and connection ID
+                    const connectionElement = document.getElementById('current-connection-name');
+                    connectionElement.textContent = data.connection_name;
+                    connectionElement.dataset.connectionId = connectionId;
+                    
+                    // Switch to the new connection cache
+                    if (typeof window.switchConnectionCache !== 'undefined') {
+                        window.switchConnectionCache(connectionId);
+                    }
+                    
+                    // Show success message
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-success alert-dismissible fade show position-fixed';
+                    alertDiv.style.top = '20px';
+                    alertDiv.style.right = '20px';
+                    alertDiv.style.zIndex = '9999';
+                    alertDiv.innerHTML = `
+                        <strong>Connection switched!</strong> Now using "${data.connection_name}".
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    `;
+                    document.body.appendChild(alertDiv);
+                    
+                    // Auto-remove after 3 seconds
+                    setTimeout(() => {
+                        if (alertDiv.parentNode) {
+                            alertDiv.remove();
+                        }
+                    }, 3000);
+                    
+                    // Reload the page to refresh data with new connection
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    alert(`Error: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error switching connection');
+            });
+        }
     </script>
     {% block scripts %}{% endblock %}
 </body>

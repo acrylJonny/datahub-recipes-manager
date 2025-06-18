@@ -123,8 +123,7 @@ def main():
             )
             
             print("Tag added to staged changes successfully")
-            print(f"Properties MCP: {result['properties_file']}")
-            print(f"Ownership MCP: {result['ownership_file']}")
+            print(f"MCP file: {result['mcp_file']}")
     
     except Exception as e:
         logger.error(f"Error: {str(e)}")

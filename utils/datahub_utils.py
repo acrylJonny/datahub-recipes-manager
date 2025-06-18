@@ -17,21 +17,53 @@ logger = logging.getLogger(__name__)
 CACHE_TIMEOUT = 60
 
 
-def get_datahub_client():
+def get_datahub_client(connection_id=None, request=None):
     """
-    Get a DataHub client instance using centrally configured settings.
+    Get a DataHub client instance using connection-based configuration.
     This function should be used throughout the application for consistent
     DataHub access.
+
+    Args:
+        connection_id (str, optional): ID of the specific connection to use.
+        request (HttpRequest, optional): Request object to get session-based connection.
+                                       If None, uses the default connection.
 
     Returns:
         DataHubRestClient: configured client, or None if connection is not possible
     """
     try:
-        # Always try to get settings from AppSettings first
+        # Try to get from Connection model first (new multi-connection approach)
+        try:
+            from web_ui.models import Connection
+            
+            if connection_id:
+                # Get specific connection
+                connection = Connection.objects.filter(id=connection_id, is_active=True).first()
+                logger.debug(f"Getting DataHub client for connection ID: {connection_id}")
+            elif request and hasattr(request, 'session') and 'current_connection_id' in request.session:
+                # Get connection from session
+                session_connection_id = request.session['current_connection_id']
+                connection = Connection.objects.filter(id=session_connection_id, is_active=True).first()
+                logger.debug(f"Getting DataHub client for session connection ID: {session_connection_id}")
+            else:
+                # Get default connection
+                connection = Connection.get_default()
+                logger.debug("Getting DataHub client for default connection")
+            
+            if connection:
+                logger.info(f"Creating DataHub client with connection: {connection.name}")
+                return connection.get_client()
+                
+        except ImportError:
+            logger.debug("Connection model not available, falling back to AppSettings")
+        except Exception as e:
+            logger.warning(f"Error getting connection: {str(e)}, falling back to AppSettings")
+
+        # Fallback to legacy AppSettings approach
         try:
             from web_ui.models import AppSettings
 
-            logger.debug("Getting DataHub settings from AppSettings")
+            logger.debug("Getting DataHub settings from AppSettings (legacy fallback)")
             datahub_url = AppSettings.get("datahub_url")
             datahub_token = AppSettings.get("datahub_token")
             verify_ssl = AppSettings.get_bool("verify_ssl", True)
@@ -84,7 +116,21 @@ def get_datahub_client():
         return None
 
 
-def test_datahub_connection():
+def get_datahub_client_from_request(request):
+    """
+    Get a DataHub client instance based on the current request session.
+    This is a convenience function for views that need session-aware client access.
+
+    Args:
+        request (HttpRequest): The request object containing session data
+
+    Returns:
+        DataHubRestClient: configured client, or None if connection is not possible
+    """
+    return get_datahub_client(request=request)
+
+
+def test_datahub_connection(request=None):
     """
     Test if the DataHub connection is working (lightweight test).
     Automatically retrieves and stores client info on successful connection.
@@ -93,7 +139,7 @@ def test_datahub_connection():
         tuple: (is_connected, client) - boolean indicating if connection works, and the client instance
     """
     logger.info("Testing DataHub connection...")
-    client = get_datahub_client()
+    client = get_datahub_client(request=request)
 
     if client:
         logger.debug(

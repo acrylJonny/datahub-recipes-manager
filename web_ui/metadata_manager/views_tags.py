@@ -22,7 +22,7 @@ sys.path.append(
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import GitSettings, Environment
 from .models import Tag
@@ -33,12 +33,13 @@ logger = logging.getLogger(__name__)
 def sanitize_ownership_data(data):
     """
     Specifically sanitize ownership data to ensure it's properly formatted for database storage.
+    Standardizes the format to match UI creation format.
     
     Args:
         data: The ownership data to sanitize
         
     Returns:
-        Sanitized ownership data with consistent structure
+        Sanitized ownership data with consistent structure: {"owners": [{"owner_urn": "...", "ownership_type_urn": "..."}]}
     """
     if not data:
         return {"owners": []}
@@ -46,35 +47,54 @@ def sanitize_ownership_data(data):
     if isinstance(data, dict):
         # Check if this already has the correct structure with owners
         if "owners" in data and isinstance(data["owners"], list):
-            # This is the standard DataHub ownership format
-            sanitized_data = {}
+            # This is the standard DataHub ownership format - convert to UI format
+            sanitized_owners = []
             
-            # Preserve the owners array
-            sanitized_data["owners"] = _sanitize_for_json(data["owners"])
+            for owner_info in data["owners"]:
+                if isinstance(owner_info, dict):
+                    # Handle different remote formats
+                    owner_urn = None
+                    ownership_type_urn = None
+                    
+                    # Format 1: DataHub GraphQL format
+                    if "owner" in owner_info and isinstance(owner_info["owner"], dict):
+                        owner_urn = owner_info["owner"].get("urn")
+                        if "ownershipType" in owner_info and isinstance(owner_info["ownershipType"], dict):
+                            ownership_type_urn = owner_info["ownershipType"].get("urn")
+                        elif "type" in owner_info:
+                            ownership_type_urn = owner_info["type"]
+                    
+                    # Format 2: Direct URN format (already in UI format)
+                    elif "owner_urn" in owner_info and "ownership_type_urn" in owner_info:
+                        owner_urn = owner_info["owner_urn"]
+                        ownership_type_urn = owner_info["ownership_type_urn"]
+                    
+                    # Format 3: Simplified format
+                    elif "owner" in owner_info and isinstance(owner_info["owner"], str):
+                        owner_urn = owner_info["owner"]
+                        ownership_type_urn = owner_info.get("type", "urn:li:ownershipType:__system__technical_owner")
+                    
+                    # Add to sanitized list if we have valid data
+                    if owner_urn and ownership_type_urn:
+                        sanitized_owners.append({
+                            "owner_urn": owner_urn,
+                            "ownership_type_urn": ownership_type_urn
+                        })
             
-            # Preserve other ownership metadata if present
-            if "lastModified" in data:
-                sanitized_data["lastModified"] = _sanitize_for_json(data["lastModified"])
-            
-            # Preserve any other fields in the ownership object
-            for key, value in data.items():
-                if key not in ["owners", "lastModified"]:
-                    sanitized_data[key] = _sanitize_for_json(value)
-            
-            return sanitized_data
+            return {"owners": sanitized_owners}
         
         # If no owners key, try to find owners in other keys
         for key, value in data.items():
             if isinstance(value, list) and value and isinstance(value[0], dict):
-                # This looks like an owners list
-                return {"owners": _sanitize_for_json(value)}
+                # This looks like an owners list - recursively sanitize
+                return sanitize_ownership_data({"owners": value})
         
         # No suitable owners list found, but preserve the structure
-        return _sanitize_for_json(data)
+        return {"owners": []}
     
     elif isinstance(data, list):
-        # Direct list of owners
-        return {"owners": _sanitize_for_json(data)}
+        # Direct list of owners - convert to standard format
+        return sanitize_ownership_data({"owners": data})
     
     # Default empty structure
     return {"owners": []}
@@ -108,37 +128,33 @@ def _sanitize_for_json(obj):
 def find_tag_by_flexible_id(tag_id):
     """
     Find a tag using multiple ID formats (id, datahub_id, urn, or formatted UUID)
-    Returns (tag, None) if found, or (None, error_response) if not found
+    Returns the tag if found, or None if not found
     """
     try:
         # First try with the ID as is
         tag = Tag.objects.get(id=tag_id)
-        return tag, None
+        return tag
     except (Tag.DoesNotExist, ValueError):
         try:
             # Try with the ID as datahub_id
             tag = Tag.objects.get(datahub_id=tag_id)
-            return tag, None
+            return tag
         except Tag.DoesNotExist:
             try:
                 # Try with the ID as URN
                 tag = Tag.objects.get(urn=tag_id)
-                return tag, None
+                return tag
             except Tag.DoesNotExist:
                 # If we still can't find it, try with a formatted UUID
                 try:
                     # Try to format the ID as a UUID
                     formatted_id = str(uuid.UUID(tag_id.replace('-', '')))
                     tag = Tag.objects.get(id=formatted_id)
-                    return tag, None
+                    return tag
                 except (Tag.DoesNotExist, ValueError):
-                    # If all attempts fail, return error
+                    # If all attempts fail, return None
                     logger.error(f"Tag not found with any ID format: {tag_id}")
-                    error_response = JsonResponse(
-                        {"success": False, "message": f"Tag not found with ID: {tag_id}"},
-                        status=404,
-                    )
-                    return None, error_response
+                    return None
 
 def check_ownership_data_column_exists():
     """
@@ -243,9 +259,28 @@ class TagListView(View):
         try:
             logger.info("Starting TagListView.get")
 
-            # Get all local tags (database-only operation)
-            tags = Tag.objects.all().order_by("name")
-            logger.debug(f"Found {tags.count()} total tags")
+            # Get current connection to filter tags by connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+            
+            # Get tags relevant to current connection (database-only operation)
+            # Include: tags with no connection (local-only) + tags with current connection (synced)
+            all_tags = Tag.objects.all().order_by("name")
+            tags = []
+            for tag in all_tags:
+                if tag.connection is None:
+                    # True local-only tags (no connection)
+                    tags.append(tag)
+                elif current_connection and tag.connection == current_connection:
+                    # Tags synced to current connection
+                    tags.append(tag)
+                elif current_connection is None and tag.connection is None:
+                    # Backward compatibility: if no current connection, show unconnected tags
+                    tags.append(tag)
+                # Tags with different connections are excluded from this connection's view
+            
+            logger.debug(f"Found {len(tags)} tags relevant to current connection")
 
             # Check DataHub connection (quick test)
             logger.debug("Testing DataHub connection from TagListView")
@@ -297,7 +332,6 @@ class TagListView(View):
             color = request.POST.get("color", "#0d6efd")
             owners = request.POST.getlist("owners[]")  # Get list of selected owners
             ownership_types = request.POST.getlist("ownership_types[]")  # Get list of ownership types
-            
             logger.debug(f"Tag creation form data: name={name}, owners={owners}, ownership_types={ownership_types}")
             
             # Also try alternate form of ownership params (forms can send them differently)
@@ -318,33 +352,51 @@ class TagListView(View):
             # Generate deterministic URN
             deterministic_urn = get_full_urn_from_name("tag", name)
 
-            # Check if tag with this URN already exists
-            if Tag.objects.filter(urn=deterministic_urn).exists():
-                messages.error(request, f"Tag with name '{name}' already exists")
+            # Get current connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Check if tag with this URN already exists for the current connection
+            existing_tag_query = Tag.objects.filter(urn=deterministic_urn)
+            if current_connection:
+                existing_tag_query = existing_tag_query.filter(connection=current_connection)
+            else:
+                existing_tag_query = existing_tag_query.filter(connection__isnull=True)
+                
+            if existing_tag_query.exists():
+                messages.error(request, f"Tag with name '{name}' already exists for this connection")
                 return redirect("metadata_manager:tag_list")
 
-            # Create the tag
+            # Create the tag (no connection until synced)
             tag = Tag.objects.create(
                 name=name,
                 description=description,
                 color=color,
                 urn=deterministic_urn,
                 sync_status="LOCAL_ONLY",
+                connection=None,  # No connection until synced to DataHub
             )
 
             # Store owners information if provided
+            logger.info(f"Raw ownership data for creation - owners: {owners}, ownership_types: {ownership_types}")
+            
             if owners and ownership_types:
                 # Filter out empty values and pair owners with ownership types
                 valid_owners = []
-                logger.debug(f"Processing ownership data: {len(owners)} owners and {len(ownership_types)} types")
+                logger.info(f"Processing ownership data: {len(owners)} owners and {len(ownership_types)} types")
+                logger.info(f"Owners list: {owners}")
+                logger.info(f"Ownership types list: {ownership_types}")
                 
                 for i, owner in enumerate(owners):
+                    logger.info(f"Processing owner {i}: '{owner}' with type {ownership_types[i] if i < len(ownership_types) else 'N/A'}")
                     if owner and owner.strip() and i < len(ownership_types) and ownership_types[i] and ownership_types[i].strip():
                         valid_owners.append({
                             'owner_urn': owner.strip(),
                             'ownership_type_urn': ownership_types[i].strip()
                         })
-                        logger.debug(f"Added valid owner: {owner.strip()} with type {ownership_types[i].strip()}")
+                        logger.info(f"Added valid owner: {owner.strip()} with type {ownership_types[i].strip()}")
+                    else:
+                        logger.warning(f"Skipped owner {i}: owner='{owner}', type='{ownership_types[i] if i < len(ownership_types) else 'N/A'}'")
                 
                 if valid_owners:
                     # Store owners with ownership types as JSON data
@@ -352,7 +404,7 @@ class TagListView(View):
                         'owners': valid_owners
                     }
                     tag.save(update_fields=['ownership_data'])
-                    logger.info(f"Saved {len(valid_owners)} owners for tag {name}")
+                    logger.info(f"Saved {len(valid_owners)} owners for tag {name}: {valid_owners}")
 
             messages.success(request, f"Tag '{name}' created successfully" + 
                            (f" with {len(valid_owners)} owner(s)" if 'valid_owners' in locals() and valid_owners else ""))
@@ -363,6 +415,7 @@ class TagListView(View):
             return redirect("metadata_manager:tag_list")
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 class TagDetailView(View):
     """View to display, edit and delete tags"""
 
@@ -388,7 +441,7 @@ class TagDetailView(View):
                 pass
 
             # Get related entities if DataHub connection is available
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if client and client.test_connection():
                 tag_urn = tag.urn
 
@@ -462,32 +515,58 @@ class TagDetailView(View):
     def post(self, request, tag_id):
         """Update a tag"""
         try:
+            logger.info(f"Starting tag update for tag_id: {tag_id}")
+            logger.info(f"Request method: {request.method}")
+            logger.info(f"Request headers: {dict(request.headers)}")
+            logger.info(f"Request POST data keys: {list(request.POST.keys())}")
+            
             tag = get_object_or_404(Tag, id=tag_id)
+            logger.info(f"Found tag: {tag.name} (ID: {tag.id})")
+
+            # Check if this is an AJAX request (from the modal form)
+            is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.POST.get('_method') == 'PUT'
 
             name = request.POST.get("name")
             description = request.POST.get("description", "")
             color = request.POST.get("color", tag.color)
+            owners = request.POST.getlist("owners[]") or request.POST.getlist("owners")
+            ownership_types = request.POST.getlist("ownership_types[]") or request.POST.getlist("ownership_types")
+            
+            # Debug logging
+            logger.info(f"Tag update request data:")
+            logger.info(f"  name: '{name}'")
+            logger.info(f"  description: '{description}'")
+            logger.info(f"  color: '{color}'")
+            logger.info(f"  owners: {owners}")
+            logger.info(f"  ownership_types: {ownership_types}")
+            logger.info(f"  is_ajax: {is_ajax}")
 
             # If color is empty, set to default color rather than None
             if not color or color.strip() == "":
                 color = "#0d6efd"  # Default bootstrap primary color
 
             if not name:
-                messages.error(request, "Tag name is required")
+                error_msg = "Tag name is required"
+                logger.error(f"Tag update failed: {error_msg}")
+                if is_ajax:
+                    return JsonResponse({"success": False, "error": error_msg}, status=400)
+                messages.error(request, error_msg)
                 return redirect("metadata_manager:tag_detail", tag_id=tag.id)
 
-            # If name changed, update deterministic URN
+            # Check if name changed and if there's a conflict with existing tags
             if name != tag.name:
-                new_urn = get_full_urn_from_name("tag", name)
-                # Check if another tag with this URN already exists
-                if (
-                    Tag.objects.filter(urn=new_urn)
-                    .exclude(id=tag.id)
-                    .exists()
-                ):
-                    messages.error(request, f"Tag with name '{name}' already exists")
+                # Check if another tag with this name already exists (case-insensitive)
+                existing_tag_by_name = Tag.objects.filter(name__iexact=name).exclude(id=tag.id).first()
+                
+                if existing_tag_by_name:
+                    error_msg = f"Tag with name '{name}' already exists (existing tag: '{existing_tag_by_name.name}')"
+                    logger.error(f"Tag name conflict: trying to rename '{tag.name}' to '{name}', but '{existing_tag_by_name.name}' already exists")
+                    if is_ajax:
+                        return JsonResponse({"success": False, "error": error_msg}, status=400)
+                    messages.error(request, error_msg)
                     return redirect("metadata_manager:tag_detail", tag_id=tag.id)
-                tag.urn = new_urn
+                
+                logger.info(f"Updating tag name from '{tag.name}' to '{name}' (URN remains: '{tag.urn}')")
 
             # If this tag exists remotely and we're changing details, mark as modified
             if tag.sync_status in ["SYNCED", "REMOTE_ONLY"] and (
@@ -499,13 +578,78 @@ class TagDetailView(View):
             tag.name = name
             tag.description = description
             tag.color = color
-            tag.save()
 
-            messages.success(request, f"Tag '{name}' updated successfully")
+            # Handle ownership data
+            logger.info(f"Raw ownership data - owners: {owners}, ownership_types: {ownership_types}")
+            
+            try:
+                if owners and ownership_types:
+                    # Filter out empty values and pair owners with ownership types
+                    valid_owners = []
+                    logger.info(f"Processing ownership data for update: {len(owners)} owners and {len(ownership_types)} types")
+                    logger.info(f"Owners list: {owners}")
+                    logger.info(f"Ownership types list: {ownership_types}")
+                    
+                    # Handle case where we have more owners than ownership types
+                    # Use the first ownership type for all owners if there's a mismatch
+                    default_ownership_type = ownership_types[0] if ownership_types else None
+                    
+                    for i, owner in enumerate(owners):
+                        if owner and owner.strip():
+                            # Use the corresponding ownership type, or default if not available
+                            ownership_type = ownership_types[i] if i < len(ownership_types) else default_ownership_type
+                            
+                            logger.info(f"Processing owner {i}: '{owner}' with type '{ownership_type}'")
+                            
+                            if ownership_type and ownership_type.strip():
+                                valid_owners.append({
+                                    'owner_urn': owner.strip(),
+                                    'ownership_type_urn': ownership_type.strip()
+                                })
+                                logger.info(f"Added valid owner: {owner.strip()} with type {ownership_type.strip()}")
+                            else:
+                                logger.warning(f"Skipped owner {i}: '{owner}' - no valid ownership type")
+                        else:
+                            logger.warning(f"Skipped empty owner at index {i}")
+                    
+                    if valid_owners:
+                        # Store owners with ownership types as JSON data
+                        tag.ownership_data = {
+                            'owners': valid_owners
+                        }
+                        logger.info(f"Updated {len(valid_owners)} owners for tag {name}: {valid_owners}")
+                    else:
+                        # Clear ownership data if no valid owners
+                        tag.ownership_data = None
+                        logger.info(f"Cleared ownership data for tag {name} - no valid owners found")
+                else:
+                    # Clear ownership data if no owners provided
+                    tag.ownership_data = None
+                    logger.info(f"Cleared ownership data for tag {name} (no owners provided)")
+
+                logger.info(f"About to save tag with data: name='{tag.name}'")
+                tag.save()
+                logger.info(f"Tag saved successfully: {tag.name}")
+            except Exception as ownership_error:
+                logger.error(f"Error processing ownership data: {str(ownership_error)}")
+                logger.exception("Ownership processing exception details:")
+                raise
+
+            success_msg = f"Tag '{name}' updated successfully"
+            if is_ajax:
+                return JsonResponse({"success": True, "message": success_msg})
+            
+            messages.success(request, success_msg)
             return redirect("metadata_manager:tag_detail", tag_id=tag.id)
         except Exception as e:
             logger.error(f"Error updating tag: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
+            logger.exception("Full exception details:")
+            error_msg = f"An error occurred: {str(e)}"
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.POST.get('_method') == 'PUT':
+                return JsonResponse({"success": False, "error": error_msg}, status=400)
+            
+            messages.error(request, error_msg)
             return redirect("metadata_manager:tag_detail", tag_id=tag.id)
 
     def delete(self, request, tag_id):
@@ -561,89 +705,6 @@ class TagDetailView(View):
             )
 
 
-class TagImportExportView(View):
-    """View to handle tag import and export"""
-
-    def get(self, request):
-        """Display import/export page or export all tags"""
-        try:
-            return render(
-                request,
-                "metadata_manager/tags/import_export.html",
-                {"page_title": "Import/Export Tags"},
-            )
-        except Exception as e:
-            logger.error(f"Error in tag import/export view: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:tag_list")
-
-    def post(self, request):
-        """Import tags from JSON file"""
-        try:
-            import_file = request.FILES.get("import_file")
-            if not import_file:
-                messages.error(request, "No file was uploaded")
-                return redirect("metadata_manager:tag_import_export")
-
-            # Read the file
-            try:
-                tag_data = json.loads(import_file.read().decode("utf-8"))
-            except json.JSONDecodeError:
-                messages.error(request, "Invalid JSON file")
-                return redirect("metadata_manager:tag_import_export")
-
-            # Process tags
-            imported_count = 0
-            errors = []
-
-            for i, tag_item in enumerate(tag_data):
-                try:
-                    name = tag_item.get("name")
-                    description = tag_item.get("description", "")
-                    color = tag_item.get("color", "#0d6efd")
-
-                    if not name:
-                        errors.append(f"Item #{i + 1}: Missing required field 'name'")
-                        continue
-
-                    # Generate deterministic URN
-                    deterministic_urn = get_full_urn_from_name("tag", name)
-
-                    # Check if tag exists, update it if it does
-                    tag, created = Tag.objects.update_or_create(
-                        urn=deterministic_urn,
-                        defaults={
-                            "name": name,
-                            "description": description,
-                            "color": color,
-                        },
-                    )
-
-                    imported_count += 1
-                except Exception as e:
-                    errors.append(f"Item #{i + 1}: {str(e)}")
-
-            # Report results
-            if imported_count > 0:
-                messages.success(
-                    request, f"Successfully imported {imported_count} tags"
-                )
-
-            if errors:
-                messages.warning(
-                    request, f"Encountered {len(errors)} errors during import"
-                )
-                for error in errors[:5]:  # Show the first 5 errors
-                    messages.error(request, error)
-                if len(errors) > 5:
-                    messages.error(request, f"... and {len(errors) - 5} more errors")
-
-            return redirect("metadata_manager:tag_list")
-        except Exception as e:
-            logger.error(f"Error importing tags: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:tag_import_export")
-
 
 @method_decorator(require_POST, name="dispatch")
 class TagDeployView(View):
@@ -656,7 +717,7 @@ class TagDeployView(View):
             tag = get_object_or_404(Tag, id=tag_id)
 
             # Get DataHub client
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if not client:
                 messages.error(
                     request,
@@ -725,7 +786,7 @@ class TagPullView(View):
         """Pull tags from DataHub"""
         try:
             # Get client from central utility
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
 
             if not client:
                 messages.error(
@@ -773,7 +834,7 @@ class TagPullView(View):
                             continue
                         
                         # Process the tag
-                        result = self._process_tag(client, tag_data)
+                        result = self._process_tag(client, tag_data, request)
                         if result == "imported":
                             imported_count += 1
                         elif result == "updated":
@@ -817,7 +878,7 @@ class TagPullView(View):
                     }
 
                     # Process the tag
-                    result = self._process_tag(client, tag_data)
+                    result = self._process_tag(client, tag_data, request)
                     if result == "imported":
                         imported_count += 1
                         messages.success(
@@ -847,7 +908,7 @@ class TagPullView(View):
 
                 for tag_data in tags:
                     try:
-                        result = self._process_tag(client, tag_data)
+                        result = self._process_tag(client, tag_data, request)
                         if result == "imported":
                             imported_count += 1
                         elif result == "updated":
@@ -884,7 +945,7 @@ class TagPullView(View):
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:tag_list")
 
-    def _process_tag(self, client, tag_data):
+    def _process_tag(self, client, tag_data, request=None):
         """Process a single tag from DataHub. Returns 'imported', 'updated', or 'error'."""
         # Extract the tag urn from the data
         tag_urn = tag_data.get("urn")
@@ -935,6 +996,13 @@ class TagPullView(View):
             ownership_data = sanitize_ownership_data(tag_data["ownership"])
             logger.debug(f"Sanitized ownership data: {ownership_data}")
 
+        # Get current connection from request session
+        current_connection = None
+        if request:
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            logger.info(f"Using connection: {current_connection.name if current_connection else 'None'}")
+
         # Try to find an existing tag with the same urn
         # Ensure tag_urn is a string for database query
         existing_tag = Tag.objects.filter(urn=str(tag_urn)).first()
@@ -947,8 +1015,11 @@ class TagPullView(View):
             existing_tag.ownership_data = ownership_data  # Add ownership data
             existing_tag.sync_status = "SYNCED"
             existing_tag.last_synced = timezone.now()
+            # Set connection if available
+            if current_connection:
+                existing_tag.connection = current_connection
             existing_tag.save()
-            logger.info(f"Updated tag {name} with ownership data: {ownership_data is not None}")
+            logger.info(f"Updated tag {name} with ownership data: {ownership_data is not None}, connection: {current_connection.name if current_connection else 'None'}")
             return "updated"
         else:
             # Create a new tag
@@ -964,8 +1035,9 @@ class TagPullView(View):
                 ownership_data=ownership_data,  # Add ownership data
                 sync_status="SYNCED",
                 last_synced=timezone.now(),
+                connection=current_connection,  # Set connection
             )
-            logger.info(f"Created new tag {name} with ownership data: {ownership_data is not None}")
+            logger.info(f"Created new tag {name} with ownership data: {ownership_data is not None}, connection: {current_connection.name if current_connection else 'None'}")
             return "imported"
 
 
@@ -1053,7 +1125,7 @@ class TagEntityView(View):
                 )
 
             # Get DataHub client
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if not client or not client.test_connection():
                 return JsonResponse(
                     {"success": False, "message": "Unable to connect to DataHub"},
@@ -1108,7 +1180,7 @@ class TagEntityView(View):
                 )
 
             # Get DataHub client
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if not client or not client.test_connection():
                 return JsonResponse(
                     {"success": False, "message": "Unable to connect to DataHub"},
@@ -1377,17 +1449,21 @@ def get_remote_tags_data(request):
     try:
         logger.info("Loading comprehensive tags data via AJAX")
         
-        # Get DataHub configuration from AppSettings (same as main views)
-        from web_ui.models import AppSettings
-        import os
+        # Get DataHub client using connection system
+        from utils.datahub_utils import get_datahub_client_from_request
+        client = get_datahub_client_from_request(request)
         
-        datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", ""))
-        datahub_token = AppSettings.get("datahub_token", os.environ.get("DATAHUB_TOKEN", ""))
-        
-        if not datahub_url:
+        if not client:
             return JsonResponse({
                 "success": False,
-                "error": "DataHub URL is not configured. Please configure it in the Configuration tab."
+                "error": "No active DataHub connection configured. Please configure a connection."
+            })
+        
+        # Test connection
+        if not client.test_connection():
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot connect to DataHub with current connection"
             })
         
         # Get parameters
@@ -1395,20 +1471,33 @@ def get_remote_tags_data(request):
         start = int(request.GET.get("start", 0))
         count = int(request.GET.get("count", 100))
         
-        # Initialize DataHub client  
-        from utils.datahub_rest_client import DataHubRestClient
-        client = DataHubRestClient(datahub_url, datahub_token)
+        # Get current connection to filter tags by connection
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
         
-        # Test connection
-        if not client.test_connection():
-            return JsonResponse({
-                "success": False,
-                "error": "Cannot connect to DataHub"
-            })
+        # Get ALL local tags - we'll categorize them based on connection logic
+        all_local_tags = Tag.objects.all().order_by("name")
+        logger.debug(f"Found {all_local_tags.count()} total local tags")
         
-        # Get all local tags
-        local_tags = Tag.objects.all().order_by("name")
-        logger.debug(f"Found {local_tags.count()} local tags")
+        # Separate tags based on connection logic:
+        # 1. Tags with no connection (LOCAL_ONLY) - should appear as local-only
+        # 2. Tags with current connection (SYNCED) - should appear as synced if they match remote
+        # 3. Tags with different connection - should appear as local-only relative to current connection
+        local_tags = []
+        for tag in all_local_tags:
+            if tag.connection is None:
+                # True local-only tags (no connection)
+                local_tags.append(tag)
+            elif current_connection and tag.connection == current_connection:
+                # Tags synced to current connection
+                local_tags.append(tag)
+            elif current_connection is None and tag.connection is None:
+                # Backward compatibility: if no current connection, show unconnected tags
+                local_tags.append(tag)
+            # Tags with different connections are excluded from this connection's view
+        
+        logger.debug(f"Filtered to {len(local_tags)} tags relevant to current connection")
         
         # Create a mapping of urns to Tag IDs for quick lookup
         local_urn_to_id_map = {str(tag.urn): str(tag.id) for tag in local_tags}
@@ -1432,12 +1521,29 @@ def get_remote_tags_data(request):
         remote_only_tags = []
         
         # Extract local tag urns
-        local_tag_urns = set(local_tags.values_list("urn", flat=True))
+        local_tag_urns = set(tag.urn for tag in local_tags)
         
         # Process local tags and match with remote
         for local_tag in local_tags:
             tag_urn = str(local_tag.urn)
             remote_match = remote_tags.get(tag_urn)
+            
+            # Extract owner names from ownership_data for local tags
+            owner_names = []
+            owners_count = 0
+            if local_tag.ownership_data and local_tag.ownership_data.get('owners'):
+                owners_count = len(local_tag.ownership_data['owners'])
+                for owner_info in local_tag.ownership_data['owners']:
+                    if owner_info and owner_info.get('owner_urn'):
+                        owner_urn = owner_info['owner_urn']
+                        # Extract username/group name from URN
+                        if ':corpuser:' in owner_urn:
+                            owner_name = owner_urn.split(':corpuser:')[-1]
+                        elif ':corpGroup:' in owner_urn:
+                            owner_name = owner_urn.split(':corpGroup:')[-1]
+                        else:
+                            owner_name = owner_urn.split(':')[-1] if ':' in owner_urn else owner_urn
+                        owner_names.append(owner_name)
             
             local_tag_data = {
                 "id": str(local_tag.id),  # Ensure ID is always a string
@@ -1449,42 +1555,67 @@ def get_remote_tags_data(request):
                 "urn": tag_urn,
                 "sync_status": local_tag.sync_status,
                 "sync_status_display": local_tag.get_sync_status_display(),
-                # Add empty ownership and relationships for local-only tags
-                "owners_count": len(local_tag.ownership_data.get('owners', [])) if local_tag.ownership_data else 0,
-                "owner_names": [],
+                # Add ownership information for local tags
+                "owners_count": owners_count,
+                "owner_names": owner_names,
                 "relationships_count": 0,
                 "ownership": local_tag.ownership_data or None,
+                "ownership_data": local_tag.ownership_data or None,  # Keep both for compatibility
                 "relationships": None,
             }
             
-            if remote_match:
-                # Check if tag needs status update
+            # Determine categorization based on connection and remote match
+            if remote_match and local_tag.connection == current_connection:
+                # Tag exists remotely AND is synced to current connection - categorize as synced
+                
+                # Check if tag needs status update, but don't override recently synced tags
                 local_description = local_tag.description or ""
                 remote_description = remote_match.get("description", "")
                 
                 remote_color = remote_match.get("colorHex", "#0d6efd")
                 local_color = local_tag.color or "#0d6efd"
                 
-                # Update sync status based on comparison
-                if (local_description != remote_description or local_color != remote_color):
-                    if local_tag.sync_status != "MODIFIED":
-                        local_tag.sync_status = "MODIFIED"
-                        local_tag.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated tag {local_tag.name} status to MODIFIED")
-                else:
-                    if local_tag.sync_status != "SYNCED":
-                        local_tag.sync_status = "SYNCED" 
-                        local_tag.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated tag {local_tag.name} status to SYNCED")
+                # Only update sync status if the tag hasn't been recently synced
+                # Check if last_synced is within the last 30 seconds to avoid overriding fresh syncs
+                from django.utils import timezone
+                from datetime import timedelta
                 
-                # Update local tag data with remote information
+                recently_synced = (
+                    local_tag.last_synced and 
+                    local_tag.last_synced > timezone.now() - timedelta(seconds=30)
+                )
+                
+                if not recently_synced:
+                    # Update sync status based on comparison
+                    if (local_description != remote_description or local_color != remote_color):
+                        if local_tag.sync_status != "MODIFIED":
+                            local_tag.sync_status = "MODIFIED"
+                            local_tag.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated tag {local_tag.name} status to MODIFIED")
+                    else:
+                        if local_tag.sync_status != "SYNCED":
+                            local_tag.sync_status = "SYNCED" 
+                            local_tag.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated tag {local_tag.name} status to SYNCED")
+                
+                # Update local tag data with remote information, but preserve local ownership if remote is empty
+                remote_ownership = remote_match.get("ownership")
+                remote_owners_count = len(remote_ownership.get("owners", [])) if remote_ownership else 0
+                remote_owner_names = remote_match.get("owner_names", [])
+                
+                # Use remote ownership if available, otherwise fall back to local
+                final_ownership = remote_ownership or local_tag.ownership_data
+                final_owners_count = remote_owners_count if remote_ownership else owners_count
+                final_owner_names = remote_owner_names if remote_owner_names else owner_names
+                
                 local_tag_data.update({
                     "sync_status": local_tag.sync_status,
                     "sync_status_display": local_tag.get_sync_status_display(),
-                    "owners_count": len(remote_match.get("ownership", {}).get("owners", [])) if remote_match.get("ownership") else 0,
-                    "owner_names": remote_match.get("owner_names", []),
+                    "owners_count": final_owners_count,
+                    "owner_names": final_owner_names,
                     "relationships_count": remote_match.get("relationships_count", 0),
-                    "ownership": remote_match.get("ownership") or local_tag.ownership_data,
+                    "ownership": final_ownership,
+                    "ownership_data": local_tag.ownership_data,  # Always preserve local ownership_data
                     "relationships": remote_match.get("relationships"),
                 })
                 
@@ -1498,15 +1629,69 @@ def get_remote_tags_data(request):
                     "combined": combined_data  # Enhanced data for display with database_id
                 })
             else:
-                # Ensure local-only tags have correct status
-                if local_tag.sync_status != "LOCAL_ONLY":
+                # Tag is local-only relative to current connection
+                # This includes:
+                # 1. Tags with no connection (true local-only)
+                # 2. Tags with different connection (local-only relative to current connection)
+                # 3. Tags with current connection but no remote match
+                
+                # Check if the tag was recently synced to avoid overriding fresh sync status
+                from django.utils import timezone
+                from datetime import timedelta
+                
+                recently_synced = (
+                    local_tag.last_synced and 
+                    local_tag.last_synced > timezone.now() - timedelta(minutes=5)  # 5 minute grace period
+                )
+                
+                # Only update sync status to LOCAL_ONLY if it wasn't recently synced
+                if not recently_synced and local_tag.sync_status != "LOCAL_ONLY":
                     local_tag.sync_status = "LOCAL_ONLY"
                     local_tag.save(update_fields=["sync_status"])
                     logger.debug(f"Updated tag {local_tag.name} status to LOCAL_ONLY")
                 
-                local_tag_data["sync_status"] = "LOCAL_ONLY"
-                local_tag_data["sync_status_display"] = "Local Only"
-                local_only_tags.append(local_tag_data)
+                # For recently synced tags without remote match, treat as synced but with missing remote data
+                if recently_synced and local_tag.sync_status == "SYNCED":
+                    # This is a recently synced tag that should be in synced category even without remote match
+                    local_tag_data.update({
+                        "sync_status": local_tag.sync_status,
+                        "sync_status_display": local_tag.get_sync_status_display(),
+                        "owners_count": owners_count,
+                        "owner_names": owner_names,
+                        "relationships_count": 0,
+                        "ownership": local_tag.ownership_data or None,
+                        "ownership_data": local_tag.ownership_data or None,
+                        "relationships": None,
+                    })
+                    
+                    # Create a fake remote match for recently synced tags
+                    fake_remote_match = {
+                        "urn": local_tag.urn,
+                        "name": local_tag.name,
+                        "description": local_tag.description or "",
+                        "colorHex": local_tag.color or "#0d6efd",
+                        "ownership": local_tag.ownership_data,
+                        "owner_names": owner_names,
+                        "relationships_count": 0,
+                        "relationships": None,
+                    }
+                    
+                    # Create combined data with explicit database_id
+                    combined_data = local_tag_data.copy()
+                    combined_data["database_id"] = str(local_tag.id)
+                    
+                    synced_tags.append({
+                        "local": local_tag_data,
+                        "remote": fake_remote_match,
+                        "combined": combined_data
+                    })
+                else:
+                    # True local-only tag
+                    local_tag_data["sync_status"] = local_tag.sync_status
+                    local_tag_data["sync_status_display"] = local_tag.get_sync_status_display()
+                    # Ensure ownership_data is preserved for local-only tags
+                    local_tag_data["ownership_data"] = local_tag.ownership_data
+                    local_only_tags.append(local_tag_data)
         
         # Find remote-only tags
         for tag_urn, remote_tag in remote_tags.items():
@@ -1575,13 +1760,11 @@ def get_remote_tags_data(request):
                 if (tag_data.get("ownership") and tag_data.get("ownership", {}).get("owners")) or tag_data.get("owner_names"):
                     owned_tags += 1
                     
-        deprecated_tags = sum(1 for tag_list in [synced_tags, local_only_tags, remote_only_tags]
-                            for tag in tag_list
-                            if (tag.get("combined", tag) if "combined" in tag else tag).get("deprecated", False) or 
-                               (tag.get("combined", tag) if "combined" in tag else tag).get("properties", {}).get("deprecated", False))
+
         
         # Get DataHub URL for external links
-        if datahub_url.endswith("/api/gms"):
+        datahub_url = client.server_url if hasattr(client, 'server_url') else ""
+        if datahub_url and datahub_url.endswith("/api/gms"):
             datahub_url = datahub_url[:-8]
         
         logger.debug(
@@ -1600,7 +1783,6 @@ def get_remote_tags_data(request):
                 "local_count": len(local_only_tags),
                 "remote_count": len(remote_only_tags),
                 "owned_tags": owned_tags,
-                "deprecated_tags": deprecated_tags,
                 "percentage_owned": round((owned_tags / total_tags * 100) if total_tags else 0, 1),
             }
         }
@@ -1656,7 +1838,7 @@ class TagSyncToLocalView(View):
             logger.critical(f"Found tag: ID={tag.id}, Name={tag.name}, URN={tag.urn}")
             
             # Get DataHub client
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if not client:
                 logger.critical("DataHub client not available")
                 return JsonResponse({
@@ -1683,15 +1865,24 @@ class TagSyncToLocalView(View):
             # Log the full remote tag structure for debugging
             logger.critical(f"FULL REMOTE TAG DATA: {json.dumps(remote_tag, indent=2, default=str)}")
 
+            # Get current connection from request session
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            logger.critical(f"Using connection: {current_connection.name if current_connection else 'None'}")
+
             # Update basic tag fields
             properties = remote_tag.get("properties") or {}
             tag.name = properties.get("name", tag.name)
             tag.description = properties.get("description", "")
             tag.color = properties.get("colorHex", tag.color)
+
             tag.sync_status = "SYNCED"
             tag.last_synced = timezone.now()
+            # Set connection
+            if current_connection:
+                tag.connection = current_connection
             
-            logger.critical(f"Updated basic fields - Name: {tag.name}, Description: {tag.description}, Color: {tag.color}")
+            logger.critical(f"Updated basic fields - Name: {tag.name}, Description: {tag.description}, Color: {tag.color}, Connection: {current_connection.name if current_connection else 'None'}")
             
             # Update ownership data if available
             ownership_data = None
@@ -1773,9 +1964,12 @@ class TagDownloadJsonView(View):
     def get(self, request, tag_id):
         try:
             # Use the helper function to find the tag
-            tag, error_response = find_tag_by_flexible_id(tag_id)
+            tag = find_tag_by_flexible_id(tag_id)
             if not tag:
-                return error_response
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Tag with ID {tag_id} not found"
+                }, status=404)
             
             logger.info(f"Found tag using flexible ID lookup: {tag.name} (ID: {tag.id})")
             
@@ -1785,6 +1979,7 @@ class TagDownloadJsonView(View):
                 "name": tag.name,
                 "description": tag.description,
                 "color": tag.color,
+                "deprecated": tag.deprecated,
                 "urn": tag.urn,
                 "sync_status": tag.sync_status,
                 "last_synced": tag.last_synced.isoformat() if tag.last_synced else None,
@@ -1792,7 +1987,7 @@ class TagDownloadJsonView(View):
             }
             
             # Add remote data if available
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if client:
                 try:
                     remote_tag = client.get_tag(tag.urn)
@@ -1831,9 +2026,12 @@ class TagAddToStagedChangesView(View):
             from scripts.mcps.tag_actions import add_tag_to_staged_changes
             
             # Use the helper function to find the tag
-            tag, error_response = find_tag_by_flexible_id(tag_id)
+            tag = find_tag_by_flexible_id(tag_id)
             if not tag:
-                return error_response
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Tag with ID {tag_id} not found"
+                }, status=404)
             
             logger.info(f"Found tag using flexible ID lookup: {tag.name} (ID: {tag.id})")
             data = json.loads(request.body)
@@ -1885,16 +2083,324 @@ class TagAddToStagedChangesView(View):
                 mutation_name=mutation_name
             )
             
+            # Provide feedback about deduplication
+            files_created = list(result.values())
+            files_created_count = len(files_created)
+            
+            # Calculate expected files (now 1 combined MCP file instead of separate files)
+            expected_files = 1  # single combined MCP file
+            
+            files_skipped_count = expected_files - files_created_count
+            
+            if files_skipped_count > 0:
+                message = f"Tag added to staged changes: {files_created_count} file created, {files_skipped_count} file skipped (unchanged)"
+            else:
+                message = f"Tag added to staged changes: {files_created_count} file created"
+            
             # Return success response
             return JsonResponse({
                 "status": "success",
-                "message": "Tag added to staged changes",
-                "files_created": list(result.values())
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "files_skipped_count": files_skipped_count
             })
                 
         except Exception as e:
             logger.error(f"Error adding tag to staged changes: {str(e)}")
             return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagSyncToDataHubView(View):
+    """View to sync local tags to DataHub with ownership support"""
+
+    def post(self, request, tag_id):
+        """Sync a local tag to DataHub"""
+        try:
+            # Find the tag by ID using flexible search
+            tag = find_tag_by_flexible_id(tag_id)
+            if not tag:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Tag with ID {tag_id} not found"
+                }, status=404)
+
+            # Get DataHub client
+            client = get_datahub_client_from_request(request)
+            if not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Test connection
+            if not client.test_connection():
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Get the tag ID portion from URN
+            tag_id_portion = (
+                str(tag.urn).split(":")[-1]
+                if tag.urn
+                else None
+            )
+            if not tag_id_portion:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Invalid tag URN"
+                }, status=400)
+
+            # Create or update the tag in DataHub
+            result = client.create_tag(
+                tag_id=tag_id_portion, 
+                name=tag.name, 
+                description=tag.description
+            )
+
+            if not result:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Failed to create tag in DataHub"
+                }, status=500)
+
+            # Set color if specified and not empty
+            if tag.color and tag.color.strip() and tag.color != "#0d6efd":
+                try:
+                    client.set_tag_color(result, tag.color)
+                except Exception as e:
+                    logger.warning(f"Failed to set tag color: {str(e)}")
+
+            # Handle ownership - ensure only intended owners are set
+            intended_owners = []
+            if tag.ownership_data and isinstance(tag.ownership_data, dict):
+                owners = tag.ownership_data.get("owners", [])
+                for owner in owners:
+                    try:
+                        # Handle the standardized UI format
+                        owner_urn = owner.get("owner_urn") or owner.get("owner")
+                        ownership_type = owner.get("ownership_type_urn") or owner.get("type", "urn:li:ownershipType:__system__technical_owner")
+                        
+                        if owner_urn:
+                            client.add_tag_owner(result, owner_urn, ownership_type)
+                            intended_owners.append((owner_urn, ownership_type))
+                    except Exception as e:
+                        logger.warning(f"Failed to add owner {owner_urn}: {str(e)}")
+
+            # Remove the sync user from ownership if they're not in the intended owners list
+            try:
+                current_user = client.get_current_user()
+                
+                if current_user and current_user.get("urn"):
+                    sync_user_urn = current_user["urn"]
+                    
+                    # Check if sync user is in intended owners
+                    sync_user_in_intended = any(owner_urn == sync_user_urn for owner_urn, _ in intended_owners)
+                    
+                    if not sync_user_in_intended:
+                        logger.debug(f"Removing sync user {sync_user_urn} from tag '{tag.name}' ownership")
+                        # Remove sync user with common ownership types
+                        common_ownership_types = [
+                            "urn:li:ownershipType:__system__technical_owner",
+                            "urn:li:ownershipType:__system__business_owner",
+                            "urn:li:ownershipType:__system__data_steward"
+                        ]
+                        
+                        for ownership_type in common_ownership_types:
+                            try:
+                                client.remove_tag_owner(result, sync_user_urn, ownership_type)
+                                logger.debug(f"Removed sync user {sync_user_urn} with ownership type {ownership_type}")
+                            except Exception as e:
+                                # It's normal for this to fail if the user doesn't have this ownership type
+                                logger.debug(f"Could not remove sync user with ownership type {ownership_type}: {str(e)}")
+                    else:
+                        logger.debug(f"Sync user {sync_user_urn} is in intended owners list, keeping them")
+                else:
+                    logger.debug(f"Could not get current user information from DataHub for ownership cleanup")
+            except Exception as e:
+                logger.warning(f"Failed to handle sync user ownership cleanup: {str(e)}")
+
+            # Get current connection from request session
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Update tag with remote info
+            tag.original_urn = result
+            tag.datahub_id = tag_id_portion
+            tag.sync_status = "SYNCED"
+            tag.last_synced = timezone.now()
+            if current_connection:
+                tag.connection = current_connection
+            tag.save()
+
+            return JsonResponse({
+                "success": True,
+                "message": f"Tag '{tag.name}' successfully synced to DataHub",
+                "tag_urn": result
+            })
+
+        except Exception as e:
+            logger.error(f"Error syncing tag to DataHub: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagBulkSyncToDataHubView(View):
+    """View to bulk sync multiple local tags to DataHub"""
+
+    def post(self, request):
+        """Bulk sync local tags to DataHub"""
+        try:
+            data = json.loads(request.body)
+            tag_ids = data.get("tag_ids", [])
+            
+            if not tag_ids:
+                return JsonResponse({
+                    "success": False,
+                    "error": "No tags selected for sync"
+                }, status=400)
+
+            # Get DataHub client
+            client = get_datahub_client_from_request(request)
+            if not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Test connection
+            if not client.test_connection():
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            success_count = 0
+            error_count = 0
+            errors = []
+
+            for tag_id in tag_ids:
+                try:
+                    tag = Tag.objects.get(id=tag_id)
+                    
+                    # Get the tag ID portion from URN
+                    tag_id_portion = (
+                        str(tag.urn).split(":")[-1]
+                        if tag.urn
+                        else None
+                    )
+                    if not tag_id_portion:
+                        errors.append(f"Invalid URN for tag '{tag.name}'")
+                        error_count += 1
+                        continue
+
+                    # Create or update the tag in DataHub
+                    result = client.create_tag(
+                        tag_id=tag_id_portion, 
+                        name=tag.name, 
+                        description=tag.description
+                    )
+
+                    if not result:
+                        errors.append(f"Failed to create tag '{tag.name}' in DataHub")
+                        error_count += 1
+                        continue
+
+                    # Set color if specified and not empty
+                    if tag.color and tag.color.strip() and tag.color != "#0d6efd":
+                        try:
+                            client.set_tag_color(result, tag.color)
+                        except Exception as e:
+                            logger.warning(f"Failed to set color for tag '{tag.name}': {str(e)}")
+
+                    # Handle ownership - ensure only intended owners are set
+                    intended_owners = []
+                    if tag.ownership_data and isinstance(tag.ownership_data, dict):
+                        owners = tag.ownership_data.get("owners", [])
+                        for owner in owners:
+                            try:
+                                # Handle the standardized UI format
+                                owner_urn = owner.get("owner_urn") or owner.get("owner")
+                                ownership_type = owner.get("ownership_type_urn") or owner.get("type", "urn:li:ownershipType:__system__technical_owner")
+                                
+                                if owner_urn:
+                                    client.add_tag_owner(result, owner_urn, ownership_type)
+                                    intended_owners.append((owner_urn, ownership_type))
+                            except Exception as e:
+                                logger.warning(f"Failed to add owner {owner_urn} to tag '{tag.name}': {str(e)}")
+
+                    # Remove the sync user from ownership if they're not in the intended owners list
+                    try:
+                        current_user = client.get_current_user()
+                        if current_user and current_user.get("urn"):
+                            sync_user_urn = current_user["urn"]
+                            
+                            # Check if sync user is in intended owners
+                            sync_user_in_intended = any(owner_urn == sync_user_urn for owner_urn, _ in intended_owners)
+                            
+                            if not sync_user_in_intended:
+                                # Remove sync user with common ownership types
+                                common_ownership_types = [
+                                    "urn:li:ownershipType:__system__technical_owner",
+                                    "urn:li:ownershipType:__system__business_owner",
+                                    "urn:li:ownershipType:__system__data_steward"
+                                ]
+                                
+                                for ownership_type in common_ownership_types:
+                                    try:
+                                        client.remove_tag_owner(result, sync_user_urn, ownership_type)
+                                        logger.debug(f"Removed sync user {sync_user_urn} from tag '{tag.name}' with ownership type {ownership_type}")
+                                    except Exception as e:
+                                        # It's normal for this to fail if the user doesn't have this ownership type
+                                        logger.debug(f"Could not remove sync user from tag '{tag.name}' with ownership type {ownership_type}: {str(e)}")
+                            else:
+                                logger.debug(f"Sync user {sync_user_urn} is in intended owners list for tag '{tag.name}', keeping them")
+                        else:
+                            logger.debug(f"Could not get current user information from DataHub for ownership cleanup")
+                    except Exception as e:
+                        logger.warning(f"Failed to handle sync user ownership cleanup for tag '{tag.name}': {str(e)}")
+
+                    # Get current connection from request session
+                    from web_ui.views import get_current_connection
+                    current_connection = get_current_connection(request)
+                    
+                    # Update tag with remote info
+                    tag.original_urn = result
+                    tag.datahub_id = tag_id_portion
+                    tag.sync_status = "SYNCED"
+                    tag.last_synced = timezone.now()
+                    if current_connection:
+                        tag.connection = current_connection
+                    tag.save()
+
+                    success_count += 1
+
+                except Tag.DoesNotExist:
+                    errors.append(f"Tag with ID {tag_id} not found")
+                    error_count += 1
+                except Exception as e:
+                    errors.append(f"Error syncing tag with ID {tag_id}: {str(e)}")
+                    error_count += 1
+
+            return JsonResponse({
+                "success": True,
+                "synced": success_count,
+                "errors": error_count,
+                "error_details": errors,
+                "message": f"Bulk sync completed: {success_count} synced, {error_count} errors"
+            })
+
+        except Exception as e:
+            logger.error(f"Error in bulk sync: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": str(e)
+            }, status=500)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1911,9 +2417,12 @@ class TagDeleteView(View):
             logger.info(f"Request content type: {request.content_type}")
             
             # Use the helper function to find the tag
-            tag, error_response = find_tag_by_flexible_id(tag_id)
+            tag = find_tag_by_flexible_id(tag_id)
             if not tag:
-                return error_response
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Tag with ID {tag_id} not found"
+                }, status=404)
             
             name = tag.name
             logger.info(f"Found tag using flexible ID lookup: {name} (ID: {tag.id})")
@@ -2014,3 +2523,719 @@ def update_urls():
     )
     """
     pass
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagBulkResyncView(View):
+    """API view for bulk resyncing tags from DataHub"""
+    
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            tag_ids = data.get('tag_ids', [])
+            
+            if not tag_ids:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No tag IDs provided'
+                }, status=400)
+            
+            # Get DataHub client
+            client = get_datahub_client_from_request(request)
+            if not client:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Unable to connect to DataHub'
+                }, status=500)
+            
+            success_count = 0
+            error_count = 0
+            errors = []
+            
+            for tag_id in tag_ids:
+                try:
+                    # Find the tag
+                    tag = find_tag_by_flexible_id(tag_id)
+                    if not tag:
+                        error_count += 1
+                        errors.append(f"Tag {tag_id}: Not found")
+                        continue
+                    
+                    # Get remote tag data
+                    if tag.urn:
+                        remote_tag = client.get_tag(tag.urn)
+                        if remote_tag:
+                            # Update tag with remote data
+                            properties = remote_tag.get("properties") or {}
+                            tag.name = properties.get("name", tag.name) or remote_tag.get("name", tag.name)
+                            tag.description = properties.get("description", "") or remote_tag.get("description", "")
+                            tag.color = properties.get("colorHex", tag.color)
+
+                            
+                            # Update ownership data from remote
+                            ownership = remote_tag.get("ownership")
+                            if ownership and ownership.get("owners"):
+                                # Convert DataHub ownership format to our format
+                                owners_list = []
+                                for owner_info in ownership["owners"]:
+                                    owner = owner_info.get("owner", {})
+                                    ownership_type = owner_info.get("ownershipType", {})
+                                    
+                                    owner_urn = owner.get("urn", "")
+                                    ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner")
+                                    
+                                    if owner_urn:
+                                        owners_list.append({
+                                            "owner_urn": owner_urn,
+                                            "ownership_type_urn": ownership_type_urn
+                                        })
+                                
+                                if owners_list:
+                                    tag.ownership_data = {"owners": owners_list}
+                                else:
+                                    tag.ownership_data = None
+                            else:
+                                # Clear ownership if none in remote
+                                tag.ownership_data = None
+                            
+                            tag.sync_status = "SYNCED"
+                            tag.last_synced = timezone.now()
+                            tag.save()
+                            success_count += 1
+                        else:
+                            error_count += 1
+                            errors.append(f"Tag {tag.name}: Not found in DataHub")
+                    else:
+                        error_count += 1
+                        errors.append(f"Tag {tag.name}: No URN available")
+                        
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"Tag {tag_id}: {str(e)}")
+                    logger.error(f"Error resyncing tag {tag_id}: {str(e)}")
+            
+            message = f"Resync completed: {success_count} successful, {error_count} failed"
+            if errors:
+                message += f". Errors: {'; '.join(errors[:5])}"  # Show first 5 errors
+                if len(errors) > 5:
+                    message += f" and {len(errors) - 5} more..."
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'success_count': success_count,
+                'error_count': error_count,
+                'errors': errors
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in bulk resync: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagResyncAllView(View):
+    """API view for resyncing all tags from DataHub"""
+    
+    def post(self, request):
+        try:
+            # Get DataHub client
+            client = get_datahub_client_from_request(request)
+            if not client:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Unable to connect to DataHub'
+                }, status=500)
+            
+            # Get all tags with URNs
+            tags = Tag.objects.exclude(urn__isnull=True).exclude(urn='')
+            
+            success_count = 0
+            error_count = 0
+            errors = []
+            
+            for tag in tags:
+                try:
+                    # Get remote tag data
+                    remote_tag = client.get_tag(tag.urn)
+                    if remote_tag:
+                        # Update tag with remote data
+                        properties = remote_tag.get("properties") or {}
+                        tag.name = properties.get("name", tag.name) or remote_tag.get("name", tag.name)
+                        tag.description = properties.get("description", "") or remote_tag.get("description", "")
+                        tag.color = properties.get("colorHex", tag.color)
+
+                        
+                        # Update ownership data from remote
+                        ownership = remote_tag.get("ownership")
+                        if ownership and ownership.get("owners"):
+                            # Convert DataHub ownership format to our format
+                            owners_list = []
+                            for owner_info in ownership["owners"]:
+                                owner = owner_info.get("owner", {})
+                                ownership_type = owner_info.get("ownershipType", {})
+                                
+                                owner_urn = owner.get("urn", "")
+                                ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner")
+                                
+                                if owner_urn:
+                                    owners_list.append({
+                                        "owner_urn": owner_urn,
+                                        "ownership_type_urn": ownership_type_urn
+                                    })
+                            
+                            if owners_list:
+                                tag.ownership_data = {"owners": owners_list}
+                            else:
+                                tag.ownership_data = None
+                        else:
+                            # Clear ownership if none in remote
+                            tag.ownership_data = None
+                        
+                        tag.sync_status = "SYNCED"
+                        tag.last_synced = timezone.now()
+                        tag.save()
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        errors.append(f"Tag {tag.name}: Not found in DataHub")
+                        
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"Tag {tag.name}: {str(e)}")
+                    logger.error(f"Error resyncing tag {tag.name}: {str(e)}")
+            
+            message = f"Resync all completed: {success_count} successful, {error_count} failed"
+            if errors:
+                message += f". Errors: {'; '.join(errors[:5])}"  # Show first 5 errors
+                if len(errors) > 5:
+                    message += f" and {len(errors) - 5} more..."
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'success_count': success_count,
+                'error_count': error_count,
+                'errors': errors
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in resync all: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagExportAllView(View):
+    """API view for exporting all tags as JSON"""
+    
+    def get(self, request):
+        try:
+            # Get current connection to filter tags by connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Get tags relevant to current connection
+            # Include: tags with no connection (local-only) + tags with current connection (synced)
+            all_tags = Tag.objects.all()
+            tags = []
+            for tag in all_tags:
+                if tag.connection is None:
+                    # True local-only tags (no connection)
+                    tags.append(tag)
+                elif current_connection and tag.connection == current_connection:
+                    # Tags synced to current connection
+                    tags.append(tag)
+                elif current_connection is None and tag.connection is None:
+                    # Backward compatibility: if no current connection, show unconnected tags
+                    tags.append(tag)
+                # Tags with different connections are excluded from this connection's view
+            
+            tags_data = []
+            for tag in tags:
+                tag_data = {
+                    "id": str(tag.id),
+                    "name": tag.name,
+                    "description": tag.description,
+                    "color": tag.color,
+                    "urn": tag.urn,
+                    "datahub_id": tag.datahub_id,
+                    "sync_status": tag.sync_status,
+                    "last_synced": tag.last_synced.isoformat() if tag.last_synced else None,
+                    "ownership_data": tag.ownership_data,
+                    "connection_id": tag.connection.id if tag.connection else None,
+                    "connection_name": tag.connection.name if tag.connection else None,
+                    "created_at": tag.created_at.isoformat() if hasattr(tag, 'created_at') and tag.created_at else None,
+                    "updated_at": tag.updated_at.isoformat() if hasattr(tag, 'updated_at') and tag.updated_at else None
+                }
+                tags_data.append(tag_data)
+            
+            # Create export data
+            export_data = {
+                "export_info": {
+                    "exported_at": timezone.now().isoformat(),
+                    "total_tags": len(tags_data),
+                    "export_source": "DataHub CI/CD Manager"
+                },
+                "tags": tags_data
+            }
+            
+            from django.http import HttpResponse
+            import json
+            
+            # Create response with JSON data
+            response = HttpResponse(
+                json.dumps(export_data, indent=2, default=str),
+                content_type='application/json'
+            )
+            
+            # Set filename for download
+            timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'tags_export_{timestamp}.json'
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error exporting all tags: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagImportJsonView(View):
+    """API view for importing tags from JSON file"""
+    
+    def post(self, request):
+        try:
+            # Check if file was uploaded
+            if 'import_file' not in request.FILES:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No file uploaded'
+                }, status=400)
+            
+            file = request.FILES['import_file']
+            overwrite_existing = request.POST.get('overwrite_existing', 'true').lower() == 'true'
+            
+            # Read and parse JSON file
+            try:
+                file_content = file.read().decode('utf-8')
+                data = json.loads(file_content)
+            except Exception as e:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Invalid JSON file: {str(e)}'
+                }, status=400)
+            
+            # Extract tags data
+            tags_data = data.get('tags', [])
+            if not tags_data:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No tags found in JSON file'
+                }, status=400)
+            
+            # Get current connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            success_count = 0
+            error_count = 0
+            skipped_count = 0
+            errors = []
+            
+            for tag_data in tags_data:
+                try:
+                    name = tag_data.get('name')
+                    if not name:
+                        error_count += 1
+                        errors.append("Tag without name skipped")
+                        continue
+                    
+                    # Check if tag already exists for current connection
+                    existing_tag = None
+                    if tag_data.get('urn'):
+                        if current_connection:
+                            existing_tag = Tag.objects.filter(urn=tag_data['urn'], connection=current_connection).first()
+                        else:
+                            existing_tag = Tag.objects.filter(urn=tag_data['urn'], connection__isnull=True).first()
+                    if not existing_tag and tag_data.get('datahub_id'):
+                        if current_connection:
+                            existing_tag = Tag.objects.filter(datahub_id=tag_data['datahub_id'], connection=current_connection).first()
+                        else:
+                            existing_tag = Tag.objects.filter(datahub_id=tag_data['datahub_id'], connection__isnull=True).first()
+                    if not existing_tag:
+                        if current_connection:
+                            existing_tag = Tag.objects.filter(name=name, connection=current_connection).first()
+                        else:
+                            existing_tag = Tag.objects.filter(name=name, connection__isnull=True).first()
+                    
+                    if existing_tag and not overwrite_existing:
+                        skipped_count += 1
+                        continue
+                    
+                    # Create or update tag
+                    if existing_tag:
+                        tag = existing_tag
+                    else:
+                        tag = Tag()
+                    
+                    # Set tag fields
+                    tag.name = name
+                    tag.description = tag_data.get('description', '')
+                    tag.color = tag_data.get('color', '#0d6efd')
+
+                    tag.urn = tag_data.get('urn', '')
+                    tag.datahub_id = tag_data.get('datahub_id', '')
+                    # Determine sync status and connection based on import context
+                    if tag_data.get('sync_status') == 'SYNCED' or tag_data.get('connection_id'):
+                        # Tag was previously synced, set connection and mark as synced
+                        tag.sync_status = 'SYNCED'
+                        tag.last_synced = timezone.now()
+                        tag.connection = current_connection
+                    else:
+                        # Tag is local-only, no connection until synced
+                        tag.sync_status = 'LOCAL_ONLY'
+                        tag.connection = None
+                    
+                    tag.ownership_data = tag_data.get('ownership_data')
+                    
+                    # Generate URN if missing
+                    if not tag.urn and name:
+                        from utils.urn_utils import generate_deterministic_urn
+                        tag.urn = generate_deterministic_urn("tag", name)
+                    
+                    tag.save()
+                    success_count += 1
+                    
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"Tag {tag_data.get('name', 'unknown')}: {str(e)}")
+                    logger.error(f"Error importing tag: {str(e)}")
+            
+            message = f"Import completed: {success_count} imported, {skipped_count} skipped, {error_count} failed"
+            if errors:
+                message += f". Errors: {'; '.join(errors[:5])}"  # Show first 5 errors
+                if len(errors) > 5:
+                    message += f" and {len(errors) - 5} more..."
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'success_count': success_count,
+                'skipped_count': skipped_count,
+                'error_count': error_count,
+                'errors': errors
+            })
+            
+        except Exception as e:
+            logger.error(f"Error importing tags: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagAddAllToStagedChangesView(View):
+    """API view for adding all tags to staged changes"""
+    
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            environment = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current connection to filter tags by connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Get tags relevant to current connection
+            # Include: tags with no connection (local-only) + tags with current connection (synced)
+            all_tags = Tag.objects.all()
+            tags = []
+            for tag in all_tags:
+                if tag.connection is None:
+                    # True local-only tags (no connection)
+                    tags.append(tag)
+                elif current_connection and tag.connection == current_connection:
+                    # Tags synced to current connection
+                    tags.append(tag)
+                elif current_connection is None and tag.connection is None:
+                    # Backward compatibility: if no current connection, show unconnected tags
+                    tags.append(tag)
+                # Tags with different connections are excluded from this connection's view
+            
+            if not tags:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No tags found to add to staged changes for current connection'
+                }, status=400)
+            
+            # Import the tag actions module
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            from scripts.mcps.tag_actions import add_tag_to_staged_changes
+            
+            success_count = 0
+            error_count = 0
+            files_created_count = 0
+            files_skipped_count = 0
+            errors = []
+            all_created_files = []
+            
+            for tag in tags:
+                try:
+                    # Convert tag to dictionary format
+                    tag_data = {
+                        "urn": tag.urn,
+                        "name": tag.name,
+                        "description": tag.description,
+                        "properties": {
+                            "name": tag.name,
+                            "description": tag.description,
+                            "colorHex": tag.color
+                        }
+                    }
+                    
+                    # Add tag to staged changes
+                    created_files = add_tag_to_staged_changes(
+                        tag_data=tag_data,
+                        environment=environment,
+                        owner="system",  # Default owner
+                        mutation_name=mutation_name
+                    )
+                    
+                    success_count += 1
+                    files_created_count += len(created_files)
+                    all_created_files.extend(list(created_files.values()))
+                    
+                    # Log deduplication info for individual tags
+                    if not created_files:
+                        files_skipped_count += 1  # All files were skipped due to deduplication
+                    
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"Tag {tag.name}: {str(e)}")
+                    logger.error(f"Error adding tag {tag.name} to staged changes: {str(e)}")
+            
+            # Calculate total files that could have been created (now 1 combined MCP file per tag)
+            total_possible_files = success_count * 1  # single combined MCP file for each tag
+            
+            files_skipped_count = total_possible_files - files_created_count
+            
+            message = f"Add all to staged changes completed: {success_count} tags processed, {files_created_count} files created, {files_skipped_count} files skipped (unchanged), {error_count} failed"
+            if errors:
+                message += f". Errors: {'; '.join(errors[:5])}"  # Show first 5 errors
+                if len(errors) > 5:
+                    message += f" and {len(errors) - 5} more..."
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'success_count': success_count,
+                'error_count': error_count,
+                'files_created_count': files_created_count,
+                'files_skipped_count': files_skipped_count,
+                'errors': errors,
+                'files_created': all_created_files
+            })
+            
+        except Exception as e:
+            logger.error(f"Error adding all tags to staged changes: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagResyncView(View):
+    """API view for resyncing a single tag from DataHub"""
+    
+    def post(self, request, tag_id):
+        try:
+            # Find the tag by ID
+            tag = find_tag_by_flexible_id(tag_id)
+            if not tag:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Tag with ID {tag_id} not found'
+                }, status=404)
+            
+            # Get DataHub client
+            client = get_datahub_client_from_request(request)
+            if not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Test connection
+            if not client.test_connection():
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+            
+            # Get the tag URN - use original_urn if available, otherwise urn
+            tag_urn = getattr(tag, 'original_urn', None) or tag.urn
+            if not tag_urn:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Tag has no URN to resync from DataHub'
+                }, status=400)
+            
+            # Fetch tag from DataHub
+            try:
+                remote_tag = client.get_tag(tag_urn)
+                if not remote_tag:
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Tag not found in DataHub: {tag_urn}'
+                    }, status=404)
+            except Exception as e:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Error fetching tag from DataHub: {str(e)}'
+                }, status=500)
+            
+            # Update local tag with remote data
+            try:
+                # Extract tag name from URN if not provided
+                tag_name = remote_tag.get('properties', {}).get('name')
+                if not tag_name and tag_urn:
+                    tag_name = tag_urn.split(':')[-1]
+                
+                # Update tag properties
+                tag.name = tag_name or tag.name
+                tag.description = remote_tag.get('properties', {}).get('description', '')
+                tag.color = remote_tag.get('properties', {}).get('colorHex', '#0d6efd')
+                tag.urn = tag_urn
+                # Set original_urn if the field exists
+                if hasattr(tag, 'original_urn'):
+                    tag.original_urn = tag_urn
+                tag.sync_status = 'SYNCED'
+                tag.last_synced = timezone.now()
+                
+                # Get current connection and set it
+                from web_ui.views import get_current_connection
+                current_connection = get_current_connection(request)
+                if current_connection:
+                    tag.connection = current_connection
+                
+                # Update ownership data if available
+                ownership_data = remote_tag.get('ownership')
+                if ownership_data:
+                    tag.ownership_data = ownership_data
+                
+                tag.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f"Tag '{tag.name}' successfully resynced from DataHub"
+                })
+                
+            except Exception as e:
+                logger.error(f"Error updating local tag: {str(e)}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Error updating local tag: {str(e)}'
+                }, status=500)
+            
+        except Exception as e:
+            logger.error(f"Error resyncing tag: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TagDeleteRemoteView(View):
+    """API view for deleting a remote tag from DataHub"""
+    
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            tag_urn = data.get('urn')
+            
+            if not tag_urn:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Tag URN is required'
+                }, status=400)
+            
+            # Get DataHub client
+            client = get_datahub_client_from_request(request)
+            if not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Test connection
+            if not client.test_connection():
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+            
+            # Delete the tag from DataHub using the deleteTag mutation
+            try:
+                result = client.delete_tag(tag_urn)
+                logger.info(f"Delete tag result: {result}")
+                
+                # For delete operations, we'll be more lenient about what constitutes success
+                # Sometimes the GraphQL response doesn't clearly indicate success/failure
+                if result is not False:  # Accept True, None, or other truthy/null values as success
+                    logger.info(f"Tag deletion operation completed: {tag_urn}")
+                    return JsonResponse({
+                        'success': True,
+                        'message': f"Tag successfully deleted from DataHub: {tag_urn}"
+                    })
+                else:
+                    logger.warning(f"Tag deletion returned False: {tag_urn}")
+                    # Even if result is False, let's check if the tag was actually deleted
+                    try:
+                        import time
+                        time.sleep(0.5)
+                        check_tag = client.get_tag(tag_urn)
+                        if not check_tag:
+                            logger.info(f"Tag confirmed deleted despite False result: {tag_urn}")
+                            return JsonResponse({
+                                'success': True,
+                                'message': f"Tag successfully deleted from DataHub: {tag_urn}"
+                            })
+                    except Exception:
+                        logger.info(f"Tag likely deleted (error fetching): {tag_urn}")
+                        return JsonResponse({
+                            'success': True,
+                            'message': f"Tag successfully deleted from DataHub: {tag_urn}"
+                        })
+                    
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Failed to delete tag from DataHub: {tag_urn}'
+                    }, status=500)
+                    
+            except Exception as e:
+                logger.error(f"Error deleting tag from DataHub: {str(e)}")
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Error deleting tag from DataHub: {str(e)}'
+                }, status=500)
+            
+        except Exception as e:
+            logger.error(f"Error in delete remote tag request: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)

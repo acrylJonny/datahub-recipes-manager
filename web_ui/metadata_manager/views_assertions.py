@@ -21,7 +21,7 @@ sys.path.append(project_root)
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import test_datahub_connection, get_datahub_client
+from utils.datahub_utils import test_datahub_connection, get_datahub_client, get_datahub_client_from_request
 from utils.datahub_rest_client import DataHubRestClient
 from .models import Assertion, AssertionResult, Domain, Environment
 from web_ui.models import Environment as DjangoEnvironment
@@ -58,7 +58,7 @@ class AssertionListView(View):
 
             # Get DataHub connection info (quick test only)
             logger.debug("Testing DataHub connection from AssertionListView")
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             logger.debug(f"DataHub connection test result: {connected}")
             
             # Initialize context with local data only
@@ -201,7 +201,7 @@ class AssertionRunView(View):
             assertion = get_object_or_404(Assertion, id=assertion_id)
             
             # Get DataHub connection
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             if not connected or not client:
                 messages.error(
@@ -410,7 +410,7 @@ class AssertionListView(View):
             assertions = Assertion.objects.all().order_by("-updated_at")
             
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             return render(
                 request,
@@ -484,7 +484,7 @@ class AssertionDetailView(View):
             )[:10]
             
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             return render(
                 request,
@@ -580,7 +580,7 @@ class AssertionRunView(View):
             assertion = get_object_or_404(Assertion, id=assertion_id)
             
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             if not connected or not client:
                 return JsonResponse(
                     {"success": False, "message": "Not connected to DataHub"}
@@ -774,7 +774,7 @@ def get_datahub_assertions(request):
         )
 
         # Get client using standard configuration
-        client = get_datahub_client()
+        client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse(
                 {"success": False, "error": "Not connected to DataHub"}, status=400
@@ -829,7 +829,7 @@ def get_remote_assertions_data(request):
         logger.info("Loading enhanced remote assertions data via AJAX")
 
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1110,7 +1110,7 @@ def run_remote_assertion(request):
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1154,7 +1154,7 @@ def sync_assertion_to_local(request):
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1371,7 +1371,7 @@ def push_assertion_to_datahub(request, assertion_id):
         assertion = get_object_or_404(Assertion, id=assertion_id)
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1436,7 +1436,7 @@ def resync_assertion(request, assertion_id):
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1625,7 +1625,7 @@ def create_datahub_assertion(request):
             })
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({
                 "success": False,

@@ -391,9 +391,29 @@
                         <i class="fas fa-plus me-1"></i> Create Tag
                     </a>
                     
-                    <a href="{% url 'metadata_manager:tag_import_export' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-file-export me-1"></i> Import/Export
-                    </a>
+                    <!-- Global Actions Dropdown -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sync-alt me-1"></i> Bulk Actions
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAll()">
+                                <i class="fas fa-sync-alt me-2"></i> Resync All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAll()">
+                                <i class="fas fa-file-export me-2"></i> Export All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllToStagedChanges()">
+                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportModal()">
+                                <i class="fas fa-file-import me-2"></i> Import from JSON
+                            </a></li>
+                        </ul>
+                    </div>
+                    
+
                     <button type="button" class="btn btn-outline-info" id="refreshTags">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
@@ -469,16 +489,10 @@
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Filters</strong>
                                 </div>
-                                <div class="col-md-5 border-end">
+                                <div class="col-md-10">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="owned" data-category="content">
                                         <div class="h6 mb-0" id="owned-tags">0</div>
                                         <div class="text-muted">With Owners</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-5">
-                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="deprecated" data-category="content">
-                                        <div class="h6 mb-0" id="deprecated-tags">0</div>
-                                        <div class="text-muted">Deprecated</div>
                                     </div>
                                 </div>
                             </div>
@@ -579,8 +593,8 @@
                                         <strong><span id="local-selected-count">0</span></strong> tag(s) selected
                                     </div>
                                     <div class="btn-group" role="group" aria-label="Bulk actions">
-                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTags('local')">
-                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkSyncToDataHub('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Sync to DataHub
                                         </button>
                                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
                                             <i class="fas fa-file-download me-1"></i> Bulk Download
@@ -678,10 +692,7 @@
                                         </div>
                                     </dd>
                                     
-                                    <dt class="col-sm-4">Deprecated:</dt>
-                                    <dd class="col-sm-8">
-                                        <span id="modal-tag-deprecated" class="badge">-</span>
-                                    </dd>
+
                                     
                                     <dt class="col-sm-4">URN:</dt>
                                     <dd class="col-sm-8">
@@ -746,44 +757,88 @@
                 <h5 class="modal-title" id="createTagModalLabel">Create New Tag</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="post">
+            <form method="post" id="tag-form">
                 {% csrf_token %}
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="tagName" class="form-label">Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="tagName" name="name" required>
+                        <label for="tag-name" class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="tag-name" name="name" required>
                         <div class="form-text">Tag name should be unique and descriptive</div>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="tagDescription" class="form-label">Description</label>
-                        <textarea class="form-control" id="tagDescription" name="description" rows="3"></textarea>
+                        <label for="tag-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="tag-description" name="description" rows="3"></textarea>
                         <div class="form-text">Optional description for the tag</div>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="tagColor" class="form-label">Color</label>
-                        <input type="color" class="form-control form-control-color" id="tagColor" name="color" value="#0d6efd">
+                        <label for="tag-color" class="form-label">Color</label>
+                        <input type="color" class="form-control form-control-color" id="tag-color" name="color" value="#0d6efd">
                         <div class="form-text">Color for the tag (optional)</div>
                     </div>
                     
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Ownership</label>
+
+                    
+                    <div class="mb-3" id="ownership-section">
+                        <label class="form-label fw-bold" id="ownership-label">Ownership</label>
                         <div id="ownership-sections-container">
                             <!-- Ownership sections will be added here -->
                         </div>
-                        <button type="button" class="btn btn-outline-primary" id="add-ownership-section">
-                            <i class="fas fa-plus me-2"></i>Add Ownership Section
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Owner
                         </button>
-                        <div class="form-text mt-2">
+                        <div class="form-text mt-2" id="ownership-help-text">
                             <i class="fas fa-info-circle me-1"></i>
-                            Each section defines one ownership type with multiple owners
+                            You can add multiple ownership sections with different ownership types
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Create Tag</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Import JSON Modal -->
+<div class="modal fade" id="importJsonModal" tabindex="-1" aria-labelledby="importJsonModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importJsonModalLabel">Import Tags from JSON</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="import-json-form" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="import-file" class="form-label">JSON File <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="import-file" name="import_file" accept=".json" required>
+                        <div class="form-text">Select a JSON file containing tag data to import</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="overwrite-existing" name="overwrite_existing" checked>
+                            <label class="form-check-label" for="overwrite-existing">
+                                Overwrite existing tags
+                            </label>
+                            <div class="form-text">If unchecked, existing tags will be skipped</div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> Imported tags will be associated with the current connection and marked as synced.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-file-import me-1"></i> Import Tags
+                    </button>
                 </div>
             </form>
         </div>

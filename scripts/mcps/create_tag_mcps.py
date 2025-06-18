@@ -112,6 +112,7 @@ def create_tag_properties_mcp(
     tag_name: Optional[str] = None,
     description: Optional[str] = None,
     color_hex: Optional[str] = None,
+
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -124,6 +125,7 @@ def create_tag_properties_mcp(
         tag_name: Display name for the tag (optional, defaults to tag_id)
         description: Description of the tag (optional)
         color_hex: Hex color code for the tag (optional)
+
         environment: Environment name (deprecated, use mutation_name instead)
         mutation_name: Mutation name for deterministic URN (optional)
 
@@ -164,6 +166,7 @@ def create_tag_properties_mcp(
 
     # Convert to dictionary for JSON serialization
     return mcp.to_obj()
+
 
 
 def create_tag_ownership_mcp(
@@ -220,25 +223,113 @@ def create_tag_ownership_mcp(
     return mcp.to_obj()
 
 
-def save_mcp_to_file(mcp: Dict[str, Any], output_path: str) -> None:
+def save_mcp_to_file(mcp: Dict[str, Any], output_path: str, enable_dedup: bool = True) -> bool:
     """
-    Save an MCP dictionary to a JSON file
+    Save an MCP dictionary to a JSON file with optional deduplication
 
     Args:
         mcp: The MCP dictionary
         output_path: File path to save to
+        enable_dedup: Whether to enable deduplication (default: True)
+
+    Returns:
+        True if file was saved, False if skipped due to deduplication
     """
     try:
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Check for deduplication if enabled
+        if enable_dedup and os.path.exists(output_path):
+            try:
+                with open(output_path, 'r') as f:
+                    existing_mcp = json.load(f)
+                
+                # Compare the MCPs for equality
+                if _mcps_are_equal(existing_mcp, mcp):
+                    logger.info(f"MCP file unchanged, skipping: {output_path}")
+                    return False
+                else:
+                    logger.info(f"MCP file changed, updating: {output_path}")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not read existing MCP file for comparison: {e}")
+                # Continue with saving if we can't read the existing file
         
         # Write to file
         with open(output_path, 'w') as f:
             json.dump(mcp, f, indent=2, default=str)
             
         logger.info(f"Saved MCP to: {output_path}")
+        return True
     except Exception as e:
         logger.error(f"Failed to save MCP: {str(e)}")
+        raise
+
+
+def _mcps_are_equal(mcp1: Dict[str, Any], mcp2: Dict[str, Any]) -> bool:
+    """
+    Compare two MCP dictionaries for equality, ignoring timestamp fields
+    
+    Args:
+        mcp1: First MCP dictionary
+        mcp2: Second MCP dictionary
+    
+    Returns:
+        True if MCPs are functionally equivalent, False otherwise
+    """
+    try:
+        # Create deep copies to avoid modifying originals
+        import copy
+        mcp1_copy = copy.deepcopy(mcp1)
+        mcp2_copy = copy.deepcopy(mcp2)
+        
+        # Remove timestamp fields that change on every run
+        _remove_timestamp_fields(mcp1_copy)
+        _remove_timestamp_fields(mcp2_copy)
+        
+        # Compare the sanitized MCPs
+        return mcp1_copy == mcp2_copy
+    except Exception as e:
+        logger.warning(f"Error comparing MCPs: {e}")
+        return False
+
+
+def _remove_timestamp_fields(mcp: Dict[str, Any]) -> None:
+    """
+    Remove timestamp fields from MCP dictionary (modifies in place)
+    
+    Args:
+        mcp: MCP dictionary to modify
+    """
+    try:
+        # Remove common timestamp fields
+        if isinstance(mcp, dict):
+            # Remove auditStamp timestamps
+            if "aspect" in mcp and isinstance(mcp["aspect"], dict):
+                aspect = mcp["aspect"]
+                
+                # Remove timestamps from ownership aspect
+                if "lastModified" in aspect and isinstance(aspect["lastModified"], dict):
+                    if "time" in aspect["lastModified"]:
+                        del aspect["lastModified"]["time"]
+                
+                # Remove timestamps from any other audit stamps
+                for key, value in aspect.items():
+                    if isinstance(value, dict) and "time" in value:
+                        del value["time"]
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, dict) and "time" in item:
+                                del item["time"]
+            
+            # Remove any top-level timestamp fields
+            if "systemMetadata" in mcp and isinstance(mcp["systemMetadata"], dict):
+                if "lastObserved" in mcp["systemMetadata"]:
+                    del mcp["systemMetadata"]["lastObserved"]
+                if "runId" in mcp["systemMetadata"]:
+                    del mcp["systemMetadata"]["runId"]
+    except Exception as e:
+        logger.warning(f"Error removing timestamp fields: {e}")
 
 
 def main():
@@ -283,7 +374,7 @@ def main():
     
     # Save properties MCP
     properties_file = os.path.join(output_dir, f"{safe_tag_id}_properties.json")
-    save_mcp_to_file(properties_mcp, properties_file)
+    properties_saved = save_mcp_to_file(properties_mcp, properties_file)
     
     # Create ownership MCP
     logger.info(f"Creating ownership MCP for tag '{tag_id}'...")
@@ -296,9 +387,27 @@ def main():
     
     # Save ownership MCP
     ownership_file = os.path.join(output_dir, f"{safe_tag_id}_ownership.json")
-    save_mcp_to_file(ownership_mcp, ownership_file)
+    ownership_saved = save_mcp_to_file(ownership_mcp, ownership_file)
     
-    logger.info(f"Successfully created MCP files for tag '{tag_id}'")
+    # Log deduplication results
+    files_created = []
+    files_skipped = []
+    
+    if properties_saved:
+        files_created.append("properties")
+    else:
+        files_skipped.append("properties")
+        
+    if ownership_saved:
+        files_created.append("ownership")
+    else:
+        files_skipped.append("ownership")
+    
+    if files_created:
+        logger.info(f"Created MCP files for tag '{tag_id}': {', '.join(files_created)}")
+    if files_skipped:
+        logger.info(f"Skipped unchanged MCP files for tag '{tag_id}': {', '.join(files_skipped)}")
+    
     logger.info(f"Tag URN: {generate_deterministic_urn('tag', tag_id, environment=args.environment, mutation_name=args.mutation_name)}")
 
 

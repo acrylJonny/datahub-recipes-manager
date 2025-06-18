@@ -111,6 +111,14 @@ urlpatterns = [
     path("refresh-logs/", web_ui_views.refresh_logs, name="refresh_logs"),
     # Settings
     path("settings/", web_ui_views.settings, name="settings"),
+    # DataHub Connections
+    path("connections/", web_ui_views.connections_list, name="connections_list"),
+    path("connections/create/", web_ui_views.connection_create, name="connection_create"),
+    path("connections/<int:connection_id>/edit/", web_ui_views.connection_edit, name="connection_edit"),
+    path("connections/<int:connection_id>/delete/", web_ui_views.connection_delete, name="connection_delete"),
+    path("connections/<int:connection_id>/test/", web_ui_views.connection_test, name="connection_test"),
+    path("connections/<int:connection_id>/set-default/", web_ui_views.connection_set_default, name="connection_set_default"),
+    path("api/switch-connection/", web_ui_views.api_switch_connection, name="api_switch_connection"),
     # Environment Variables Templates
     path(
         "env-vars/templates/",

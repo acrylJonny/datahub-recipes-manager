@@ -18,7 +18,7 @@ project_root = os.path.dirname(
 sys.path.append(project_root)
 
 # Import the deterministic URN utilities
-
+from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.datahub_rest_client import DataHubRestClient
 from .models import Tag, GlossaryNode, GlossaryTerm, Domain, Assertion, Environment, StructuredProperty, SearchResultCache, SearchProgress
 
@@ -1213,15 +1213,12 @@ from .views_sync import *
 def get_entity_details(request, urn):
     """Get details of a specific entity."""
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
+        # Get DataHub client using connection system
+        client = get_client_from_session(request)
+        if not client:
             return JsonResponse(
-                {"success": False, "error": "No active environment configured"}
+                {"success": False, "error": "No active connection configured"}
             )
-        
-        # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
         
         # Get entity details
         entity = client.get_entity(urn)
@@ -1240,15 +1237,12 @@ def get_entity_details(request, urn):
 def get_entity_schema(request, urn):
     """Get schema details for a dataset entity."""
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
+        # Get DataHub client using connection system
+        client = get_client_from_session(request)
+        if not client:
             return JsonResponse(
-                {"success": False, "error": "No active environment configured"}
+                {"success": False, "error": "No active connection configured"}
             )
-        
-        # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
         
         # Get schema details
         schema = client.get_schema(urn)
@@ -1267,15 +1261,12 @@ def get_entity_schema(request, urn):
 def sync_metadata(request):
     """Sync metadata with DataHub."""
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
+        # Get DataHub client using connection system
+        client = get_client_from_session(request)
+        if not client:
             return JsonResponse(
-                {"success": False, "error": "No active environment configured"}
+                {"success": False, "error": "No active connection configured"}
             )
-        
-        # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
         
         # Sync metadata
         success = client.sync_metadata()
@@ -1887,7 +1878,7 @@ def metadata_entities_editable_list(request):
         editable_only = request.GET.get("editable_only", "true").lower() == "true"
 
         # Get client
-        client = get_datahub_client()
+        client = get_datahub_client_from_request(request)
 
         # Call the improved get_editable_entities method with all parameters
         result = client.get_editable_entities(
@@ -1924,7 +1915,7 @@ def metadata_entities_editable_list(request):
 
 def get_client_from_session(request):
     """
-    Get a DataHub client from the session or create a new one.
+    Get a DataHub client from the session or create a new one using the connection system.
 
     Args:
         request (HttpRequest): The request object
@@ -1933,15 +1924,8 @@ def get_client_from_session(request):
         DataHubRestClient: The client instance or None if not connected
     """
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
-            logger.error("No active environment configured")
-            return None
-
-        # Initialize and return a client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-        return client
+        from utils.datahub_utils import get_datahub_client_from_request
+        return get_datahub_client_from_request(request)
     except Exception as e:
         logger.error(f"Error creating DataHub client: {str(e)}")
         return None

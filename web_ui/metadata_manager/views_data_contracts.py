@@ -25,7 +25,8 @@ class DataContractListView(View):
 
             # Get DataHub connection info (quick test only)
             logger.debug("Testing DataHub connection from DataContractListView")
-            connected, client = test_datahub_connection()
+            from utils.datahub_utils import test_datahub_connection
+            connected, client = test_datahub_connection(request)
             logger.debug(f"DataHub connection test result: {connected}")
 
             # Initialize context with local data only - remote data loaded via AJAX
@@ -52,10 +53,11 @@ def get_remote_data_contracts_data(request):
     try:
         logger.info("Loading remote data contracts data via AJAX")
 
-        # Get DataHub connection
-        connected, client = test_datahub_connection()
+        # Get DataHub connection using connection system
+        from utils.datahub_utils import test_datahub_connection
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
-            return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+            return JsonResponse({"success": False, "error": "No active DataHub connection configured"})
 
         # Fetch remote data contracts
         remote_data_contracts = []
@@ -189,12 +191,13 @@ def get_data_contracts(request):
         
         logger.info(f"Getting Data Contracts: query='{query}', start={start}, count={count}")
         
-        # Get client using standard configuration
-        client = get_datahub_client()
+        # Get client using connection system
+        from utils.datahub_utils import get_datahub_client_from_request
+        client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse({
                 "success": False,
-                "error": "Not connected to DataHub"
+                "error": "No active DataHub connection configured"
             }, status=400)
             
         # Get data contracts from DataHub

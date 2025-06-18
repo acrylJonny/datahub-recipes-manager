@@ -18,7 +18,7 @@ sys.path.append(
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from web_ui.models import GitSettings
 from .models import StructuredProperty
 # Git integration imports - handle gracefully if not available
@@ -51,7 +51,7 @@ class PropertyListView(View):
 
             # Get DataHub connection info
             logger.debug("Testing DataHub connection from PropertyListView")
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             logger.debug(f"DataHub connection test result: {connected}")
 
             # Initialize context
@@ -162,7 +162,8 @@ class PropertyListView(View):
             local_properties = StructuredProperty.objects.all()
             
             # Check connection to DataHub for remote properties
-            connected, client = test_datahub_connection()
+            from utils.datahub_utils import test_datahub_connection
+            connected, client = test_datahub_connection(request)
             remote_properties = []
             
             if connected and client:
@@ -449,7 +450,7 @@ class PropertyDetailView(View):
                 pass
 
             # Get property values if DataHub connection is available
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if client and client.test_connection():
                 property_urn = property.deterministic_urn
 
@@ -638,7 +639,7 @@ class PropertyDeployView(View):
             property = get_object_or_404(StructuredProperty, id=property_id)
 
             # Get DataHub client
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if not client or not client.test_connection():
                 messages.error(
                     request,
@@ -727,7 +728,7 @@ class PropertyPullView(View):
         """Pull properties from DataHub"""
         try:
             # Get DataHub client
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if not client or not client.test_connection():
                 messages.error(
                     request,
@@ -891,7 +892,7 @@ class PropertyValuesView(View):
             count = int(request.GET.get("count", "20"))
 
             # Get DataHub client
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if not client or not client.test_connection():
                 return JsonResponse(
                     {
@@ -984,7 +985,7 @@ def resync_property(request, property_id):
         property = get_object_or_404(StructuredProperty, id=property_id)
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1032,7 +1033,7 @@ def sync_property_to_local(request):
             return JsonResponse({"success": False, "error": "Property URN required"})
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1110,7 +1111,7 @@ def add_remote_property_to_pr(request):
             return JsonResponse({"success": False, "error": "Property URN required"})
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1208,7 +1209,7 @@ def delete_remote_property(request):
             return JsonResponse({"success": False, "error": "Property URN required"})
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 

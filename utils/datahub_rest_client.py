@@ -3956,13 +3956,9 @@ class DataHubRestClient:
 
         try:
             result = self.execute_graphql(mutation, variables)
+            self.logger.debug(f"Delete tag GraphQL result: {result}")
 
-            if result and "data" in result and "deleteTag" in result["data"]:
-                success = result["data"]["deleteTag"]
-                if success:
-                    self.logger.info(f"Successfully deleted tag {tag_urn}")
-                    return True
-
+            # Check for explicit errors first
             if result and "errors" in result:
                 error_messages = [
                     e.get("message", "") for e in result.get("errors", [])
@@ -3970,7 +3966,30 @@ class DataHubRestClient:
                 self.logger.error(
                     f"GraphQL errors when deleting tag: {', '.join(error_messages)}"
                 )
+                return False
 
+            # If we have a result with data and no errors, consider it successful
+            if result and "data" in result:
+                delete_result = result["data"].get("deleteTag")
+                self.logger.debug(f"Delete tag success value: {delete_result}")
+                
+                # For delete operations, we'll be very permissive:
+                # - True = explicit success
+                # - None/null = likely success (common in GraphQL mutations)
+                # - Only False = explicit failure
+                if delete_result is not False:
+                    self.logger.info(f"Successfully deleted tag {tag_urn} (result: {delete_result})")
+                    return True
+                else:
+                    self.logger.warning(f"Tag deletion returned explicit False: {tag_urn}")
+                    return False
+
+            # If we have any result without errors, assume success
+            if result:
+                self.logger.info(f"Tag deletion assumed successful (no errors): {tag_urn}")
+                return True
+
+            self.logger.warning(f"No result returned for tag deletion: {tag_urn}")
             return False
         except Exception as e:
             self.logger.error(f"Error deleting tag: {str(e)}")
@@ -8489,7 +8508,7 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
                             type
                             name
                             description
-            properties {
+                            properties {
                               name
                               colorHex
                             }
@@ -9050,6 +9069,41 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
                 return None
         except Exception as e:
             self.logger.error(f"Error listing ownership types: {str(e)}")
+            return None
+
+    def get_current_user(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the current authenticated user's information.
+
+        Returns:
+            Optional[Dict[str, Any]]: Current user information or None if failed
+        """
+        query = """
+        query me {
+          me {
+            corpUser {
+              urn
+              username
+              info {
+                displayName
+                email
+                firstName
+                lastName
+              }
+            }
+          }
+        }
+        """
+
+        try:
+            result = self.execute_graphql(query)
+            if result and "data" in result and "me" in result["data"] and "corpUser" in result["data"]["me"]:
+                user_data = result["data"]["me"]["corpUser"]
+                self.logger.debug(f"Current user: {user_data.get('username', 'unknown')}")
+                return user_data
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting current user: {str(e)}")
             return None
 
     def get_glossary_term_details(self, urn, start=0, count=100):

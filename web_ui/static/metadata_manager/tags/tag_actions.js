@@ -368,8 +368,21 @@ function showNotification(type, message) {
     const id = 'toast-' + Date.now();
     
     // Create toast HTML
-    const bgClass = type === 'success' ? 'bg-success' : 'bg-danger';
-    const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+    let bgClass, icon, title;
+    
+    if (type === 'success') {
+        bgClass = 'bg-success';
+        icon = 'fa-check-circle';
+        title = 'Success';
+    } else if (type === 'info') {
+        bgClass = 'bg-info';
+        icon = 'fa-info-circle';
+        title = 'Info';
+    } else {
+        bgClass = 'bg-danger';
+        icon = 'fa-exclamation-circle';
+        title = 'Error';
+    }
     
     const toast = document.createElement('div');
     toast.className = `toast ${bgClass} text-white`;
@@ -380,7 +393,7 @@ function showNotification(type, message) {
     toast.innerHTML = `
         <div class="toast-header ${bgClass} text-white">
             <i class="fas ${icon} me-2"></i>
-            <strong class="me-auto">${type === 'success' ? 'Success' : 'Error'}</strong>
+            <strong class="me-auto">${title}</strong>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
         <div class="toast-body">${message}</div>
@@ -398,4 +411,56 @@ function showNotification(type, message) {
     toast.addEventListener('hidden.bs.toast', function () {
         toast.remove();
     });
-} 
+}
+
+/**
+ * Sync tag to DataHub
+ * @param {Object} tag - The tag object
+ */
+function syncTagToDataHub(tag) {
+    console.log('syncTagToDataHub called with:', tag);
+    
+    // Get tag data
+    const tagData = tag.combined || tag;
+    const tagId = getDatabaseId(tagData);
+    
+    if (!tagId) {
+        console.error('Cannot sync tag without a database ID:', tagData);
+        showNotification('error', 'Error syncing tag: Missing tag database ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('success', `Syncing tag "${tagData.name}" to DataHub...`);
+    
+    // Make the API call to sync this tag to DataHub
+    fetch(`/metadata/api/tags/${tagId}/sync_to_datahub/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Sync to DataHub response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Refresh the page to show updated sync status
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error syncing tag to DataHub:', error);
+        showNotification('error', `Error syncing tag: ${error.message}`);
+    });
+}

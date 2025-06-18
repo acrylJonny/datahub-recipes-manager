@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import sys
+import time
 from typing import Dict, Any, Optional
 
 # Add the parent directory to the sys.path
@@ -19,7 +20,11 @@ sys.path.append(
 
 # Import local utilities
 from utils.urn_utils import generate_deterministic_urn, extract_name_from_properties
-from scripts.mcps.create_tag_mcps import create_tag_properties_mcp, create_tag_ownership_mcp, save_mcp_to_file
+from scripts.mcps.create_tag_mcps import (
+    create_tag_properties_mcp, 
+    create_tag_ownership_mcp, 
+    save_mcp_to_file
+)
 
 logger = logging.getLogger(__name__)
 
@@ -134,17 +139,17 @@ def add_tag_to_staged_changes(
     mutation_name: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    Add tag to staged changes by creating MCP files
+    Add tag to staged changes by creating a single MCP file containing all MCPs
 
     Args:
         tag_data: Tag data as a dictionary
         environment: Environment name (for directory structure)
         owner: Owner username
-        base_dir: Optional base directory (defaults to metadata-manager/{environment})
+        base_dir: Optional base directory (defaults to metadata-manager/{environment} in repo root)
         mutation_name: Optional mutation name for deterministic URN generation
 
     Returns:
-        Dictionary with paths to created MCP files
+        Dictionary with path to created MCP file
     """
     try:
         # Extract tag information
@@ -170,17 +175,65 @@ def add_tag_to_staged_changes(
         if "properties" in tag_data and "colorHex" in tag_data["properties"]:
             color_hex = tag_data["properties"]["colorHex"]
         
-        # Determine output directory
+        # Determine output directory - use repo root metadata-manager instead of web_ui/metadata-manager
         if base_dir:
-            output_dir = os.path.join(base_dir, "tags")
+            output_dir = base_dir
         else:
-            output_dir = os.path.join("metadata-manager", environment, "tags")
+            # Find repository root by looking for characteristic files
+            current_dir = os.path.abspath(os.getcwd())
+            repo_root = None
+            
+            # Search upwards for the repository root (look for README.md and scripts/ directory)
+            search_dir = current_dir
+            for _ in range(10):  # Limit search to avoid infinite loop
+                if (os.path.exists(os.path.join(search_dir, "README.md")) and 
+                    os.path.exists(os.path.join(search_dir, "scripts")) and
+                    os.path.exists(os.path.join(search_dir, "web_ui"))):
+                    repo_root = search_dir
+                    break
+                parent_dir = os.path.dirname(search_dir)
+                if parent_dir == search_dir:  # Reached filesystem root
+                    break
+                search_dir = parent_dir
+            
+            # Fallback: try to calculate from __file__ path
+            if not repo_root:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                if "scripts/mcps" in script_dir:
+                    repo_root = os.path.dirname(os.path.dirname(script_dir))
+                else:
+                    # Last resort: assume we're in a subdirectory and go up
+                    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+            
+            output_dir = os.path.join(repo_root, "metadata-manager", environment)
+            logger.debug(f"Calculated repo root: {repo_root}, output dir: {output_dir}")
         
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
         
-        # Generate a filename-safe version of the tag_id
-        safe_tag_id = tag_id.replace(" ", "_").lower()
+        # Use constant filename
+        mcp_file_path = os.path.join(output_dir, "mcp_file.json")
+        
+        # Load existing MCP file or create new structure
+        existing_mcp_data = {"mcps": [], "metadata": {"entities": []}}
+        if os.path.exists(mcp_file_path):
+            try:
+                with open(mcp_file_path, "r") as f:
+                    existing_mcp_data = json.load(f)
+                    # Ensure required structure exists
+                    if "mcps" not in existing_mcp_data:
+                        existing_mcp_data["mcps"] = []
+                    if "metadata" not in existing_mcp_data:
+                        existing_mcp_data["metadata"] = {"entities": []}
+                    if "entities" not in existing_mcp_data["metadata"]:
+                        existing_mcp_data["metadata"]["entities"] = []
+                logger.info(f"Loaded existing MCP file with {len(existing_mcp_data['mcps'])} existing MCPs")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
+                existing_mcp_data = {"mcps": [], "metadata": {"entities": []}}
+        
+        # Create new MCPs for this tag
+        new_mcps = []
         
         # Create properties MCP
         properties_mcp = create_tag_properties_mcp(
@@ -192,10 +245,7 @@ def add_tag_to_staged_changes(
             environment=environment,
             mutation_name=mutation_name
         )
-        
-        # Save properties MCP
-        properties_file = os.path.join(output_dir, f"{safe_tag_id}_properties.json")
-        save_mcp_to_file(properties_mcp, properties_file)
+        new_mcps.append(properties_mcp)
         
         # Create ownership MCP
         ownership_mcp = create_tag_ownership_mcp(
@@ -204,18 +254,56 @@ def add_tag_to_staged_changes(
             environment=environment,
             mutation_name=mutation_name
         )
+        new_mcps.append(ownership_mcp)
         
-        # Save ownership MCP
-        ownership_file = os.path.join(output_dir, f"{safe_tag_id}_ownership.json")
-        save_mcp_to_file(ownership_mcp, ownership_file)
+        # Remove any existing MCPs for this tag URN to avoid duplicates
+        tag_entity_urn = properties_mcp.get("entityUrn")
+        existing_mcp_data["mcps"] = [
+            mcp for mcp in existing_mcp_data["mcps"] 
+            if mcp.get("entityUrn") != tag_entity_urn
+        ]
         
-        logger.info(f"Successfully added tag '{tag_name}' to staged changes")
+        # Remove existing metadata entry for this tag
+        existing_mcp_data["metadata"]["entities"] = [
+            entity for entity in existing_mcp_data["metadata"]["entities"]
+            if entity.get("tag_urn") != tag_urn
+        ]
         
-        # Return the paths to the created files
-        return {
-            "properties_file": properties_file,
-            "ownership_file": ownership_file
+        # Add new MCPs
+        existing_mcp_data["mcps"].extend(new_mcps)
+        
+        # Add metadata entry for this tag
+        tag_metadata = {
+            "tag_name": tag_name,
+            "tag_id": tag_id,
+            "tag_urn": tag_urn,
+            "entity_urn": tag_entity_urn,
+            "environment": environment,
+            "owner": owner,
+            "updated_at": int(time.time() * 1000),
+            "mcp_count": len(new_mcps)
         }
+        existing_mcp_data["metadata"]["entities"].append(tag_metadata)
+        
+        # Update global metadata
+        existing_mcp_data["metadata"].update({
+            "total_mcps": len(existing_mcp_data["mcps"]),
+            "total_entities": len(existing_mcp_data["metadata"]["entities"]),
+            "last_updated": int(time.time() * 1000),
+            "environment": environment
+        })
+        
+        # Save updated MCP file
+        mcp_saved = save_mcp_to_file(existing_mcp_data, mcp_file_path)
+        
+        created_files = {}
+        if mcp_saved:
+            created_files["mcp_file"] = mcp_file_path
+        
+        logger.info(f"Successfully added tag '{tag_name}' to staged changes with {len(new_mcps)} MCPs. Total MCPs in file: {len(existing_mcp_data['mcps'])}")
+        
+        # Return the path to the created file
+        return created_files
         
     except Exception as e:
         logger.error(f"Error adding tag to staged changes: {str(e)}")

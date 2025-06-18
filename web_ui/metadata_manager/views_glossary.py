@@ -19,7 +19,7 @@ sys.path.append(
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name, get_parent_path
-from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import Environment as DjangoEnvironment
 from web_ui.models import GitSettings, GitIntegration
@@ -77,7 +77,7 @@ class GlossaryListView(View):
             synced_count = synced_nodes.count() + synced_terms.count()
 
             # Test DataHub connection
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
 
             # Build context for the template
             context = {
@@ -595,7 +595,7 @@ class GlossaryListView(View):
                 return redirect("metadata_manager:glossary_list")
             
             # Get DataHub client
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
@@ -657,7 +657,7 @@ class GlossaryListView(View):
         """Push all glossary nodes and terms to DataHub"""
         try:
             # Get DataHub client
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
@@ -962,7 +962,7 @@ class GlossaryPullView(View):
     def get(self, request):
         try:
             # Get DataHub connection info
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             context = {
                 "page_title": "Pull from DataHub",
@@ -977,7 +977,7 @@ class GlossaryPullView(View):
     def post(self, request):
         try:
             # Get DataHub client
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
@@ -1024,7 +1024,7 @@ class GlossaryImportExportView(View):
     def get(self, request):
         try:
             # Get DataHub connection info
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             context = {
                 "page_title": "Import/Export Glossary",
@@ -1189,7 +1189,7 @@ class GlossaryNodeDeployView(View):
                 )
             
             # Get DataHub client
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect(
@@ -1341,7 +1341,7 @@ class GlossaryTermDeployView(View):
                 )
             
             # Get DataHub client
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             if not connected or not client:
                 messages.error(request, "Could not connect to DataHub")
                 return redirect(
@@ -1471,7 +1471,7 @@ def get_remote_glossary_data(request):
         logger.info("Loading enhanced remote glossary data via AJAX")
 
         # Get DataHub connection using standard configuration
-        client = get_datahub_client()
+        client = get_datahub_client_from_request(request)
         connected = client and client.test_connection()
         
         if not connected or not client:

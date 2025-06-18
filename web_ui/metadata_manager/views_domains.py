@@ -17,7 +17,7 @@ sys.path.append(
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.token_utils import get_token_from_env
 from .models import Domain
 from web_ui.models import GitSettings
@@ -47,7 +47,7 @@ class DomainListView(View):
             
             # Get DataHub connection info (quick test only)
             logger.debug("Testing DataHub connection from DomainListView")
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             logger.debug(f"DataHub connection test result: {connected}")
             
             # Initialize basic context with local data only
@@ -146,7 +146,7 @@ class DomainDetailView(View):
                 pass
             
             # Get related entities if DataHub connection is available
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if client and client.test_connection():
                 domain_urn = domain.urn
                 
@@ -288,7 +288,7 @@ class DomainDeployView(View):
             # Get the client
             try:
                 get_token_from_env()
-                connected, client = test_datahub_connection()
+                connected, client = test_datahub_connection(request)
                 if not connected or not client:
                     messages.error(
                         request,
@@ -533,7 +533,7 @@ class DomainPullView(View):
             }
             
             # Get DataHub connection info
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             context["has_datahub_connection"] = connected
             
             return render(request, "metadata_manager/domains/pull.html", context)
@@ -552,7 +552,7 @@ class DomainPullView(View):
                 return self.get(request)
             
             # Get the client
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             if not connected or not client:
                 messages.error(
@@ -892,7 +892,7 @@ def get_remote_domains_data(request):
         logger.info("Loading enhanced remote domains data via AJAX")
 
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1226,7 +1226,7 @@ def sync_domain_to_local(request, domain_id=None):
             original_urn = domain_urn
 
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1316,7 +1316,7 @@ def resync_domain(request, domain_id):
         domain = get_object_or_404(Domain, id=domain_id)
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1394,7 +1394,7 @@ def push_domain_to_datahub(request, domain_id):
         domain = get_object_or_404(Domain, id=domain_id)
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1447,7 +1447,7 @@ def delete_remote_domain(request, domain_id):
             return JsonResponse({"success": False, "error": "Domain URN required"})
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
@@ -1489,7 +1489,7 @@ def add_remote_domain_to_pr(request):
             return JsonResponse({"success": False, "error": "Domain URN required"})
         
         # Test DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 

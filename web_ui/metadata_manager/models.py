@@ -33,9 +33,9 @@ class BaseMetadataModel(models.Model):
     )
     last_synced = models.DateTimeField(null=True, blank=True)
 
-    # Environmental context
-    environment = models.ForeignKey(
-        "Environment", on_delete=models.SET_NULL, null=True, blank=True
+    # Connection context - links this entity to a specific DataHub connection
+    connection = models.ForeignKey(
+        "web_ui.Connection", on_delete=models.SET_NULL, null=True, blank=True
     )
 
     # Metadata

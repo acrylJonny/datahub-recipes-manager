@@ -360,6 +360,109 @@ class AppSettings:
         return cls.set(key, json.dumps(value))
 
 
+class Connection(models.Model):
+    """Model for storing DataHub connection configurations."""
+    
+    name = models.CharField(max_length=255, unique=True, help_text="Friendly name for this connection")
+    description = models.TextField(blank=True, null=True, help_text="Description of this connection")
+    datahub_url = models.URLField(help_text="DataHub GMS URL (e.g., https://your-datahub.com)")
+    datahub_token = models.CharField(max_length=255, blank=True, null=True, help_text="DataHub access token")
+    
+    # Connection settings
+    verify_ssl = models.BooleanField(default=True, help_text="Verify SSL certificates")
+    timeout = models.IntegerField(default=30, help_text="Connection timeout in seconds")
+    
+    # Status tracking
+    is_active = models.BooleanField(default=True, help_text="Whether this connection is active")
+    is_default = models.BooleanField(default=False, help_text="Whether this is the default connection")
+    last_tested = models.DateTimeField(null=True, blank=True, help_text="Last time connection was tested")
+    connection_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('connected', 'Connected'),
+            ('failed', 'Failed'),
+            ('unknown', 'Unknown'),
+        ],
+        default='unknown'
+    )
+    error_message = models.TextField(blank=True, null=True, help_text="Last error message if connection failed")
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "DataHub Connection"
+        verbose_name_plural = "DataHub Connections"
+        ordering = ["-is_default", "name"]
+    
+    def __str__(self):
+        return f"{self.name} ({'Default' if self.is_default else 'Active' if self.is_active else 'Inactive'})"
+    
+    def save(self, *args, **kwargs):
+        """Ensure only one default connection exists."""
+        if self.is_default:
+            # Remove default from all other connections
+            Connection.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+    
+    @classmethod
+    def get_default(cls):
+        """Get the default connection."""
+        return cls.objects.filter(is_default=True, is_active=True).first()
+    
+    @classmethod
+    def get_active_connections(cls):
+        """Get all active connections."""
+        return cls.objects.filter(is_active=True).order_by("-is_default", "name")
+    
+    def test_connection(self):
+        """Test the connection to DataHub."""
+        try:
+            from utils.datahub_rest_client import DataHubRestClient
+            
+            client = DataHubRestClient(
+                server_url=self.datahub_url,
+                token=self.datahub_token,
+                verify_ssl=self.verify_ssl,
+                timeout=self.timeout
+            )
+            
+            if client.test_connection():
+                self.connection_status = 'connected'
+                self.error_message = None
+                self.last_tested = timezone.now()
+                self.save(update_fields=['connection_status', 'error_message', 'last_tested'])
+                return True
+            else:
+                self.connection_status = 'failed'
+                self.error_message = "Connection test failed"
+                self.last_tested = timezone.now()
+                self.save(update_fields=['connection_status', 'error_message', 'last_tested'])
+                return False
+                
+        except Exception as e:
+            self.connection_status = 'failed'
+            self.error_message = str(e)
+            self.last_tested = timezone.now()
+            self.save(update_fields=['connection_status', 'error_message', 'last_tested'])
+            return False
+    
+    def get_client(self):
+        """Get a DataHub client for this connection."""
+        try:
+            from utils.datahub_rest_client import DataHubRestClient
+            
+            return DataHubRestClient(
+                server_url=self.datahub_url,
+                token=self.datahub_token,
+                verify_ssl=self.verify_ssl,
+                timeout=self.timeout
+            )
+        except Exception:
+            return None
+
+
 class RecipeTemplate(models.Model):
     """Model for storing reusable recipe templates."""
 
@@ -2866,84 +2969,7 @@ class Policy(models.Model):
         return yaml_content
 
 
-class EnvironmentInstance(models.Model):
-    """Model representing a set of environment variables for a specific deployment"""
 
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)
-    template = models.ForeignKey(
-        EnvVarsTemplate, on_delete=models.PROTECT, related_name="instances"
-    )
-    recipe_type = models.CharField(
-        max_length=50,
-        choices=(
-            ("postgres", "PostgreSQL"),
-            ("mysql", "MySQL"),
-            ("mssql", "Microsoft SQL Server"),
-            ("snowflake", "Snowflake"),
-            ("bigquery", "BigQuery"),
-            ("redshift", "Redshift"),
-            ("databricks", "Databricks"),
-        ),
-    )
-    tenant = models.CharField(max_length=255, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.name
-
-    def to_dict(self):
-        """Convert environment instance to a dictionary suitable for JSON/YAML export."""
-        env_vars = {}
-        for var in self.variables.all():
-            env_vars[var.key] = {
-                "value": var.value,
-                "description": var.description or "",
-                "is_secret": var.is_secret,
-                "is_required": var.is_required,
-            }
-
-        return {
-            "environment_instance": {
-                "name": self.name,
-                "description": self.description or "",
-                "recipe_type": self.recipe_type,
-                "template": self.template.name,
-                "tenant": self.tenant or "",
-                "variables": env_vars,
-            },
-            "metadata": {
-                "exported_at": datetime.now().isoformat(),
-                "exported_by": "datahub_recipes_manager",
-            },
-        }
-
-    def to_yaml(self, path=None):
-        """
-        Export environment instance to YAML format.
-
-        Args:
-            path: Optional path to save the YAML file
-
-        Returns:
-            Path to the saved file or the YAML string if path is None
-        """
-        import yaml
-
-        data = self.to_dict()
-        yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
-
-        if path:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-
-            # Write to file
-            with open(path, "w") as f:
-                f.write(yaml_content)
-            return path
-
-        return yaml_content
 
 
 class GitSecrets(models.Model):
