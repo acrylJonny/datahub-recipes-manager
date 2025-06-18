@@ -113,6 +113,13 @@ urlpatterns = [
     path("tags/", views_tags.TagListView.as_view(), name="tag_list"),
     path("tags/remote-data/", views_tags.get_remote_tags_data, name="get_remote_tags_data"),
     path("tags/users-groups/", views_tags.get_users_and_groups, name="get_users_and_groups"),
+    
+    # Common API endpoints for users, groups, and ownership types (used across multiple pages)
+    path("api/users/", views_tags.get_users_and_groups, name="api_users"),
+    path("api/groups/", views_tags.get_users_and_groups, name="api_groups"), 
+    path("api/ownership-types/", views_tags.get_users_and_groups, name="api_ownership_types"),
+    path("api/users-groups/", views_tags.get_users_and_groups, name="api_users_and_groups"),
+    
     path("tags/<uuid:tag_id>/", views_tags.TagDetailView.as_view(), name="tag_detail"),
     path(
         "tags/<uuid:tag_id>/edit/", views_tags.TagDetailView.as_view(), name="tag_edit"
@@ -228,11 +235,7 @@ urlpatterns = [
         views_glossary.GlossaryPullView.as_view(),
         name="glossary_pull",
     ),
-    path(
-        "glossary/import-export/",
-        views_glossary.GlossaryImportExportView.as_view(),
-        name="glossary_import_export",
-    ),
+
     # Glossary Nodes
     path(
         "glossary/nodes/create/",

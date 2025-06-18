@@ -1020,51 +1020,6 @@ class GlossaryPullView(View):
             return redirect("metadata_manager:glossary_list")
 
 
-class GlossaryImportExportView(View):
-    def get(self, request):
-        try:
-            # Get DataHub connection info
-            connected, client = test_datahub_connection(request)
-            
-            context = {
-                "page_title": "Import/Export Glossary",
-                "has_datahub_connection": connected,
-            }
-            return render(
-                request, "metadata_manager/glossary/import_export.html", context
-            )
-        except Exception as e:
-            logger.error(f"Error in glossary import/export view: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:glossary_list")
-    
-    def post(self, request):
-        try:
-            action = request.POST.get("action")
-            if action == "import":
-                if "file" not in request.FILES:
-                    messages.error(request, "No file uploaded")
-                    return redirect("metadata_manager:glossary_import_export")
-                
-                # Handle file import
-                file = request.FILES["file"]
-                try:
-                    json.loads(file.read())
-                    # Process the imported data
-                    # ... implementation details ...
-                    messages.success(request, "Successfully imported glossary items")
-                    return redirect("metadata_manager:glossary_list")
-                except json.JSONDecodeError:
-                    messages.error(request, "Invalid JSON file")
-                    return redirect("metadata_manager:glossary_import_export")
-            else:
-                messages.error(request, "Invalid action")
-                return redirect("metadata_manager:glossary_import_export")
-        except Exception as e:
-            logger.error(f"Error in glossary import/export view: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:glossary_list")
-
 
 class GlossaryNodeCreateView(View):
     def get(self, request):
@@ -1080,6 +1035,10 @@ class GlossaryNodeCreateView(View):
             description = request.POST.get("description", "")
             parent_id = request.POST.get("parent_id")
             
+            # Get ownership data
+            owners = request.POST.getlist("owners")
+            ownership_types = request.POST.getlist("ownership_types")
+            
             if not name:
                 messages.error(request, "Glossary node name is required")
                 return redirect("metadata_manager:glossary_list")
@@ -1094,9 +1053,25 @@ class GlossaryNodeCreateView(View):
                     return redirect("metadata_manager:glossary_list")
             
             # Create the node
-            GlossaryNode.objects.create(
+            node = GlossaryNode.objects.create(
                 name=name, description=description, parent=parent
             )
+            
+            # Handle ownership data if provided
+            if owners and ownership_types and len(owners) == len(ownership_types):
+                ownership_data = []
+                for owner, ownership_type in zip(owners, ownership_types):
+                    if owner and ownership_type:  # Skip empty entries
+                        ownership_data.append({
+                            "owner": owner,
+                            "ownershipType": ownership_type
+                        })
+                
+                # Store ownership data as JSON in a field (if the model supports it)
+                # or handle it through DataHub API when deploying
+                if hasattr(node, 'ownership_data'):
+                    node.ownership_data = json.dumps(ownership_data)
+                    node.save()
             
             messages.success(request, f"Glossary node '{name}' created successfully")
             return redirect("metadata_manager:glossary_list")
@@ -1229,6 +1204,10 @@ class GlossaryTermCreateView(View):
             parent_node_id = request.POST.get("parent_node_id")
             term_source = request.POST.get("term_source", "")
             
+            # Get ownership data
+            owners = request.POST.getlist("owners")
+            ownership_types = request.POST.getlist("ownership_types")
+            
             if not name:
                 messages.error(request, "Glossary term name is required")
                 return redirect("metadata_manager:glossary_list")
@@ -1243,12 +1222,28 @@ class GlossaryTermCreateView(View):
                     return redirect("metadata_manager:glossary_list")
             
             # Create the term
-            GlossaryTerm.objects.create(
+            term = GlossaryTerm.objects.create(
                 name=name,
                 description=description,
                 parent_node=parent_node,
                 term_source=term_source,
             )
+            
+            # Handle ownership data if provided
+            if owners and ownership_types and len(owners) == len(ownership_types):
+                ownership_data = []
+                for owner, ownership_type in zip(owners, ownership_types):
+                    if owner and ownership_type:  # Skip empty entries
+                        ownership_data.append({
+                            "owner": owner,
+                            "ownershipType": ownership_type
+                        })
+                
+                # Store ownership data as JSON in a field (if the model supports it)
+                # or handle it through DataHub API when deploying
+                if hasattr(term, 'ownership_data'):
+                    term.ownership_data = json.dumps(ownership_data)
+                    term.save()
             
             messages.success(request, f"Glossary term '{name}' created successfully")
             return redirect("metadata_manager:glossary_list")
@@ -1527,8 +1522,9 @@ def get_remote_glossary_data(request):
         
         # Process local nodes and match with remote
         for local_node in local_nodes:
-            node_urn = str(local_node.urn)
-            remote_match = remote_nodes_dict.get(node_urn)
+            # Handle URN safely - use empty string for None/empty URNs
+            node_urn = local_node.urn if local_node.urn else ""
+            remote_match = remote_nodes_dict.get(node_urn) if node_urn else None
             
             local_item_data = {
                 "id": str(local_node.id),
@@ -1538,7 +1534,8 @@ def get_remote_glossary_data(request):
                 "type": "node",
                 "sync_status": local_node.sync_status,
                 "sync_status_display": local_node.get_sync_status_display(),
-                "parent_urn": str(local_node.parent.urn) if local_node.parent else None,
+                "parent_urn": str(local_node.parent.urn) if local_node.parent and local_node.parent.urn else None,
+                "parent_id": str(local_node.parent.id) if local_node.parent else None,
                 "has_children": local_node.children.exists() or local_node.terms.exists(),
                 # Initialize empty ownership and relationships for local-only items
                 "owners_count": 0,
@@ -1618,8 +1615,9 @@ def get_remote_glossary_data(request):
         
         # Process local terms and match with remote
         for local_term in local_terms:
-            term_urn = str(local_term.urn)
-            remote_match = remote_terms_dict.get(term_urn)
+            # Handle URN safely - use empty string for None/empty URNs
+            term_urn = local_term.urn if local_term.urn else ""
+            remote_match = remote_terms_dict.get(term_urn) if term_urn else None
             
             local_item_data = {
                 "id": str(local_term.id),
@@ -1629,7 +1627,8 @@ def get_remote_glossary_data(request):
                 "type": "term",
                 "sync_status": local_term.sync_status,
                 "sync_status_display": local_term.get_sync_status_display(),
-                "parent_node_urn": str(local_term.parent_node.urn) if local_term.parent_node else None,
+                "parent_node_urn": str(local_term.parent_node.urn) if local_term.parent_node and local_term.parent_node.urn else None,
+                "parent_node_id": str(local_term.parent_node.id) if local_term.parent_node else None,
                 "term_source": getattr(local_term, 'term_source', '') or "",
                 # Initialize empty ownership and relationships for local-only items
                 "owners_count": 0,
@@ -1856,11 +1855,12 @@ def get_remote_glossary_data(request):
         }
         
         # Apply global sanitization to prevent issues with long descriptions and malformed data
-        sanitized_data = sanitize_api_response(response_data)
+        # DISABLED: Sanitization was causing empty URNs and objects, similar to tags issue
+        # sanitized_data = sanitize_api_response(response_data)
         
         return JsonResponse({
             "success": True,
-            "data": sanitized_data
+            "data": response_data  # Return raw data without sanitization
         })
         
     except Exception as e:

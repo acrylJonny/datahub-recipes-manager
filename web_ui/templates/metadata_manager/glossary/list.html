@@ -441,7 +441,255 @@
         min-width: 0;
         flex: 1;
     }
+    
+    /* Bulk actions styling */
+    .bulk-actions {
+        display: none;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+    
+    /* Table column adjustments for checkbox */
+    .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
+        width: 40px;
+        max-width: 40px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* Name */
+        max-width: 200px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(9), .table td:nth-child(9) { /* Actions */
+        width: 150px;
+        max-width: 150px;
+    }
+    
+    /* Bulk Actions Styling */
+    .bulk-actions {
+        display: none;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 1;
+        max-width: none;
+    }
+    
+    /* Table column width constraints */
+    .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
+        width: 40px;
+        max-width: 40px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* Name */
+        max-width: 200px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* Description */
+        max-width: 180px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* Owners */
+        width: 70px;
+        max-width: 70px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* Relationships */
+        width: 90px;
+        max-width: 90px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* Custom Properties */
+        width: 80px;
+        max-width: 80px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* Structured Properties */
+        width: 80px;
+        max-width: 80px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* URN */
+        max-width: 180px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(9), .table td:nth-child(9) { /* Actions */
+        width: 160px;
+        max-width: 160px;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .pagination .page-link {
+        color: #007bff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white !important;
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        pointer-events: none;
+        cursor: auto;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+
+    /* Hierarchy styling */
+    .hierarchy-indent {
+        margin-left: 20px;
+    }
+    
+    .expand-collapse {
+        cursor: pointer;
+        width: 20px;
+        text-align: center;
+        display: inline-block;
+    }
+    
+    .expand-collapse:hover {
+        color: #007bff;
+    }
+    
+    .collapsed-children {
+        display: none;
+    }
 </style>
+<!-- Old duplicate modals removed - using the newer ones at the bottom of the template -->
+
 {% endblock %}
 
 {% block extra_js %}
@@ -461,10 +709,10 @@
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>DataHub Glossary</h1>
                 <div class="d-flex gap-2">
-                    <a href="{% url 'metadata_manager:glossary_node_create' %}" class="btn btn-primary">
+                    <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createNodeModal">
                         <i class="fas fa-folder-plus me-1"></i> Create Node
                     </a>
-                    <a href="{% url 'metadata_manager:glossary_term_create' %}" class="btn btn-success">
+                    <a href="#" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createTermModal">
                         <i class="fas fa-tag me-1"></i> Create Term
                     </a>
                     <div class="btn-group" role="group">
@@ -484,9 +732,7 @@
                             </a></li>
                         </ul>
                     </div>
-                    <a href="{% url 'metadata_manager:glossary_import_export' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-file-export me-1"></i> Import/Export
-                    </a>
+
                     <button type="button" class="btn btn-outline-info" id="refreshGlossary">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
@@ -644,6 +890,33 @@
                                     </div>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> item(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncItems('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkDeployItems('synced')">
+                                            <i class="fas fa-cloud-upload-alt me-1"></i> Bulk Deploy
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -673,6 +946,30 @@
                                     </div>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> item(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkDeployItems('local')">
+                                            <i class="fas fa-cloud-upload-alt me-1"></i> Bulk Deploy to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -702,6 +999,27 @@
                                     </div>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> item(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Import to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -913,6 +1231,157 @@
     </div>
 </div>
 
+<!-- Create Node Modal -->
+<div class="modal fade" id="createNodeModal" tabindex="-1" aria-labelledby="createNodeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createNodeModalLabel">
+                    <i class="fas fa-plus me-2"></i>Create Glossary Node
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="createNodeForm" method="post" action="{% url 'metadata_manager:glossary_node_create' %}">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="node-name" class="form-label">Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="node-name" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="node-parent" class="form-label">Parent Node</label>
+                                <select class="form-select" id="node-parent" name="parent_node">
+                                    <option value="">-- Select Parent Node (Optional) --</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="node-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="node-description" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="node-color" class="form-label">Color</label>
+                        <input type="color" class="form-control form-control-color" id="node-color" name="color" value="#007bff" title="Choose node color">
+                    </div>
+                    
+                    <!-- Ownership Section -->
+                    <div class="mb-3" id="node-ownership-section">
+                        <label class="form-label fw-bold" id="node-ownership-label">Ownership</label>
+                        <div id="node-ownership-sections-container">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-node-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Owner
+                        </button>
+                        <div class="form-text mt-2" id="node-ownership-help-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            You can add multiple ownership sections with different ownership types
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Create Node
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Create Term Modal -->
+<div class="modal fade" id="createTermModal" tabindex="-1" aria-labelledby="createTermModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createTermModalLabel">
+                    <i class="fas fa-plus me-2"></i>Create Glossary Term
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="createTermForm" method="post" action="{% url 'metadata_manager:glossary_term_create' %}">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="term-name" class="form-label">Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="term-name" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="term-parent-node" class="form-label">Parent Node <span class="text-danger">*</span></label>
+                                <select class="form-select" id="term-parent-node" name="parent_node" required>
+                                    <option value="">-- Select Parent Node --</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="term-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="term-description" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <!-- Relationships Section -->
+                    <div class="mb-3">
+                        <label class="form-label">Relationships</label>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="term-is-a" class="form-label">Is A (Related Terms)</label>
+                                <select class="form-select" id="term-is-a" name="is_a_terms" multiple>
+                                    <!-- Options will be populated by JavaScript -->
+                                </select>
+                                <div class="form-text">Terms that this term is a type of</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="term-has-a" class="form-label">Has A (Contains Terms)</label>
+                                <select class="form-select" id="term-has-a" name="has_a_terms" multiple>
+                                    <!-- Options will be populated by JavaScript -->
+                                </select>
+                                <div class="form-text">Terms that this term contains or includes</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership Section -->
+                    <div class="mb-3" id="term-ownership-section">
+                        <label class="form-label fw-bold" id="term-ownership-label">Ownership</label>
+                        <div id="term-ownership-sections-container">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-term-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Owner
+                        </button>
+                        <div class="form-text mt-2" id="term-ownership-help-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            You can add multiple ownership sections with different ownership types
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Create Term
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -921,4 +1390,5 @@
 
 <!-- Glossary Enhanced JavaScript -->
 <script src="{% static 'metadata_manager/glossary/glossary_enhanced.js' %}"></script>
+
 {% endblock %} 

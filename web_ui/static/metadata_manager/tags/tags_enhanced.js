@@ -223,10 +223,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Load users and groups when create modal is opened
-    document.getElementById('createTagModal').addEventListener('show.bs.modal', function() {
-        // Ensure users and groups are loaded
+    document.getElementById('createTagModal').addEventListener('show.bs.modal', async function() {
+        // Ensure users and groups are loaded before setting up ownership interface
         if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
-            loadUsersAndGroups();
+            try {
+                await loadUsersAndGroups();
+                console.log('Tags modal: Users and groups loaded successfully');
+            } catch (error) {
+                console.error('Tags modal: Error loading users and groups:', error);
+            }
         }
         
         // Only reset if not in edit mode (edit mode sets data attributes)
@@ -234,6 +239,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!form.dataset.editMode) {
             resetTagModal();
         }
+        
+        // Set up the ownership interface (Add Owner button functionality)
+        setupOwnershipInterface();
         
         // Hide ownership section by default unless in edit mode with existing owners
         hideOwnershipSectionIfEmpty();
@@ -2078,7 +2086,7 @@ async function loadUsersAndGroups() {
         const csrfToken = getCsrfToken();
         console.log('Using CSRF token for users-groups:', csrfToken);
         
-        const response = await fetch('/metadata/tags/users-groups/', {
+        const response = await fetch('/metadata/api/users-groups/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -2141,6 +2149,8 @@ function setupOwnershipInterface() {
     newAddButton.addEventListener('click', (e) => {
         e.preventDefault();
         addOwnershipSection();
+        // Show the ownership section when adding the first one
+        showOwnershipSection();
         // Add a subtle animation to the button
         newAddButton.style.transform = 'scale(0.95)';
         setTimeout(() => {
@@ -2148,8 +2158,8 @@ function setupOwnershipInterface() {
         }, 150);
     });
     
-    // Add one initial ownership section
-    addOwnershipSection();
+    // Don't add an initial ownership section - let it be hidden by default
+    // Only show ownership section if there are existing owners (in edit mode)
 }
 
 

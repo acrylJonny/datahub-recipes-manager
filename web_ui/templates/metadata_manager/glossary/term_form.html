@@ -35,6 +35,20 @@
                                 {% endfor %}
                             </select>
                         </div>
+                        
+                        <!-- Ownership Section -->
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label">Ownership (Optional)</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="OwnershipManager.addOwnershipSection('ownership-container', Date.now())">
+                                    <i class="fas fa-plus me-1"></i> Add Owner
+                                </button>
+                            </div>
+                            <div id="ownership-container" style="display: none;">
+                                <!-- Ownership sections will be added here -->
+                            </div>
+                        </div>
+                        
                         <div class="d-flex justify-content-between">
                             <a href="{% url 'metadata_manager:glossary_list' %}" class="btn btn-secondary">Cancel</a>
                             <button type="submit" class="btn btn-primary">Create Term</button>

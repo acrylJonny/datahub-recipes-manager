@@ -84,21 +84,154 @@ const DataUtils = {
         };
     },
     
-    safeJsonStringify: function(obj, maxLength = 1000) {
+    safeJsonStringify: function(obj, maxLength = 5000) {
         try {
-            const jsonString = JSON.stringify(obj);
-            return jsonString.length > maxLength ? jsonString.substring(0, maxLength) + '...' : jsonString;
+            // Handle circular references and special characters
+            const seen = new WeakSet();
+            let jsonString = JSON.stringify(obj, (key, value) => {
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) {
+                        return '[Circular Reference]';
+                    }
+                    seen.add(value);
+                }
+                // Convert undefined values to null for valid JSON
+                return value === undefined ? null : value;
+            }, 2);
+            
+            // If the string is too long, we need to truncate safely
+            if (jsonString.length > maxLength) {
+                // Try to create a simplified version by removing large arrays/objects
+                const simplified = this.simplifyObjectForJson(obj, maxLength);
+                jsonString = JSON.stringify(simplified, null, 2);
+                
+                // If still too long, truncate at the last complete JSON structure
+                if (jsonString.length > maxLength) {
+                    const truncated = jsonString.substring(0, maxLength);
+                    // Find the last complete JSON structure by looking for the last closing brace/bracket
+                    let lastValidIndex = truncated.lastIndexOf('}');
+                    const lastBracket = truncated.lastIndexOf(']');
+                    if (lastBracket > lastValidIndex) {
+                        lastValidIndex = lastBracket;
+                    }
+                    
+                    if (lastValidIndex > 0) {
+                        jsonString = truncated.substring(0, lastValidIndex + 1);
+                    } else {
+                        // Fallback to a minimal valid JSON object
+                        jsonString = '{"truncated": true, "original_size": ' + jsonString.length + '}';
+                    }
+                }
+            }
+            
+            return jsonString;
         } catch (error) {
             console.error('Error stringifying object:', error);
-            return '{}';
+            return '{"error": "Failed to stringify object"}';
         }
+    },
+    
+    // Helper function to simplify objects for JSON storage
+    simplifyObjectForJson: function(obj, maxLength) {
+        if (typeof obj !== 'object' || obj === null) {
+            return obj;
+        }
+        
+        const simplified = {};
+        
+        // Keep essential fields
+        const essentialFields = ['id', 'name', 'urn', 'type', 'sync_status', 'description'];
+        essentialFields.forEach(field => {
+            if (obj.hasOwnProperty(field)) {
+                simplified[field] = obj[field];
+            }
+        });
+        
+        // Add other fields but truncate large arrays/objects
+        Object.keys(obj).forEach(key => {
+            if (!essentialFields.includes(key)) {
+                const value = obj[key];
+                if (Array.isArray(value)) {
+                    // Limit arrays to first few items
+                    simplified[key] = value.length > 3 ? value.slice(0, 3).concat([`... ${value.length - 3} more items`]) : value;
+                } else if (typeof value === 'object' && value !== null) {
+                    // Simplify nested objects
+                    simplified[key] = this.simplifyObjectForJson(value, 100);
+                } else if (typeof value === 'string' && value.length > 200) {
+                    // Truncate long strings
+                    simplified[key] = value.substring(0, 200) + '...';
+                } else {
+                    simplified[key] = value;
+                }
+            }
+        });
+        
+        return simplified;
     },
     
     safeJsonParse: function(jsonString) {
         try {
+            if (!jsonString || typeof jsonString !== 'string') {
+                console.error('Invalid JSON string:', jsonString);
+                return {};
+            }
+            
+            // Try to parse directly first
             return JSON.parse(jsonString);
+            
         } catch (error) {
             console.error('Error parsing JSON:', error);
+            console.error('JSON string length:', jsonString ? jsonString.length : 'undefined');
+            
+            if (error instanceof SyntaxError && error.message.includes('position')) {
+                const match = error.message.match(/position (\d+)/);
+                if (match && match[1]) {
+                    const position = parseInt(match[1]);
+                    const start = Math.max(0, position - 50);
+                    const end = Math.min(jsonString.length, position + 50);
+                    console.error(`JSON error near position ${position}:`, 
+                        jsonString.substring(start, position) + '→HERE→' + jsonString.substring(position, end));
+                }
+            }
+            
+            // Try to fix common JSON issues and re-parse
+            try {
+                let fixedString = jsonString;
+                
+                // Remove any trailing incomplete strings or objects
+                const lastValidBrace = fixedString.lastIndexOf('}');
+                const lastValidBracket = fixedString.lastIndexOf(']');
+                const lastValidIndex = Math.max(lastValidBrace, lastValidBracket);
+                
+                if (lastValidIndex > 0 && lastValidIndex < fixedString.length - 10) {
+                    console.log('Attempting to fix truncated JSON by cutting at last valid structure');
+                    fixedString = fixedString.substring(0, lastValidIndex + 1);
+                    return JSON.parse(fixedString);
+                }
+                
+                // If that doesn't work, try to extract just the essential data
+                console.log('Attempting to extract essential data from malformed JSON');
+                const nameMatch = jsonString.match(/"name"\s*:\s*"([^"]+)"/);
+                const urnMatch = jsonString.match(/"urn"\s*:\s*"([^"]+)"/);
+                const typeMatch = jsonString.match(/"type"\s*:\s*"([^"]+)"/);
+                const idMatch = jsonString.match(/"id"\s*:\s*"?([^",}]+)"?/);
+                
+                if (nameMatch || urnMatch || idMatch) {
+                    return {
+                        name: nameMatch ? nameMatch[1] : 'Unknown',
+                        urn: urnMatch ? urnMatch[1] : '',
+                        type: typeMatch ? typeMatch[1] : 'unknown',
+                        id: idMatch ? idMatch[1] : '',
+                        _parsed_from_malformed: true
+                    };
+                }
+                
+            } catch (fixError) {
+                console.error('Failed to fix JSON:', fixError);
+            }
+            
+            // Final fallback
+            console.error('Returning empty object due to unparseable JSON');
             return {};
         }
     },
@@ -116,66 +249,16 @@ const DataUtils = {
 };
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded, starting glossary initialization...');
-    // Initialize connection cache
-    getCurrentConnectionCache();
+    // Initialize connection cache and load users and groups immediately on page load
+    getCurrentConnectionCache(); // This initializes the connection ID and cache
+    
     loadGlossaryData();
-    loadUsersAndGroups(); // Load users and groups cache for owner lookup
-    
-    // Set up filter listeners
     setupFilterListeners();
+    setupBulkActions();
+    setupActionButtonListeners();
     
-    // Search functionality for each tab
-    ['synced', 'local', 'remote'].forEach(tab => {
-        const searchInput = document.getElementById(`${tab}-search`);
-        const clearButton = document.getElementById(`${tab}-clear`);
-        
-        searchInput.addEventListener('input', function() {
-            currentSearch[tab] = this.value.toLowerCase();
-            // Reset pagination when searching
-            currentPagination[tab].page = 1;
-            displayTabContent(tab);
-        });
-        
-        clearButton.addEventListener('click', function() {
-            searchInput.value = '';
-            currentSearch[tab] = '';
-            // Reset pagination when clearing search
-            currentPagination[tab].page = 1;
-            displayTabContent(tab);
-        });
-    });
-    
-    // Global search functionality
-    const globalSearchInput = document.getElementById('globalSearchInput');
-    if (globalSearchInput) {
-        globalSearchInput.addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            // Apply search to all tabs
-            ['synced', 'local', 'remote'].forEach(tab => {
-                currentSearch[tab] = searchTerm;
-                // Reset pagination when searching
-                currentPagination[tab].page = 1;
-                const tabSearchInput = document.getElementById(`${tab}-search`);
-                if (tabSearchInput) {
-                    tabSearchInput.value = this.value;
-                }
-            });
-            // Refresh current active tab
-            const activeTab = document.querySelector('.nav-link.active');
-            if (activeTab) {
-                const tabType = activeTab.id.replace('-tab', '');
-                displayTabContent(tabType);
-            }
-        });
-    }
-    
-
-    
-    // Refresh button
-    document.getElementById('refreshGlossary').addEventListener('click', function() {
-        loadGlossaryData();
-    });
+    // Initialize create modals
+    initializeCreateModals();
 });
 
 function loadGlossaryData() {
@@ -510,18 +593,8 @@ function displayTabContent(tabType, contentFilters = []) {
         // Attach pagination handlers
         attachPaginationHandlers(content, tabType);
         
-        // Attach click handlers for view buttons
-        content.querySelectorAll('.view-item').forEach(button => {
-            button.addEventListener('click', function() {
-                const row = this.closest('tr');
-                const itemData = DataUtils.safeJsonParse(row.dataset.item);
-                if (itemData) {
-                    showItemDetails(itemData);
-                } else {
-                    console.error('Failed to parse item data from row');
-                }
-            });
-        });
+        // Attach checkbox handlers
+        attachCheckboxHandlers(content, tabType);
         
         // Attach click handlers for expand/collapse buttons
         content.querySelectorAll('.expand-button').forEach(button => {
@@ -550,17 +623,20 @@ function generateTableHTMLWithPagination(rootItems, tabType, totalItems, current
     
     return `
         <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
+            <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        <th class="sortable-header" data-sort="name" width="20%">Name</th>
-                        <th width="20%">Description</th>
-                        <th class="sortable-header text-center" data-sort="owners_count" width="8%">Owners</th>
-                        <th class="sortable-header text-center" data-sort="relationships_count" width="8%">Relationships</th>
-                        <th class="sortable-header text-center" data-sort="custom_properties_count" width="8%">Custom<br/>Properties</th>
-                        <th class="sortable-header text-center" data-sort="structured_properties_count" width="8%">Structured<br/>Properties</th>
-                        <th width="13%">URN</th>
-                        <th width="15%">Actions</th>
+                        <th width="40">
+                            <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
+                        </th>
+                        <th class="sortable-header" data-sort="name" width="200">Name</th>
+                        <th width="180">Description</th>
+                        <th class="sortable-header text-center" data-sort="owners_count" width="70">Owners</th>
+                        <th class="sortable-header text-center" data-sort="relationships_count" width="90">Relationships</th>
+                        <th class="sortable-header text-center" data-sort="custom_properties_count" width="80">Custom<br/>Properties</th>
+                        <th class="sortable-header text-center" data-sort="structured_properties_count" width="80">Structured<br/>Properties</th>
+                        <th width="180">URN</th>
+                        <th width="160">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -675,44 +751,58 @@ function organizeHierarchy(items) {
         return [];
     }
     
+    console.log(`organizeHierarchy: Processing ${items.length} items`);
+    
     // First pass: create map of all items
-    items.forEach(item => {
-        if (item && item.urn) {
-            itemMap.set(item.urn, { ...item, children: [] });
+    items.forEach((item, index) => {
+        if (!item) {
+            console.warn(`organizeHierarchy: Null/undefined item at index ${index}:`, item);
+            return;
+        }
+        
+        // For hierarchy organization, use URN if available, otherwise use ID for local items
+        const itemKey = item.urn || item.id;
+        
+        if (itemKey) {
+            itemMap.set(itemKey, { ...item, children: [] });
         } else {
-            console.warn('organizeHierarchy: Item missing URN:', item);
+            console.warn('organizeHierarchy: Item missing both URN and ID:', item);
         }
     });
     
     // Second pass: organize into hierarchy
     items.forEach(item => {
-        if (!item || !item.urn) return;
+        if (!item) return;
+        
+        const itemKey = item.urn || item.id;
+        if (!itemKey) return;
         
         try {
             const entityType = determineEntityType(item);
-            let parentUrn = null;
+            let parentKey = null;
             
-            // For glossary terms, use parent_node_urn to link to their parent glossary node
-            if (entityType === 'glossaryTerm' && item.parent_node_urn) {
-                parentUrn = item.parent_node_urn;
+            // For glossary terms, find parent using different methods based on whether it's local or remote
+            if (entityType === 'glossaryTerm') {
+                // Try different parent reference methods
+                parentKey = item.parent_node_urn || item.parent_node_id || item.parent_urn || item.parent_id;
             }
-            // For glossary nodes, use parent_urn to link to their parent glossary node
-            else if (entityType === 'glossaryNode' && item.parent_urn) {
-                parentUrn = item.parent_urn;
+            // For glossary nodes, use parent reference
+            else if (entityType === 'glossaryNode') {
+                parentKey = item.parent_urn || item.parent_id;
             }
             
-            if (parentUrn && itemMap.has(parentUrn)) {
+            if (parentKey && itemMap.has(parentKey)) {
                 // Add to parent's children
-                itemMap.get(parentUrn).children.push(itemMap.get(item.urn));
+                itemMap.get(parentKey).children.push(itemMap.get(itemKey));
             } else {
                 // Root level item (no parent or parent not found)
-                rootItems.push(itemMap.get(item.urn));
+                rootItems.push(itemMap.get(itemKey));
             }
         } catch (error) {
             console.error('Error organizing item in hierarchy:', item, error);
             // Add to root items as fallback
-            if (itemMap.has(item.urn)) {
-                rootItems.push(itemMap.get(item.urn));
+            if (itemMap.has(itemKey)) {
+                rootItems.push(itemMap.get(itemKey));
             }
         }
     });
@@ -735,6 +825,12 @@ function renderHierarchicalItems(items, tabType, level) {
 }
 
 function determineEntityType(item) {
+    // First, validate that we have a valid item
+    if (!item || typeof item !== 'object' || Object.keys(item).length === 0) {
+        console.warn('Could not determine entity type for item:', item);
+        return 'unknown';
+    }
+    
     // First, check if entity_type is already set correctly
     if (item.entity_type === 'glossaryTerm' || item.entity_type === 'glossaryNode') {
         return item.entity_type;
@@ -796,30 +892,55 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
     // Create indentation for hierarchy
     const indent = level * 20;
     
-    // Determine the correct parent URN for data attributes
-    let parentUrn = null;
-    if (entityType === 'glossaryTerm' && item.parent_node_urn) {
-        parentUrn = item.parent_node_urn;
-    } else if (entityType === 'glossaryNode' && item.parent_urn) {
-        parentUrn = item.parent_urn;
+    // Determine the correct parent key for data attributes (URN or ID)
+    let parentKey = null;
+    if (entityType === 'glossaryTerm') {
+        parentKey = item.parent_node_urn || item.parent_node_id || item.parent_urn || item.parent_id;
+    } else if (entityType === 'glossaryNode') {
+        parentKey = item.parent_urn || item.parent_id;
     }
     
-    // Create a safe version of the item for JSON.stringify using global utilities
-    const safeItem = DataUtils.createDisplaySafeItem(item, {
-        descriptionLength: 200,
-        nameLength: 100,
-        urnLength: 500
-    });
+    // Use URN or ID as the primary key for the item
+    const itemKey = item.urn || item.id;
+    
+    // Store only essential data in the data-item attribute to avoid JSON size issues
+    const minimalItemData = {
+        id: item.id,
+        name: item.name,
+        urn: item.urn,
+        type: item.type,
+        sync_status: item.sync_status,
+        description: item.description ? item.description.substring(0, 200) : ''
+    };
+    
+    // Store the full item data in a global cache for lookup
+    if (!window.glossaryDataCache) {
+        window.glossaryDataCache = {};
+    }
+    
+    // Use the URN as a unique key for the cache, fallback to ID
+    const cacheKey = item.urn || item.id;
+    if (cacheKey) {
+        window.glossaryDataCache[cacheKey] = item;
+    }
+    
+    // Use safe JSON stringify for minimal data attributes
+    const safeJsonData = JSON.stringify(minimalItemData)
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
     
     return `
-        <tr data-item='${DataUtils.safeJsonStringify(safeItem)}' data-level="${level}" data-node-urn="${item.urn}" ${parentUrn ? `data-parent-node="${parentUrn}"` : ''} ${level > 0 ? 'style="display: none;"' : ''}>
+        <tr data-item='${safeJsonData}' data-level="${level}" data-node-urn="${itemKey}" ${parentKey ? `data-parent-node="${parentKey}"` : ''} ${level > 0 ? 'style="display: none;"' : ''}>
+            <td>
+                <input type="checkbox" class="form-check-input item-checkbox" value="${item.id || item.urn}">
+            </td>
             <td>
                 <div class="hierarchy-container" style="margin-left: ${indent}px;">
                     ${level > 0 ? '<div class="tree-connector"></div>' : ''}
                     <div class="expand-button-container">
                         ${hasChildren ? `
                             <button class="expand-button" type="button" title="Expand/Collapse">
-                                <i class="fas fa-chevron-right expand-icon" id="icon-${item.urn}"></i>
+                                <i class="fas fa-chevron-right expand-icon" id="icon-${itemKey}"></i>
                             </button>
                         ` : ''}
                     </div>
@@ -835,7 +956,17 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
             </td>
             <td class="text-center">
                 ${entityType === 'glossaryTerm' ? 
-                    ((item.relationships_count || 0) > 0 ? `<i class="fas fa-link text-success me-1"></i><span class="badge bg-success">${item.relationships_count}</span>` : '<span class="text-muted">None</span>') :
+                    (() => {
+                        let relationshipsCount = 0;
+                        if (item.relationships_count !== undefined && item.relationships_count !== null) {
+                            relationshipsCount = item.relationships_count;
+                        } else if (item.relationships) {
+                            relationshipsCount = item.relationships.length;
+                        }
+                        return relationshipsCount > 0 ? 
+                            `<i class="fas fa-link text-success me-1"></i><span class="badge bg-success">${relationshipsCount}</span>` : 
+                            '<span class="text-muted">None</span>';
+                    })() :
                     '<span class="text-muted">N/A</span>'
                 }
             </td>
@@ -849,22 +980,8 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
                 <code class="small" title="${escapeHtml(item.urn || '')}">${escapeHtml(truncateUrnFromEnd(item.urn || '', 30))}</code>
             </td>
             <td>
-                <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-outline-primary view-item" 
-                            title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" 
-                            title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    ${item.urn && !item.urn.includes('local:') ? `
-                        <a href="${getDataHubUrl(item.urn, entityType)}" 
-                           class="btn btn-outline-info" 
-                           target="_blank" title="View in DataHub">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    ` : ''}
+                <div class="btn-group action-buttons" role="group">
+                    ${getActionButtons(item, tabType)}
                 </div>
             </td>
         </tr>
@@ -873,100 +990,124 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
 
 function getActionButtons(item, tabType) {
     const hasDataHubConnection = true; // This should come from the template context
-    let buttons = '';
+    let actionButtons = '';
     
-    if (tabType === 'synced' && item.sync_status === 'MODIFIED' && hasDataHubConnection) {
-        const deployUrl = item.type === 'node' ? 
-            `/metadata/glossary/nodes/${item.id}/deploy/` : 
-            `/metadata/glossary/terms/${item.id}/deploy/`;
-        buttons += `
-            <form action="${deployUrl}" method="post" class="d-inline">
-                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
-                <button type="submit" class="btn btn-sm btn-outline-warning" title="Update in DataHub">
-                    <i class="fas fa-sync-alt"></i>
-                </button>
-            </form>
+    // 1. View details button (always available) - FIRST like in tags
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-primary view-item" 
+                title="View Details">
+            <i class="fas fa-eye"></i>
+        </button>
+    `;
+    
+    // 2. DataHub link (if item has URN and is not local-only) - SECOND like in tags
+    if (item.urn && !item.urn.includes('local:') && glossaryData.datahub_url) {
+        const entityType = determineEntityType(item);
+        const datahubUrl = getDataHubUrl(item.urn, entityType);
+        actionButtons += `
+            <a href="${datahubUrl}" target="_blank" class="btn btn-sm btn-outline-info" title="View in DataHub">
+                <i class="fas fa-external-link-alt"></i>
+            </a>
         `;
     }
     
+    // 3. Edit button - For local and synced items
+    if (tabType === 'local' || tabType === 'synced') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-warning edit-item" 
+                    title="Edit ${item.type === 'node' ? 'Node' : 'Term'}">
+                <i class="fas fa-edit"></i>
+            </button>
+        `;
+    }
+    
+    // 4. Deploy to DataHub - Only for local-only items
     if (tabType === 'local' && hasDataHubConnection) {
-        const deployUrl = item.type === 'node' ? 
-            `/metadata/glossary/nodes/${item.id}/deploy/` : 
-            `/metadata/glossary/terms/${item.id}/deploy/`;
-        buttons += `
-            <form action="${deployUrl}" method="post" class="d-inline">
-                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
-                <button type="submit" class="btn btn-sm btn-outline-success" title="Deploy to DataHub">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                </button>
-            </form>
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success deploy-to-datahub" 
+                    title="Deploy to DataHub">
+                <i class="fas fa-cloud-upload-alt"></i>
+            </button>
         `;
     }
     
+    // 5. Resync - Only for synced items that are modified or synced
+    if (tabType === 'synced' && (item.sync_status === 'MODIFIED' || item.sync_status === 'SYNCED') && hasDataHubConnection) {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-info resync-item" 
+                    title="Resync from DataHub">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        `;
+    }
+    
+    // 6. Sync to Local - Only for remote items
     if (tabType === 'remote') {
-        buttons += `
-            <form action="/metadata/glossary/pull/" method="post" class="d-inline">
-                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
-                <input type="hidden" name="${item.type}_urns" value="${item.urn}">
-                <button type="submit" class="btn btn-sm btn-outline-info" title="Import to Local">
-                    <i class="fas fa-download"></i>
-                </button>
-            </form>
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-primary sync-to-local" 
+                    title="Import to Local">
+                <i class="fas fa-download"></i>
+            </button>
         `;
     }
     
-    return buttons;
+    // 7. Download JSON - Available for all items
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-secondary download-json"
+                title="Download JSON">
+            <i class="fas fa-file-download"></i>
+        </button>
+    `;
+
+    // 8. Add to Staged Changes - Available for all items
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
+                title="Add to Staged Changes">
+            <i class="fab fa-github"></i>
+        </button>
+    `;
+
+    // 9. Delete Local - Only for synced and local items (LAST like in tags)
+    if (tabType === 'synced' || tabType === 'local') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-danger delete-local" 
+                    title="Delete Local ${item.type === 'node' ? 'Node' : 'Term'}">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    }
+    
+    return actionButtons;
 }
 
 function getEmptyStateHTML(tabType, hasSearch) {
+    // Calculate colspan based on number of columns: checkbox + name + description + owners + relationships + custom props + structured props + urn + actions = 9
+    const colspan = '9';
+    
     if (hasSearch) {
         return `
-            <div class="py-5 text-center">
-                <div class="mb-3">
-                    <i class="fas fa-search fa-4x text-muted"></i>
-                </div>
-                <h4>No items found</h4>
-                <p class="text-muted">No items match your search criteria.</p>
-            </div>
+            <tr>
+                <td colspan="${colspan}" class="text-center py-4 text-muted">
+                    <i class="fas fa-search fa-2x mb-2"></i><br>
+                    No glossary items found matching your search criteria.
+                </td>
+            </tr>
         `;
     }
     
     const emptyStates = {
-        synced: {
-            icon: 'fas fa-sync-alt',
-            title: 'No synced items',
-            description: 'Items that exist both locally and in DataHub will appear here.'
-        },
-        local: {
-            icon: 'fas fa-laptop',
-            title: 'No local-only items',
-            description: 'Items that exist only in this application will appear here.',
-            action: `<div class="mt-2">
-                        <a href="/metadata/glossary/nodes/create/" class="btn btn-primary me-2">
-                            <i class="fas fa-folder-plus me-1"></i> Create Node
-                        </a>
-                        <a href="/metadata/glossary/terms/create/" class="btn btn-success">
-                            <i class="fas fa-tag me-1"></i> Create Term
-                        </a>
-                     </div>`
-        },
-        remote: {
-            icon: 'fas fa-server',
-            title: 'No remote-only items',
-            description: 'Items that exist only in DataHub will appear here.'
-        }
+        synced: 'No synced glossary items found. Items that exist both locally and in DataHub will appear here.',
+        local: 'No local-only glossary items found. Items that exist only in this application will appear here.',
+        remote: 'No remote-only glossary items found. Items that exist only in DataHub will appear here.'
     };
     
-    const state = emptyStates[tabType];
     return `
-        <div class="py-5 text-center">
-            <div class="mb-3">
-                <i class="${state.icon} fa-4x text-muted"></i>
-            </div>
-            <h4>${state.title}</h4>
-            <p class="text-muted">${state.description}</p>
-            ${state.action || ''}
-        </div>
+        <tr>
+            <td colspan="${colspan}" class="text-center py-4 text-muted">
+                <i class="fas fa-folder-open fa-2x mb-2"></i><br>
+                ${emptyStates[tabType]}
+            </td>
+        </tr>
     `;
 }
 
@@ -998,8 +1139,14 @@ function showItemDetails(item) {
         }
     }
     
-    // Basic information
-    document.getElementById('modal-item-name').textContent = itemData.name || itemData.properties?.name || 'Unnamed';
+    // Basic information - handle both old and new data structures
+    const name = itemData.name || itemData.properties?.name || 'Unnamed';
+    const description = itemData.description || itemData.properties?.description || 'No description available';
+    const urn = itemData.urn || 'No URN available';
+    
+    document.getElementById('modal-item-name').textContent = name;
+    document.getElementById('modal-item-description').textContent = description;
+    document.getElementById('modal-item-urn').textContent = urn;
     
     // Set type with icon
     const typeElement = document.getElementById('modal-item-type');
@@ -1011,9 +1158,6 @@ function showItemDetails(item) {
         typeElement.innerHTML = `<i class="fas fa-question-circle text-warning me-1"></i>Unknown Type`;
     }
     
-    document.getElementById('modal-item-description').textContent = itemData.description || itemData.properties?.description || 'No description available';
-    document.getElementById('modal-item-urn').textContent = itemData.urn || 'No URN available';
-    
     // Parent information (for terms and child nodes)
     const parentLabel = document.getElementById('modal-parent-label');
     const parentValue = document.getElementById('modal-parent-value');
@@ -1021,9 +1165,14 @@ function showItemDetails(item) {
     
     let parentUrn = null;
     if (entityType === 'glossaryTerm') {
-        parentUrn = itemData.parent_node_urn || itemData.parentNodes?.nodes?.[0]?.urn;
+        // Check multiple possible locations for parent URN
+        parentUrn = itemData.parent_node_urn || 
+                   itemData.parentNodes?.nodes?.[0]?.urn ||
+                   (itemData.parentNodes && itemData.parentNodes.length > 0 ? itemData.parentNodes[0].urn : null);
     } else if (entityType === 'glossaryNode') {
-        parentUrn = itemData.parent_urn || itemData.parentNodes?.nodes?.[0]?.urn;
+        parentUrn = itemData.parent_urn || 
+                   itemData.parentNodes?.nodes?.[0]?.urn ||
+                   (itemData.parentNodes && itemData.parentNodes.length > 0 ? itemData.parentNodes[0].urn : null);
     }
     
     if (parentUrn) {
@@ -1037,117 +1186,56 @@ function showItemDetails(item) {
     
     // Status
     const statusBadge = document.getElementById('modal-item-status');
-    statusBadge.textContent = itemData.sync_status_display || itemData.sync_status || item.sync_status_display || item.sync_status;
+    const syncStatus = itemData.sync_status_display || itemData.sync_status || item.sync_status_display || item.sync_status || 'Unknown';
+    statusBadge.textContent = syncStatus;
     statusBadge.className = `badge ${getStatusBadgeClass(itemData.sync_status || item.sync_status)}`;
     
     // DataHub link
     const datahubLink = document.getElementById('modal-datahub-link');
-    if (itemData.urn && !itemData.urn.includes('local:') && glossaryData.datahub_url) {
-        datahubLink.href = getDataHubUrl(itemData.urn, entityType);
+    if (urn && !urn.includes('local:') && glossaryData.datahub_url) {
+        datahubLink.href = getDataHubUrl(urn, entityType);
         datahubLink.style.display = 'inline-block';
     } else {
         datahubLink.style.display = 'none';
     }
     
-    // Ownership information - similar to tags page
+    // Ownership information - handle both old and new structures
     const ownersList = document.getElementById('modal-owners-list');
     
-    // Load users/groups cache if needed
-    if (usersAndGroupsCache.users.length === 0) {
-        loadUsersAndGroups();
+    // Check for ownership data from the comprehensive GraphQL query or processed data
+    let ownershipData = null;
+    if (itemData.ownership?.owners) {
+        ownershipData = itemData.ownership.owners;
+    } else if (itemData.owners) {
+        ownershipData = itemData.owners;
+    } else if (item.ownership?.owners) {
+        ownershipData = item.ownership.owners;
+    } else if (item.owners) {
+        ownershipData = item.owners;
     }
     
-    // Check for ownership data from the comprehensive GraphQL query
-    const ownershipData = itemData.ownership || item.ownership;
-    
-    if (ownershipData && ownershipData.length > 0) {
-        // Group owners by ownership type - using the same format as tags view
-        const ownersByType = {};
-        
-        ownershipData.forEach(ownerInfo => {
-            let ownerUrn, ownershipTypeUrn, ownershipTypeName;
-            
-            // Handle the processed ownership data structure from backend
-            if (ownerInfo.urn && ownerInfo.ownershipType) {
-                // Backend processed format
-                ownerUrn = ownerInfo.urn;
-                ownershipTypeUrn = ownerInfo.ownershipType.urn;
-                ownershipTypeName = ownerInfo.ownershipType.name || 'Unknown Type';
-            } else if (ownerInfo.owner && ownerInfo.ownershipType) {
-                // GraphQL format
-                ownerUrn = ownerInfo.owner.urn;
-                ownershipTypeUrn = ownerInfo.ownershipType.urn;
-                ownershipTypeName = ownerInfo.ownershipType.info?.name || 'Unknown Type';
-            } else {
-                return; // Skip invalid entries
-            }
-            
-            // Find the owner name using the same logic as tags view
-            let ownerName = ownerUrn;
-            let isUser = false;
-            
-            if (ownerInfo.owner && (ownerInfo.owner.username || ownerInfo.owner.name)) {
-                // GraphQL format - owner data is already included
-                if (ownerInfo.owner.username) {
-                    // CorpUser
-                    isUser = true;
-                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.username;
-                } else if (ownerInfo.owner.name) {
-                    // CorpGroup
-                    isUser = false;
-                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.name;
-                }
-            } else {
-                // Backend processed format or need to look up in cache
-                if (ownerInfo.displayName || ownerInfo.name) {
-                    ownerName = ownerInfo.displayName || ownerInfo.name;
-                    isUser = ownerUrn?.includes('corpuser');
-                } else {
-                    // Look up in cache
-                    const user = usersAndGroupsCache.users.find(u => u.urn === ownerUrn);
-                    const group = usersAndGroupsCache.groups.find(g => g.urn === ownerUrn);
-                    
-                    if (user) {
-                        isUser = true;
-                        ownerName = user.display_name || user.username || ownerUrn;
-                    } else if (group) {
-                        isUser = false;
-                        ownerName = group.display_name || ownerUrn;
-                    }
-                }
-            }
-            
-            if (!ownersByType[ownershipTypeName]) {
-                ownersByType[ownershipTypeName] = [];
-            }
-            ownersByType[ownershipTypeName].push({
-                name: ownerName,
-                urn: ownerUrn,
-                isUser: isUser
-            });
-        });
-        
-        // Generate HTML for owners grouped by type - using the same format as tags view
+    if (ownersList && ownershipData && ownershipData.length > 0) {
+        // Display ownership info using processed data
         let ownersHTML = '';
-        Object.keys(ownersByType).forEach(ownershipType => {
-            const owners = ownersByType[ownershipType];
+        ownershipData.forEach(owner => {
+            const ownerName = owner.name || owner.displayName || owner.urn || 'Unknown';
+            const ownerType = owner.type || (owner.urn && owner.urn.includes(':corpGroup:') ? 'group' : 'user');
+            const ownershipTypeName = owner.ownershipType?.name || 'Unknown';
+            const icon = ownerType === 'group' ? 'fas fa-users' : 'fas fa-user';
+            
             ownersHTML += `
-                <div class="mb-3">
-                    <h6 class="text-primary mb-2">
-                        <i class="fas fa-crown me-1"></i>${escapeHtml(ownershipType)}
-                    </h6>
-                    <div class="ms-3">
-                        ${owners.map(owner => `
-                            <div class="d-flex align-items-center mb-1">
-                                <i class="fas fa-${owner.isUser ? 'user' : 'users'} text-muted me-2"></i>
-                                <span>${escapeHtml(owner.name)}</span>
-                            </div>
-                        `).join('')}
+                <div class="owner-item mb-2">
+                    <div class="d-flex align-items-center">
+                        <i class="${icon} me-2"></i>
+                        <div>
+                            <strong>${escapeHtml(ownerName)}</strong>
+                            <br>
+                            <small class="text-muted">${escapeHtml(ownershipTypeName)}</small>
+                        </div>
                     </div>
                 </div>
             `;
         });
-        
         ownersList.innerHTML = ownersHTML;
     } else {
         ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
@@ -1156,65 +1244,80 @@ function showItemDetails(item) {
     // Relationships - Show existing relationships or load on demand for glossary terms
     const relationshipsList = document.getElementById('modal-relationships-list');
     
-    // Check if we already have relationships data from the backend
-    if ((itemData.relationships && itemData.relationships.length > 0) || (item.relationships && item.relationships.length > 0)) {
-        const relationshipsData = itemData.relationships || item.relationships;
-        // Display existing relationships data
-        let relationshipsHTML = '';
+    // Only process relationships for glossary terms, not nodes
+    // (entityType is already declared at the top of the function)
+    
+    if (entityType === 'glossaryTerm') {
+        // Check if we already have relationships data from the backend
+        let relationshipsData = itemData.relationships || item.relationships;
         
-        // Group relationships by type
-        const relationshipsByType = {};
-        relationshipsData.forEach(rel => {
-            const relType = rel.type || 'Related';
-            if (!relationshipsByType[relType]) {
-                relationshipsByType[relType] = [];
-            }
-            relationshipsByType[relType].push(rel);
-        });
-        
-        // Display each relationship type
-        Object.keys(relationshipsByType).forEach(relType => {
-            const rels = relationshipsByType[relType];
-            const typeIcon = relType === 'isA' ? 'fas fa-arrow-up' : 
-                           relType === 'hasA' ? 'fas fa-arrow-down' : 
-                           'fas fa-link';
-            const typeColor = relType === 'isA' ? 'text-primary' : 
-                            relType === 'hasA' ? 'text-success' : 
-                            'text-info';
+        if (relationshipsData && relationshipsData.length > 0) {
+            // Display existing relationships data
+            let relationshipsHTML = '';
             
-            relationshipsHTML += `
-                <div class="mb-3">
-                    <h6 class="${typeColor}"><i class="${typeIcon} me-1"></i>${relType} (${rels.length})</h6>
-                    ${rels.map(rel => `
-                        <div class="border rounded p-2 mb-2">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <strong>${escapeHtml(rel.entity?.name || 'Unknown Entity')}</strong>
-                                    ${rel.entity?.type ? `<span class="badge bg-secondary ms-2">${rel.entity.type}</span>` : ''}
+            // Group relationships by type
+            const relationshipsByType = {};
+            relationshipsData.forEach(rel => {
+                const relType = rel.type || 'Related';
+                if (!relationshipsByType[relType]) {
+                    relationshipsByType[relType] = [];
+                }
+                relationshipsByType[relType].push(rel);
+            });
+            
+            // Display each relationship type
+            Object.keys(relationshipsByType).forEach(relType => {
+                const rels = relationshipsByType[relType];
+                const typeIcon = relType === 'isA' ? 'fas fa-arrow-up' : 
+                               relType === 'hasA' ? 'fas fa-arrow-down' : 
+                               'fas fa-link';
+                const typeColor = relType === 'isA' ? 'text-primary' : 
+                                relType === 'hasA' ? 'text-success' : 
+                                'text-info';
+                
+                relationshipsHTML += `
+                    <div class="mb-3">
+                        <h6 class="${typeColor}"><i class="${typeIcon} me-1"></i>${relType} (${rels.length})</h6>
+                        ${rels.map(rel => `
+                            <div class="border rounded p-2 mb-2">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong>${escapeHtml(rel.entity?.name || 'Unknown Entity')}</strong>
+                                        ${rel.entity?.type ? `<span class="badge bg-secondary ms-2">${rel.entity.type}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="mt-1">
+                                    <code class="small">${escapeHtml(rel.entity?.urn || 'No URN')}</code>
                                 </div>
                             </div>
-                            <div class="mt-1">
-                                <code class="small">${escapeHtml(rel.entity?.urn || 'No URN')}</code>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-        });
-        
-        relationshipsList.innerHTML = relationshipsHTML;
+                        `).join('')}
+                    </div>
+                `;
+            });
+            
+            relationshipsList.innerHTML = relationshipsHTML;
+        } else {
+            // No relationships data available from backend for this term
+            relationshipsList.innerHTML = '<p class="text-muted">No relationships available for this term</p>';
+        }
+    } else if (entityType === 'glossaryNode') {
+        // Glossary nodes don't have relationships
+        relationshipsList.innerHTML = '<p class="text-muted">Glossary nodes do not have relationships</p>';
     } else {
-        // No relationships data available from backend
-        relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
+        // Unknown entity type
+        relationshipsList.innerHTML = '<p class="text-muted">Relationships not applicable for this item type</p>';
     }
     
-    // Properties
+    // Properties - handle both old and new structures
     const propertiesDiv = document.getElementById('modal-glossary-properties');
     let propertiesHTML = '';
     
-    // Custom Properties
-    if ((itemData.custom_properties && itemData.custom_properties.length > 0) || (item.custom_properties && item.custom_properties.length > 0)) {
-        const customProperties = itemData.custom_properties || item.custom_properties;
+    // Custom Properties - check multiple possible locations
+    let customProperties = itemData.custom_properties || itemData.customProperties || 
+                          itemData.properties?.customProperties || item.custom_properties || 
+                          item.customProperties;
+    
+    if (customProperties && customProperties.length > 0) {
         propertiesHTML += `
             <div class="border rounded p-2 mb-2">
                 <strong>Custom Properties:</strong>
@@ -1229,16 +1332,19 @@ function showItemDetails(item) {
         `;
     }
     
-    // Structured Properties
-    if ((itemData.structured_properties && itemData.structured_properties.length > 0) || (item.structured_properties && item.structured_properties.length > 0)) {
-        const structuredProperties = itemData.structured_properties || item.structured_properties;
+    // Structured Properties - check multiple possible locations
+    let structuredProperties = itemData.structured_properties || itemData.structuredProperties || 
+                              item.structured_properties || item.structuredProperties;
+    
+    if (structuredProperties && structuredProperties.length > 0) {
         propertiesHTML += `
             <div class="border rounded p-2 mb-2">
                 <strong>Structured Properties:</strong>
                 <div class="mt-2">
                     ${structuredProperties.map(prop => `
                         <div class="mb-1">
-                            <strong>${escapeHtml(prop.propertyUrn || 'Unknown')}:</strong> ${escapeHtml(JSON.stringify(prop.value) || '')}
+                            <strong>${escapeHtml(prop.urn || prop.propertyUrn || 'Unknown')}:</strong> 
+                            ${escapeHtml(prop.values ? JSON.stringify(prop.values) : JSON.stringify(prop.value) || '')}
                         </div>
                     `).join('')}
                 </div>
@@ -1252,7 +1358,7 @@ function showItemDetails(item) {
         propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
     }
     
-    // Raw JSON
+    // Raw JSON - show the processed data
     const rawData = itemData;
     document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
     
@@ -1277,54 +1383,9 @@ function truncateUrnFromEnd(urn, maxLength) {
 }
 
 function formatDate(timestamp) {
-    try {
-        const date = new Date(parseInt(timestamp));
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-    } catch (e) {
-        return timestamp;
-    }
-}
-
-async function loadUsersAndGroups() {
-    const now = Date.now();
-    const connectionCache = getCurrentConnectionCache();
-    
-    // Check if cache is still valid for current connection
-    if (connectionCache.lastFetched && 
-        (now - connectionCache.lastFetched) < connectionCache.cacheExpiry &&
-        connectionCache.users.length > 0) {
-        console.log(`Using cached users and groups for connection: ${currentConnectionId}`);
-        return;
-    }
-    
-    console.log(`Fetching fresh users and groups data for connection: ${currentConnectionId}`);
-    
-    try {
-        // Fetch users, groups, and ownership types in a single request
-        const response = await fetch('/metadata/tags/users-groups/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: JSON.stringify({ type: 'all' })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            connectionCache.users = data.data.users || [];
-            connectionCache.groups = data.data.groups || [];
-            connectionCache.ownership_types = data.data.ownership_types || [];
-            connectionCache.lastFetched = now;
-            
-            console.log(`Loaded ${connectionCache.users.length} users, ${connectionCache.groups.length} groups, and ${connectionCache.ownership_types.length} ownership types for connection ${currentConnectionId}${data.cached ? ' (cached)' : ''}`);
-        } else {
-            console.error('Failed to load users, groups, and ownership types:', data.error);
-        }
-    } catch (error) {
-        console.error('Error loading users and groups:', error);
-    }
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }
 
 function getDataHubUrl(urn, type) {
@@ -1765,4 +1826,1243 @@ async function uploadCSV() {
     } finally {
         document.getElementById('uploadCSVBtn').disabled = false;
     }
-} 
+}
+
+function setupActionButtonListeners() {
+    // Use event delegation since rows are dynamically created
+    document.addEventListener('click', function(e) {
+        // Get the closest row to find item data
+        const row = e.target.closest('tr[data-item]');
+        if (!row) return;
+        
+        // Parse the minimal item data from the row
+        const rawData = row.dataset.item
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'");
+        
+        let minimalItemData;
+        try {
+            minimalItemData = JSON.parse(rawData);
+        } catch (error) {
+            console.error('Failed to parse minimal item data:', error, rawData);
+            return;
+        }
+        
+        if (!minimalItemData) return;
+        
+        // Look up the full item data from the cache
+        const cacheKey = minimalItemData.urn || minimalItemData.id;
+        const itemData = window.glossaryDataCache && window.glossaryDataCache[cacheKey] ? 
+                         window.glossaryDataCache[cacheKey] : minimalItemData;
+        
+        // Check which button was clicked
+        const clickedElement = e.target.closest('button');
+        if (!clickedElement) return;
+
+        if (clickedElement.classList.contains('view-item') || clickedElement.closest('.view-item')) {
+            // View Details button clicked
+            console.log('View Details clicked for item:', itemData);
+            showItemDetails(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('edit-item') || clickedElement.closest('.edit-item')) {
+            // Edit Item button clicked
+            console.log('Edit Item clicked for item:', itemData);
+            editItem(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('deploy-to-datahub') || clickedElement.closest('.deploy-to-datahub')) {
+            // Deploy to DataHub button clicked
+            console.log('Deploy to DataHub clicked for item:', itemData);
+            deployToDataHub(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('resync-item') || clickedElement.closest('.resync-item')) {
+            // Resync Item button clicked
+            console.log('Resync Item clicked for item:', itemData);
+            resyncItem(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('sync-to-local') || clickedElement.closest('.sync-to-local')) {
+            // Sync to Local button clicked
+            console.log('Sync to Local clicked for item:', itemData);
+            syncToLocal(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('download-json') || clickedElement.closest('.download-json')) {
+            // Download JSON button clicked
+            console.log('Download JSON clicked for item:', itemData);
+            downloadItemJson(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('add-to-staged') || clickedElement.closest('.add-to-staged')) {
+            // Add to Staged Changes button clicked
+            console.log('Add to Staged Changes clicked for item:', itemData);
+            addToStagedChanges(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('delete-local') || clickedElement.closest('.delete-local')) {
+            // Delete Local button clicked
+            console.log('Delete Local clicked for item:', itemData);
+            deleteLocalItem(itemData);
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    });
+}
+
+/**
+ * Edit an item by navigating to its edit page
+ * @param {Object} item - The item object
+ */
+function editItem(item) {
+    const itemType = item.type === 'node' ? 'nodes' : 'terms';
+    const editUrl = `/metadata/glossary/${itemType}/${item.id}/`;
+    window.location.href = editUrl;
+}
+
+/**
+ * Deploy item to DataHub
+ * @param {Object} item - The item object
+ */
+function deployToDataHub(item) {
+    console.log('deployToDataHub called with:', item);
+    
+    if (!item.id) {
+        console.error('Cannot deploy item without an ID:', item);
+        showError('Error deploying item: Missing item ID.');
+        return;
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Show loading notification
+    showNotification('info', `Deploying ${itemType.toLowerCase()} "${itemName}" to DataHub...`);
+    
+    // Make the API call to deploy this item to DataHub
+    const deployUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/deploy/` : 
+        `/metadata/glossary/terms/${item.id}/deploy/`;
+    
+    fetch(deployUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Deploy to DataHub response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `${itemType} deployed successfully`);
+            // Add a small delay before refreshing to ensure backend processing is complete
+            setTimeout(() => {
+                // Refresh the data to show updated sync status
+                if (typeof loadGlossaryData === 'function') {
+                    loadGlossaryData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000); // 1 second delay
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error deploying item to DataHub:', error);
+        showNotification('error', `Error deploying ${itemType.toLowerCase()}: ${error.message}`);
+    });
+}
+
+/**
+ * Resync an item from DataHub
+ * @param {Object} item - The item object
+ */
+function resyncItem(item) {
+    console.log('resyncItem called with:', item);
+    
+    if (!item.id) {
+        console.error('Cannot resync item without an ID:', item);
+        showError('Error resyncing item: Missing item ID.');
+        return;
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    if (!confirm(`Are you sure you want to resync "${itemName}" from DataHub? This will overwrite any local changes.`)) {
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('info', `Resyncing ${itemType.toLowerCase()} "${itemName}" from DataHub...`);
+    
+    // For now, we'll use the same deploy endpoint but could add a specific resync endpoint later
+    const deployUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/deploy/` : 
+        `/metadata/glossary/terms/${item.id}/deploy/`;
+    
+    fetch(deployUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({ action: 'resync' })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Resync response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `${itemType} resynced successfully`);
+            setTimeout(() => {
+                if (typeof loadGlossaryData === 'function') {
+                    loadGlossaryData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error resyncing item:', error);
+        showNotification('error', `Error resyncing ${itemType.toLowerCase()}: ${error.message}`);
+    });
+}
+
+/**
+ * Sync item to local
+ * @param {Object} item - The item object
+ */
+function syncToLocal(item) {
+    console.log('syncToLocal called with:', item);
+    
+    if (!item.urn) {
+        console.error('Cannot sync item without URN:', item);
+        showError('Error syncing item: Missing URN.');
+        return;
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Show loading notification
+    showNotification('info', `Importing ${itemType.toLowerCase()} "${itemName}" to local...`);
+    
+    // Use the existing pull endpoint
+    const formData = new FormData();
+    formData.append('csrfmiddlewaretoken', getCsrfToken());
+    formData.append(`${item.type}_urns`, item.urn);
+    
+    fetch('/metadata/glossary/pull/', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Sync to local response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `${itemType} imported successfully`);
+            setTimeout(() => {
+                if (typeof loadGlossaryData === 'function') {
+                    loadGlossaryData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error syncing item to local:', error);
+        showNotification('error', `Error importing ${itemType.toLowerCase()}: ${error.message}`);
+    });
+}
+
+/**
+ * Download item as JSON
+ * @param {Object} item - The item object
+ */
+function downloadItemJson(item) {
+    console.log('downloadItemJson called with:', item);
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Create a clean JSON representation
+    const jsonData = {
+        urn: item.urn,
+        name: item.name,
+        description: item.description,
+        type: item.type,
+        sync_status: item.sync_status,
+        properties: item.properties || {},
+        ownership: item.ownership || [],
+        custom_properties: item.custom_properties || {},
+        structured_properties: item.structured_properties || {},
+        relationships: item.relationships || [],
+        institutional_memory: item.institutional_memory || {}
+    };
+    
+    // Create and download the file
+    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${itemType.toLowerCase()}_${itemName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showNotification('success', `${itemType} JSON downloaded successfully`);
+}
+
+/**
+ * Add item to staged changes
+ * @param {Object} item - The item object
+ */
+function addToStagedChanges(item) {
+    console.log('addToStagedChanges called with:', item);
+    
+    if (!item.id) {
+        console.error('Cannot add item to staged changes without an ID:', item);
+        showError('Error adding to staged changes: Missing item ID.');
+        return;
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Show loading notification
+    showNotification('info', `Adding ${itemType.toLowerCase()} "${itemName}" to staged changes...`);
+    
+    // Use the git push endpoint
+    const pushUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/git_push/` : 
+        `/metadata/glossary/terms/${item.id}/git_push/`;
+    
+    fetch(pushUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Add to staged changes response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `${itemType} added to staged changes successfully`);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding item to staged changes:', error);
+        showNotification('error', `Error adding ${itemType.toLowerCase()} to staged changes: ${error.message}`);
+    });
+}
+
+/**
+ * Delete local item
+ * @param {Object} item - The item object
+ */
+function deleteLocalItem(item) {
+    console.log('deleteLocalItem called with:', item);
+    
+    if (!item.id) {
+        console.error('Cannot delete item without an ID:', item);
+        showError('Error deleting item: Missing item ID.');
+        return;
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    if (!confirm(`Are you sure you want to delete the local ${itemType.toLowerCase()} "${itemName}"? This action cannot be undone.`)) {
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('info', `Deleting local ${itemType.toLowerCase()} "${itemName}"...`);
+    
+    // Use the delete endpoint
+    const deleteUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/` : 
+        `/metadata/glossary/terms/${item.id}/`;
+    
+    fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Delete local item response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `${itemType} deleted successfully`);
+            setTimeout(() => {
+                if (typeof loadGlossaryData === 'function') {
+                    loadGlossaryData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting local item:', error);
+        showNotification('error', `Error deleting ${itemType.toLowerCase()}: ${error.message}`);
+    });
+}
+
+/**
+ * Show notification to user
+ * @param {string} type - The notification type (success, error, info, warning)
+ * @param {string} message - The message to display
+ */
+function showNotification(type, message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    // Add to page
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 5000);
+}
+
+// Checkbox and bulk action handlers
+function attachCheckboxHandlers(content, tabType) {
+    // Attach individual checkbox handlers
+    content.querySelectorAll('.item-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            updateBulkActionsVisibility(tabType);
+        });
+    });
+    
+    // Attach select-all checkbox handler
+    const selectAllCheckbox = content.querySelector('.select-all-checkbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = content.querySelectorAll('.item-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            updateBulkActionsVisibility(tabType);
+        });
+    }
+}
+
+function updateBulkActionsVisibility(tabType) {
+    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
+    const bulkActions = document.getElementById(`${tabType}-bulk-actions`);
+    const selectedCount = document.getElementById(`${tabType}-selected-count`);
+    
+    if (checkboxes.length > 0) {
+        bulkActions.classList.add('show');
+        selectedCount.textContent = checkboxes.length;
+    } else {
+        bulkActions.classList.remove('show');
+        selectedCount.textContent = '0';
+    }
+}
+
+function getSelectedItems(tabType) {
+    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
+    const selectedItems = [];
+    
+    checkboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        if (row && row.dataset.item) {
+            // Parse the minimal item data from the row
+            const rawData = row.dataset.item
+                .replace(/&quot;/g, '"')
+                .replace(/&apos;/g, "'");
+            
+            let minimalItemData;
+            try {
+                minimalItemData = JSON.parse(rawData);
+            } catch (error) {
+                console.error('Failed to parse minimal item data in bulk selection:', error);
+                return;
+            }
+            
+            if (minimalItemData) {
+                // Look up the full item data from the cache
+                const cacheKey = minimalItemData.urn || minimalItemData.id;
+                const fullItemData = window.glossaryDataCache && window.glossaryDataCache[cacheKey] ? 
+                                   window.glossaryDataCache[cacheKey] : minimalItemData;
+                selectedItems.push(fullItemData);
+            }
+        }
+    });
+    
+    return selectedItems;
+}
+
+// Bulk action functions
+function bulkResyncItems(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for resync');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to resync ${selectedItems.length} selected items?`)) {
+        return;
+    }
+    
+    // Process each item
+    selectedItems.forEach(item => {
+        resyncItem(item);
+    });
+    
+    showNotification('success', `Started resync for ${selectedItems.length} items`);
+}
+
+function bulkDeployItems(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for deployment');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to deploy ${selectedItems.length} selected items to DataHub?`)) {
+        return;
+    }
+    
+    // Process each item
+    selectedItems.forEach(item => {
+        deployToDataHub(item);
+    });
+    
+    showNotification('success', `Started deployment for ${selectedItems.length} items`);
+}
+
+function bulkSyncToLocal(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for sync to local');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to sync ${selectedItems.length} selected items to local?`)) {
+        return;
+    }
+    
+    // Process each item
+    selectedItems.forEach(item => {
+        syncToLocal(item);
+    });
+    
+    showNotification('success', `Started sync to local for ${selectedItems.length} items`);
+}
+
+function bulkDownloadJson(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for download');
+        return;
+    }
+    
+    // Create a combined JSON file
+    const combinedData = {
+        items: selectedItems,
+        exported_at: new Date().toISOString(),
+        count: selectedItems.length,
+        type: 'glossary_bulk_export'
+    };
+    
+    const blob = new Blob([JSON.stringify(combinedData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `glossary_bulk_export_${selectedItems.length}_items_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showNotification('success', `Downloaded ${selectedItems.length} items as JSON`);
+}
+
+function bulkAddToPR(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for adding to staged changes');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to add ${selectedItems.length} selected items to staged changes?`)) {
+        return;
+    }
+    
+    // Process each item
+    selectedItems.forEach(item => {
+        addToStagedChanges(item);
+    });
+    
+    showNotification('success', `Added ${selectedItems.length} items to staged changes`);
+}
+
+function bulkDeleteLocal(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for deletion');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete ${selectedItems.length} selected local items? This action cannot be undone.`)) {
+        return;
+    }
+    
+    // Process each item
+    selectedItems.forEach(item => {
+        deleteLocalItem(item);
+    });
+    
+    showNotification('success', `Deleted ${selectedItems.length} local items`);
+}
+
+// Modal initialization functions
+async function initializeCreateModals() {
+    console.log('Initializing create modals...');
+    
+    // Load users and groups data first
+    try {
+        await loadUsersAndGroups();
+        console.log('Users and groups loaded successfully');
+    } catch (error) {
+        console.error('Error loading users and groups:', error);
+    }
+    
+    // Initialize create node modal
+    const createNodeModal = document.getElementById('createNodeModal');
+    console.log('createNodeModal found:', !!createNodeModal);
+    if (createNodeModal) {
+        createNodeModal.addEventListener('show.bs.modal', function() {
+            console.log('Node modal opening...');
+            // Load parent node options
+            populateParentNodeOptions('node-parent', false); // false = optional parent
+            
+            // Set up the ownership interface
+            setupNodeOwnershipInterface();
+            
+            // Hide ownership section by default
+            hideNodeOwnershipSectionIfEmpty();
+        });
+        
+        // Clean up when modal is closed
+        createNodeModal.addEventListener('hidden.bs.modal', function() {
+            resetNodeModal();
+        });
+    }
+    
+    // Initialize create term modal
+    const createTermModal = document.getElementById('createTermModal');
+    console.log('createTermModal found:', !!createTermModal);
+    if (createTermModal) {
+        createTermModal.addEventListener('show.bs.modal', function() {
+            console.log('Term modal opening...');
+            // Load parent node options
+            populateParentNodeOptions('term-parent-node', true); // true = required parent
+            
+            // Load relationship options
+            populateTermRelationshipOptions();
+            
+            // Set up the ownership interface
+            setupTermOwnershipInterface();
+            
+            // Hide ownership section by default
+            hideTermOwnershipSectionIfEmpty();
+        });
+        
+        // Clean up when modal is closed
+        createTermModal.addEventListener('hidden.bs.modal', function() {
+            resetTermModal();
+        });
+    }
+    
+    console.log('Create modals initialization complete');
+}
+
+function populateParentNodeOptions(selectId, required = false) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    
+    // Clear existing options (except the first placeholder)
+    while (select.children.length > 1) {
+        select.removeChild(select.lastChild);
+    }
+    
+    // Get all available nodes from the current data
+    const allNodes = [];
+    
+    // Collect nodes from all tabs
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        const tabData = glossaryData[tabType] || [];
+        tabData.forEach(item => {
+            if (determineEntityType(item) === 'glossaryNode') {
+                allNodes.push({
+                    id: item.id,
+                    name: item.name,
+                    urn: item.urn,
+                    tabType: tabType
+                });
+            }
+        });
+    });
+    
+    // Sort nodes by name
+    allNodes.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Add nodes to select
+    allNodes.forEach(node => {
+        const option = document.createElement('option');
+        option.value = node.id;
+        option.textContent = `${node.name} (${node.tabType})`;
+        select.appendChild(option);
+    });
+    
+    // Update required attribute
+    select.required = required;
+}
+
+function populateTermRelationshipOptions() {
+    const isASelect = document.getElementById('term-is-a');
+    const hasASelect = document.getElementById('term-has-a');
+    
+    if (!isASelect || !hasASelect) return;
+    
+    // Clear existing options
+    isASelect.innerHTML = '';
+    hasASelect.innerHTML = '';
+    
+    // Get all available terms from the current data
+    const allTerms = [];
+    
+    // Collect terms from all tabs
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        const tabData = glossaryData[tabType] || [];
+        tabData.forEach(item => {
+            if (determineEntityType(item) === 'glossaryTerm') {
+                allTerms.push({
+                    id: item.id,
+                    name: item.name,
+                    urn: item.urn,
+                    tabType: tabType
+                });
+            }
+        });
+    });
+    
+    // Sort terms by name
+    allTerms.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Add terms to both selects
+    allTerms.forEach(term => {
+        const isAOption = document.createElement('option');
+        isAOption.value = term.urn;
+        isAOption.textContent = `${term.name} (${term.tabType})`;
+        isASelect.appendChild(isAOption);
+        
+        const hasAOption = document.createElement('option');
+        hasAOption.value = term.urn;
+        hasAOption.textContent = `${term.name} (${term.tabType})`;
+        hasASelect.appendChild(hasAOption);
+    });
+}
+
+// Glossary Ownership Management Functions (similar to tags)
+
+// Load users and groups from the API
+async function loadUsersAndGroups() {
+    console.log('Loading users and groups for glossary...');
+    try {
+        const csrfToken = getCsrfToken();
+        console.log('Using CSRF token for users-groups:', csrfToken);
+        
+        const response = await fetch('/metadata/api/users-groups/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ type: 'all' })
+        });
+        
+        const data = await response.json();
+        console.log('Users and groups API response:', data);
+        
+        if (data.success) {
+            // Use the existing proxy cache
+            const cache = getCurrentConnectionCache();
+            cache.users = data.data.users || [];
+            cache.groups = data.data.groups || [];
+            cache.ownership_types = data.data.ownership_types || [];
+            console.log('Loaded users and groups:', cache);
+        } else {
+            throw new Error(data.error || 'Failed to load users and groups');
+        }
+    } catch (error) {
+        console.error('Error loading users and groups:', error);
+        throw error;
+    }
+}
+
+// Setup the ownership interface for nodes
+function setupNodeOwnershipInterface() {
+    const container = document.getElementById('node-ownership-sections-container');
+    const addButton = document.getElementById('add-node-ownership-section');
+    
+    if (!container || !addButton) return;
+    
+    // Clear existing sections
+    container.innerHTML = '';
+    
+    // Remove any existing event listeners to prevent multiple handlers
+    const newAddButton = addButton.cloneNode(true);
+    addButton.parentNode.replaceChild(newAddButton, addButton);
+    
+    // Setup add ownership section button
+    newAddButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        addNodeOwnershipSection();
+        showNodeOwnershipSection();
+        // Add a subtle animation to the button
+        newAddButton.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            newAddButton.style.transform = 'scale(1)';
+        }, 150);
+    });
+}
+
+// Setup the ownership interface for terms
+function setupTermOwnershipInterface() {
+    const container = document.getElementById('term-ownership-sections-container');
+    const addButton = document.getElementById('add-term-ownership-section');
+    
+    if (!container || !addButton) return;
+    
+    // Clear existing sections
+    container.innerHTML = '';
+    
+    // Remove any existing event listeners to prevent multiple handlers
+    const newAddButton = addButton.cloneNode(true);
+    addButton.parentNode.replaceChild(newAddButton, addButton);
+    
+    // Setup add ownership section button
+    newAddButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        addTermOwnershipSection();
+        showTermOwnershipSection();
+        // Add a subtle animation to the button
+        newAddButton.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+            newAddButton.style.transform = 'scale(1)';
+        }, 150);
+    });
+}
+
+// Add a new ownership section for nodes
+function addNodeOwnershipSection() {
+    const container = document.getElementById('node-ownership-sections-container');
+    if (!container) return;
+    
+    showNodeOwnershipSection();
+    
+    const sectionId = 'node-section-' + Date.now();
+    
+    const sectionHTML = `
+        <div class="card mb-3" id="${sectionId}">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="fas fa-crown me-2 text-primary"></i>
+                    Ownership Section
+                </h6>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeNodeSection('${sectionId}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Owners <span class="text-danger">*</span></label>
+                    <select class="form-select owners-select" name="owners[]" multiple required>
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                    <div class="form-text">Search and select multiple owners</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Ownership Type <span class="text-danger">*</span></label>
+                    <select class="form-select ownership-type-select" name="ownership_types[]" required>
+                        <option value="">Select ownership type...</option>
+                    </select>
+                    <div class="form-text">Select the ownership type for these owners</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', sectionHTML);
+    
+    // Get the new section elements
+    const newSection = document.getElementById(sectionId);
+    const ownersSelect = newSection.querySelector('.owners-select');
+    const ownershipTypeSelect = newSection.querySelector('.ownership-type-select');
+    
+    // Populate the dropdowns
+    populateOwnersSelect(ownersSelect);
+    populateOwnershipTypeSelect(ownershipTypeSelect);
+    
+    updateNodeRemoveButtons();
+}
+
+// Add a new ownership section for terms
+function addTermOwnershipSection() {
+    const container = document.getElementById('term-ownership-sections-container');
+    if (!container) return;
+    
+    showTermOwnershipSection();
+    
+    const sectionId = 'term-section-' + Date.now();
+    
+    const sectionHTML = `
+        <div class="card mb-3" id="${sectionId}">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="fas fa-crown me-2 text-primary"></i>
+                    Ownership Section
+                </h6>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeTermSection('${sectionId}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Owners <span class="text-danger">*</span></label>
+                    <select class="form-select owners-select" name="owners[]" multiple required>
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                    <div class="form-text">Search and select multiple owners</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Ownership Type <span class="text-danger">*</span></label>
+                    <select class="form-select ownership-type-select" name="ownership_types[]" required>
+                        <option value="">Select ownership type...</option>
+                    </select>
+                    <div class="form-text">Select the ownership type for these owners</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', sectionHTML);
+    
+    // Get the new section elements
+    const newSection = document.getElementById(sectionId);
+    const ownersSelect = newSection.querySelector('.owners-select');
+    const ownershipTypeSelect = newSection.querySelector('.ownership-type-select');
+    
+    // Populate the dropdowns
+    populateOwnersSelect(ownersSelect);
+    populateOwnershipTypeSelect(ownershipTypeSelect);
+    
+    updateTermRemoveButtons();
+}
+
+// Populate owners select dropdown
+function populateOwnersSelect(selectElement) {
+    if (!selectElement) return;
+    
+    const cache = getCurrentConnectionCache();
+    selectElement.innerHTML = '';
+    
+    // Add users
+    if (cache.users.length > 0) {
+        const userGroup = document.createElement('optgroup');
+        userGroup.label = 'Users';
+        cache.users.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user.urn;
+            option.textContent = `${user.display_name || user.username} (${user.username})`;
+            option.dataset.type = 'user';
+            userGroup.appendChild(option);
+        });
+        selectElement.appendChild(userGroup);
+    }
+    
+    // Add groups
+    if (cache.groups.length > 0) {
+        const groupGroup = document.createElement('optgroup');
+        groupGroup.label = 'Groups';
+        cache.groups.forEach(group => {
+            const option = document.createElement('option');
+            option.value = group.urn;
+            option.textContent = group.display_name;
+            option.dataset.type = 'group';
+            groupGroup.appendChild(option);
+        });
+        selectElement.appendChild(groupGroup);
+    }
+}
+
+// Populate ownership type select dropdown
+function populateOwnershipTypeSelect(selectElement) {
+    if (!selectElement) return;
+    
+    const cache = getCurrentConnectionCache();
+    
+    // Clear existing options except the first one
+    selectElement.innerHTML = '<option value="">Select ownership type...</option>';
+    
+    cache.ownership_types.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type.urn;
+        option.textContent = type.name;
+        selectElement.appendChild(option);
+    });
+}
+
+// Remove section functions
+function removeNodeSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.remove();
+        updateNodeRemoveButtons();
+        hideNodeOwnershipSectionIfEmpty();
+    }
+}
+
+function removeTermSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.remove();
+        updateTermRemoveButtons();
+        hideTermOwnershipSectionIfEmpty();
+    }
+}
+
+// Update remove button visibility for nodes
+function updateNodeRemoveButtons() {
+    const container = document.getElementById('node-ownership-sections-container');
+    if (!container) return;
+    
+    const sections = container.querySelectorAll('.card');
+    const removeButtons = container.querySelectorAll('.btn-outline-danger');
+    
+    removeButtons.forEach(button => {
+        button.style.display = sections.length > 1 ? 'block' : 'none';
+    });
+}
+
+// Update remove button visibility for terms
+function updateTermRemoveButtons() {
+    const container = document.getElementById('term-ownership-sections-container');
+    if (!container) return;
+    
+    const sections = container.querySelectorAll('.card');
+    const removeButtons = container.querySelectorAll('.btn-outline-danger');
+    
+    removeButtons.forEach(button => {
+        button.style.display = sections.length > 1 ? 'block' : 'none';
+    });
+}
+
+// Show/hide ownership sections for nodes
+function hideNodeOwnershipSectionIfEmpty() {
+    const container = document.getElementById('node-ownership-sections-container');
+    const addButton = document.getElementById('add-node-ownership-section');
+    const label = document.getElementById('node-ownership-label');
+    const helpText = document.getElementById('node-ownership-help-text');
+    
+    if (!container || !addButton) return;
+    
+    const hasSections = container.children.length > 0;
+    
+    if (hasSections) {
+        // Show the full ownership section
+        if (label) label.style.display = 'block';
+        container.style.display = 'block';
+        if (helpText) helpText.style.display = 'block';
+        
+        // Update button text and style to normal
+        addButton.innerHTML = '<i class="fas fa-plus me-1"></i> Add Owner';
+        addButton.className = 'btn btn-sm btn-outline-primary mt-2';
+    } else {
+        // Hide everything except the "Add Owner" button
+        if (label) label.style.display = 'none';
+        container.style.display = 'none';
+        if (helpText) helpText.style.display = 'none';
+        
+        // Show only the "Add Owner" button with simplified style
+        addButton.style.display = 'block';
+        addButton.textContent = '+ Add Owner';
+        addButton.className = 'btn btn-sm btn-outline-primary';
+    }
+}
+
+function showNodeOwnershipSection() {
+    const container = document.getElementById('node-ownership-sections-container');
+    const addButton = document.getElementById('add-node-ownership-section');
+    const label = document.getElementById('node-ownership-label');
+    const helpText = document.getElementById('node-ownership-help-text');
+    
+    if (!container || !addButton) return;
+    
+    // Show all elements
+    if (label) label.style.display = 'block';
+    container.style.display = 'block';
+    if (helpText) helpText.style.display = 'block';
+    
+    // Update button text and style
+    addButton.innerHTML = '<i class="fas fa-plus me-1"></i> Add Owner';
+    addButton.className = 'btn btn-sm btn-outline-primary mt-2';
+}
+
+// Show/hide ownership sections for terms
+function hideTermOwnershipSectionIfEmpty() {
+    const container = document.getElementById('term-ownership-sections-container');
+    const addButton = document.getElementById('add-term-ownership-section');
+    const label = document.getElementById('term-ownership-label');
+    const helpText = document.getElementById('term-ownership-help-text');
+    
+    if (!container || !addButton) return;
+    
+    const hasSections = container.children.length > 0;
+    
+    if (hasSections) {
+        // Show the full ownership section
+        if (label) label.style.display = 'block';
+        container.style.display = 'block';
+        if (helpText) helpText.style.display = 'block';
+        
+        // Update button text and style to normal
+        addButton.innerHTML = '<i class="fas fa-plus me-1"></i> Add Owner';
+        addButton.className = 'btn btn-sm btn-outline-primary mt-2';
+    } else {
+        // Hide everything except the "Add Owner" button
+        if (label) label.style.display = 'none';
+        container.style.display = 'none';
+        if (helpText) helpText.style.display = 'none';
+        
+        // Show only the "Add Owner" button with simplified style
+        addButton.style.display = 'block';
+        addButton.textContent = '+ Add Owner';
+        addButton.className = 'btn btn-sm btn-outline-primary';
+    }
+}
+
+function showTermOwnershipSection() {
+    const container = document.getElementById('term-ownership-sections-container');
+    const addButton = document.getElementById('add-term-ownership-section');
+    const label = document.getElementById('term-ownership-label');
+    const helpText = document.getElementById('term-ownership-help-text');
+    
+    if (!container || !addButton) return;
+    
+    // Show all elements
+    if (label) label.style.display = 'block';
+    container.style.display = 'block';
+    if (helpText) helpText.style.display = 'block';
+    
+    // Update button text and style
+    addButton.innerHTML = '<i class="fas fa-plus me-1"></i> Add Owner';
+    addButton.className = 'btn btn-sm btn-outline-primary mt-2';
+}
+
+// Reset modal functions
+function resetNodeModal() {
+    // Reset form
+    const form = document.getElementById('createNodeForm');
+    if (form) {
+        form.reset();
+    }
+    
+    // Clear ownership sections container
+    const ownershipContainer = document.getElementById('node-ownership-sections-container');
+    if (ownershipContainer) {
+        ownershipContainer.innerHTML = '';
+    }
+    
+    // Hide ownership section by default
+    hideNodeOwnershipSectionIfEmpty();
+}
+
+function resetTermModal() {
+    // Reset form
+    const form = document.getElementById('createTermForm');
+    if (form) {
+        form.reset();
+    }
+    
+    // Clear ownership sections container
+    const ownershipContainer = document.getElementById('term-ownership-sections-container');
+    if (ownershipContainer) {
+        ownershipContainer.innerHTML = '';
+    }
+    
+    // Hide ownership section by default
+    hideTermOwnershipSectionIfEmpty();
+}
+
+// Bulk Actions Setup
+function setupBulkActions() {
+    ['synced', 'local', 'remote'].forEach(tab => {
+        const selectAllCheckbox = document.getElementById(`selectAll${tab.charAt(0).toUpperCase() + tab.slice(1)}`);
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                const checkboxes = document.querySelectorAll(`#${tab}-content .item-checkbox`);
+                checkboxes.forEach(checkbox => {
+                    checkbox.checked = this.checked;
+                });
+                updateBulkActionsVisibility(tab);
+            });
+        }
+    });
+}
