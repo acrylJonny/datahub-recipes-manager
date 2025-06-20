@@ -2,7 +2,8 @@ import logging
 from django.shortcuts import render
 from django.views import View
 from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
+from django.utils.decorators import method_decorator
 
 # Add project root to sys.path
 import sys
@@ -236,4 +237,91 @@ def get_data_contracts(request):
         return JsonResponse({
             "success": False,
             "error": str(e)
-        }, status=500) 
+        }, status=500)
+
+
+@method_decorator(require_POST)
+def add_data_contract_to_staged_changes(request):
+    """Add a data contract to staged changes by creating comprehensive MCP files"""
+    try:
+        import json
+        import os
+        import sys
+        from pathlib import Path
+        
+        # Add project root to path to import our Python modules
+        sys.path.append(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+        
+        # Import the function
+        from scripts.mcps.data_contract_actions import add_data_contract_to_staged_changes_legacy as add_contract_mcps
+        
+        # Get the data contract URN from the request
+        contract_urn = request.POST.get("contract_urn")
+        if not contract_urn:
+            return JsonResponse({
+                "success": False,
+                "error": "Data contract URN is required"
+            }, status=400)
+        
+        # Get DataHub connection
+        from utils.datahub_utils import test_datahub_connection
+        connected, client = test_datahub_connection(request)
+        if not connected or not client:
+            return JsonResponse({
+                "success": False,
+                "error": "No active DataHub connection configured"
+            }, status=400)
+        
+        # Fetch the data contract from DataHub
+        try:
+            contract_data = client.get_data_contract(contract_urn)
+            if not contract_data:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Data contract with URN {contract_urn} not found"
+                }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                "success": False,
+                "error": f"Error fetching data contract: {str(e)}"
+            }, status=500)
+        
+        # Extract contract ID from URN for file naming
+        contract_id = contract_urn.split(":")[-1] if ":" in contract_urn else contract_urn
+        
+        # Prepare data contract data
+        properties = contract_data.get("properties", {})
+        contract_data_processed = {
+            "id": contract_id,
+            "urn": contract_urn,
+            "entity_urn": properties.get("entity", {}).get("urn") if properties.get("entity") else None,
+            "properties": properties,
+            "sync_status": "REMOTE_ONLY",
+        }
+        
+        # Create staged changes
+        result = add_contract_mcps(
+            contract_data=contract_data_processed,
+            environment="dev",
+            owner=request.user.username if request.user.is_authenticated else "admin",
+            base_dir="metadata-manager"
+        )
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"Data contract '{contract_id}' added to staged changes",
+            "files_created": len(result),
+            "file_paths": result
+        })
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Error adding data contract to staged changes: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        return JsonResponse({
+            "success": False,
+            "error": f"An error occurred: {str(e)}"
+        }) 

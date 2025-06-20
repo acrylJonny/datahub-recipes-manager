@@ -212,18 +212,15 @@ def node_to_json(node):
     try:
         return json.dumps(
             {
-                "id": node.id,
                 "name": node.name,
-                "description": node.description or "",
-                "urn": str(node.deterministic_urn),
+                "description": node.description,
+                "urn": str(node.urn),
+                "parent_urn": str(node.parent.urn) if node.parent else None,
+                "color_hex": node.color_hex,
+                "deprecated": node.deprecated,
                 "sync_status": node.sync_status,
-                "parent_urn": str(node.parent.deterministic_urn)
-                if node.parent
-                else None,
-                "has_children": node.children.exists() or node.terms.exists(),
-                "related_items": [],  # Local nodes don't have relationship data by default
-                "owners": [],  # Local nodes don't have owner data loaded by default
-                "custom_properties": [],
+                "created_at": node.created_at.isoformat() if node.created_at else None,
+                "updated_at": node.updated_at.isoformat() if node.updated_at else None,
             },
             default=str,
         )
@@ -244,9 +241,9 @@ def term_to_json(term):
                 "id": term.id,
                 "name": term.name,
                 "description": term.description or "",
-                "urn": str(term.deterministic_urn),
+                "urn": str(term.urn),
                 "sync_status": term.sync_status,
-                "parent_node_urn": str(term.parent_node.deterministic_urn)
+                "parent_node_urn": str(term.parent_node.urn)
                 if term.parent_node
                 else None,
                 "related_items": [],  # Local terms don't have relationship data by default

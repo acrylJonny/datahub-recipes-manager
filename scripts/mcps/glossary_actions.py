@@ -21,15 +21,7 @@ sys.path.append(
 # Import local utilities
 from utils.urn_utils import generate_deterministic_urn, extract_name_from_properties
 from scripts.mcps.create_glossary_mcps import (
-    create_glossary_node_info_mcp,
-    create_glossary_term_info_mcp, 
-    create_glossary_ownership_mcp,
-    create_glossary_status_mcp,
-    create_glossary_global_tags_mcp,
-    create_glossary_terms_mcp,
-    create_glossary_browse_paths_mcp,
-    create_glossary_institutional_memory_mcp,
-    create_glossary_related_terms_mcp,
+    create_comprehensive_glossary_mcps,
     save_mcp_to_file
 )
 
@@ -115,50 +107,23 @@ def add_glossary_to_staged_changes(
         Dictionary with path to created MCP file
     """
     try:
-        # Debug: Log the incoming entity data structure
-        logger.debug(f"Entity data type: {type(entity_data)}")
-        logger.debug(f"Entity data keys: {list(entity_data.keys()) if isinstance(entity_data, dict) else 'Not a dict'}")
-        logger.debug(f"Entity data: {entity_data}")
+        # Extract basic entity information
+        entity_id = entity_data.get("id")
+        entity_name = entity_data.get("name", entity_id)
+        description = entity_data.get("description", "")
         
-        # Map entity type to DataHub entity type
-        datahub_entity_type = "glossaryNode" if entity_type == "node" else "glossaryTerm"
+        if not entity_id:
+            raise ValueError(f"Entity ID is required for {entity_type}")
         
-        # Extract entity information
-        entity_urn = entity_data.get("urn")
-        if not entity_urn:
-            raise ValueError(f"{entity_type.title()} URN not found in entity data")
-        
-        # Extract entity properties
-        entity_name = entity_data.get("name")
-        if not entity_name:
-            raise ValueError(f"{entity_type.title()} name not found in entity data")
-        
-        # Extract entity ID from URN or use name as fallback
-        try:
-            entity_id = extract_entity_id_from_urn(entity_urn, datahub_entity_type)
-        except ValueError:
-            # Fallback to using name as ID
-            entity_id = entity_name.replace(" ", "_").lower()
-        
-        # Get description if available
-        description = entity_data.get("description")
-        
-        # Get parent node URN if available
-        parent_node_urn = None
-        if entity_data.get("parent_urn"):
-            parent_node_urn = entity_data["parent_urn"]
-        elif entity_data.get("parent_id"):
-            # Generate parent URN from parent ID
-            parent_node_urn = generate_deterministic_urn(
-                "glossaryNode", 
-                str(entity_data["parent_id"]), 
-                environment=environment, 
-                mutation_name=mutation_name
-            )
+        logger.info(f"Adding {entity_type} '{entity_name}' to staged changes...")
         
         # Determine output directory - use repo root metadata-manager instead of web_ui/metadata-manager
         if base_dir:
-            output_dir = base_dir
+            # If base_dir is already something like metadata-manager/dev, append glossary
+            if base_dir.endswith("glossary"):
+                output_dir = base_dir
+            else:
+                output_dir = os.path.join(base_dir, "glossary")
         else:
             # Find repository root by looking for characteristic files
             current_dir = os.path.abspath(os.getcwd())
@@ -182,7 +147,8 @@ def add_glossary_to_staged_changes(
                 script_dir = os.path.dirname(os.path.abspath(__file__))
                 repo_root = os.path.dirname(os.path.dirname(script_dir))
             
-            output_dir = os.path.join(repo_root, "metadata-manager", environment)
+            # Create environment directory with glossary subfolder
+            output_dir = os.path.join(repo_root, "metadata-manager", environment, "glossary")
         
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -208,97 +174,37 @@ def add_glossary_to_staged_changes(
                 logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
                 existing_mcp_data = {"mcps": [], "metadata": {"entities": []}}
         
-        # Create new MCPs for this entity
-        new_mcps = []
+        # Create comprehensive MCPs using all backend data
+        logger.info(f"Creating comprehensive MCPs for {entity_type} '{entity_name}'...")
+        new_mcps = create_comprehensive_glossary_mcps(
+            entity_data=entity_data,
+            entity_type=entity_type,
+            owner=owner,
+            environment=environment,
+            mutation_name=mutation_name
+        )
         
-        # Create info MCP
-        logger.info(f"Creating info MCP for {entity_type} '{entity_name}'...")
-        if entity_type == "node":
-            info_mcp = create_glossary_node_info_mcp(
-                node_id=entity_id,
-                owner=owner,
-                node_name=entity_name,
-                description=description,
-                parent_node_urn=parent_node_urn,
-                environment=environment,
-                mutation_name=mutation_name
-            )
-        else:  # term
-            # Get additional term-specific fields
-            source_ref = entity_data.get("source_ref")
-            
-            info_mcp = create_glossary_term_info_mcp(
-                term_id=entity_id,
-                owner=owner,
-                term_name=entity_name,
-                description=description,
-                parent_node_urn=parent_node_urn,
-                source_ref=source_ref,
-                environment=environment,
-                mutation_name=mutation_name
-            )
-        
-        new_mcps.append(info_mcp)
-        
-        # Create ownership MCP if ownership data exists
-        ownership_data = entity_data.get("ownership_data") or entity_data.get("ownership")
-        owners = []
-        if isinstance(ownership_data, list):
-            owners = ownership_data
-        elif isinstance(ownership_data, dict) and "owners" in ownership_data:
-            owners = ownership_data["owners"]
-        # else: leave owners as empty list
-        if owners:
-            logger.info(f"Creating ownership MCP for {entity_type} '{entity_name}'...")
-            logger.debug(f"Owners type: {type(owners)}")
-            logger.debug(f"Owners: {owners}")
-            first_owner = owners[0]
-            logger.debug(f"First owner type: {type(first_owner)}")
-            logger.debug(f"First owner: {first_owner}")
-            # Check if first_owner is a dictionary or a string
-            if isinstance(first_owner, dict):
-                owner_urn = first_owner.get("owner_urn") or first_owner.get("ownerUrn") or first_owner.get("urn") or f"urn:li:corpuser:{owner}"
-                # Try to get ownership type from dict, fallback to type, fallback to default
-                ownership_type_urn = (
-                    first_owner.get("ownership_type_urn") or
-                    first_owner.get("type") or
-                    (first_owner.get("ownershipType", {}).get("urn") if isinstance(first_owner.get("ownershipType"), dict) else None) or
-                    "urn:li:ownershipType:dataowner"
-                )
-            elif isinstance(first_owner, str):
-                owner_urn = first_owner
-                ownership_type_urn = "urn:li:ownershipType:dataowner"
-            else:
-                logger.warning(f"Unexpected owner type: {type(first_owner)}, using default owner")
-                owner_urn = f"urn:li:corpuser:{owner}"
-                ownership_type_urn = "urn:li:ownershipType:dataowner"
-            # Extract username from owner URN
-            if owner_urn.startswith("urn:li:corpuser:"):
-                owner_username = owner_urn.split(":")[-1]
-            else:
-                owner_username = owner
-            ownership_mcp = create_glossary_ownership_mcp(
-                entity_id=entity_id,
-                entity_type=datahub_entity_type,
-                owner=owner_username,
-                ownership_type=ownership_type_urn,
-                environment=environment,
-                mutation_name=mutation_name
-            )
-            new_mcps.append(ownership_mcp)
+        logger.info(f"Created {len(new_mcps)} MCPs for {entity_type} '{entity_name}'")
         
         # Remove any existing MCPs for this entity URN to avoid duplicates
-        entity_entity_urn = info_mcp.get("entityUrn")
-        existing_mcp_data["mcps"] = [
-            mcp for mcp in existing_mcp_data["mcps"] 
-            if mcp.get("entityUrn") != entity_entity_urn
-        ]
+        # Get the entity URN from the first MCP (info MCP)
+        entity_entity_urn = None
+        if new_mcps:
+            entity_entity_urn = new_mcps[0].get("entityUrn")
+        
+        if entity_entity_urn:
+            existing_mcp_data["mcps"] = [
+                mcp for mcp in existing_mcp_data["mcps"] 
+                if mcp.get("entityUrn") != entity_entity_urn
+            ]
         
         # Remove existing metadata entry for this entity
-        existing_mcp_data["metadata"]["entities"] = [
-            entity for entity in existing_mcp_data["metadata"]["entities"]
-            if entity.get("entity_urn") != entity_urn
-        ]
+        entity_urn = entity_data.get("urn")
+        if entity_urn:
+            existing_mcp_data["metadata"]["entities"] = [
+                entity for entity in existing_mcp_data["metadata"]["entities"]
+                if entity.get("entity_urn") != entity_urn
+            ]
         
         # Add new MCPs
         existing_mcp_data["mcps"].extend(new_mcps)
@@ -366,127 +272,14 @@ def add_glossary_node_to_staged_changes(
     """
     setup_logging()
     
-    node_id = node_data.get("id")
-    if not node_id:
-        raise ValueError("node_data must contain 'id' field")
-    
-    node_name = node_data.get("name", node_id)
-    description = node_data.get("description")
-    parent_node_urn = node_data.get("parent_urn")
-    
-    # Create output directory
-    output_dir = os.path.join(base_dir, "glossary")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    created_files = {}
-    
-    # Core node info MCP (always created)
-    node_info_mcp = create_glossary_node_info_mcp(
-        node_id=node_id,
+    # Use the unified function
+    return add_glossary_to_staged_changes(
+        entity_data=node_data,
+        entity_type="node",
+        environment=environment,
         owner=owner,
-        node_name=node_name,
-        description=description,
-        parent_node_urn=parent_node_urn,
-        environment=environment
+        base_dir=base_dir
     )
-    
-    node_info_path = os.path.join(output_dir, f"{node_id}_node_info.json")
-    if save_mcp_to_file(node_info_mcp, node_info_path):
-        created_files["glossaryNodeInfo"] = node_info_path
-    
-    # Core ownership MCP (always created)
-    ownership_mcp = create_glossary_ownership_mcp(
-        entity_id=node_id,
-        entity_type="glossaryNode",
-        owner=owner,
-        environment=environment
-    )
-    
-    ownership_path = os.path.join(output_dir, f"{node_id}_ownership.json")
-    if save_mcp_to_file(ownership_mcp, ownership_path):
-        created_files["ownership"] = ownership_path
-    
-    if include_all_aspects:
-        # Status MCP
-        status_mcp = create_glossary_status_mcp(
-            entity_id=node_id,
-            entity_type="glossaryNode",
-            removed=node_data.get("removed", False),
-            environment=environment
-        )
-        
-        status_path = os.path.join(output_dir, f"{node_id}_status.json")
-        if save_mcp_to_file(status_mcp, status_path):
-            created_files["status"] = status_path
-        
-        # Global Tags MCP (if tags are provided)
-        tags = node_data.get("tags", [])
-        if tags:
-            global_tags_mcp = create_glossary_global_tags_mcp(
-                entity_id=node_id,
-                entity_type="glossaryNode",
-                tags=tags,
-                owner=owner,
-                environment=environment
-            )
-            
-            tags_path = os.path.join(output_dir, f"{node_id}_global_tags.json")
-            if save_mcp_to_file(global_tags_mcp, tags_path):
-                created_files["globalTags"] = tags_path
-        
-        # Glossary Terms MCP (if glossary terms are provided)
-        glossary_terms = node_data.get("glossary_terms", [])
-        if glossary_terms:
-            terms_mcp = create_glossary_terms_mcp(
-                entity_id=node_id,
-                entity_type="glossaryNode",
-                glossary_terms=glossary_terms,
-                owner=owner,
-                environment=environment
-            )
-            
-            terms_path = os.path.join(output_dir, f"{node_id}_glossary_terms.json")
-            if save_mcp_to_file(terms_mcp, terms_path):
-                created_files["glossaryTerms"] = terms_path
-        
-        # Browse Paths MCP (if browse paths are provided)
-        browse_paths = node_data.get("browse_paths", [])
-        if browse_paths:
-            browse_paths_mcp = create_glossary_browse_paths_mcp(
-                entity_id=node_id,
-                entity_type="glossaryNode",
-                browse_paths=browse_paths,
-                environment=environment
-            )
-            
-            browse_path = os.path.join(output_dir, f"{node_id}_browse_paths.json")
-            if save_mcp_to_file(browse_paths_mcp, browse_path):
-                created_files["browsePaths"] = browse_path
-        
-        # Institutional Memory MCP (if memory elements are provided)
-        memory_elements = node_data.get("institutional_memory", [])
-        if memory_elements:
-            memory_mcp = create_glossary_institutional_memory_mcp(
-                entity_id=node_id,
-                entity_type="glossaryNode",
-                memory_elements=memory_elements,
-                owner=owner,
-                environment=environment
-            )
-            
-            memory_path = os.path.join(output_dir, f"{node_id}_institutional_memory.json")
-            if save_mcp_to_file(memory_mcp, memory_path):
-                created_files["institutionalMemory"] = memory_path
-    
-    # Handle custom aspects
-    if custom_aspects:
-        for aspect_name, aspect_data in custom_aspects.items():
-            custom_path = os.path.join(output_dir, f"{node_id}_{aspect_name}.json")
-            if save_mcp_to_file(aspect_data, custom_path):
-                created_files[aspect_name] = custom_path
-    
-    logger.info(f"Created {len(created_files)} MCP files for glossary node '{node_id}'")
-    return created_files
 
 
 def add_glossary_term_to_staged_changes(
@@ -513,142 +306,14 @@ def add_glossary_term_to_staged_changes(
     """
     setup_logging()
     
-    term_id = term_data.get("id")
-    if not term_id:
-        raise ValueError("term_data must contain 'id' field")
-    
-    term_name = term_data.get("name", term_id)
-    description = term_data.get("description")
-    parent_node_urn = term_data.get("parent_urn")
-    source_ref = term_data.get("source_ref")
-    
-    # Create output directory
-    output_dir = os.path.join(base_dir, "glossary")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    created_files = {}
-    
-    # Core term info MCP (always created)
-    term_info_mcp = create_glossary_term_info_mcp(
-        term_id=term_id,
+    # Use the unified function
+    return add_glossary_to_staged_changes(
+        entity_data=term_data,
+        entity_type="term",
+        environment=environment,
         owner=owner,
-        term_name=term_name,
-        description=description,
-        parent_node_urn=parent_node_urn,
-        source_ref=source_ref,
-        environment=environment
+        base_dir=base_dir
     )
-    
-    term_info_path = os.path.join(output_dir, f"{term_id}_term_info.json")
-    if save_mcp_to_file(term_info_mcp, term_info_path):
-        created_files["glossaryTermInfo"] = term_info_path
-    
-    # Core ownership MCP (always created)
-    ownership_mcp = create_glossary_ownership_mcp(
-        entity_id=term_id,
-        entity_type="glossaryTerm",
-        owner=owner,
-        environment=environment
-    )
-    
-    ownership_path = os.path.join(output_dir, f"{term_id}_ownership.json")
-    if save_mcp_to_file(ownership_mcp, ownership_path):
-        created_files["ownership"] = ownership_path
-    
-    if include_all_aspects:
-        # Status MCP
-        status_mcp = create_glossary_status_mcp(
-            entity_id=term_id,
-            entity_type="glossaryTerm",
-            removed=term_data.get("removed", False),
-            environment=environment
-        )
-        
-        status_path = os.path.join(output_dir, f"{term_id}_status.json")
-        if save_mcp_to_file(status_mcp, status_path):
-            created_files["status"] = status_path
-        
-        # Global Tags MCP (if tags are provided)
-        tags = term_data.get("tags", [])
-        if tags:
-            global_tags_mcp = create_glossary_global_tags_mcp(
-                entity_id=term_id,
-                entity_type="glossaryTerm",
-                tags=tags,
-                owner=owner,
-                environment=environment
-            )
-            
-            tags_path = os.path.join(output_dir, f"{term_id}_global_tags.json")
-            if save_mcp_to_file(global_tags_mcp, tags_path):
-                created_files["globalTags"] = tags_path
-        
-        # Glossary Terms MCP (if glossary terms are provided)
-        glossary_terms = term_data.get("glossary_terms", [])
-        if glossary_terms:
-            terms_mcp = create_glossary_terms_mcp(
-                entity_id=term_id,
-                entity_type="glossaryTerm",
-                glossary_terms=glossary_terms,
-                owner=owner,
-                environment=environment
-            )
-            
-            terms_path = os.path.join(output_dir, f"{term_id}_glossary_terms.json")
-            if save_mcp_to_file(terms_mcp, terms_path):
-                created_files["glossaryTerms"] = terms_path
-        
-        # Browse Paths MCP (if browse paths are provided)
-        browse_paths = term_data.get("browse_paths", [])
-        if browse_paths:
-            browse_paths_mcp = create_glossary_browse_paths_mcp(
-                entity_id=term_id,
-                entity_type="glossaryTerm",
-                browse_paths=browse_paths,
-                environment=environment
-            )
-            
-            browse_path = os.path.join(output_dir, f"{term_id}_browse_paths.json")
-            if save_mcp_to_file(browse_paths_mcp, browse_path):
-                created_files["browsePaths"] = browse_path
-        
-        # Institutional Memory MCP (if memory elements are provided)
-        memory_elements = term_data.get("institutional_memory", [])
-        if memory_elements:
-            memory_mcp = create_glossary_institutional_memory_mcp(
-                entity_id=term_id,
-                entity_type="glossaryTerm",
-                memory_elements=memory_elements,
-                owner=owner,
-                environment=environment
-            )
-            
-            memory_path = os.path.join(output_dir, f"{term_id}_institutional_memory.json")
-            if save_mcp_to_file(memory_mcp, memory_path):
-                created_files["institutionalMemory"] = memory_path
-        
-        # Related Terms MCP (if related terms are provided)
-        related_terms = term_data.get("related_terms", [])
-        if related_terms:
-            related_terms_mcp = create_glossary_related_terms_mcp(
-                term_id=term_id,
-                related_terms=related_terms,
-                environment=environment
-            )
-            
-            related_path = os.path.join(output_dir, f"{term_id}_related_terms.json")
-            if save_mcp_to_file(related_terms_mcp, related_path):
-                created_files["glossaryRelatedTerms"] = related_path
-    
-    # Handle custom aspects
-    if custom_aspects:
-        for aspect_name, aspect_data in custom_aspects.items():
-            custom_path = os.path.join(output_dir, f"{term_id}_{aspect_name}.json")
-            if save_mcp_to_file(aspect_data, custom_path):
-                created_files[aspect_name] = custom_path
-    
-    logger.info(f"Created {len(created_files)} MCP files for glossary term '{term_id}'")
-    return created_files
 
 
  

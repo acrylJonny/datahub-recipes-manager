@@ -1,0 +1,10 @@
+{
+  "entityType": "structuredproperty",
+  "entityUrn": "urn:li:structuredproperty:test_property_001",
+  "changeType": "UPSERT",
+  "aspectName": "propertyDefinition",
+  "aspect": {
+    "value": "{\"qualifiedName\": \"test.property\", \"displayName\": \"Test Property\", \"valueType\": \"urn:li:dataType:datahub.string\", \"cardinality\": \"SINGLE\", \"entityTypes\": [\"urn:li:entityType:datahub.dataset\"], \"description\": \"A test structured property for staged changes\", \"immutable\": false, \"lastModified\": {\"time\": 1750456951971, \"actor\": \"urn:li:corpuser:admin\"}}",
+    "contentType": "application/json"
+  }
+}

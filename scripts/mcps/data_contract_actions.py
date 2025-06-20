@@ -136,4 +136,84 @@ def add_data_contract_to_staged_changes(
             "data_contract_id": data_contract_id,
             "mcps_created": 0,
             "files_saved": []
-        } 
+        }
+
+
+def add_data_contract_to_staged_changes_legacy(
+    contract_data: Dict[str, Any],
+    environment: str = "dev",
+    owner: str = "admin",
+    base_dir: str = "metadata-manager",
+    include_all_aspects: bool = True,
+    custom_aspects: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    """
+    Legacy function for backward compatibility.
+    Add a data contract to staged changes by creating comprehensive MCP files
+    
+    Args:
+        contract_data: Dictionary containing data contract information
+        environment: Environment name for URN generation
+        owner: Owner username
+        base_dir: Base directory for metadata files
+        include_all_aspects: Whether to include all supported aspects
+        custom_aspects: Custom aspect data to include
+    
+    Returns:
+        Dictionary mapping aspect names to file paths
+    """
+    setup_logging()
+    
+    contract_id = contract_data.get("id")
+    if not contract_id:
+        raise ValueError("contract_data must contain 'id' field")
+    
+    entity_urn = contract_data.get("entity_urn")
+    if not entity_urn:
+        raise ValueError("contract_data must contain 'entity_urn' field")
+    
+    # Extract properties from contract_data
+    properties = contract_data.get("properties", {})
+    schema_assertions = []
+    freshness_assertions = []
+    data_quality_assertions = []
+    raw_contract = None
+    state = "ACTIVE"
+    
+    # Extract assertion URNs if available
+    if properties.get("schema"):
+        schema_assertions = [assertion.get("urn") for assertion in properties.get("schema", {}).get("assertions", []) if assertion.get("urn")]
+    
+    if properties.get("freshness"):
+        freshness_assertions = [assertion.get("urn") for assertion in properties.get("freshness", {}).get("assertions", []) if assertion.get("urn")]
+    
+    if properties.get("dataQuality"):
+        data_quality_assertions = [assertion.get("urn") for assertion in properties.get("dataQuality", {}).get("assertions", []) if assertion.get("urn")]
+    
+    # Extract other properties
+    custom_properties = contract_data.get("custom_properties", {})
+    structured_properties = contract_data.get("structured_properties", [])
+    
+    # Use the new function
+    result = add_data_contract_to_staged_changes(
+        data_contract_id=contract_id,
+        entity_urn=entity_urn,
+        schema_assertions=schema_assertions,
+        freshness_assertions=freshness_assertions,
+        data_quality_assertions=data_quality_assertions,
+        raw_contract=raw_contract,
+        state=state,
+        custom_properties=custom_properties,
+        structured_properties=structured_properties,
+        include_all_aspects=include_all_aspects,
+        custom_aspects=custom_aspects,
+        environment=environment,
+        owner=owner,
+        base_dir=os.path.join(base_dir, environment, "data_contracts")
+    )
+    
+    if result.get("success"):
+        # Return dictionary mapping aspect names to file paths for compatibility
+        return {f"contract_{i}": path for i, path in enumerate(result.get("files_saved", []))}
+    else:
+        raise Exception(result.get("message", "Failed to create data contract MCPs")) 

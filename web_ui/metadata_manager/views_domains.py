@@ -1612,7 +1612,7 @@ def add_domain_to_staged_changes(request, domain_id):
         )
         
         # Import the function
-        from scripts.mcps.glossary_actions import add_domain_to_staged_changes as add_domain_mcps
+        from scripts.mcps.domain_actions import add_domain_to_staged_changes_legacy as add_domain_mcps
         
         # Get the domain from database
         try:
@@ -1641,8 +1641,8 @@ def add_domain_to_staged_changes(request, domain_id):
         result = add_domain_mcps(
             domain_data=domain_data,
             environment="dev",
-            owner="admin",
-            base_dir="metadata"
+            owner=request.user.username if request.user.is_authenticated else "admin",
+            base_dir="metadata-manager"
         )
         
         return JsonResponse({

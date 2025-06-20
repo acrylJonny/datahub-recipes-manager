@@ -115,7 +115,7 @@ class AssertionListView(View):
                     config = {
                         "domain_id": str(domain.id),
                         "domain_name": domain.name,
-                        "domain_urn": domain.deterministic_urn,
+                        "domain_urn": domain.urn,
                     }
                 except Domain.DoesNotExist:
                     messages.error(request, "Domain not found")
@@ -1265,10 +1265,10 @@ def sync_assertion_to_local(request):
         if status_data and isinstance(status_data, dict):
             removed = status_data.get("removed", False)
         
-        # Check if assertion already exists (by deterministic_urn or original_urn)
+        # Check if assertion already exists (by urn or original_urn)
         existing_assertion = None
         try:
-            existing_assertion = Assertion.objects.get(deterministic_urn=deterministic_urn)
+            existing_assertion = Assertion.objects.get(urn=deterministic_urn)
         except Assertion.DoesNotExist:
             try:
                 existing_assertion = Assertion.objects.get(original_urn=assertion_urn)
@@ -1281,7 +1281,7 @@ def sync_assertion_to_local(request):
             existing_assertion.description = description
             existing_assertion.type = assertion_type  # Legacy field
             existing_assertion.assertion_type = assertion_type
-            existing_assertion.deterministic_urn = deterministic_urn
+            existing_assertion.urn = deterministic_urn
             existing_assertion.original_urn = assertion_urn
             existing_assertion.entity_urn = entity_urn
             existing_assertion.platform_name = platform_name
@@ -1325,7 +1325,7 @@ def sync_assertion_to_local(request):
                 },
                 
                 # URN tracking
-                deterministic_urn=deterministic_urn,
+                urn=deterministic_urn,
                 original_urn=assertion_urn,
                 
                 # Entity and platform info
@@ -2274,20 +2274,20 @@ def create_local_assertion(request):
             description=description,
             assertion_type=assertion_type,  # Use the new field
             entity_urn=dataset_urn,  # Store the assertee URN in the entity_urn field  
-            deterministic_urn=deterministic_urn,
+            urn=deterministic_urn,
             type=assertion_type,  # Keep for backward compatibility
             config=config,
             sync_status="LOCAL_ONLY"  # Mark as local-only
         )
         
-        logger.info(f"Successfully created local assertion: {assertion.name} with URN: {assertion.deterministic_urn}")
+        logger.info(f"Successfully created local assertion: {assertion.name} with URN: {assertion.urn}")
         
         return JsonResponse({
             "success": True,
             "message": f"Local assertion '{name}' created successfully",
             "assertion_id": assertion.id,
             "assertion_type": assertion_type,
-            "urn": assertion.deterministic_urn
+            "urn": assertion.urn
         })
         
     except Exception as e:

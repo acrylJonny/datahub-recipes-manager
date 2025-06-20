@@ -677,6 +677,7 @@ class StructuredProperty(BaseMetadataModel):
     immutable = models.BooleanField(default=False)
     entity_types = models.JSONField(default=list)
     allowed_values = models.JSONField(default=list, blank=True, null=True)
+    allowed_entity_types = models.JSONField(default=list, blank=True, null=True, help_text="Entity types allowed as values for URN properties")
 
     # Display settings
     show_in_search_filters = models.BooleanField(default=True)
@@ -702,6 +703,7 @@ class StructuredProperty(BaseMetadataModel):
             "immutable": self.immutable,
             "entity_types": self.entity_types,
             "allowed_values": self.allowed_values,
+            "allowed_entity_types": self.allowed_entity_types,
             "settings": {
                 "show_in_search_filters": self.show_in_search_filters,
                 "show_as_asset_badge": self.show_as_asset_badge,

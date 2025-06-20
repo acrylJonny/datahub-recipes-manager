@@ -19,10 +19,6 @@ sys.path.append(
 try:
     from datahub.emitter.mcp import MetadataChangeProposalWrapper
     from datahub.metadata.schema_classes import (
-        # Data Product specific classes
-        DataProductPropertiesClass,
-        EditableDataProductPropertiesClass,
-        
         # Common aspect classes
         OwnershipClass,
         OwnerClass,
@@ -43,8 +39,11 @@ try:
         StructuredPropertyValueAssignmentClass,
         DomainsClass,
         SubTypesClass,
-        SubTypeInfoClass,
         DeprecationClass,
+        
+        # Data Product specific classes
+        DataProductPropertiesClass,
+        DataProductPropertiesClass,
     )
     DATAHUB_AVAILABLE = True
 except ImportError as e:
@@ -111,13 +110,13 @@ def create_editable_data_product_properties_mcp(
         return None
     
     try:
-        editable_properties = EditableDataProductPropertiesClass(
+        data_product_properties = DataProductPropertiesClass(
             description=description
         )
         
         return MetadataChangeProposalWrapper(
             entityUrn=data_product_urn,
-            aspect=editable_properties,
+            aspect=data_product_properties,
             changeType=ChangeTypeClass.UPSERT
         )
     except Exception as e:
@@ -378,11 +377,7 @@ def create_data_product_sub_types_mcp(
         return None
     
     try:
-        type_names = []
-        for sub_type in sub_types:
-            type_names.append(SubTypeInfoClass(typeNames=[sub_type]))
-        
-        sub_types_obj = SubTypesClass(typeNames=type_names)
+        sub_types_obj = SubTypesClass(typeNames=sub_types)
         
         return MetadataChangeProposalWrapper(
             entityUrn=data_product_urn,

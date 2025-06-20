@@ -126,27 +126,27 @@ class TestListView(View):
 
 
 
-            # Categorize tests using consistent pattern from tags/domains
+            # Get local test URNs for comparison
+            local_test_urns = set(test.urn for test in local_tests if test.urn)
+            
+            # Categorize tests
             synced_tests = []
             local_only_tests = []
             remote_only_tests = []
             
-            # Create remote tests dict - consistent with tags/domains pattern
-            remote_tests_dict = {test.get('urn', '').strip(): test for test in remote_tests if test.get('urn', '').strip()}
-            
-            # Extract local test URNs - consistent with tags/domains pattern  
-            local_test_urns = set(test.deterministic_urn for test in local_tests if test.deterministic_urn)
-            
-
-            
-            # Process local tests and match with remote - consistent with tags/domains pattern
+            # Process local tests
             for local_test in local_tests:
-                test_urn = local_test.deterministic_urn
-                if not test_urn:  # Skip local tests without URNs
+                test_urn = local_test.urn
+                if not test_urn:
                     continue
                     
-                remote_match = remote_tests_dict.get(test_urn)
-                
+                remote_match = None
+                if connected and client:
+                    try:
+                        remote_match = client.get_test(test_urn)
+                    except Exception as e:
+                        logger.error(f"Error fetching remote test: {str(e)}")
+
                 # Create local test data
                 local_test_data = {
                     'id': str(local_test.id),
@@ -195,7 +195,7 @@ class TestListView(View):
                     local_test_data['status'] = 'local_only'
                     local_only_tests.append(local_test_data)
             
-            # Find remote-only tests - consistent with tags/domains pattern
+            # Find remote-only tests
             for test_urn, remote_test in remote_tests_dict.items():
                 if test_urn not in local_test_urns:
                     # REMOTE_ONLY: exists only on DataHub
@@ -224,7 +224,7 @@ class TestListView(View):
                     }
                     remote_only_tests.append(remote_test_enhanced)
 
-            # Combine all tests for final output - consistent with tags/domains pattern
+            # Combine all tests for final output
             all_tests = []
             
             # Add synced tests (using combined data)
@@ -499,7 +499,7 @@ class TestDeleteView(View):
                             local_test = Test.objects.get(id=test_id)
                         except Test.DoesNotExist:
                             try:
-                                local_test = Test.objects.get(deterministic_urn=test_id)
+                                local_test = Test.objects.get(urn=test_id)
                             except Test.DoesNotExist:
                                 pass
                         

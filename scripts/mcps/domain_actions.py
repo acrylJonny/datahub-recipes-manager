@@ -213,7 +213,7 @@ def add_domain_to_staged_changes_legacy(
         custom_aspects=custom_aspects,
         environment=environment,
         owner=owner,
-        base_dir=base_dir
+        base_dir=os.path.join(base_dir, environment, "domains")
     )
     
     # Convert to legacy format (file paths only)

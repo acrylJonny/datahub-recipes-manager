@@ -73,7 +73,6 @@ def create_structured_property_definition_mcp(
     allowed_values: Optional[List[Dict[str, Any]]] = None,
     type_qualifier: Optional[Dict[str, List[str]]] = None,
     search_config: Optional[Dict[str, Any]] = None,
-    is_hidden: bool = False,
     show_in_search_filters: bool = False,
     show_in_asset_summary: bool = False,
     show_as_asset_badge: bool = False,
@@ -146,15 +145,11 @@ def create_structured_property_definition_mcp(
         valueType=value_type,
         typeQualifier=type_qualifier,
         allowedValues=property_allowed_values,
-        cardinality=PropertyCardinalityClass.from_string(cardinality),
+        cardinality=getattr(PropertyCardinalityClass, cardinality.upper(), PropertyCardinalityClass.SINGLE),
         entityTypes=entity_types,
         description=description,
-        searchConfig=search_configuration,
-        isHidden=is_hidden,
-        showInSearchFilters=show_in_search_filters,
-        showInAssetSummary=show_in_asset_summary,
-        showAsAssetBadge=show_as_asset_badge,
-        showInColumnsTable=show_in_columns_table,
+        searchConfiguration=search_configuration,
+        
         lastModified=audit_stamp
     )
 
@@ -402,4 +397,140 @@ if __name__ == "__main__":
     
     print(f"Created structured property MCPs:")
     print(f"  - Definition: {definition_path}")
-    print(f"  - Ownership: {ownership_path}") 
+    print(f"  - Ownership: {ownership_path}")
+
+
+def create_structured_property_staged_changes(
+    property_urn: str,
+    qualified_name: str,
+    display_name: Optional[str] = None,
+    description: Optional[str] = None,
+    value_type: str = "STRING",
+    cardinality: str = "SINGLE",
+    allowed_values: Optional[List[Any]] = None,
+    entity_types: Optional[List[str]] = None,
+    owners: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    terms: Optional[List[str]] = None,
+    links: Optional[List[Dict[str, str]]] = None,
+    custom_properties: Optional[Dict[str, str]] = None,
+    include_all_aspects: bool = True,
+    custom_aspects: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> List[Dict[str, Any]]:
+    """
+    Create comprehensive MCPs for a structured property with all aspects
+    
+    Args:
+        property_urn: Property URN
+        qualified_name: Qualified name for the property
+        display_name: Display name for the property
+        description: Property description
+        value_type: Value type (STRING, NUMBER, etc.)
+        cardinality: Cardinality (SINGLE, MULTIPLE)
+        allowed_values: List of allowed values
+        entity_types: List of entity types this property can be applied to
+        owners: List of owner URNs
+        tags: List of tag URNs
+        terms: List of glossary term URNs
+        links: List of documentation links
+        custom_properties: Custom properties dictionary
+        include_all_aspects: Whether to include all supported aspects
+        custom_aspects: Custom aspects dictionary
+        **kwargs: Additional arguments
+    
+    Returns:
+        List of MCP dictionaries
+    """
+    mcps = []
+    property_id = property_urn.split(":")[-1]
+    
+    # Map simple value types to DataHub value type URNs
+    value_type_mapping = {
+        "STRING": "urn:li:dataType:datahub.string",
+        "NUMBER": "urn:li:dataType:datahub.number",
+        "BOOLEAN": "urn:li:dataType:datahub.boolean",
+        "DATE": "urn:li:dataType:datahub.date",
+        "URN": "urn:li:dataType:datahub.urn"
+    }
+    
+    datahub_value_type = value_type_mapping.get(value_type.upper(), "urn:li:dataType:datahub.string")
+    
+    # Default entity types if not provided
+    if not entity_types:
+        entity_types = ["urn:li:entityType:datahub.dataset"]
+    
+    # 1. Property Definition (always include)
+    definition_mcp = create_structured_property_definition_mcp(
+        property_id=property_id,
+        qualified_name=qualified_name,
+        value_type=datahub_value_type,
+        entity_types=entity_types,
+        owner=owners[0] if owners else "admin",
+        display_name=display_name,
+        description=description,
+        cardinality=cardinality,
+        allowed_values=allowed_values
+    )
+    mcps.append(definition_mcp)
+    
+    # 2. Ownership (if owners provided)
+    if owners:
+        ownership_mcp = create_structured_property_ownership_mcp(
+            property_id=property_id,
+            owner=owners[0]
+        )
+        mcps.append(ownership_mcp)
+    
+    # 3. Status (always include)
+    status_mcp = create_structured_property_status_mcp(
+        property_id=property_id,
+        removed=False
+    )
+    mcps.append(status_mcp)
+    
+    # 4. Institutional Memory (if links provided)
+    if links:
+        memory_mcp = create_structured_property_institutional_memory_mcp(
+            property_id=property_id,
+            memory_elements=links,
+            owner=owners[0] if owners else "admin"
+        )
+        mcps.append(memory_mcp)
+    
+    logger.info(f"Created {len(mcps)} MCPs for structured property {property_urn}")
+    return mcps
+
+
+def save_mcps_to_files(
+    mcps: List[Dict[str, Any]],
+    base_directory: str,
+    entity_id: str
+) -> List[str]:
+    """
+    Save multiple MCPs to individual files
+    
+    Args:
+        mcps: List of MCP dictionaries
+        base_directory: Base directory for saving files
+        entity_id: Entity ID for file naming
+    
+    Returns:
+        List of file paths created
+    """
+    saved_files = []
+    
+    # Create base directory
+    os.makedirs(base_directory, exist_ok=True)
+    
+    for mcp in mcps:
+        aspect_name = mcp.get("aspectName", "unknown")
+        filename = f"{entity_id}_{aspect_name}.json"
+        file_path = os.path.join(base_directory, filename)
+        
+        # Save the MCP
+        if save_mcp_to_file(mcp, file_path):
+            saved_files.append(file_path)
+            logger.info(f"Saved MCP to {file_path}")
+    
+    return saved_files 

@@ -2738,7 +2738,7 @@ class GlossaryNodeAddToStagedChangesView(View):
             # Get current user as owner
             owner = request.user.username if request.user.is_authenticated else "admin"
             
-            # Create node data dictionary
+            # Create comprehensive node data dictionary with all available fields
             node_data = {
                 "id": str(node.id),
                 "name": node.name,
@@ -2746,12 +2746,24 @@ class GlossaryNodeAddToStagedChangesView(View):
                 "urn": node.urn,
                 "parent_id": str(node.parent.id) if node.parent else None,
                 "parent_urn": node.parent.urn if node.parent else None,
+                "deprecated": node.deprecated,
+                "color_hex": node.color_hex,
+                "sync_status": node.sync_status,
+                "datahub_id": node.datahub_id,
+                "last_synced": node.last_synced.isoformat() if node.last_synced else None,
+                "created_at": node.created_at.isoformat(),
+                "updated_at": node.updated_at.isoformat(),
             }
             
+            # Add ownership data if available
             if node.ownership_data:
                 node_data["ownership_data"] = node.ownership_data
             
-            # Add node to staged changes using the correct function
+            # Add any additional data that might be available
+            # Note: GlossaryNode doesn't have relationships_data, domains, or other complex fields
+            # but we include the structure for future extensibility
+            
+            # Add node to staged changes using the comprehensive function
             result = add_glossary_to_staged_changes(
                 entity_data=node_data,
                 entity_type="node",
@@ -2827,7 +2839,7 @@ class GlossaryTermAddToStagedChangesView(View):
             # Get current user as owner
             owner = request.user.username if request.user.is_authenticated else "admin"
             
-            # Create term data dictionary
+            # Create comprehensive term data dictionary with all available fields
             term_data = {
                 "id": str(term.id),
                 "name": term.name,
@@ -2835,13 +2847,41 @@ class GlossaryTermAddToStagedChangesView(View):
                 "urn": term.urn,
                 "parent_id": str(term.parent_node.id) if term.parent_node else None,
                 "parent_urn": term.parent_node.urn if term.parent_node else None,
-                "source_ref": term.term_source,  # Use the correct field name
+                "term_source": term.term_source,
+                "domain_urn": term.domain_urn,
+                "deprecated": term.deprecated,
+                "sync_status": term.sync_status,
+                "datahub_id": term.datahub_id,
+                "last_synced": term.last_synced.isoformat() if term.last_synced else None,
+                "created_at": term.created_at.isoformat(),
+                "updated_at": term.updated_at.isoformat(),
             }
             
+            # Add ownership data if available
             if term.ownership_data:
                 term_data["ownership_data"] = term.ownership_data
             
-            # Add term to staged changes using the correct function
+            # Add relationships data if available
+            if term.relationships_data:
+                term_data["relationships_data"] = term.relationships_data
+            
+            # Add domain information if available
+            if term.domain:
+                term_data["domain"] = {
+                    "id": str(term.domain.id),
+                    "name": term.domain.name,
+                    "urn": term.domain.urn,
+                    "description": term.domain.description,
+                    "color_hex": term.domain.color_hex,
+                    "icon_name": term.domain.icon_name,
+                    "icon_style": term.domain.icon_style,
+                    "icon_library": term.domain.icon_library,
+                }
+            
+            # Add any additional data that might be available
+            # Note: GlossaryTerm has more complex relationships than nodes
+            
+            # Add term to staged changes using the comprehensive function
             result = add_glossary_to_staged_changes(
                 entity_data=term_data,
                 entity_type="term",
@@ -2923,7 +2963,26 @@ class GlossaryRemoteAddToStagedChangesView(View):
                     "error": "No entity type specified in item_data"
                 }, status=400)
             
-            # Add remote item to staged changes using the correct function
+            # For remote items, we need to ensure we have an ID for MCP creation
+            # If the remote item doesn't have an ID, we'll generate one from the URN or name
+            if not item_data.get('id'):
+                if item_data.get('urn'):
+                    # Extract ID from URN
+                    urn_parts = item_data['urn'].split(':')
+                    if len(urn_parts) >= 3:
+                        item_data['id'] = urn_parts[-1]
+                    else:
+                        item_data['id'] = item_data['urn']
+                elif item_data.get('name'):
+                    # Use name as ID
+                    item_data['id'] = item_data['name'].replace(' ', '_').lower()
+                else:
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Remote item must have either URN or name for ID generation"
+                    }, status=400)
+            
+            # Add remote item to staged changes using the comprehensive function
             result = add_glossary_to_staged_changes(
                 entity_data=item_data,
                 entity_type=entity_type,

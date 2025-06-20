@@ -147,4 +147,77 @@ def add_structured_property_to_staged_changes(
             "property_id": property_id,
             "mcps_created": 0,
             "files_saved": []
-        } 
+        }
+
+
+def add_structured_property_to_staged_changes_legacy(
+    property_data: Dict[str, Any],
+    environment: str = "dev",
+    owner: str = "admin",
+    base_dir: str = "metadata-manager",
+    include_all_aspects: bool = True,
+    custom_aspects: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    """
+    Legacy function for backward compatibility.
+    Add a structured property to staged changes by creating comprehensive MCP files
+    
+    Args:
+        property_data: Dictionary containing structured property information
+        environment: Environment name for URN generation
+        owner: Owner username
+        base_dir: Base directory for metadata files
+        include_all_aspects: Whether to include all supported aspects
+        custom_aspects: Custom aspect data to include
+    
+    Returns:
+        Dictionary mapping aspect names to file paths
+    """
+    setup_logging()
+    
+    property_id = property_data.get("id")
+    if not property_id:
+        raise ValueError("property_data must contain 'id' field")
+    
+    qualified_name = property_data.get("qualified_name", property_id)
+    display_name = property_data.get("name")
+    description = property_data.get("description")
+    value_type = property_data.get("value_type", "STRING")
+    cardinality = property_data.get("cardinality", "SINGLE")
+    
+    # Extract other properties from property_data
+    allowed_values = property_data.get("allowed_values", [])
+    entity_types = property_data.get("entity_types", [])
+    owners = property_data.get("owners", [])
+    tags = property_data.get("tags", [])
+    terms = property_data.get("terms", [])
+    links = property_data.get("links", [])
+    custom_properties = property_data.get("custom_properties", {})
+    
+    # Use the new function
+    result = add_structured_property_to_staged_changes(
+        property_id=property_id,
+        qualified_name=qualified_name,
+        display_name=display_name,
+        description=description,
+        value_type=value_type,
+        cardinality=cardinality,
+        allowed_values=allowed_values,
+        entity_types=entity_types,
+        owners=owners,
+        tags=tags,
+        terms=terms,
+        links=links,
+        custom_properties=custom_properties,
+        include_all_aspects=include_all_aspects,
+        custom_aspects=custom_aspects,
+        environment=environment,
+        owner=owner,
+        base_dir=os.path.join(base_dir, environment, "structured_properties")
+    )
+    
+    if result.get("success"):
+        # Return dictionary mapping aspect names to file paths for compatibility
+        return {f"property_{i}": path for i, path in enumerate(result.get("files_saved", []))}
+    else:
+        raise Exception(result.get("message", "Failed to create structured property MCPs")) 

@@ -5,6 +5,7 @@ let filterData = {
     entity_types: {}
 };
 let currentFilters = new Set();
+let currentOverviewFilter = null;
 
 // Pagination settings
 const ITEMS_PER_PAGE = 25;
@@ -38,6 +39,15 @@ function setupEventListeners() {
     
     // Tab switching handlers
     setupTabSwitchHandlers();
+    
+    // Filter listeners
+    setupFilterListeners();
+    
+    // Bulk actions
+    setupBulkActions();
+    
+    // Import form handler
+    setupImportFormHandler();
 }
 
 function setupSearchListeners() {
@@ -58,6 +68,122 @@ function setupSearchListeners() {
             });
         }
     });
+}
+
+function setupFilterListeners() {
+    // Overview filters - switch tabs instead of filtering
+    document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(stat => {
+        stat.addEventListener('click', function() {
+            const filter = this.getAttribute('data-filter');
+            
+            // Switch to appropriate tab
+            let targetTab = null;
+            switch (filter) {
+                case 'synced':
+                    targetTab = 'synced-tab';
+                    break;
+                case 'local-only':
+                    targetTab = 'local-tab';
+                    break;
+                case 'remote-only':
+                    targetTab = 'remote-tab';
+                    break;
+                default:
+                    return; // Don't switch for total
+            }
+            
+            if (targetTab) {
+                // Clear overview active states
+                document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(s => {
+                    s.classList.remove('active');
+                });
+                
+                // Set this one as active
+                this.classList.add('active');
+                
+                // Switch to the tab
+                const tabButton = document.getElementById(targetTab);
+                if (tabButton) {
+                    tabButton.click();
+                }
+            }
+        });
+    });
+    
+    // Value type and entity type filters - multi-select functionality
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('#value-type-filters .filter-stat') || e.target.closest('#entity-type-filters .filter-stat')) {
+            const stat = e.target.closest('.filter-stat');
+            const filterType = stat.closest('#value-type-filters') ? 'valueType' : 'entityType';
+            const filterValue = stat.getAttribute('data-filter');
+            
+            // Toggle the filter
+            toggleFilter(filterType, filterValue);
+            
+            // Toggle active state
+            stat.classList.toggle('active');
+            
+            // Refresh current tab
+            refreshCurrentTab();
+        }
+    });
+}
+
+function setupBulkActions() {
+    // Setup bulk selection checkboxes
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        setupBulkSelectionForTab(tabType);
+    });
+}
+
+function setupImportFormHandler() {
+    const importForm = document.getElementById('import-json-form');
+    if (importForm) {
+        importForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            // Show loading state
+            const submitButton = this.querySelector('button[type="submit"]');
+            const originalText = submitButton.innerHTML;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Importing...';
+            submitButton.disabled = true;
+            
+            fetch('/metadata/properties/import/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('Properties imported successfully', 'success');
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('importJsonModal'));
+                    modal.hide();
+                    
+                    // Refresh properties data
+                    loadPropertiesData();
+                } else {
+                    showNotification(data.error || 'Failed to import properties', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('Error importing properties', 'error');
+            })
+            .finally(() => {
+                // Restore button state
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            });
+        });
+    }
 }
 
 function setupEditFormHandler() {
@@ -319,12 +445,6 @@ function updateFilterRows() {
                 <div class="text-muted">${displayValueType}</div>
             `;
             
-            filterDiv.addEventListener('click', function() {
-                toggleFilter('valueType', valueType);
-                this.classList.toggle('active');
-                refreshCurrentTab();
-            });
-            
             valueTypeContainer.appendChild(filterDiv);
         });
     }
@@ -351,12 +471,6 @@ function updateFilterRows() {
                 <div class="h5 mb-0">${count}</div>
                 <div class="text-muted">${displayEntityType}</div>
             `;
-            
-            filterDiv.addEventListener('click', function() {
-                toggleFilter('entityType', entityType);
-                this.classList.toggle('active');
-                refreshCurrentTab();
-            });
             
             entityTypeContainer.appendChild(filterDiv);
         });
@@ -460,6 +574,7 @@ function refreshCurrentTab() {
         const tabType = activeTab.id.replace('-tab', '');
         console.log('Refreshing current tab:', tabType);
         renderTab(`${tabType}-items`);
+        updateFilterDisplay();
     }
 }
 
@@ -528,13 +643,14 @@ function renderTab(tabId) {
                 <thead>
                     <tr>
                         <th width="40px"><input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}"></th>
-                        <th class="sortable-header" data-sort="name">Name</th>
-                        <th>Description</th>
-                        <th class="sortable-header" data-sort="entity_types">Entity Types</th>
-                        <th class="sortable-header" data-sort="value_type">Value Type</th>
-                        <th class="sortable-header" data-sort="cardinality">Cardinality</th>
-                        <th width="200px" class="sortable-header" data-sort="urn">URN</th>
-                        <th width="200px">Actions</th>
+                        <th class="sortable-header" data-sort="name" width="180px">Name</th>
+                        <th width="250px">Description</th>
+                        <th class="sortable-header" data-sort="entity_types" width="200px">Entity Types</th>
+                        <th class="sortable-header" data-sort="value_type" width="120px">Value Type</th>
+                        <th class="sortable-header" data-sort="cardinality" width="100px">Cardinality</th>
+                        <th class="sortable-header" data-sort="allowed_values" width="100px">Allowed Values</th>
+                        <th width="150px" class="sortable-header" data-sort="urn">URN</th>
+                        <th width="180px">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -617,13 +733,14 @@ function renderPropertiesTable(properties, tabType, container) {
                         <th width="40px">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Entity Types</th>
-                        <th>Value Type</th>
-                        <th>Cardinality</th>
-                        <th width="200px">URN</th>
-                        <th width="200px">Actions</th>
+                        <th width="180px">Name</th>
+                        <th width="250px">Description</th>
+                        <th width="200px">Entity Types</th>
+                        <th width="120px">Value Type</th>
+                        <th width="100px">Cardinality</th>
+                        <th width="100px">Allowed Values</th>
+                        <th width="150px">URN</th>
+                        <th width="180px">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -639,7 +756,7 @@ function renderPropertiesTable(properties, tabType, container) {
     console.log('Table rendered successfully');
     
     // Setup bulk selection
-    setupBulkSelection(tabType);
+    setupBulkSelectionForTab(tabType);
 }
 
 function renderPagination(currentPage, totalPages, totalItems, startItem, endItem, tabType) {
@@ -715,12 +832,15 @@ function renderPropertyRow(property, tabType) {
     const propertyName = property.name || property.qualified_name || 'Unnamed Property';
     const propertyUrn = property.urn || '';
     
-    console.log('URN for truncation:', propertyUrn, 'truncated:', truncateUrn(propertyUrn, 40));
+    console.log('URN for truncation:', propertyUrn, 'truncated:', truncateUrn(propertyUrn, 30));
+    
+    // Escape the property data for the data attribute
+    const propertyDataAttr = JSON.stringify(property).replace(/"/g, '&quot;');
     
     return `
         <tr>
             <td>
-                <input type="checkbox" class="form-check-input item-checkbox" value="${property.id || property.urn}">
+                <input type="checkbox" class="form-check-input item-checkbox" value="${property.id || property.urn}" data-property="${propertyDataAttr}">
             </td>
             <td>
                 <strong>${escapeHtml(propertyName)}</strong>
@@ -741,8 +861,11 @@ function renderPropertyRow(property, tabType) {
             <td>
                 <span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>
             </td>
-            <td class="urn-cell">
-                <code class="small text-muted" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;" title="${escapeHtml(propertyUrn)}">${escapeHtml(truncateUrn(propertyUrn, 40))}</code>
+            <td>
+                <span class="badge bg-secondary">${property.allowed_values_count || 0}</span>
+            </td>
+            <td title="${escapeHtml(propertyUrn)}">
+                <code class="small">${escapeHtml(truncateUrn(propertyUrn, 30))}</code>
             </td>
             <td>
                 <div class="btn-group" role="group">
@@ -766,13 +889,25 @@ function getActionButtons(property, tabType) {
         <i class="fas fa-eye"></i>
     </button>`);
     
+    // View in DataHub button - always available for properties with URNs
+    if (propertyUrn && !propertyUrn.includes('local:')) {
+        buttons.push(`<a href="#" class="btn btn-sm btn-outline-info view-in-datahub" onclick="viewInDataHub('${propertyUrn}')" title="View in DataHub" target="_blank">
+            <i class="fas fa-external-link-alt"></i>
+        </a>`);
+    }
+    
+    // Download JSON button - always available
+    buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
+        <i class="fas fa-file-download"></i>
+    </button>`);
+    
     if (tabType === 'synced') {
         // Edit button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
             <i class="fas fa-edit"></i>
         </button>`);
-        // Add to PR button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-property-to-pr" onclick="addPropertyToPR('${propertyId}')" title="Add to PR">
+        // Add to Staged Changes button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
             <i class="fab fa-github"></i>
         </button>`);
         // Sync/Resync button
@@ -792,8 +927,8 @@ function getActionButtons(property, tabType) {
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
             <i class="fas fa-edit"></i>
         </button>`);
-        // Add to PR button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-property-to-pr" onclick="addPropertyToPR('${propertyId}')" title="Add to PR">
+        // Add to Staged Changes button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
             <i class="fab fa-github"></i>
         </button>`);
         // Push to DataHub button
@@ -806,11 +941,11 @@ function getActionButtons(property, tabType) {
         </button>`);
     } else if (tabType === 'remote') {
         // Sync to Local button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary sync-property-to-local" onclick="syncPropertyToLocal('${propertyUrn}')" title="Sync to Local">
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary sync-property-to-local" onclick="syncPropertyToLocal(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Sync to Local">
             <i class="fas fa-download"></i>
         </button>`);
-        // Add to PR button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-remote-property-to-pr" onclick="addRemotePropertyToPR('${propertyUrn}')" title="Add to PR">
+        // Add to Staged Changes button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
             <i class="fab fa-github"></i>
         </button>`);
         // Delete remote button
@@ -822,40 +957,162 @@ function getActionButtons(property, tabType) {
     return buttons.join(' ');
 }
 
+/**
+ * Setup bulk selection for a specific tab
+ */
 function setupBulkSelectionForTab(tabType) {
-    const selectAllCheckbox = document.getElementById(`selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}`);
-    const tabContent = document.getElementById(`${tabType}-content`);
+    const container = document.getElementById(`${tabType}-content`);
+    if (!container) return;
     
-    if (selectAllCheckbox && tabContent) {
-        // Remove existing listeners to avoid duplicates
-        selectAllCheckbox.replaceWith(selectAllCheckbox.cloneNode(true));
-        const newSelectAllCheckbox = document.getElementById(`selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}`);
-        
-        newSelectAllCheckbox.addEventListener('change', function() {
-            const itemCheckboxes = tabContent.querySelectorAll('.item-checkbox');
-            itemCheckboxes.forEach(cb => {
-                cb.checked = this.checked;
+    // Handle select all checkbox
+    container.addEventListener('change', function(e) {
+        if (e.target.classList.contains('select-all-checkbox')) {
+            const checkboxes = container.querySelectorAll('input[type="checkbox"]:not(.select-all-checkbox)');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = e.target.checked;
             });
-            updateBulkActionsVisibility();
-        });
-        
-        // Setup individual checkbox listeners
-        const itemCheckboxes = tabContent.querySelectorAll('.item-checkbox');
-        itemCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', function() {
-                updateBulkActionsVisibility();
-                
-                // Update select all checkbox state
-                const allCheckboxes = tabContent.querySelectorAll('.item-checkbox');
-                const checkedCheckboxes = tabContent.querySelectorAll('.item-checkbox:checked');
-                
-                if (newSelectAllCheckbox) {
-                    newSelectAllCheckbox.checked = allCheckboxes.length > 0 && allCheckboxes.length === checkedCheckboxes.length;
-                    newSelectAllCheckbox.indeterminate = checkedCheckboxes.length > 0 && checkedCheckboxes.length < allCheckboxes.length;
-                }
-            });
-        });
+            updateBulkActionsVisibility(tabType);
+        } else if (e.target.type === 'checkbox') {
+            updateBulkActionsVisibility(tabType);
+            
+            // Update select all checkbox state
+            const checkboxes = container.querySelectorAll('input[type="checkbox"]:not(.select-all-checkbox)');
+            const checkedCheckboxes = container.querySelectorAll('input[type="checkbox"]:checked:not(.select-all-checkbox)');
+            const selectAllCheckbox = container.querySelector('.select-all-checkbox');
+            
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = checkedCheckboxes.length === checkboxes.length;
+                selectAllCheckbox.indeterminate = checkedCheckboxes.length > 0 && checkedCheckboxes.length < checkboxes.length;
+            }
+        }
+    });
+}
+
+/**
+ * Add property to staged changes (MCP)
+ * @param {Object} property - The property object
+ */
+function addPropertyToStagedChanges(property) {
+    const propertyId = getDatabaseId(property);
+    if (!propertyId) {
+        showNotification('Cannot add property to staged changes: No database ID found', 'error');
+        return;
     }
+    
+    // Get current environment and mutation name
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = window.mutationName || null;
+    
+    // Find the button to show loading state
+    const button = document.querySelector(`[data-property-id="${propertyId}"].add-to-staged-changes`);
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+    
+    // Make API call to add property to staged changes
+    fetch(`/metadata/properties/${propertyId}/stage_changes/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showNotification(data.message || 'Property added to staged changes successfully', 'success');
+            // Refresh the data
+            if (typeof loadPropertiesData === 'function') {
+                loadPropertiesData();
+            }
+        } else {
+            throw new Error(data.error || 'Failed to add property to staged changes');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding property to staged changes:', error);
+        showNotification(`Error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = '<i class="fab fa-github"></i>';
+        }
+    });
+}
+
+/**
+ * Get the actual database ID from a property object
+ * This is needed because the property data might contain datahub_id instead of the actual database id
+ * @param {Object} propertyData - The property data object
+ * @returns {string|null} - The database ID or null if not found
+ */
+function getDatabaseId(propertyData) {
+    // For combined objects (synced properties), check local first
+    if (propertyData.local && propertyData.local.id) {
+        return propertyData.local.id;
+    }
+    
+    // For local-only properties, use the id directly
+    if (propertyData.id) {
+        return propertyData.id;
+    }
+    
+    // For remote-only properties, try to extract from URN
+    if (propertyData.urn) {
+        const urnParts = propertyData.urn.split(':');
+        if (urnParts.length >= 4) {
+            return urnParts[3]; // Return the database ID part
+        }
+    }
+    
+    // Log warning if we couldn't find an ID
+    console.warn('Could not find database ID for property:', propertyData);
+    return null;
+}
+
+/**
+ * View property in DataHub
+ * @param {string} propertyUrn - The property URN
+ */
+function viewInDataHub(propertyUrn) {
+    // Get DataHub URL from the page data
+    const datahubUrl = window.propertiesData?.datahub_url;
+    if (!datahubUrl) {
+        showNotification('DataHub URL not available', 'error');
+        return;
+    }
+    
+    // Construct the URL for structured properties
+    const baseUrl = datahubUrl.replace(/\/+$/, ''); // Remove trailing slashes
+    const propertyUrl = `${baseUrl}/structured-properties/${propertyUrn}`;
+    
+    // Open in new tab
+    window.open(propertyUrl, '_blank');
+}
+
+/**
+ * Download property JSON
+ * @param {string} propertyId - The property ID
+ */
+function downloadPropertyJson(propertyId) {
+    console.log(`Downloading property JSON for ID: ${propertyId}`);
+    
+    // Create a temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = `/metadata/properties/${propertyId}/download/`;
+    link.download = `property_${propertyId}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showNotification('Property JSON download started', 'success');
 }
 
 // Global sorting state for properties
@@ -929,14 +1186,12 @@ function getSortValueFromRow(row, column) {
             return cells[4]?.textContent?.trim().toLowerCase() || '';
         case 'entity_types':
             return cells[5]?.textContent?.trim().toLowerCase() || '';
+        case 'allowed_values':
+            return cells[6]?.textContent?.trim().toLowerCase() || '';
         default:
             return '';
     }
 }
-
-
-
-
 
 function attachViewButtonHandlers(container) {
     container.querySelectorAll('.view-property').forEach(button => {
@@ -1020,27 +1275,32 @@ function populateEditPropertyModal(property) {
     const form = document.getElementById('editPropertyForm');
     form.action = `/metadata/properties/${property.id}/`;
     
-    // Populate form fields
-    document.getElementById('editPropertyId').value = property.id;
-    document.getElementById('editPropertyName').value = property.name || '';
-    document.getElementById('editPropertyDescription').value = property.description || '';
-    document.getElementById('editPropertyQualifiedName').value = property.qualified_name || '';
-    document.getElementById('editPropertyValueType').value = property.value_type || 'STRING';
-    document.getElementById('editPropertyCardinality').value = property.cardinality || 'SINGLE';
-    
-    // Handle entity types
-    const entityTypeCheckboxes = document.querySelectorAll('input[name="entity_types"]');
-    entityTypeCheckboxes.forEach(checkbox => {
-        checkbox.checked = (property.entity_types || []).includes(checkbox.value);
-    });
-    
-    // Handle display settings
-    document.getElementById('editShowInSearchFilters').checked = property.show_in_search_filters || false;
-    document.getElementById('editShowAsAssetBadge').checked = property.show_as_asset_badge || false;
-    document.getElementById('editShowInAssetSummary').checked = property.show_in_asset_summary || false;
-    document.getElementById('editShowInColumnsTable').checked = property.show_in_columns_table || false;
-    document.getElementById('editIsHidden').checked = property.is_hidden || false;
-    document.getElementById('editImmutable').checked = property.immutable || false;
+    // Use the new comprehensive modal population function
+    if (window.propertyModal && window.propertyModal.populateEditModal) {
+        window.propertyModal.populateEditModal(property);
+    } else {
+        // Fallback to basic population if new modal system is not available
+        document.getElementById('editPropertyId').value = property.id;
+        document.getElementById('editPropertyName').value = property.name || '';
+        document.getElementById('editPropertyDescription').value = property.description || '';
+        document.getElementById('editPropertyQualifiedName').value = property.qualified_name || '';
+        document.getElementById('editPropertyValueType').value = property.value_type || 'string';
+        document.getElementById('editPropertyCardinality').value = property.cardinality || 'SINGLE';
+        
+        // Handle entity types
+        const entityTypeCheckboxes = document.querySelectorAll('input[name="entity_types"]');
+        entityTypeCheckboxes.forEach(checkbox => {
+            checkbox.checked = (property.entity_types || []).includes(checkbox.value);
+        });
+        
+        // Handle display settings
+        document.getElementById('editShowInSearchFilters').checked = property.show_in_search_filters || false;
+        document.getElementById('editShowAsAssetBadge').checked = property.show_as_asset_badge || false;
+        document.getElementById('editShowInAssetSummary').checked = property.show_in_asset_summary || false;
+        document.getElementById('editShowInColumnsTable').checked = property.show_in_columns_table || false;
+        document.getElementById('editIsHidden').checked = property.is_hidden || false;
+        document.getElementById('editPropertyImmutable').checked = property.immutable || false;
+    }
 }
 
 function populatePropertyViewModal(property) {
@@ -1187,6 +1447,7 @@ function pushPropertyToDataHub(propertyId) {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         }
     })
     .then(response => response.json())
@@ -1229,6 +1490,7 @@ function deleteLocalProperty(propertyId) {
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         }
     })
     .then(response => response.json())
@@ -1253,10 +1515,23 @@ function deleteLocalProperty(propertyId) {
     });
 }
 
-function syncPropertyToLocal(propertyUrn) {
+function syncPropertyToLocal(property) {
+    // Handle both property object and URN string for backward compatibility
+    const propertyUrn = typeof property === 'string' ? property : property.urn;
+    const propertyData = typeof property === 'object' ? property : null;
+    
     console.log(`Syncing property to local: ${propertyUrn}`);
     
-    const button = document.querySelector(`button[onclick="syncPropertyToLocal('${propertyUrn}')"]`);
+    // For property objects, extract the URN
+    const urnToSync = propertyUrn || (propertyData && propertyData.urn) || (propertyData && propertyData.deterministic_urn);
+    
+    if (!urnToSync) {
+        console.error('No URN found for property:', property);
+        showNotification('Error: No URN found for property', 'error');
+        return;
+    }
+    
+    const button = document.querySelector(`button[onclick*="syncPropertyToLocal"]`);
     if (button) {
         button.disabled = true;
         button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -1267,8 +1542,9 @@ function syncPropertyToLocal(propertyUrn) {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         },
-        body: `property_urn=${encodeURIComponent(propertyUrn)}`
+        body: `property_urn=${encodeURIComponent(urnToSync)}`
     })
     .then(response => response.json())
     .then(data => {
@@ -1310,6 +1586,7 @@ function deleteRemoteProperty(propertyUrn) {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         },
         body: `property_urn=${encodeURIComponent(propertyUrn)}`
     })
@@ -1458,8 +1735,8 @@ function bulkSyncToLocal(tabType) {
     
     if (confirm(`Are you sure you want to sync ${checkedBoxes.length} properties to local?`)) {
         checkedBoxes.forEach(checkbox => {
-            const propertyUrn = checkbox.value;
-            syncPropertyToLocal(propertyUrn);
+            const propertyData = JSON.parse(checkbox.getAttribute('data-property') || '{}');
+            syncPropertyToLocal(propertyData);
         });
     }
 }
@@ -1492,16 +1769,232 @@ function bulkAddToPR(tabType) {
     const checkedBoxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
     if (checkedBoxes.length === 0) return;
     
-    if (confirm(`Are you sure you want to add ${checkedBoxes.length} properties to PR?`)) {
+    if (confirm(`Are you sure you want to add ${checkedBoxes.length} properties to staged changes?`)) {
         checkedBoxes.forEach(checkbox => {
-            const propertyId = checkbox.value;
-            const propertyUrn = checkbox.value;
-            
-            if (tabType === 'remote') {
-                addRemotePropertyToPR(propertyUrn);
-            } else {
-                addPropertyToPR(propertyId);
-            }
+            const propertyData = JSON.parse(checkbox.getAttribute('data-property') || '{}');
+            addPropertyToStagedChanges(propertyData);
         });
     }
+}
+
+/**
+ * Global Actions Functions
+ */
+
+/**
+ * Resync all properties
+ */
+function resyncAll() {
+    if (!confirm('Are you sure you want to resync all properties? This will update all properties from DataHub.')) {
+        return;
+    }
+    
+    showNotification('Starting resync of all properties...', 'info');
+    
+    fetch('/metadata/properties/resync_all/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(`Successfully resynced ${data.count || 0} properties`, 'success');
+            loadPropertiesData();
+        } else {
+            showNotification(data.error || 'Failed to resync properties', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Error resyncing properties', 'error');
+    });
+}
+
+/**
+ * Export all properties to JSON
+ */
+function exportAll() {
+    showNotification('Preparing export...', 'info');
+    
+    fetch('/metadata/properties/export_all/', {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `properties_export_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showNotification('Export completed successfully', 'success');
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Error exporting properties', 'error');
+    });
+}
+
+/**
+ * Add all properties to staged changes
+ */
+function addAllToStagedChanges() {
+    if (!confirm('Are you sure you want to add ALL properties to staged changes? This will create MCP files for all properties in the current environment.')) {
+        return;
+    }
+    
+    // Get current environment and mutation name
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = window.mutationName || null;
+    
+    showNotification('Starting to add all properties to staged changes...', 'success');
+    
+    fetch('/metadata/properties/add_all_to_staged_changes/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Add all to staged changes response:', data);
+        if (data.success) {
+            showNotification(data.message || `Successfully added ${data.success_count || 0} properties to staged changes`, 'success');
+            if (data.success_count > 0) {
+                loadPropertiesData();
+            }
+        } else {
+            showNotification(data.error || 'Failed to add properties to staged changes', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding all properties to staged changes:', error);
+        showNotification(`Error adding properties to staged changes: ${error.message}`, 'error');
+    });
+}
+
+/**
+ * Show import modal
+ */
+function showImportModal() {
+    const modal = new bootstrap.Modal(document.getElementById('importJsonModal'));
+    modal.show();
+}
+
+/**
+ * Bulk download JSON for a specific tab
+ */
+function bulkDownloadJson(tabType) {
+    const selectedProperties = getSelectedProperties(tabType);
+    
+    if (selectedProperties.length === 0) {
+        showNotification('Please select properties to download', 'warning');
+        return;
+    }
+    
+    // Create JSON data
+    const jsonData = JSON.stringify(selectedProperties, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create download link
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `properties_${tabType}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    showNotification(`Downloaded ${selectedProperties.length} properties`, 'success');
+}
+
+/**
+ * Get selected properties for a specific tab
+ */
+function getSelectedProperties(tabType) {
+    const checkboxes = document.querySelectorAll(`#${tabType}-content input[type="checkbox"]:checked:not(.select-all-checkbox)`);
+    const selectedProperties = [];
+    
+    checkboxes.forEach(checkbox => {
+        const propertyData = JSON.parse(checkbox.getAttribute('data-property') || '{}');
+        if (propertyData.id) {
+            selectedProperties.push(propertyData);
+        }
+    });
+    
+    return selectedProperties;
+}
+
+/**
+ * Update bulk actions visibility
+ */
+function updateBulkActionsVisibility(tabType) {
+    const selectedCount = document.querySelectorAll(`#${tabType}-content input[type="checkbox"]:checked:not(.select-all-checkbox)`).length;
+    const bulkActions = document.getElementById(`${tabType}-bulk-actions`);
+    const selectedCountElement = document.getElementById(`${tabType}-selected-count`);
+    
+    if (bulkActions) {
+        if (selectedCount > 0) {
+            bulkActions.classList.add('show');
+        } else {
+            bulkActions.classList.remove('show');
+        }
+    }
+    
+    if (selectedCountElement) {
+        selectedCountElement.textContent = selectedCount;
+    }
+}
+
+function clearAllFilters() {
+    currentFilters.clear();
+    
+    // Remove active states from all filter stats
+    document.querySelectorAll('.clickable-stat.multi-select').forEach(stat => {
+        stat.classList.remove('active');
+    });
+    
+    // Refresh current tab
+    refreshCurrentTab();
+}
+
+function updateFilterDisplay() {
+    // Update active states based on current filters
+    document.querySelectorAll('.clickable-stat.multi-select').forEach(stat => {
+        const filterType = stat.closest('#value-type-filters') ? 'valueType' : 'entityType';
+        const filterValue = stat.getAttribute('data-filter');
+        const filterKey = `${filterType}:${filterValue}`;
+        
+        if (currentFilters.has(filterKey)) {
+            stat.classList.add('active');
+        } else {
+            stat.classList.remove('active');
+        }
+    });
 }

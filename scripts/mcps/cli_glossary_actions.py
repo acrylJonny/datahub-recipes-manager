@@ -16,8 +16,7 @@ sys.path.append(
 )
 
 from scripts.mcps.glossary_actions import (
-    add_glossary_node_to_staged_changes,
-    add_glossary_term_to_staged_changes,
+    add_glossary_to_staged_changes,
     setup_logging
 )
 
@@ -37,8 +36,7 @@ def parse_args():
     node_parser.add_argument("--environment", default="dev", help="Environment name")
     node_parser.add_argument("--owner", default="admin", help="Owner username")
     node_parser.add_argument("--base-dir", default="metadata", help="Base directory for output")
-    node_parser.add_argument("--include-all-aspects", action="store_true", default=True, help="Include all supported aspects")
-    node_parser.add_argument("--custom-aspects", help="JSON string with custom aspects")
+    node_parser.add_argument("--mutation-name", help="Mutation name for deterministic URN generation")
     
     # Add glossary term to staged changes
     term_parser = subparsers.add_parser("stage-term", help="Add glossary term to staged changes")
@@ -46,115 +44,120 @@ def parse_args():
     term_parser.add_argument("--environment", default="dev", help="Environment name")
     term_parser.add_argument("--owner", default="admin", help="Owner username")
     term_parser.add_argument("--base-dir", default="metadata", help="Base directory for output")
-    term_parser.add_argument("--include-all-aspects", action="store_true", default=True, help="Include all supported aspects")
-    term_parser.add_argument("--custom-aspects", help="JSON string with custom aspects")
+    term_parser.add_argument("--mutation-name", help="Mutation name for deterministic URN generation")
     
-    # General options
-    parser.add_argument(
-        "--log-level",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Logging level",
-    )
+    # Add generic glossary entity to staged changes
+    entity_parser = subparsers.add_parser("stage-entity", help="Add glossary entity to staged changes")
+    entity_parser.add_argument("--entity-file", required=True, help="JSON file with glossary entity data")
+    entity_parser.add_argument("--entity-type", required=True, choices=["node", "term"], help="Type of entity")
+    entity_parser.add_argument("--environment", default="dev", help="Environment name")
+    entity_parser.add_argument("--owner", default="admin", help="Owner username")
+    entity_parser.add_argument("--base-dir", default="metadata", help="Base directory for output")
+    entity_parser.add_argument("--mutation-name", help="Mutation name for deterministic URN generation")
     
-    args = parser.parse_args()
-    
-    # Ensure an action was specified
-    if args.action is None:
-        parser.print_help()
-        sys.exit(1)
-    
-    return args
+    return parser.parse_args()
 
 
 def load_json_data(file_path: str) -> Dict[str, Any]:
-    """Load data from a JSON file"""
+    """Load JSON data from file"""
     try:
-        with open(file_path, "r") as f:
+        with open(file_path, 'r') as f:
             return json.load(f)
     except Exception as e:
-        logger.error(f"Error loading JSON data from {file_path}: {str(e)}")
-        sys.exit(1)
-
-
-def parse_custom_aspects(custom_aspects_str: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Parse custom aspects from JSON string"""
-    if not custom_aspects_str:
-        return None
-    
-    try:
-        return json.loads(custom_aspects_str)
-    except Exception as e:
-        logger.error(f"Error parsing custom aspects JSON: {str(e)}")
-        sys.exit(1)
+        logger.error(f"Error loading JSON file {file_path}: {str(e)}")
+        raise
 
 
 def main():
     """Main function"""
-    args = parse_args()
-    setup_logging(args.log_level)
-    
     try:
+        args = parse_args()
+        
+        if not args.action:
+            print("Please specify an action. Use --help for more information.")
+            sys.exit(1)
+        
+        setup_logging()
+        
         if args.action == "stage-node":
             # Load glossary node data
             node_data = load_json_data(args.node_file)
-            custom_aspects = parse_custom_aspects(args.custom_aspects)
             
-            # Add to staged changes
-            result = add_glossary_node_to_staged_changes(
-                node_data=node_data,
+            # Add to staged changes using comprehensive function
+            result = add_glossary_to_staged_changes(
+                entity_data=node_data,
+                entity_type="node",
                 environment=args.environment,
                 owner=args.owner,
-                base_dir=args.base_dir,
-                include_all_aspects=args.include_all_aspects,
-                custom_aspects=custom_aspects
+                base_dir=os.path.join(args.base_dir, "glossary"),
+                mutation_name=args.mutation_name
             )
             
-            if result.get("success"):
+            if result:
                 print(f"✅ Glossary node added to staged changes successfully")
-                print(f"📁 Node ID: {result.get('node_id')}")
-                print(f"🔗 Node URN: {result.get('node_urn')}")
-                print(f"📊 MCPs created: {result.get('mcps_created')}")
-                print(f"📄 Files saved: {len(result.get('files_saved', []))}")
-                print(f"🎯 Aspects included: {', '.join(result.get('aspects_included', []))}")
+                print(f"📁 Node ID: {node_data.get('id', 'Unknown')}")
+                print(f"📄 Files created: {len(result)}")
                 
-                if result.get('files_saved'):
+                if result:
                     print("\n📁 Files created:")
-                    for file_path in result.get('files_saved', []):
+                    for file_path in result.values():
                         print(f"  - {file_path}")
             else:
-                print(f"❌ Failed to add glossary node to staged changes: {result.get('message')}")
+                print(f"❌ Failed to add glossary node to staged changes")
                 sys.exit(1)
                 
         elif args.action == "stage-term":
             # Load glossary term data
             term_data = load_json_data(args.term_file)
-            custom_aspects = parse_custom_aspects(args.custom_aspects)
             
-            # Add to staged changes
-            result = add_glossary_term_to_staged_changes(
-                term_data=term_data,
+            # Add to staged changes using comprehensive function
+            result = add_glossary_to_staged_changes(
+                entity_data=term_data,
+                entity_type="term",
                 environment=args.environment,
                 owner=args.owner,
-                base_dir=args.base_dir,
-                include_all_aspects=args.include_all_aspects,
-                custom_aspects=custom_aspects
+                base_dir=os.path.join(args.base_dir, "glossary"),
+                mutation_name=args.mutation_name
             )
             
-            if result.get("success"):
+            if result:
                 print(f"✅ Glossary term added to staged changes successfully")
-                print(f"📁 Term ID: {result.get('term_id')}")
-                print(f"🔗 Term URN: {result.get('term_urn')}")
-                print(f"📊 MCPs created: {result.get('mcps_created')}")
-                print(f"📄 Files saved: {len(result.get('files_saved', []))}")
-                print(f"🎯 Aspects included: {', '.join(result.get('aspects_included', []))}")
+                print(f"📁 Term ID: {term_data.get('id', 'Unknown')}")
+                print(f"📄 Files created: {len(result)}")
                 
-                if result.get('files_saved'):
+                if result:
                     print("\n📁 Files created:")
-                    for file_path in result.get('files_saved', []):
+                    for file_path in result.values():
                         print(f"  - {file_path}")
             else:
-                print(f"❌ Failed to add glossary term to staged changes: {result.get('message')}")
+                print(f"❌ Failed to add glossary term to staged changes")
+                sys.exit(1)
+                
+        elif args.action == "stage-entity":
+            # Load glossary entity data
+            entity_data = load_json_data(args.entity_file)
+            
+            # Add to staged changes using comprehensive function
+            result = add_glossary_to_staged_changes(
+                entity_data=entity_data,
+                entity_type=args.entity_type,
+                environment=args.environment,
+                owner=args.owner,
+                base_dir=os.path.join(args.base_dir, "glossary"),
+                mutation_name=args.mutation_name
+            )
+            
+            if result:
+                print(f"✅ Glossary {args.entity_type} added to staged changes successfully")
+                print(f"📁 Entity ID: {entity_data.get('id', 'Unknown')}")
+                print(f"📄 Files created: {len(result)}")
+                
+                if result:
+                    print("\n📁 Files created:")
+                    for file_path in result.values():
+                        print(f"  - {file_path}")
+            else:
+                print(f"❌ Failed to add glossary {args.entity_type} to staged changes")
                 sys.exit(1)
     
     except Exception as e:

@@ -1903,7 +1903,7 @@ class GitIntegration:
             # Handle Domain objects from metadata_manager (identified by having to_dict method and being a Domain model)
             elif (
                 hasattr(instance_or_template, "to_dict")
-                and hasattr(instance_or_template, "deterministic_urn")
+                and hasattr(instance_or_template, "urn")
                 and hasattr(instance_or_template, "_meta") 
                 and getattr(instance_or_template._meta, "model_name", None) == "domain"
             ):
@@ -1944,7 +1944,7 @@ class GitIntegration:
                         "input": {
                             "name": instance_or_template.name,
                             "description": instance_or_template.description or "",
-                            "urn": domain_data.get("urn", instance_or_template.deterministic_urn)
+                            "urn": domain_data.get("urn", instance_or_template.urn)
                         }
                     }
                 }
@@ -2013,6 +2013,137 @@ class GitIntegration:
                     f.write(content)
 
                 pr_title = f"Add/update metadata test: {instance_or_template.name}"
+
+            # Handle domains (identified by having a urn and no recipe_type)
+            elif (
+                hasattr(instance_or_template, "urn")
+                and hasattr(instance_or_template, "name")
+                and not hasattr(instance_or_template, "recipe_type")
+            ):
+                logger.info(f"Exporting domain: {instance_or_template.name}")
+
+                # Get environment (use domain's environment if set, otherwise default)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+
+                # Create metadata-manager directory structure
+                metadata_manager_dir = base_dir / "metadata-manager" / environment / "domains"
+                metadata_manager_dir.mkdir(parents=True, exist_ok=True)
+
+                # Generate a safe file name from the domain name
+                import re
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+                
+                # Create filename with operation prefix and domain ID for uniqueness
+                filename = f"create_DOMAIN_{instance_or_template.id}_{safe_name}.json"
+                file_path = metadata_manager_dir / filename
+
+                # Get base domain data
+                domain_data = instance_or_template.to_dict()
+                
+                # Structure the data for GraphQL workflow compatibility
+                structured_data = {
+                    "operation": "create",
+                    "entity_type": "DOMAIN",
+                    "name": instance_or_template.name,
+                    "description": instance_or_template.description or "",
+                    "config": domain_data,
+                    "local_id": str(instance_or_template.id),
+                    "filename": filename,
+                    "graphql_input": {
+                        "mutation": "createDomain",
+                        "input": {
+                            "name": instance_or_template.name,
+                            "description": instance_or_template.description or "",
+                            "urn": domain_data.get("urn", instance_or_template.urn)
+                        }
+                    }
+                }
+                
+                # Add parent domain if exists
+                if instance_or_template.parent_domain_urn:
+                    structured_data["graphql_input"]["input"]["parentDomains"] = {
+                        "domains": [{"urn": instance_or_template.parent_domain_urn}]
+                    }
+                
+                # Add display properties if they exist
+                if instance_or_template.color_hex or instance_or_template.icon_name:
+                    display_props = {}
+                    if instance_or_template.color_hex:
+                        display_props["colorHex"] = instance_or_template.color_hex
+                    if instance_or_template.icon_name:
+                        display_props["icon"] = {
+                            "name": instance_or_template.icon_name,
+                            "style": instance_or_template.icon_style or "solid",
+                            "iconLibrary": instance_or_template.icon_library or "font-awesome",
+                        }
+                    structured_data["graphql_input"]["input"]["displayProperties"] = display_props
+
+                # Export the domain as JSON
+                import json
+                with open(file_path, "w") as f:
+                    json.dump(structured_data, f, indent=2)
+
+                pr_title = f"Add/update domain '{instance_or_template.name}' for {environment} environment"
+
+            # Handle data products (DataProductForGit wrapper or direct data product)
+            elif (
+                hasattr(instance_or_template, "entity_urns")
+                or (hasattr(instance_or_template, "name") and 
+                    (hasattr(instance_or_template, "domain_urn") or hasattr(instance_or_template, "external_url")))
+            ):
+                # Generate a safe file name from the data product name
+                import re
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+                
+                # Construct file path for Data Product
+                file_path = f"data_products/{safe_name}.yml"
+
+            # Handle assertions (AssertionForGit wrapper or direct assertion)
+            elif (
+                (hasattr(instance_or_template, "config") and hasattr(instance_or_template, "name"))
+                or (hasattr(instance_or_template, "assertion_type") and hasattr(instance_or_template, "name"))
+            ):
+                # Get environment (default to 'prod' if not specified)
+                environment = Environment.get_default().name.lower()
+                
+                # Generate a safe file name from the assertion name
+                import re
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+                
+                # Construct file path for Assertion
+                file_path = f"assertions/{environment}/{safe_name}.yml"
+
+            # Handle metadata tests (identified by having id, name, definition, and environment attributes)
+            elif (
+                hasattr(instance_or_template, "id")
+                and hasattr(instance_or_template, "name")
+                and hasattr(instance_or_template, "definition")
+                and hasattr(instance_or_template, "environment")
+            ):
+                # Get environment (default to 'prod' if not specified)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+
+                # Generate a safe file name from the test name
+                import re
+
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+
+                # Construct file path for Metadata Test
+                file_path = f"metadata_tests/{environment}/{safe_name}.yaml"
 
             else:
                 err_msg = f"Invalid object type: {type(instance_or_template)}"
@@ -2623,9 +2754,9 @@ class GitIntegration:
             policy_name = instance_or_template.name.replace(" ", "_").lower()
             file_path = f"policies/{environment}/{policy_name}.json"
 
-        # Handle domains (identified by having a deterministic_urn and no recipe_type)
+        # Handle domains (identified by having a urn and no recipe_type)
         elif (
-            hasattr(instance_or_template, "deterministic_urn")
+            hasattr(instance_or_template, "urn")
             and hasattr(instance_or_template, "name")
             and not hasattr(instance_or_template, "recipe_type")
         ):

@@ -327,8 +327,8 @@ def apply_entity_mutation(entity, entity_type, environment_config=None):
         parent_path=parent_path,
     )
 
-    # Update entity's deterministic URN
-    entity.deterministic_urn = new_urn
+    # Update entity's urn
+    entity.urn = new_urn
 
     # Set the environment reference
     if hasattr(entity, "environment_id") and environment_config.get("id"):

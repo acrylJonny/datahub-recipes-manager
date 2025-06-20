@@ -5389,7 +5389,6 @@ class DataHubRestClient:
         except Exception as e:
             logging.error(f"Error processing structured properties: {str(e)}")
             return {"success": False, "error": str(e)}
-
     def get_assertions(self, entity_urn=None, query="*", start=0, count=100):
         """
         Get assertions from DataHub using comprehensive GraphQL query.

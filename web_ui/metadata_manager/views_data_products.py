@@ -9,7 +9,7 @@ from django.views import View
 from django.http import JsonResponse
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from django.utils.decorators import method_decorator
 from django.utils import timezone
 from django.db import models
@@ -1436,4 +1436,69 @@ def get_data_products(request):
         return JsonResponse({
             "success": False,
             "error": str(e)
-        }, status=500) 
+        }, status=500)
+
+
+@method_decorator(require_POST)
+def add_data_product_to_staged_changes(request, data_product_id):
+    """Add a data product to staged changes by creating comprehensive MCP files"""
+    try:
+        import json
+        import os
+        import sys
+        from pathlib import Path
+        
+        # Add project root to path to import our Python modules
+        sys.path.append(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        )
+        
+        # Import the function
+        from scripts.mcps.data_product_actions import add_data_product_to_staged_changes_legacy as add_data_product_mcps
+        
+        # Get the data product from database
+        try:
+            data_product = DataProduct.objects.get(id=data_product_id)
+        except DataProduct.DoesNotExist:
+            return JsonResponse({
+                "success": False,
+                "error": f"Data product with id {data_product_id} not found"
+            }, status=404)
+        
+        # Prepare data product data
+        data_product_data = {
+            "id": str(data_product.id),
+            "name": data_product.name,
+            "description": data_product.description,
+            "urn": data_product.urn,
+            "external_url": data_product.external_url,
+            "domain_urn": data_product.domain_urn,
+            "entity_urns": data_product.entity_urns or [],
+            "entities_count": data_product.entities_count,
+            "sync_status": data_product.sync_status,
+        }
+        
+        # Create staged changes
+        result = add_data_product_mcps(
+            data_product_data=data_product_data,
+            environment="dev",
+            owner=request.user.username if request.user.is_authenticated else "admin",
+            base_dir="metadata-manager"
+        )
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"Data product '{data_product.name}' added to staged changes",
+            "files_created": len(result),
+            "file_paths": result
+        })
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Error adding data product to staged changes: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        return JsonResponse({
+            "success": False,
+            "error": f"An error occurred: {str(e)}"
+        }) 

@@ -640,4 +640,177 @@ if __name__ == "__main__":
     
     print(f"Created domain MCPs:")
     print(f"  - Properties: {properties_path}")
-    print(f"  - Ownership: {ownership_path}") 
+    print(f"  - Ownership: {ownership_path}")
+
+
+def create_domain_staged_changes(
+    domain_urn: str,
+    name: str,
+    description: Optional[str] = None,
+    owners: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    terms: Optional[List[str]] = None,
+    links: Optional[List[Dict[str, str]]] = None,
+    custom_properties: Optional[Dict[str, str]] = None,
+    structured_properties: Optional[List[Dict[str, Any]]] = None,
+    forms: Optional[List[Dict[str, Any]]] = None,
+    test_results: Optional[List[Dict[str, Any]]] = None,
+    display_properties: Optional[Dict[str, Any]] = None,
+    parent_domain: Optional[str] = None,
+    include_all_aspects: bool = True,
+    custom_aspects: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> List[Dict[str, Any]]:
+    """
+    Create comprehensive MCPs for a domain with all aspects
+    
+    Args:
+        domain_urn: Domain URN
+        name: Domain name
+        description: Domain description
+        owners: List of owner URNs
+        tags: List of tag URNs
+        terms: List of glossary term URNs
+        links: List of documentation links
+        custom_properties: Custom properties dictionary
+        structured_properties: List of structured properties
+        forms: List of form associations
+        test_results: List of test results
+        display_properties: Display properties (color, icon, etc.)
+        parent_domain: Parent domain URN
+        include_all_aspects: Whether to include all supported aspects
+        custom_aspects: Custom aspects dictionary
+        **kwargs: Additional arguments
+    
+    Returns:
+        List of MCP dictionaries
+    """
+    mcps = []
+    domain_id = domain_urn.split(":")[-1]
+    
+    # 1. Domain Properties (always include)
+    properties_mcp = create_domain_properties_mcp(
+        domain_id=domain_id,
+        domain_name=name,
+        owner=owners[0] if owners else "admin",
+        description=description,
+        parent_domain_urn=parent_domain,
+        custom_properties=custom_properties or {}
+    )
+    mcps.append(properties_mcp)
+    
+    # 2. Ownership (always include)
+    if owners:
+        ownership_mcp = create_domain_ownership_mcp(
+            domain_id=domain_id,
+            owner=owners[0]
+        )
+        mcps.append(ownership_mcp)
+    
+    # 3. Status (always include)
+    status_mcp = create_domain_status_mcp(
+        domain_id=domain_id,
+        removed=False
+    )
+    mcps.append(status_mcp)
+    
+    # 4. Global Tags (if tags provided)
+    if tags:
+        tags_mcp = create_domain_global_tags_mcp(
+            domain_id=domain_id,
+            tags=tags,
+            owner=owners[0] if owners else "admin"
+        )
+        mcps.append(tags_mcp)
+    
+    # 5. Glossary Terms (if terms provided)
+    if terms:
+        terms_mcp = create_domain_glossary_terms_mcp(
+            domain_id=domain_id,
+            glossary_terms=terms,
+            owner=owners[0] if owners else "admin"
+        )
+        mcps.append(terms_mcp)
+    
+    # 6. Institutional Memory (if links provided)
+    if links:
+        memory_mcp = create_domain_institutional_memory_mcp(
+            domain_id=domain_id,
+            memory_elements=links,
+            owner=owners[0] if owners else "admin"
+        )
+        mcps.append(memory_mcp)
+    
+    # 7. Structured Properties (if provided)
+    if structured_properties:
+        props_mcp = create_domain_structured_properties_mcp(
+            domain_id=domain_id,
+            properties=structured_properties,
+            owner=owners[0] if owners else "admin"
+        )
+        mcps.append(props_mcp)
+    
+    # 8. Forms (if provided)
+    if forms:
+        forms_mcp = create_domain_forms_mcp(
+            domain_id=domain_id,
+            completed_forms=[f.get("urn") for f in forms if f.get("urn")]
+        )
+        mcps.append(forms_mcp)
+    
+    # 9. Test Results (if provided)
+    if test_results:
+        test_mcp = create_domain_test_results_mcp(
+            domain_id=domain_id,
+            owner=owners[0] if owners else "admin",
+            passing_tests=[t.get("urn") for t in test_results if t.get("status") == "PASS" and t.get("urn")],
+            failing_tests=[t.get("urn") for t in test_results if t.get("status") == "FAIL" and t.get("urn")]
+        )
+        mcps.append(test_mcp)
+    
+    # 10. Display Properties (if provided)
+    if display_properties:
+        display_mcp = create_domain_display_properties_mcp(
+            domain_id=domain_id,
+            color_hex=display_properties.get("colorHex"),
+            icon_library=display_properties.get("icon", {}).get("library"),
+            icon_name=display_properties.get("icon", {}).get("name"),
+            icon_style=display_properties.get("icon", {}).get("style")
+        )
+        mcps.append(display_mcp)
+    
+    logger.info(f"Created {len(mcps)} MCPs for domain {domain_urn}")
+    return mcps
+
+
+def save_mcps_to_files(
+    mcps: List[Dict[str, Any]],
+    base_directory: str,
+    entity_id: str
+) -> List[str]:
+    """
+    Save multiple MCPs to individual files
+    
+    Args:
+        mcps: List of MCP dictionaries
+        base_directory: Base directory for saving files
+        entity_id: Entity ID for file naming
+    
+    Returns:
+        List of file paths created
+    """
+    saved_files = []
+    
+    # Create base directory
+    os.makedirs(base_directory, exist_ok=True)
+    
+    for mcp in mcps:
+        aspect_name = mcp.get("aspectName", "unknown")
+        filename = f"{entity_id}_{aspect_name}.json"
+        file_path = os.path.join(base_directory, filename)
+        
+        # Save the MCP
+        if save_mcp_to_file(mcp, file_path):
+            saved_files.append(file_path)
+    
+    return saved_files 

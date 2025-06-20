@@ -109,6 +109,37 @@ urlpatterns = [
         views_properties.delete_remote_property,
         name="property_delete_remote",
     ),
+    path(
+        "properties/<uuid:property_id>/stage_changes/",
+        views_properties.PropertyAddToStagedChangesView.as_view(),
+        name="property_add_to_staged_changes",
+    ),
+    path(
+        "properties/<uuid:property_id>/download/",
+        views_properties.PropertyDownloadJsonView.as_view(),
+        name="property_download_json",
+    ),
+    # Global property action endpoints
+    path(
+        "properties/resync_all/",
+        views_properties.resync_all_properties,
+        name="property_resync_all",
+    ),
+    path(
+        "properties/export_all/",
+        views_properties.export_all_properties,
+        name="property_export_all",
+    ),
+    path(
+        "properties/add_all_to_staged_changes/",
+        views_properties.PropertyAddAllToStagedChangesView.as_view(),
+        name="property_add_all_to_staged_changes",
+    ),
+    path(
+        "properties/import/",
+        views_properties.import_properties,
+        name="property_import",
+    ),
     # Tags
     path("tags/", views_tags.TagListView.as_view(), name="tag_list"),
     path("tags/remote-data/", views_tags.get_remote_tags_data, name="get_remote_tags_data"),
@@ -420,6 +451,11 @@ urlpatterns = [
         views_data_contracts.get_remote_data_contracts_data,
         name="get_remote_data_contracts_data",
     ),
+    path(
+        "data-contracts/stage_changes/",
+        views_data_contracts.add_data_contract_to_staged_changes,
+        name="data_contract_add_to_staged_changes",
+    ),
     # Data Products
     path(
         "data-products/",
@@ -486,6 +522,11 @@ urlpatterns = [
         "data-products/add-remote-to-pr/",
         views_data_products.add_remote_data_product_to_pr,
         name="add_remote_data_product_to_pr",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/stage_changes/",
+        views_data_products.add_data_product_to_staged_changes,
+        name="data_product_add_to_staged_changes",
     ),
     # Assertions
     path(

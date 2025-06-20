@@ -5,6 +5,10 @@
 {% block title %}DataHub Structured Properties{% endblock %}
 
 {% block extra_css %}
+<!-- Select2 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+
 <link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <style>
     .description-cell {
@@ -199,6 +203,28 @@
         padding: 1rem;
     }
     
+    /* Select2 styling for modals */
+    .select2-container {
+        z-index: 1056;
+    }
+    
+    .select2-container--open {
+        z-index: 1057;
+    }
+    
+    .select2-dropdown {
+        z-index: 1057;
+    }
+    
+    .modal .select2-container {
+        width: 100% !important;
+    }
+    
+    .select2-container--bootstrap-5 .select2-selection {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+    
     /* Bulk Actions Styling - matching domains */
     .bulk-actions {
         background-color: #e3f2fd;
@@ -271,14 +297,79 @@
         #entity-type-filters .filter-stat {
             font-size: 0.8rem;
         }
-        
-        #entity-type-filters .filter-stat .h5 {
-            font-size: 0.9rem;
-        }
-        
-        #entity-type-filters .filter-stat .text-muted {
-            font-size: 0.7rem;
-        }
+    }
+    
+    /* Table column width constraints and text overflow */
+    .table th, .table td {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    
+    .table td:nth-child(2) { /* Name column */
+        max-width: 180px;
+        min-width: 120px;
+    }
+    
+    .table td:nth-child(3) { /* Description column */
+        max-width: 250px;
+        min-width: 150px;
+    }
+    
+    .table td:nth-child(4) { /* Entity Types column */
+        max-width: 200px;
+        min-width: 120px;
+    }
+    
+    .table td:nth-child(5) { /* Value Type column */
+        max-width: 120px;
+        min-width: 80px;
+    }
+    
+    .table td:nth-child(6) { /* Cardinality column */
+        max-width: 100px;
+        min-width: 80px;
+    }
+    
+    .table td:nth-child(7) { /* Allowed Values column */
+        max-width: 100px;
+        min-width: 80px;
+    }
+    
+    .table td:nth-child(8) { /* URN column */
+        max-width: 150px;
+        min-width: 100px;
+    }
+    
+    .table td:nth-child(9) { /* Actions column */
+        max-width: 180px;
+        min-width: 120px;
+    }
+    
+    /* Description text truncation */
+    .description-preview {
+        max-height: 3em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        line-height: 1.4;
+    }
+    
+    /* Entity types wrapping */
+    .entity-types {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        max-height: 3em;
+        overflow: hidden;
+    }
+    
+    .entity-type-badge {
+        font-size: 0.75em;
+        padding: 0.2em 0.4em;
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 </style>
 {% endblock %}
@@ -303,7 +394,31 @@
                     <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createPropertyModal">
                         <i class="fas fa-plus me-1"></i> Create Property
                     </a>
-                    <button type="button" class="btn btn-outline-secondary" id="refreshProperties">
+                    
+                    <!-- Global Actions Dropdown -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sync-alt me-1"></i> Bulk Actions
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAll()">
+                                <i class="fas fa-sync-alt me-2"></i> Resync All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAll()">
+                                <i class="fas fa-file-export me-2"></i> Export All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllToStagedChanges()">
+                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportModal()">
+                                <i class="fas fa-file-import me-2"></i> Import from JSON
+                            </a></li>
+                        </ul>
+                    </div>
+                    
+
+                    <button type="button" class="btn btn-outline-info" id="refreshProperties">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
                 </div>
@@ -347,19 +462,19 @@
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Overview</strong>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center" data-filter="total" data-category="overview">
                                         <div class="h5 mb-0" id="total-items">0</div>
                                         <div class="text-muted">Total</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
                                         <div class="h5 mb-0" id="synced-count">0</div>
                                         <div class="text-muted">Synced</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
                                         <div class="h5 mb-0" id="local-only-count">0</div>
                                         <div class="text-muted">Local Only</div>
@@ -449,11 +564,14 @@
                                         <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushProperties('synced')">
                                             <i class="fas fa-upload me-1"></i> Bulk Push
                                         </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocalProperties('synced')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                            <i class="fas fa-trash me-1"></i> Delete Local
                                         </button>
                                     </div>
                                 </div>
@@ -489,8 +607,11 @@
                                         <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushProperties('local')">
                                             <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
                                         </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocalProperties('local')">
                                             <i class="fas fa-trash me-1"></i> Bulk Delete
@@ -529,11 +650,11 @@
                                         <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
                                             <i class="fas fa-download me-1"></i> Bulk Sync to Local
                                         </button>
-                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
-                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemoteProperties('remote')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete Remote
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                     </div>
                                 </div>
@@ -656,6 +777,7 @@
                         <div class="col-md-6">
                             <label for="editPropertyQualifiedName" class="form-label">Qualified Name</label>
                             <input type="text" class="form-control" id="editPropertyQualifiedName" name="qualified_name">
+                            <small class="text-muted">Optional - will be auto-generated if not provided</small>
                         </div>
                     </div>
                     
@@ -669,23 +791,79 @@
                         <div class="col-12">
                             <h6 class="text-primary"><i class="fas fa-cog me-2"></i>Configuration</h6>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label for="editPropertyValueType" class="form-label">Value Type *</label>
                             <select class="form-control" id="editPropertyValueType" name="value_type" required>
-                                <option value="STRING">String</option>
-                                <option value="NUMBER">Number</option>
-                                <option value="BOOLEAN">Boolean</option>
-                                <option value="DATE">Date</option>
-                                <option value="URN">URN</option>
+                                <option value="">Select Value Type</option>
+                                <option value="string">String</option>
+                                <option value="rich_text">Rich Text</option>
+                                <option value="number">Number</option>
+                                <option value="date">Date</option>
+                                <option value="urn">URN</option>
                             </select>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label for="editPropertyCardinality" class="form-label">Cardinality *</label>
                             <select class="form-control" id="editPropertyCardinality" name="cardinality" required>
+                                <option value="">Select Cardinality</option>
                                 <option value="SINGLE">Single</option>
                                 <option value="MULTIPLE">Multiple</option>
                             </select>
                         </div>
+                        <div class="col-md-4">
+                            <div class="form-check mt-4 pt-3">
+                                <input class="form-check-input" type="checkbox" id="editPropertyImmutable" name="immutable">
+                                <label class="form-check-label" for="editPropertyImmutable">Immutable</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Allowed Entity Types (only for URN type) -->
+                    <div class="mb-4" id="editAllowedEntityTypesSection" style="display: none;">
+                        <label for="editPropertyAllowedEntityTypes" class="form-label">Allowed Entity Types *</label>
+                        <select class="form-select" id="editPropertyAllowedEntityTypes" name="allowed_entity_types" multiple>
+                            <option value="dataset">Dataset</option>
+                            <option value="container">Container</option>
+                            <option value="dashboard">Dashboard</option>
+                            <option value="chart">Chart</option>
+                            <option value="dataFlow">Data Flow</option>
+                            <option value="dataJob">Data Job</option>
+                            <option value="mlFeatureTable">ML Feature Table</option>
+                            <option value="mlFeature">ML Feature</option>
+                            <option value="mlModel">ML Model</option>
+                            <option value="mlModelGroup">ML Model Group</option>
+                            <option value="mlPrimaryKey">ML Primary Key</option>
+                            <option value="tag">Tag</option>
+                            <option value="glossaryTerm">Glossary Term</option>
+                            <option value="corpUser">User</option>
+                            <option value="corpGroup">Group</option>
+                            <option value="domain">Domain</option>
+                        </select>
+                        <small class="text-muted">Select the entity types that are allowed as values for this URN property</small>
+                    </div>
+                    
+                    <!-- Allowed Values -->
+                    <div class="mb-4" id="editAllowedValuesSection">
+                        <label for="editPropertyAllowedValues" class="form-label">Allowed Values</label>
+                        <div id="editAllowedValuesContainer">
+                            <div class="row mb-2 edit-allowed-value-row">
+                                <div class="col-md-6">
+                                    <input type="text" class="form-control" name="allowed_values[]" placeholder="Value">
+                                </div>
+                                <div class="col-md-5">
+                                    <input type="text" class="form-control" name="allowed_value_descriptions[]" placeholder="Description (optional)">
+                                </div>
+                                <div class="col-md-1">
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-edit-allowed-value" style="display: none;">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="addEditAllowedValue">
+                            <i class="fas fa-plus me-1"></i> Add Allowed Value
+                        </button>
+                        <small class="text-muted">Define specific values that are allowed for this property</small>
                     </div>
                     
                     <!-- Entity Types -->
@@ -694,31 +872,60 @@
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DATASET" id="editEntityDataset">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dataset" id="editEntityDataset">
                                     <label class="form-check-label" for="editEntityDataset">Dataset</label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DASHBOARD" id="editEntityDashboard">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="container" id="editEntityContainer">
+                                    <label class="form-check-label" for="editEntityContainer">Container</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dashboard" id="editEntityDashboard">
                                     <label class="form-check-label" for="editEntityDashboard">Dashboard</label>
                                 </div>
-                            </div>
-                            <div class="col-md-4">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="entity_types" value="CHART" id="editEntityChart">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="chart" id="editEntityChart">
                                     <label class="form-check-label" for="editEntityChart">Chart</label>
                                 </div>
+                            </div>
+                            <div class="col-md-4">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DATA_FLOW" id="editEntityDataFlow">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dataFlow" id="editEntityDataFlow">
                                     <label class="form-check-label" for="editEntityDataFlow">Data Flow</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dataJob" id="editEntityDataJob">
+                                    <label class="form-check-label" for="editEntityDataJob">Data Job</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlFeatureTable" id="editEntityMLFeatureTable">
+                                    <label class="form-check-label" for="editEntityMLFeatureTable">ML Feature Table</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlFeature" id="editEntityMLFeature">
+                                    <label class="form-check-label" for="editEntityMLFeature">ML Feature</label>
                                 </div>
                             </div>
                             <div class="col-md-4">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="entity_types" value="DATA_JOB" id="editEntityDataJob">
-                                    <label class="form-check-label" for="editEntityDataJob">Data Job</label>
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlModel" id="editEntityMLModel">
+                                    <label class="form-check-label" for="editEntityMLModel">ML Model</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlModelGroup" id="editEntityMLModelGroup">
+                                    <label class="form-check-label" for="editEntityMLModelGroup">ML Model Group</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlPrimaryKey" id="editEntityMLPrimaryKey">
+                                    <label class="form-check-label" for="editEntityMLPrimaryKey">ML Primary Key</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="tag" id="editEntityTag">
+                                    <label class="form-check-label" for="editEntityTag">Tag</label>
                                 </div>
                             </div>
                         </div>
+                        <small class="text-muted">Select at least one entity type that this property applies to</small>
                     </div>
                     
                     <!-- Display Settings -->
@@ -740,17 +947,14 @@
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <div class="form-check">
+                                <div class="form-check" id="editShowInColumnsTableContainer">
                                     <input class="form-check-input" type="checkbox" id="editShowInColumnsTable" name="show_in_columns_table">
                                     <label class="form-check-label" for="editShowInColumnsTable">Show in Columns Table</label>
+                                    <small class="form-text text-muted d-block">Only available when "Show as Asset Badge" is enabled</small>
                                 </div>
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" id="editIsHidden" name="is_hidden">
                                     <label class="form-check-label" for="editIsHidden">Hidden</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="editImmutable" name="immutable">
-                                    <label class="form-check-label" for="editImmutable">Immutable</label>
                                 </div>
                             </div>
                         </div>
@@ -767,43 +971,259 @@
     </div>
 </div>
 
-<!-- Create Property Modal (keeping existing functionality) -->
+<!-- Create Property Modal -->
 <div class="modal fade" id="createPropertyModal" tabindex="-1" aria-labelledby="createPropertyModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="createPropertyModalLabel">Create New Property</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="post">
+            <form id="createPropertyForm" method="post">
                 {% csrf_token %}
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="propertyName" class="form-label">Property Name</label>
-                        <input type="text" class="form-control" id="propertyName" name="name" required>
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="createPropertyName" class="form-label">Property Name *</label>
+                            <input type="text" class="form-control" id="createPropertyName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="createPropertyQualifiedName" class="form-label">Qualified Name</label>
+                            <input type="text" class="form-control" id="createPropertyQualifiedName" name="qualified_name">
+                            <small class="text-muted">Optional - will be auto-generated if not provided</small>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="propertyQualifiedName" class="form-label">Qualified Name</label>
-                        <input type="text" class="form-control" id="propertyQualifiedName" name="qualified_name" required>
+                    
+                    <div class="mb-4">
+                        <label for="createPropertyDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="createPropertyDescription" name="description" rows="3"></textarea>
                     </div>
-                    <div class="mb-3">
-                        <label for="propertyValueType" class="form-label">Value Type</label>
-                        <select class="form-control" id="propertyValueType" name="value_type" required>
-                            <option value="STRING">String</option>
-                            <option value="NUMBER">Number</option>
-                            <option value="BOOLEAN">Boolean</option>
-                            <option value="DATE">Date</option>
-                            <option value="URN">URN</option>
+                    
+                    <!-- Property Configuration -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-cog me-2"></i>Configuration</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="createPropertyValueType" class="form-label">Value Type *</label>
+                            <select class="form-control" id="createPropertyValueType" name="value_type" required>
+                                <option value="">Select Value Type</option>
+                                <option value="string">String</option>
+                                <option value="rich_text">Rich Text</option>
+                                <option value="number">Number</option>
+                                <option value="date">Date</option>
+                                <option value="urn">URN</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="createPropertyCardinality" class="form-label">Cardinality *</label>
+                            <select class="form-control" id="createPropertyCardinality" name="cardinality" required>
+                                <option value="">Select Cardinality</option>
+                                <option value="SINGLE">Single</option>
+                                <option value="MULTIPLE">Multiple</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check mt-4 pt-3">
+                                <input class="form-check-input" type="checkbox" id="createPropertyImmutable" name="immutable">
+                                <label class="form-check-label" for="createPropertyImmutable">Immutable</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Allowed Entity Types (only for URN type) -->
+                    <div class="mb-4" id="allowedEntityTypesSection" style="display: none;">
+                        <label for="createPropertyAllowedEntityTypes" class="form-label">Allowed Entity Types *</label>
+                        <select class="form-select" id="createPropertyAllowedEntityTypes" name="allowed_entity_types" multiple>
+                            <option value="dataset">Dataset</option>
+                            <option value="container">Container</option>
+                            <option value="dashboard">Dashboard</option>
+                            <option value="chart">Chart</option>
+                            <option value="dataFlow">Data Flow</option>
+                            <option value="dataJob">Data Job</option>
+                            <option value="mlFeatureTable">ML Feature Table</option>
+                            <option value="mlFeature">ML Feature</option>
+                            <option value="mlModel">ML Model</option>
+                            <option value="mlModelGroup">ML Model Group</option>
+                            <option value="mlPrimaryKey">ML Primary Key</option>
+                            <option value="tag">Tag</option>
+                            <option value="glossaryTerm">Glossary Term</option>
+                            <option value="corpUser">User</option>
+                            <option value="corpGroup">Group</option>
+                            <option value="domain">Domain</option>
                         </select>
+                        <small class="text-muted">Select the entity types that are allowed as values for this URN property</small>
                     </div>
-                    <div class="mb-3">
-                        <label for="propertyDescription" class="form-label">Description</label>
-                        <textarea class="form-control" id="propertyDescription" name="description" rows="3"></textarea>
+                    
+                    <!-- Allowed Values -->
+                    <div class="mb-4" id="allowedValuesSection">
+                        <label for="createPropertyAllowedValues" class="form-label">Allowed Values</label>
+                        <div id="allowedValuesContainer">
+                            <div class="row mb-2 allowed-value-row">
+                                <div class="col-md-6">
+                                    <input type="text" class="form-control" name="allowed_values[]" placeholder="Value">
+                                </div>
+                                <div class="col-md-5">
+                                    <input type="text" class="form-control" name="allowed_value_descriptions[]" placeholder="Description (optional)">
+                                </div>
+                                <div class="col-md-1">
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-allowed-value" style="display: none;">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="addAllowedValue">
+                            <i class="fas fa-plus me-1"></i> Add Allowed Value
+                        </button>
+                        <small class="text-muted">Define specific values that are allowed for this property</small>
+                    </div>
+                    
+                    <!-- Entity Types -->
+                    <div class="mb-4">
+                        <label class="form-label">Entity Types *</label>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dataset" id="createEntityDataset">
+                                    <label class="form-check-label" for="createEntityDataset">Dataset</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="container" id="createEntityContainer">
+                                    <label class="form-check-label" for="createEntityContainer">Container</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dashboard" id="createEntityDashboard">
+                                    <label class="form-check-label" for="createEntityDashboard">Dashboard</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="chart" id="createEntityChart">
+                                    <label class="form-check-label" for="createEntityChart">Chart</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dataFlow" id="createEntityDataFlow">
+                                    <label class="form-check-label" for="createEntityDataFlow">Data Flow</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="dataJob" id="createEntityDataJob">
+                                    <label class="form-check-label" for="createEntityDataJob">Data Job</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlFeatureTable" id="createEntityMLFeatureTable">
+                                    <label class="form-check-label" for="createEntityMLFeatureTable">ML Feature Table</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlFeature" id="createEntityMLFeature">
+                                    <label class="form-check-label" for="createEntityMLFeature">ML Feature</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlModel" id="createEntityMLModel">
+                                    <label class="form-check-label" for="createEntityMLModel">ML Model</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlModelGroup" id="createEntityMLModelGroup">
+                                    <label class="form-check-label" for="createEntityMLModelGroup">ML Model Group</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="mlPrimaryKey" id="createEntityMLPrimaryKey">
+                                    <label class="form-check-label" for="createEntityMLPrimaryKey">ML Primary Key</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="entity_types" value="tag" id="createEntityTag">
+                                    <label class="form-check-label" for="createEntityTag">Tag</label>
+                                </div>
+                            </div>
+                        </div>
+                        <small class="text-muted">Select at least one entity type that this property applies to</small>
+                    </div>
+                    
+                    <!-- Display Settings -->
+                    <div class="mb-4">
+                        <h6 class="text-primary"><i class="fas fa-display me-2"></i>Display Settings</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="createShowInSearchFilters" name="show_in_search_filters" checked>
+                                    <label class="form-check-label" for="createShowInSearchFilters">Show in Search Filters</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="createShowAsAssetBadge" name="show_as_asset_badge" checked>
+                                    <label class="form-check-label" for="createShowAsAssetBadge">Show as Asset Badge</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="createShowInAssetSummary" name="show_in_asset_summary" checked>
+                                    <label class="form-check-label" for="createShowInAssetSummary">Show in Asset Summary</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check" id="showInColumnsTableContainer">
+                                    <input class="form-check-input" type="checkbox" id="createShowInColumnsTable" name="show_in_columns_table">
+                                    <label class="form-check-label" for="createShowInColumnsTable">Show in Columns Table</label>
+                                    <small class="form-text text-muted d-block">Only available when "Show as Asset Badge" is enabled</small>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="createIsHidden" name="is_hidden">
+                                    <label class="form-check-label" for="createIsHidden">Hidden</label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Property</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Create Property
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Import JSON Modal -->
+<div class="modal fade" id="importJsonModal" tabindex="-1" aria-labelledby="importJsonModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importJsonModalLabel">Import Properties from JSON</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="import-json-form" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="import-file" class="form-label">JSON File <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="import-file" name="import_file" accept=".json" required>
+                        <div class="form-text">Select a JSON file containing property data to import</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="overwrite-existing" name="overwrite_existing" checked>
+                            <label class="form-check-label" for="overwrite-existing">
+                                Overwrite existing properties
+                            </label>
+                            <div class="form-text">If unchecked, existing properties will be skipped</div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> Imported properties will be associated with the current connection and marked as synced.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-file-import me-1"></i> Import Properties
+                    </button>
                 </div>
             </form>
         </div>
@@ -813,6 +1233,72 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Select2 JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<!-- Include the property actions JavaScript -->
+<script src="{% static 'metadata_manager/properties/property_actions.js' %}"></script>
+
 <!-- Include the enhanced properties JavaScript -->
 <script src="{% static 'metadata_manager/properties/properties_enhanced.js' %}"></script>
+
+<!-- Include the property modal JavaScript -->
+<script src="{% static 'metadata_manager/properties/property_modal.js' %}"></script>
+
+<!-- Initialize Select2 for entity types -->
+<script>
+    // Make DataHub URL available to JavaScript
+    window.propertiesData = {
+        datahub_url: '{{ datahub_url|default:"" }}'
+    };
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Select2 for entity types dropdown
+        $('#propertyEntityTypes').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Search and select entity types...',
+            allowClear: true,
+            dropdownParent: $('#createPropertyModal')
+        });
+    });
+</script>
+
+<!-- Modal cleanup script -->
+<script>
+    // Fix for modal backdrop issue
+    document.addEventListener('DOMContentLoaded', function() {
+        const propertyViewModal = document.getElementById('propertyViewModal');
+        if (propertyViewModal) {
+            propertyViewModal.addEventListener('hidden.bs.modal', function() {
+                // Remove any leftover modal-backdrop elements
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => {
+                    backdrop.remove();
+                });
+                // Remove modal-open class from body
+                document.body.classList.remove('modal-open');
+                // Remove inline styles from body
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
+            });
+        }
+        
+        // Reset create modal when closed
+        const createModal = document.getElementById('createPropertyModal');
+        if (createModal) {
+            createModal.addEventListener('hidden.bs.modal', function() {
+                if (window.propertyModal && window.propertyModal.resetCreateModal) {
+                    window.propertyModal.resetCreateModal();
+                }
+            });
+        }
+    });
+</script>
+
+<script>
+  window.currentEnvironment = { name: 'dev' };
+  window.mutationName = null;
+</script>
+
 {% endblock %} 
