@@ -963,6 +963,14 @@ function getDomainSortValue(domain, column) {
 function showDomainDetails(domain) {
     console.log('Showing domain details for:', domain.name);
     
+    // Check if the modal element exists
+    const modalElement = document.getElementById('domainViewModal');
+    if (!modalElement) {
+        console.error('domainViewModal element not found in DOM');
+        showError('Modal not found. Please refresh the page.');
+        return;
+    }
+    
     // Basic information - enhanced like data products and assertions
     const name = domain.properties?.name || domain.name || 'Unnamed Domain';
     const description = domain.properties?.description || domain.description || 'No description available';
@@ -993,162 +1001,187 @@ function showDomainDetails(domain) {
         parentUrn = domain.parentDomain.urn || domain.parentDomain;
     }
     
-    document.getElementById('modal-domain-name').textContent = name;
-    document.getElementById('modal-domain-parent').innerHTML = parentDomain !== 'No parent domain' ? 
+    // Populate basic information
+    const nameElement = document.getElementById('modal-domain-name');
+    const parentElement = document.getElementById('modal-domain-parent');
+    const descriptionElement = document.getElementById('modal-domain-description');
+    const urnElement = document.getElementById('modal-domain-urn');
+    const statusElement = document.getElementById('modal-domain-status');
+    
+    if (nameElement) nameElement.textContent = name;
+    if (parentElement) parentElement.innerHTML = parentDomain !== 'No parent domain' ? 
         `<span class="badge bg-info">${escapeHtml(parentDomain)}</span>${parentUrn ? `<br><small class="text-muted">${escapeHtml(parentUrn)}</small>` : ''}` : parentDomain;
-    document.getElementById('modal-domain-description').textContent = description;
-    document.getElementById('modal-domain-urn').textContent = domain.urn || 'No URN available';
+    if (descriptionElement) descriptionElement.textContent = description;
+    if (urnElement) urnElement.textContent = domain.urn || 'No URN available';
     
     // Status
-    const statusBadge = document.getElementById('modal-domain-status');
-    statusBadge.textContent = domain.sync_status_display || domain.sync_status;
-    statusBadge.className = `badge ${getStatusBadgeClass(domain.sync_status)}`;
+    if (statusElement) {
+        statusElement.textContent = domain.sync_status_display || domain.sync_status;
+        statusElement.className = `badge ${getStatusBadgeClass(domain.sync_status)}`;
+    }
     
     // Metrics & Ownership
-    document.getElementById('modal-domain-owners').textContent = domain.owners_count || 0;
-    document.getElementById('modal-domain-entities').textContent = domain.entities_count || 0;
+    const ownersElement = document.getElementById('modal-domain-owners');
+    const entitiesElement = document.getElementById('modal-domain-entities');
+    const childrenElement = document.getElementById('modal-domain-children');
+    
+    if (ownersElement) ownersElement.textContent = domain.owners_count || 0;
+    if (entitiesElement) entitiesElement.textContent = domain.entities_count || 0;
     
     // Calculate sub-domains count
     const subDomainsCount = calculateSubDomainsCount(domain.urn);
-    document.getElementById('modal-domain-children').textContent = subDomainsCount;
+    if (childrenElement) childrenElement.textContent = subDomainsCount;
     
     // Owner details - format like tags and glossary
     const ownersListElement = document.getElementById('modal-domain-owners-list');
     
-    // Check for ownership data from GraphQL (remote domains) or local storage
-    const ownershipData = domain.ownership || domain.ownership_data;
-    
-    if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
-        // Group owners by ownership type
-        const ownersByType = {};
+    if (ownersListElement) {
+        // Check for ownership data from GraphQL (remote domains) or local storage
+        const ownershipData = domain.ownership || domain.ownership_data;
         
-        ownershipData.owners.forEach(ownerInfo => {
-            let ownerUrn, ownershipTypeUrn, ownershipTypeName;
+        if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
+            // Group owners by ownership type
+            const ownersByType = {};
             
-            // Handle different data structures
-            if (ownerInfo.owner_urn && ownerInfo.ownership_type_urn) {
-                // Local storage format
-                ownerUrn = ownerInfo.owner_urn;
-                ownershipTypeUrn = ownerInfo.ownership_type_urn;
+            ownershipData.owners.forEach(ownerInfo => {
+                let ownerUrn, ownershipTypeUrn, ownershipTypeName;
                 
-                // Find the ownership type name from cache (if available)
-                ownershipTypeName = 'Unknown Type';
-                // Note: We'd need to load ownership types cache for domains too
-            } else if (ownerInfo.owner && ownerInfo.ownershipType) {
-                // GraphQL format
-                ownerUrn = ownerInfo.owner.urn;
-                ownershipTypeUrn = ownerInfo.ownershipType.urn;
-                ownershipTypeName = ownerInfo.ownershipType.info?.name || 'Unknown Type';
-            } else {
-                return; // Skip invalid entries
-            }
-            
-            // Find the owner name
-            let ownerName = ownerUrn;
-            let isUser = false;
-            
-            if (ownerInfo.owner && (ownerInfo.owner.username || ownerInfo.owner.name)) {
-                // GraphQL format - owner data is already included
-                if (ownerInfo.owner.username) {
-                    // CorpUser
-                    isUser = true;
-                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.username;
-                } else if (ownerInfo.owner.name) {
-                    // CorpGroup
-                    isUser = false;
-                    ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.name;
+                // Handle different data structures
+                if (ownerInfo.owner_urn && ownerInfo.ownership_type_urn) {
+                    // Local storage format
+                    ownerUrn = ownerInfo.owner_urn;
+                    ownershipTypeUrn = ownerInfo.ownership_type_urn;
+                    
+                    // Find the ownership type name from cache (if available)
+                    ownershipTypeName = 'Unknown Type';
+                    // Note: We'd need to load ownership types cache for domains too
+                } else if (ownerInfo.owner && ownerInfo.ownershipType) {
+                    // GraphQL format
+                    ownerUrn = ownerInfo.owner.urn;
+                    ownershipTypeUrn = ownerInfo.ownershipType.urn;
+                    ownershipTypeName = ownerInfo.ownershipType.info?.name || 'Unknown Type';
+                } else {
+                    return; // Skip invalid entries
                 }
-            } else {
-                // Local storage format or simple name format
-                if (ownerUrn.includes('corpuser:')) {
-                    isUser = true;
-                    ownerName = ownerUrn.replace('urn:li:corpuser:', '');
-                } else if (ownerUrn.includes('corpGroup:')) {
-                    isUser = false;
-                    ownerName = ownerUrn.replace('urn:li:corpGroup:', '');
+                
+                // Find the owner name
+                let ownerName = ownerUrn;
+                let isUser = false;
+                
+                if (ownerInfo.owner && (ownerInfo.owner.username || ownerInfo.owner.name)) {
+                    // GraphQL format - owner data is already included
+                    if (ownerInfo.owner.username) {
+                        // CorpUser
+                        isUser = true;
+                        ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.username;
+                    } else if (ownerInfo.owner.name) {
+                        // CorpGroup
+                        isUser = false;
+                        ownerName = ownerInfo.owner.properties?.displayName || ownerInfo.owner.name;
+                    }
+                } else {
+                    // Local storage format or simple name format
+                    if (ownerUrn.includes('corpuser:')) {
+                        isUser = true;
+                        ownerName = ownerUrn.replace('urn:li:corpuser:', '');
+                    } else if (ownerUrn.includes('corpGroup:')) {
+                        isUser = false;
+                        ownerName = ownerUrn.replace('urn:li:corpGroup:', '');
+                    }
                 }
-            }
-            
-            if (!ownersByType[ownershipTypeName]) {
-                ownersByType[ownershipTypeName] = [];
-            }
-            ownersByType[ownershipTypeName].push({
-                name: ownerName,
-                urn: ownerUrn,
-                isUser: isUser
+                
+                if (!ownersByType[ownershipTypeName]) {
+                    ownersByType[ownershipTypeName] = [];
+                }
+                ownersByType[ownershipTypeName].push({
+                    name: ownerName,
+                    urn: ownerUrn,
+                    isUser: isUser
+                });
             });
-        });
-        
-        // Generate HTML for owners grouped by type
-        let ownersHTML = '';
-        Object.keys(ownersByType).forEach(ownershipType => {
-            const owners = ownersByType[ownershipType];
-            ownersHTML += `
+            
+            // Generate HTML for owners grouped by type
+            let ownersHTML = '';
+            Object.keys(ownersByType).forEach(ownershipType => {
+                const owners = ownersByType[ownershipType];
+                ownersHTML += `
+                    <div class="mb-3">
+                        <h6 class="text-primary mb-2">
+                            <i class="fas fa-crown me-1"></i>${escapeHtml(ownershipType)}
+                        </h6>
+                        <div class="ms-3">
+                            ${owners.map(owner => `
+                                <div class="d-flex align-items-center mb-1">
+                                    <i class="fas fa-${owner.isUser ? 'user' : 'users'} text-muted me-2"></i>
+                                    <span>${escapeHtml(owner.name)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            ownersListElement.innerHTML = ownersHTML;
+        } else if (domain.owner_names && domain.owner_names.length > 0) {
+            // Fallback to simple owner names format
+            let ownersHTML = `
                 <div class="mb-3">
                     <h6 class="text-primary mb-2">
-                        <i class="fas fa-crown me-1"></i>${escapeHtml(ownershipType)}
+                        <i class="fas fa-crown me-1"></i>Domain Owners
                     </h6>
                     <div class="ms-3">
-                        ${owners.map(owner => `
+                        ${domain.owner_names.map(owner => `
                             <div class="d-flex align-items-center mb-1">
-                                <i class="fas fa-${owner.isUser ? 'user' : 'users'} text-muted me-2"></i>
-                                <span>${escapeHtml(owner.name)}</span>
+                                <i class="fas fa-user text-muted me-2"></i>
+                                <span>${escapeHtml(owner)}</span>
                             </div>
                         `).join('')}
                     </div>
                 </div>
             `;
-        });
-        
-        ownersListElement.innerHTML = ownersHTML;
-    } else if (domain.owner_names && domain.owner_names.length > 0) {
-        // Fallback to simple owner names format
-        let ownersHTML = `
-            <div class="mb-3">
-                <h6 class="text-primary mb-2">
-                    <i class="fas fa-crown me-1"></i>Domain Owners
-                </h6>
-                <div class="ms-3">
-                    ${domain.owner_names.map(owner => `
-                        <div class="d-flex align-items-center mb-1">
-                            <i class="fas fa-user text-muted me-2"></i>
-                            <span>${escapeHtml(owner)}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-        ownersListElement.innerHTML = ownersHTML;
-    } else {
-        ownersListElement.innerHTML = '<p class="text-muted">No ownership information available</p>';
+            ownersListElement.innerHTML = ownersHTML;
+        } else {
+            ownersListElement.innerHTML = '<p class="text-muted">No ownership information available</p>';
+        }
     }
     
     // Domain Properties
-    const iconName = domain.icon_name || 'folder';
-    const iconClass = domain.icon_library === 'font-awesome' ? `fas fa-${iconName}` : iconName;
-    const colorHex = domain.color_hex || '#6c757d';
+    const iconElement = document.getElementById('modal-domain-icon');
+    const colorElement = document.getElementById('modal-domain-color');
+    const createdElement = document.getElementById('modal-domain-created');
     
-    document.getElementById('modal-domain-icon').innerHTML = `<i class="${iconClass}"></i> ${iconName}`;
-    document.getElementById('modal-domain-color').innerHTML = `<span class="badge" style="background-color: ${colorHex};">${colorHex}</span>`;
-    
-    // Created date
-    const createdDate = domain.created_at ? formatDate(domain.created_at) : 'Unknown';
-    document.getElementById('modal-domain-created').textContent = createdDate;
+    if (iconElement || colorElement || createdElement) {
+        const iconName = domain.icon_name || 'folder';
+        const iconClass = domain.icon_library === 'font-awesome' ? `fas fa-${iconName}` : iconName;
+        const colorHex = domain.color_hex || '#6c757d';
+        
+        if (iconElement) iconElement.innerHTML = `<i class="${iconClass}"></i> ${iconName}`;
+        if (colorElement) colorElement.innerHTML = `<span class="badge" style="background-color: ${colorHex};">${colorHex}</span>`;
+        
+        // Created date
+        const createdDate = domain.created_at ? formatDate(domain.created_at) : 'Unknown';
+        if (createdElement) createdElement.textContent = createdDate;
+    }
     
     // Raw JSON Data
-    document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(domain, null, 2))}</code>`;
+    const rawJsonElement = document.getElementById('modal-raw-json');
+    if (rawJsonElement) {
+        rawJsonElement.innerHTML = `<code>${escapeHtml(JSON.stringify(domain, null, 2))}</code>`;
+    }
     
     // DataHub link
     const datahubLink = document.getElementById('modal-datahub-link');
-    if (domain.urn && !domain.urn.includes('local:') && domainsData.datahub_url) {
-        datahubLink.href = getDataHubUrl(domain.urn, 'domain');
-        datahubLink.style.display = 'inline-block';
-    } else {
-        datahubLink.style.display = 'none';
+    if (datahubLink) {
+        if (domain.urn && !domain.urn.includes('local:') && domainsData.datahub_url) {
+            datahubLink.href = getDataHubUrl(domain.urn, 'domain');
+            datahubLink.style.display = 'inline-block';
+        } else {
+            datahubLink.style.display = 'none';
+        }
     }
     
     // Show modal
-    new bootstrap.Modal(document.getElementById('domainViewModal')).show();
+    new bootstrap.Modal(modalElement).show();
 }
 
 function calculateSubDomainsCount(parentUrn) {

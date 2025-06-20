@@ -99,6 +99,11 @@ setup_database_and_static() {
     python manage.py migrate
     print_status "Database migrations completed"
 
+    # Generate new cache version for frontend cache busting
+    print_info "Generating cache version for frontend cache busting..."
+    python manage.py generate_cache_version
+    print_status "Cache version generated"
+
     # Collect static files
     print_info "Collecting static files..."
     python manage.py collectstatic --noinput

@@ -123,15 +123,25 @@ def editable_properties_view(request):
 
     # Check if there's a default environment and log its details
     if environment:
-        logger.info(
-            f"Default environment: {environment.name}, URL: {environment.datahub_url}"
-        )
-        # Try to create a client and test connection
+        logger.info(f"Default environment: {environment.name}")
+        
+        # Note: Environment objects don't have datahub_url/datahub_token fields.
+        # Using the default connection configuration instead.
         try:
             from utils.datahub_rest_client import DataHubRestClient
+            from web_ui.models import Connection
+
+            default_connection = Connection.get_default()
+            if not default_connection:
+                logger.warning("No default DataHub connection configured!")
+                return render(
+                    request,
+                    "metadata_manager/entities/editable_properties.html",
+                    {"page_title": "Editable Properties"},
+                )
 
             client = DataHubRestClient(
-                environment.datahub_url, environment.datahub_token
+                default_connection.datahub_url, default_connection.datahub_token
             )
             connection_working = client.test_connection()
             logger.info(
@@ -1145,7 +1155,12 @@ def update_entity_properties(request):
             )
         
         # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        default_connection = Connection.get_default()
+        if not default_connection:
+            logger.warning("No default DataHub connection configured for client creation!")
+            return JsonResponse({'error': 'No DataHub connection configured'}, status=500)
+        
+        client = DataHubRestClient(default_connection.datahub_url, default_connection.datahub_token)
         
         # Get entity details from request
         entity_urn = request.POST.get("entityUrn")
@@ -2092,14 +2107,16 @@ def get_search_progress(request):
 def get_datahub_url_config(request):
     """Get DataHub URL configuration for frontend use"""
     try:
-        # Get the default environment
-        environment = ensure_default_environment()
-        if not environment:
-            return JsonResponse({"success": False, "error": "No default environment configured"})
+        # Use the default connection instead of environment
+        from web_ui.models import Connection
+        
+        default_connection = Connection.get_default()
+        if not default_connection:
+            return JsonResponse({"success": False, "error": "No default DataHub connection configured"})
         
         return JsonResponse({
             "success": True,
-            "url": environment.datahub_url
+            "url": default_connection.datahub_url
         })
     except Exception as e:
         logger.error(f"Error getting DataHub URL config: {str(e)}")

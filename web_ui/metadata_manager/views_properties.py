@@ -232,11 +232,7 @@ class PropertyListView(View):
             
             # Process remote-only properties
             for prop_urn, remote_prop in remote_properties_dict.items():
-                if prop_urn not in local_property_urns:
-                    # REMOTE_ONLY: exists only on DataHub
-                    logger.debug(f"Processing remote property: {prop_urn}")
-                    logger.debug(f"Remote property data: {remote_prop}")
-                    
+                if prop_urn not in local_property_urns:                    
                     # Extract data from the remote property structure
                     definition = remote_prop.get('definition', {}) or {}
                     settings = remote_prop.get('settings', {}) or {}
@@ -289,10 +285,6 @@ class PropertyListView(View):
                         'status': 'remote_only',
                         'remote_data': remote_prop
                     }
-                    
-                    logger.debug(f"Enhanced remote property: {prop_name}")
-                    logger.debug(f"  Value type: {value_type} (from {value_type_info})")
-                    logger.debug(f"  Entity types: {entity_types} (from {entity_types_info})")
                     
                     remote_only_properties.append(remote_prop_enhanced)
             

@@ -3,6 +3,7 @@ Context processors for the web UI.
 """
 
 import os
+import time
 from django.conf import settings
 from dotenv import load_dotenv
 from web_ui.models import Environment
@@ -70,3 +71,29 @@ def connections_context(request):
             'connections': [],
             'current_connection': None,
         }
+
+
+def cache_busting(request):
+    """
+    Add cache busting version to template context.
+    This helps ensure users get fresh static files when the server restarts.
+    """
+    cache_version_file = os.path.join(settings.BASE_DIR, '.cache_version')
+    
+    # Try to read existing version
+    try:
+        with open(cache_version_file, 'r') as f:
+            version = f.read().strip()
+    except FileNotFoundError:
+        # Generate new version if file doesn't exist
+        version = str(int(time.time()))
+        try:
+            with open(cache_version_file, 'w') as f:
+                f.write(version)
+        except Exception:
+            # If we can't write the file, use current timestamp
+            version = str(int(time.time()))
+    
+    return {
+        'cache_version': version,
+    }

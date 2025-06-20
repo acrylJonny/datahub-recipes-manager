@@ -1,6 +1,7 @@
 from django.apps import AppConfig
 import os
 import logging
+import time
 from django.db import connection
 from asgiref.sync import sync_to_async
 import asyncio
@@ -41,6 +42,9 @@ class WebUiConfig(AppConfig):
 
         # Run initialization synchronously
         self._initialize_settings()
+        
+        # Generate new cache version on startup
+        self._generate_cache_version()
 
     def _initialize_settings(self):
         """Initialize settings - can be called from thread or sync context"""
@@ -166,3 +170,19 @@ class WebUiConfig(AppConfig):
                 logger.warning(f"Error loading repository data: {str(e)}")
         except Exception as e:
             logger.warning(f"Error during initialization: {str(e)}")
+
+    def _generate_cache_version(self):
+        """Generate a new cache version to bust frontend caches on server restart"""
+        try:
+            from django.conf import settings
+            cache_version_file = os.path.join(settings.BASE_DIR, '.cache_version')
+            
+            # Generate new version based on current timestamp
+            version = str(int(time.time()))
+            
+            with open(cache_version_file, 'w') as f:
+                f.write(version)
+            
+            logger.info(f"Generated new cache version: {version}")
+        except Exception as e:
+            logger.warning(f"Error generating cache version: {str(e)}")

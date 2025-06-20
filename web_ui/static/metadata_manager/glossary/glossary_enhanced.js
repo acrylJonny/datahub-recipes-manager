@@ -23,11 +23,12 @@ let currentPagination = {
 let currentOverviewFilter = 'synced'; // Default to synced tab
 let currentFilters = new Set();
 
-// Connection-specific cache for users, groups, and ownership types
+// Connection-specific cache for users, groups, ownership types, and domains
 let usersAndGroupsCacheByConnection = {};
+let domainsCacheByConnection = {};
 let currentConnectionId = null;
 
-// Proxy object to maintain backward compatibility
+// Proxy objects to maintain backward compatibility
 let usersAndGroupsCache = new Proxy({}, {
     get(target, prop) {
         const connectionCache = getCurrentConnectionCache();
@@ -35,6 +36,18 @@ let usersAndGroupsCache = new Proxy({}, {
     },
     set(target, prop, value) {
         const connectionCache = getCurrentConnectionCache();
+        connectionCache[prop] = value;
+        return true;
+    }
+});
+
+let domainsCache = new Proxy({}, {
+    get(target, prop) {
+        const connectionCache = getCurrentDomainCache();
+        return connectionCache[prop];
+    },
+    set(target, prop, value) {
+        const connectionCache = getCurrentDomainCache();
         connectionCache[prop] = value;
         return true;
     }
@@ -66,10 +79,36 @@ function getCurrentConnectionCache() {
     return usersAndGroupsCacheByConnection[currentConnectionId];
 }
 
+// Get or create domain cache for current connection
+function getCurrentDomainCache() {
+    if (!currentConnectionId) {
+        // Try to get connection ID from the page
+        const connectionElement = document.getElementById('current-connection-name');
+        if (connectionElement && connectionElement.dataset.connectionId) {
+            currentConnectionId = connectionElement.dataset.connectionId;
+        } else {
+            // Fallback to default connection
+            currentConnectionId = 'default';
+        }
+    }
+    
+    if (!domainsCacheByConnection[currentConnectionId]) {
+        domainsCacheByConnection[currentConnectionId] = {
+            domains: [],
+            lastFetched: null,
+            cacheExpiry: 5 * 60 * 1000 // 5 minutes
+        };
+    }
+    
+    return domainsCacheByConnection[currentConnectionId];
+}
+
 // Make cache globally accessible for connection switching
 if (!window.usersAndGroupsCache) {
     window.usersAndGroupsCache = usersAndGroupsCache;
     window.usersAndGroupsCacheByConnection = usersAndGroupsCacheByConnection;
+    window.domainsCache = domainsCache;
+    window.domainsCacheByConnection = domainsCacheByConnection;
 }
 
 // DataUtils object for safe data handling
@@ -251,14 +290,120 @@ const DataUtils = {
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize connection cache and load users and groups immediately on page load
     getCurrentConnectionCache(); // This initializes the connection ID and cache
+    loadUsersAndGroups();
+    loadDomains();
+    loadGlossaryNodes(); // Load nodes for parent selection dropdowns
     
     loadGlossaryData();
     setupFilterListeners();
     setupBulkActions();
     setupActionButtonListeners();
     
-    // Initialize create modals
-    initializeCreateModals();
+    // Refresh button
+    document.getElementById('refreshGlossary').addEventListener('click', function() {
+        loadGlossaryData();
+        loadGlossaryNodes(); // Reload nodes when refreshing
+    });
+    
+    // Load users and groups when create modals are opened
+    document.getElementById('createNodeModal').addEventListener('show.bs.modal', async function() {
+        // Ensure users and groups are loaded before setting up ownership interface
+        if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
+            try {
+                await loadUsersAndGroups();
+                console.log('Node modal: Users and groups loaded successfully');
+            } catch (error) {
+                console.error('Node modal: Error loading users and groups:', error);
+            }
+        }
+        
+        // Load glossary nodes for parent selection
+        if (!window.glossaryNodesCache || window.glossaryNodesCache.length === 0) {
+            try {
+                await loadGlossaryNodes();
+                console.log('Node modal: Glossary nodes loaded successfully');
+            } catch (error) {
+                console.error('Node modal: Error loading glossary nodes:', error);
+            }
+        } else {
+            // Populate dropdowns with cached nodes
+            populateParentNodeDropdowns();
+        }
+        
+        // Only reset if not in edit mode (edit mode sets data attributes)
+        const form = document.getElementById('createNodeForm');
+        if (!form.dataset.editMode) {
+            resetNodeModal();
+        }
+        
+        // Set up the ownership interface (Add Owner button functionality)
+        setupNodeOwnershipInterface();
+        
+        // Hide ownership section by default unless in edit mode with existing owners
+        hideNodeOwnershipSectionIfEmpty();
+    });
+    
+    // Clean up when modal is closed
+    document.getElementById('createNodeModal').addEventListener('hidden.bs.modal', function() {
+        resetNodeModal();
+    });
+    
+    // Load users and groups when create term modal is opened
+    document.getElementById('createTermModal').addEventListener('show.bs.modal', async function() {
+        // Ensure users and groups are loaded before setting up ownership interface
+        if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
+            try {
+                await loadUsersAndGroups();
+                console.log('Term modal: Users and groups loaded successfully');
+            } catch (error) {
+                console.error('Term modal: Error loading users and groups:', error);
+            }
+        }
+        
+        // Load domains for domain selection
+        const domainCache = getCurrentDomainCache();
+        if (!domainCache.domains || domainCache.domains.length === 0) {
+            try {
+                await loadDomains();
+                console.log('Term modal: Domains loaded successfully');
+            } catch (error) {
+                console.error('Term modal: Error loading domains:', error);
+            }
+        }
+        
+        // Load glossary nodes for parent selection
+        if (!window.glossaryNodesCache || window.glossaryNodesCache.length === 0) {
+            try {
+                await loadGlossaryNodes();
+                console.log('Term modal: Glossary nodes loaded successfully');
+            } catch (error) {
+                console.error('Term modal: Error loading glossary nodes:', error);
+            }
+        } else {
+            // Populate dropdowns with cached nodes
+            populateParentNodeDropdowns();
+        }
+        
+        // Populate domain dropdown
+        populateDomainDropdown();
+        
+        // Only reset if not in edit mode (edit mode sets data attributes)
+        const form = document.getElementById('createTermForm');
+        if (!form.dataset.editMode) {
+            resetTermModal();
+        }
+        
+        // Set up the ownership interface (Add Owner button functionality)
+        setupTermOwnershipInterface();
+        
+        // Hide ownership section by default unless in edit mode with existing owners
+        hideTermOwnershipSectionIfEmpty();
+    });
+    
+    // Clean up when modal is closed
+    document.getElementById('createTermModal').addEventListener('hidden.bs.modal', function() {
+        resetTermModal();
+    });
 });
 
 function loadGlossaryData() {
@@ -267,7 +412,18 @@ function loadGlossaryData() {
     
     fetch('/metadata/glossary/data/')
         .then(response => {
-            console.log('Received response:', response.status);
+            console.log('Received response:', response.status, response.statusText);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            // Check if the response is actually JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error(`Expected JSON response but got: ${contentType}`);
+            }
+            
             return response.json();
         })
         .then(data => {
@@ -492,8 +648,11 @@ function displayTabContent(tabType, contentFilters = []) {
             });
         }
         
-        // Sort items alphabetically by name (A-Z)
-        if (items && items.length > 0) {
+        // Apply sorting if specified
+        if (currentSort.column && currentSort.tabType === tabType) {
+            items = sortItems(items, currentSort.column, currentSort.direction);
+        } else {
+            // Default sort by name (A-Z)
             items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
         }
         
@@ -510,7 +669,8 @@ function displayTabContent(tabType, contentFilters = []) {
                 items = items.filter(item => {
                     switch (currentOverviewFilter) {
                         case 'synced':
-                            return item.sync_status === 'SYNCED';
+                            // Synced tab should show both SYNCED and MODIFIED items (both exist locally and remotely)
+                            return item.sync_status === 'SYNCED' || item.sync_status === 'MODIFIED';
                         case 'local-only':
                             return item.sync_status === 'LOCAL_ONLY' || item.sync_status === 'MODIFIED';
                         case 'remote-only':
@@ -596,6 +756,12 @@ function displayTabContent(tabType, contentFilters = []) {
         // Attach checkbox handlers
         attachCheckboxHandlers(content, tabType);
         
+        // Attach sorting handlers
+        attachSortingHandlers(content, tabType);
+        
+        // Restore sort state visual indicators
+        restoreSortState(content, tabType);
+        
         // Attach click handlers for expand/collapse buttons
         content.querySelectorAll('.expand-button').forEach(button => {
             button.addEventListener('click', function(e) {
@@ -626,17 +792,19 @@ function generateTableHTMLWithPagination(rootItems, tabType, totalItems, current
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        <th width="40">
+                        <th width="30">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
                         <th class="sortable-header" data-sort="name" width="200">Name</th>
-                        <th width="180">Description</th>
+                        <th class="text-start" width="160">Description</th>
+                        <th class="sortable-header text-center" data-sort="domain" width="120">Domain</th>
                         <th class="sortable-header text-center" data-sort="owners_count" width="70">Owners</th>
-                        <th class="sortable-header text-center" data-sort="relationships_count" width="90">Relationships</th>
                         <th class="sortable-header text-center" data-sort="custom_properties_count" width="80">Custom<br/>Properties</th>
                         <th class="sortable-header text-center" data-sort="structured_properties_count" width="80">Structured<br/>Properties</th>
-                        <th width="180">URN</th>
-                        <th width="160">Actions</th>
+                        <th class="sortable-header text-center" data-sort="deprecated" width="80">Deprecated</th>
+                        <th width="160">URN</th>
+                        ${tabType === 'synced' ? '<th class="sortable-header text-center" data-sort="sync_status" width="100">Sync Status</th>' : ''}
+                        <th width="180">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -878,8 +1046,10 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
         typeDisplay = 'Term';
         typeBadgeClass = 'success';
     } else if (entityType === 'glossaryNode') {
-        // Use folder icon for nodes - closed if has children, open if expanded
-        typeIcon = hasChildren ? 'fas fa-folder text-primary' : 'fas fa-folder-open text-primary';
+        // Use folder icon for nodes - open folder for nodes without children or when expanded
+        // For nodes with children, check if they're expanded (initially all are collapsed)
+        const isExpanded = false; // Initially all nodes are collapsed
+        typeIcon = hasChildren && !isExpanded ? 'fas fa-folder text-primary' : 'fas fa-folder-open text-primary';
         typeDisplay = 'Node';
         typeBadgeClass = 'primary';
     } else {
@@ -949,26 +1119,40 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
                 </div>
             </td>
             <td class="description-cell">
-                <div class="description-preview" title="${escapeHtml(item.description || '')}">${escapeHtml(truncateText(item.description || '', 150))}</div>
-            </td>
-            <td class="text-center">
-                ${(item.owners_count || 0) > 0 ? `<i class="fas fa-users text-info me-1"></i><span class="badge bg-info">${item.owners_count}</span>` : '<span class="text-muted">None</span>'}
+                <div class="description-preview" title="${escapeHtml(item.description || '')}">${escapeHtml(truncateText(item.description || '', 120))}</div>
             </td>
             <td class="text-center">
                 ${entityType === 'glossaryTerm' ? 
                     (() => {
-                        let relationshipsCount = 0;
-                        if (item.relationships_count !== undefined && item.relationships_count !== null) {
-                            relationshipsCount = item.relationships_count;
-                        } else if (item.relationships) {
-                            relationshipsCount = item.relationships.length;
+                        // Calculate domain count dynamically from available data
+                        const domains = item.domains;
+                        let domainCount = 0;
+                        let domainName = '';
+                        
+                        if (domains && domains.domain) {
+                            domainCount = 1;
+                            domainName = domains.domain.name || domains.domain.urn;
+                        } else if (item.domain_urn) {
+                            // Fallback: check for direct domain_urn field
+                            domainCount = 1;
+                            domainName = item.domain_name || item.domain_urn;
+                        } else if (item.raw_data && item.raw_data.domain) {
+                            // Check raw GraphQL data for domain information
+                            domainCount = 1;
+                            domainName = item.raw_data.domain.domain?.properties?.name || 
+                                        item.raw_data.domain.domain?.urn || 'Unknown Domain';
                         }
-                        return relationshipsCount > 0 ? 
-                            `<i class="fas fa-link text-success me-1"></i><span class="badge bg-success">${relationshipsCount}</span>` : 
-                            '<span class="text-muted">None</span>';
+                        
+                        if (domainCount > 0) {
+                            return `<i class="fas fa-sitemap text-primary me-1"></i><span class="badge bg-primary" title="Domain: ${escapeHtml(domainName)}">${domainCount}</span>`;
+                        }
+                        return '<span class="text-muted">None</span>';
                     })() :
                     '<span class="text-muted">N/A</span>'
                 }
+            </td>
+            <td class="text-center">
+                ${(item.owners_count || 0) > 0 ? `<i class="fas fa-users text-info me-1"></i><span class="badge bg-info">${item.owners_count}</span>` : '<span class="text-muted">None</span>'}
             </td>
             <td class="text-center">
                 <span class="badge bg-secondary">${item.custom_properties_count || 0}</span>
@@ -976,9 +1160,17 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
             <td class="text-center">
                 <span class="badge bg-success">${item.structured_properties_count || 0}</span>
             </td>
+            <td class="text-center">
+                ${item.deprecated ? '<span class="badge bg-warning">Yes</span>' : '<span class="badge bg-success">No</span>'}
+            </td>
             <td>
                 <code class="small" title="${escapeHtml(item.urn || '')}">${escapeHtml(truncateUrnFromEnd(item.urn || '', 30))}</code>
             </td>
+            ${tabType === 'synced' ? `
+                <td class="text-center">
+                    <span class="badge ${getStatusBadgeClass(item.sync_status)}">${(item.sync_status || 'UNKNOWN').replace('_', ' ')}</span>
+                </td>
+            ` : ''}
             <td>
                 <div class="btn-group action-buttons" role="group">
                     ${getActionButtons(item, tabType)}
@@ -1067,7 +1259,44 @@ function getActionButtons(item, tabType) {
         </button>
     `;
 
-    // 9. Delete Local - Only for synced and local items (LAST like in tags)
+    // 9. Delete button - For remote-only items
+    if (tabType === 'remote') {
+        const entityType = determineEntityType(item);
+        let canDelete = false;
+        let disabledReason = '';
+        
+        if (entityType === 'glossaryTerm') {
+            // Terms can always be deleted
+            canDelete = true;
+        } else if (entityType === 'glossaryNode') {
+            // Nodes can only be deleted if they have no children
+            canDelete = !item.children || item.children.length === 0;
+            if (!canDelete) {
+                disabledReason = 'Glossary nodes with children cannot be deleted. Please delete all child items first.';
+            }
+        }
+        
+        if (canDelete) {
+            actionButtons += `
+                <button type="button" class="btn btn-sm btn-outline-danger delete-remote-item" 
+                        title="Delete ${item.type === 'node' ? 'Node' : 'Term'} from DataHub">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+        } else {
+            // Show disabled button with tooltip explanation
+            actionButtons += `
+                <button type="button" class="btn btn-sm btn-outline-secondary delete-remote-disabled" 
+                        disabled 
+                        title="${disabledReason}"
+                        style="opacity: 0.5; cursor: not-allowed;">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+        }
+    }
+    
+    // 10. Delete Local - Only for synced and local items (using same trash icon)
     if (tabType === 'synced' || tabType === 'local') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-danger delete-local" 
@@ -1081,8 +1310,8 @@ function getActionButtons(item, tabType) {
 }
 
 function getEmptyStateHTML(tabType, hasSearch) {
-    // Calculate colspan based on number of columns: checkbox + name + description + owners + relationships + custom props + structured props + urn + actions = 9
-    const colspan = '9';
+    // Determine the correct colspan based on the number of columns shown
+    const colspan = tabType === 'synced' ? '10' : '9'; // checkbox + name + description + domain + owners + custom props + structured props + deprecated + urn + (sync status for synced) + actions
     
     if (hasSearch) {
         return `
@@ -1097,15 +1326,15 @@ function getEmptyStateHTML(tabType, hasSearch) {
     
     const emptyStates = {
         synced: 'No synced glossary items found. Items that exist both locally and in DataHub will appear here.',
-        local: 'No local-only glossary items found. Items that exist only in this application will appear here.',
-        remote: 'No remote-only glossary items found. Items that exist only in DataHub will appear here.'
+        local: 'No local-only glossary items found. Create new items or import from DataHub to get started.',
+        remote: 'No remote-only glossary items found. All remote items have been imported locally.'
     };
     
     return `
         <tr>
             <td colspan="${colspan}" class="text-center py-4 text-muted">
-                <i class="fas fa-folder-open fa-2x mb-2"></i><br>
-                ${emptyStates[tabType]}
+                <i class="fas fa-inbox fa-2x mb-2"></i><br>
+                ${emptyStates[tabType] || 'No items found.'}
             </td>
         </tr>
     `;
@@ -1114,6 +1343,11 @@ function getEmptyStateHTML(tabType, hasSearch) {
 
 
 function showItemDetails(item) {
+    // Load domains cache if needed for domain lookup
+    if (domainsCache.domains.length === 0) {
+        loadDomains();
+    }
+    
     // Determine the actual entity type first
     const entityType = determineEntityType(item);
     
@@ -1184,6 +1418,28 @@ function showItemDetails(item) {
         parentValue.style.display = 'none';
     }
     
+    // Domain information (only for terms)
+    const domainLabel = document.getElementById('modal-domain-label');
+    const domainValue = document.getElementById('modal-domain-value');
+    const domainElement = document.getElementById('modal-item-domain');
+    
+    if (entityType === 'glossaryTerm') {
+        // Use only what the backend provides for domains
+        const domains = itemData.domains;
+        if (domains && domains.domain) {
+            const domainName = domains.domain.name || domains.domain.urn;
+            domainElement.textContent = domainName;
+            domainLabel.style.display = 'block';
+            domainValue.style.display = 'block';
+        } else {
+            domainLabel.style.display = 'none';
+            domainValue.style.display = 'none';
+        }
+    } else {
+        domainLabel.style.display = 'none';
+        domainValue.style.display = 'none';
+    }
+    
     // Status
     const statusBadge = document.getElementById('modal-item-status');
     const syncStatus = itemData.sync_status_display || itemData.sync_status || item.sync_status_display || item.sync_status || 'Unknown';
@@ -1199,43 +1455,53 @@ function showItemDetails(item) {
         datahubLink.style.display = 'none';
     }
     
-    // Ownership information - handle both old and new structures
+    // Ownership information
     const ownersList = document.getElementById('modal-owners-list');
     
-    // Check for ownership data from the comprehensive GraphQL query or processed data
-    let ownershipData = null;
-    if (itemData.ownership?.owners) {
-        ownershipData = itemData.ownership.owners;
-    } else if (itemData.owners) {
-        ownershipData = itemData.owners;
-    } else if (item.ownership?.owners) {
-        ownershipData = item.ownership.owners;
-    } else if (item.owners) {
-        ownershipData = item.owners;
-    }
+    // Use only what the backend provides in the ownership section
+    const ownershipData = itemData.ownership;
     
-    if (ownersList && ownershipData && ownershipData.length > 0) {
-        // Display ownership info using processed data
-        let ownersHTML = '';
-        ownershipData.forEach(owner => {
-            const ownerName = owner.name || owner.displayName || owner.urn || 'Unknown';
-            const ownerType = owner.type || (owner.urn && owner.urn.includes(':corpGroup:') ? 'group' : 'user');
-            const ownershipTypeName = owner.ownershipType?.name || 'Unknown';
-            const icon = ownerType === 'group' ? 'fas fa-users' : 'fas fa-user';
+    if (ownershipData && Array.isArray(ownershipData) && ownershipData.length > 0) {
+        // Group owners by ownership type using the data as provided by backend
+        const ownersByType = {};
+        
+        ownershipData.forEach(ownerInfo => {
+            // Use the data structure as provided by the backend
+            const ownershipTypeName = ownerInfo.ownershipType?.name || 'Unknown Type';
+            const ownerName = ownerInfo.displayName || ownerInfo.name || 'Unknown Owner';
+            const isUser = ownerInfo.urn?.includes(':corpuser:'); // Check URN to determine user vs group
             
+            if (!ownersByType[ownershipTypeName]) {
+                ownersByType[ownershipTypeName] = [];
+            }
+            ownersByType[ownershipTypeName].push({
+                name: ownerName,
+                urn: ownerInfo.urn,
+                isUser: isUser
+            });
+        });
+        
+        // Generate HTML for owners grouped by type
+        let ownersHTML = '';
+        Object.keys(ownersByType).forEach(ownershipType => {
+            const owners = ownersByType[ownershipType];
             ownersHTML += `
-                <div class="owner-item mb-2">
-                    <div class="d-flex align-items-center">
-                        <i class="${icon} me-2"></i>
-                        <div>
-                            <strong>${escapeHtml(ownerName)}</strong>
-                            <br>
-                            <small class="text-muted">${escapeHtml(ownershipTypeName)}</small>
-                        </div>
+                <div class="mb-3">
+                    <h6 class="text-primary mb-2">
+                        <i class="fas fa-crown me-1"></i>${escapeHtml(ownershipType)}
+                    </h6>
+                    <div class="ms-3">
+                        ${owners.map(owner => `
+                            <div class="d-flex align-items-center mb-1">
+                                <i class="fas fa-${owner.isUser ? 'user' : 'users'} text-muted me-2"></i>
+                                <span>${escapeHtml(owner.name)}</span>
+                            </div>
+                        `).join('')}
                     </div>
                 </div>
             `;
         });
+        
         ownersList.innerHTML = ownersHTML;
     } else {
         ownersList.innerHTML = '<p class="text-muted">No ownership information available</p>';
@@ -1313,40 +1579,75 @@ function showItemDetails(item) {
     let propertiesHTML = '';
     
     // Custom Properties - check multiple possible locations
-    let customProperties = itemData.custom_properties || itemData.customProperties || 
-                          itemData.properties?.customProperties || item.custom_properties || 
-                          item.customProperties;
+    let customProperties = itemData.customProperties || itemData.custom_properties || 
+                          itemData.properties?.customProperties || item.customProperties || 
+                          item.custom_properties;
     
+    // Structured Properties - check multiple possible locations  
+    let structuredProperties = itemData.structuredProperties || itemData.structured_properties || 
+                              item.structuredProperties || item.structured_properties;
+    
+    // Custom Properties Section
     if (customProperties && customProperties.length > 0) {
         propertiesHTML += `
-            <div class="border rounded p-2 mb-2">
-                <strong>Custom Properties:</strong>
-                <div class="mt-2">
-                    ${customProperties.map(prop => `
-                        <div class="mb-1">
-                            <strong>${escapeHtml(prop.key || 'Unknown')}:</strong> ${escapeHtml(prop.value || '')}
-                        </div>
-                    `).join('')}
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0"><i class="fas fa-tags me-2"></i>Custom Properties (${customProperties.length})</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        ${customProperties.map(prop => `
+                            <div class="col-md-6 mb-2">
+                                <dl class="row mb-0">
+                                    <dt class="col-sm-5 text-truncate" title="${escapeHtml(prop.key || 'Unknown')}">${escapeHtml(prop.key || 'Unknown')}:</dt>
+                                    <dd class="col-sm-7 mb-0">
+                                        <span class="text-break">${escapeHtml(prop.value || '')}</span>
+                                    </dd>
+                                </dl>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
             </div>
         `;
     }
     
-    // Structured Properties - check multiple possible locations
-    let structuredProperties = itemData.structured_properties || itemData.structuredProperties || 
-                              item.structured_properties || item.structuredProperties;
-    
+    // Structured Properties Section
     if (structuredProperties && structuredProperties.length > 0) {
         propertiesHTML += `
-            <div class="border rounded p-2 mb-2">
-                <strong>Structured Properties:</strong>
-                <div class="mt-2">
-                    ${structuredProperties.map(prop => `
-                        <div class="mb-1">
-                            <strong>${escapeHtml(prop.urn || prop.propertyUrn || 'Unknown')}:</strong> 
-                            ${escapeHtml(prop.values ? JSON.stringify(prop.values) : JSON.stringify(prop.value) || '')}
-                        </div>
-                    `).join('')}
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0"><i class="fas fa-cogs me-2"></i>Structured Properties (${structuredProperties.length})</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        ${structuredProperties.map(prop => {
+                            // Handle new backend format with URN, displayName, and values
+                            const propertyName = prop.urn || prop.propertyUrn || 'Unknown';
+                            const displayName = prop.displayName || prop.qualifiedName || propertyName.split(':').pop() || propertyName;
+                            let propertyValue = '';
+                            
+                            if (prop.values && Array.isArray(prop.values)) {
+                                // New format: values is an array of strings/numbers
+                                propertyValue = prop.values.filter(v => v !== null && v !== undefined).join(', ');
+                            } else if (prop.value) {
+                                // Old format: single value
+                                propertyValue = typeof prop.value === 'object' ? JSON.stringify(prop.value) : prop.value;
+                            }
+                            
+                            return `
+                                <div class="col-md-6 mb-2">
+                                    <dl class="row mb-0">
+                                        <dt class="col-sm-5 text-truncate" title="${escapeHtml(propertyName)}">${escapeHtml(displayName)}:</dt>
+                                        <dd class="col-sm-7 mb-0">
+                                            <span class="text-break">${escapeHtml(propertyValue)}</span>
+                                            ${propertyName !== displayName ? `<br><small class="text-muted" title="${escapeHtml(propertyName)}">URN: ${escapeHtml(propertyName)}</small>` : ''}
+                                        </dd>
+                                    </dl>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
                 </div>
             </div>
         `;
@@ -1355,11 +1656,51 @@ function showItemDetails(item) {
     if (propertiesHTML) {
         propertiesDiv.innerHTML = propertiesHTML;
     } else {
-        propertiesDiv.innerHTML = '<p class="text-muted">No additional properties available</p>';
+        // Show empty cards for both custom and structured properties
+        propertiesDiv.innerHTML = `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0"><i class="fas fa-tags me-2"></i>Custom Properties (0)</h6>
+                </div>
+                <div class="card-body">
+                    <div class="text-center py-3 text-muted">
+                        <i class="fas fa-tags fa-2x mb-2"></i><br>
+                        No custom properties available
+                    </div>
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0"><i class="fas fa-cogs me-2"></i>Structured Properties (0)</h6>
+                </div>
+                <div class="card-body">
+                    <div class="text-center py-3 text-muted">
+                        <i class="fas fa-cogs fa-2x mb-2"></i><br>
+                        No structured properties available
+                    </div>
+                </div>
+            </div>
+        `;
     }
     
-    // Raw JSON - show the processed data
-    const rawData = itemData;
+    // Raw JSON - show the processed data with enhanced domain information
+    let rawData = { ...itemData };
+    
+    // If we have the original GraphQL raw data, include the original domain structure
+    if (itemData.raw_data) {
+        rawData.original_graphql_data = itemData.raw_data;
+    }
+    
+    // Enhance domain information in the raw data if available
+    if (entityType === 'glossaryTerm' && itemData.domains) {
+        rawData.domain_information = {
+            processed_domains: itemData.domains,
+            domain_count: itemData.domains && itemData.domains.domain ? 1 : 0,
+            domain_urn: itemData.domains && itemData.domains.domain ? itemData.domains.domain.urn : null,
+            domain_name: itemData.domains && itemData.domains.domain ? itemData.domains.domain.name : null
+        };
+    }
+    
     document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
     
     // Show modal
@@ -1450,6 +1791,10 @@ function toggleNodeChildren(nodeUrn) {
     
     const isCollapsed = expandIcon.classList.contains('fa-chevron-right');
     
+    // Find the folder icon for this node
+    const nodeRow = document.querySelector(`[data-node-urn="${nodeUrn}"]`);
+    const folderIcon = nodeRow ? nodeRow.querySelector('.fas.fa-folder, .fas.fa-folder-open') : null;
+    
     if (isCollapsed) {
         // Expand: show direct children only
         expandIcon.classList.remove('fa-chevron-right');
@@ -1457,6 +1802,12 @@ function toggleNodeChildren(nodeUrn) {
         childRows.forEach(row => {
             row.style.display = 'table-row';
         });
+        
+        // Change folder icon to open when expanded
+        if (folderIcon) {
+            folderIcon.classList.remove('fa-folder');
+            folderIcon.classList.add('fa-folder-open');
+        }
     } else {
         // Collapse: hide all descendants recursively
         expandIcon.classList.remove('fa-chevron-down');
@@ -1464,6 +1815,12 @@ function toggleNodeChildren(nodeUrn) {
         
         // Recursively collapse all descendants
         collapseAllDescendants(nodeUrn);
+        
+        // Change folder icon to closed when collapsed
+        if (folderIcon) {
+            folderIcon.classList.remove('fa-folder-open');
+            folderIcon.classList.add('fa-folder');
+        }
     }
 }
 
@@ -1483,6 +1840,13 @@ function collapseAllDescendants(parentUrn) {
         if (childExpandIcon) {
             childExpandIcon.classList.remove('fa-chevron-down');
             childExpandIcon.classList.add('fa-chevron-right');
+        }
+        
+        // Update folder icon to closed when collapsed
+        const folderIcon = row.querySelector('.fas.fa-folder, .fas.fa-folder-open');
+        if (folderIcon) {
+            folderIcon.classList.remove('fa-folder-open');
+            folderIcon.classList.add('fa-folder');
         }
         
         // Recursively collapse this child's descendants
@@ -1505,6 +1869,14 @@ function expandAllNodes() {
             childRows.forEach(row => {
                 row.style.display = 'table-row';
             });
+            
+            // Update folder icon to open when expanded
+            const nodeRow = document.querySelector(`[data-node-urn="${nodeUrn}"]`);
+            const folderIcon = nodeRow ? nodeRow.querySelector('.fas.fa-folder, .fas.fa-folder-open') : null;
+            if (folderIcon) {
+                folderIcon.classList.remove('fa-folder');
+                folderIcon.classList.add('fa-folder-open');
+            }
         }
     });
 }
@@ -1519,6 +1891,14 @@ function collapseAllNodes() {
             icon.classList.add('fa-chevron-right');
             // Use the recursive collapse function
             collapseAllDescendants(nodeUrn);
+            
+            // Update folder icon to closed when collapsed
+            const nodeRow = document.querySelector(`[data-node-urn="${nodeUrn}"]`);
+            const folderIcon = nodeRow ? nodeRow.querySelector('.fas.fa-folder, .fas.fa-folder-open') : null;
+            if (folderIcon) {
+                folderIcon.classList.remove('fa-folder-open');
+                folderIcon.classList.add('fa-folder');
+            }
         }
     });
 }
@@ -1753,6 +2133,18 @@ async function uploadCSV() {
             body: formData
         });
         
+        console.log('CSV upload response status:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        // Check if the response is actually JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Expected JSON response but got: ${contentType}`);
+        }
+        
         statusDiv.textContent = 'Processing CSV...';
         progressBar.style.width = '75%';
         
@@ -1907,6 +2299,12 @@ function setupActionButtonListeners() {
             deleteLocalItem(itemData);
             e.preventDefault();
             e.stopPropagation();
+        } else if (clickedElement.classList.contains('delete-remote-item') || clickedElement.closest('.delete-remote-item')) {
+            // Delete Remote Item button clicked
+            console.log('Delete Remote Item clicked for item:', itemData);
+            deleteRemoteItem(itemData);
+            e.preventDefault();
+            e.stopPropagation();
         }
     });
 }
@@ -1916,707 +2314,416 @@ function setupActionButtonListeners() {
  * @param {Object} item - The item object
  */
 function editItem(item) {
-    const itemType = item.type === 'node' ? 'nodes' : 'terms';
-    const editUrl = `/metadata/glossary/${itemType}/${item.id}/`;
-    window.location.href = editUrl;
-}
-
-/**
- * Deploy item to DataHub
- * @param {Object} item - The item object
- */
-function deployToDataHub(item) {
-    console.log('deployToDataHub called with:', item);
-    
-    if (!item.id) {
-        console.error('Cannot deploy item without an ID:', item);
-        showError('Error deploying item: Missing item ID.');
-        return;
-    }
-    
-    const itemType = item.type === 'node' ? 'Node' : 'Term';
-    const itemName = item.name || 'Unknown';
-    
-    // Show loading notification
-    showNotification('info', `Deploying ${itemType.toLowerCase()} "${itemName}" to DataHub...`);
-    
-    // Make the API call to deploy this item to DataHub
-    const deployUrl = item.type === 'node' ? 
-        `/metadata/glossary/nodes/${item.id}/deploy/` : 
-        `/metadata/glossary/terms/${item.id}/deploy/`;
-    
-    fetch(deployUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Deploy to DataHub response:', data);
-        if (data.success) {
-            showNotification('success', data.message || `${itemType} deployed successfully`);
-            // Add a small delay before refreshing to ensure backend processing is complete
-            setTimeout(() => {
-                // Refresh the data to show updated sync status
-                if (typeof loadGlossaryData === 'function') {
-                    loadGlossaryData();
+    const itemType = determineEntityType(item);
+    if (itemType === 'glossaryNode') {
+        editNode(item);
+    } else if (itemType === 'glossaryTerm') {
+        editTerm(item);
                 } else {
-                    window.location.reload();
-                }
-            }, 1000); // 1 second delay
-        } else {
-            throw new Error(data.error || 'Unknown error occurred');
-        }
-    })
-    .catch(error => {
-        console.error('Error deploying item to DataHub:', error);
-        showNotification('error', `Error deploying ${itemType.toLowerCase()}: ${error.message}`);
-    });
+        showNotification('error', 'Unknown item type for editing');
+    }
 }
 
-/**
- * Resync an item from DataHub
- * @param {Object} item - The item object
- */
-function resyncItem(item) {
-    console.log('resyncItem called with:', item);
+function editNode(node) {
+    console.log('editNode called with:', node);
     
-    if (!item.id) {
-        console.error('Cannot resync item without an ID:', item);
-        showError('Error resyncing item: Missing item ID.');
+    // Get node data
+    const nodeData = node.combined || node;
+    const nodeId = nodeData.id;
+    
+    if (!nodeId) {
+        console.error('Cannot edit node without a database ID:', nodeData);
+        showNotification('error', 'Error editing node: Missing node database ID.');
         return;
     }
     
-    const itemType = item.type === 'node' ? 'Node' : 'Term';
-    const itemName = item.name || 'Unknown';
-    
-    if (!confirm(`Are you sure you want to resync "${itemName}" from DataHub? This will overwrite any local changes.`)) {
-        return;
+    // Ensure users and groups are loaded
+    if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
+        loadUsersAndGroups();
     }
     
-    // Show loading notification
-    showNotification('info', `Resyncing ${itemType.toLowerCase()} "${itemName}" from DataHub...`);
+    // Populate the form with existing data
+    document.getElementById('node-name').value = nodeData.name || '';
+    document.getElementById('node-description').value = nodeData.description || '';
     
-    // For now, we'll use the same deploy endpoint but could add a specific resync endpoint later
-    const deployUrl = item.type === 'node' ? 
-        `/metadata/glossary/nodes/${item.id}/deploy/` : 
-        `/metadata/glossary/terms/${item.id}/deploy/`;
-    
-    fetch(deployUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
-        },
-        body: JSON.stringify({ action: 'resync' })
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Resync response:', data);
-        if (data.success) {
-            showNotification('success', data.message || `${itemType} resynced successfully`);
-            setTimeout(() => {
-                if (typeof loadGlossaryData === 'function') {
-                    loadGlossaryData();
-                } else {
-                    window.location.reload();
-                }
-            }, 1000);
-        } else {
-            throw new Error(data.error || 'Unknown error occurred');
-        }
-    })
-    .catch(error => {
-        console.error('Error resyncing item:', error);
-        showNotification('error', `Error resyncing ${itemType.toLowerCase()}: ${error.message}`);
-    });
-}
-
-/**
- * Sync item to local
- * @param {Object} item - The item object
- */
-function syncToLocal(item) {
-    console.log('syncToLocal called with:', item);
-    
-    if (!item.urn) {
-        console.error('Cannot sync item without URN:', item);
-        showError('Error syncing item: Missing URN.');
-        return;
-    }
-    
-    const itemType = item.type === 'node' ? 'Node' : 'Term';
-    const itemName = item.name || 'Unknown';
-    
-    // Show loading notification
-    showNotification('info', `Importing ${itemType.toLowerCase()} "${itemName}" to local...`);
-    
-    // Use the existing pull endpoint
-    const formData = new FormData();
-    formData.append('csrfmiddlewaretoken', getCsrfToken());
-    formData.append(`${item.type}_urns`, item.urn);
-    
-    fetch('/metadata/glossary/pull/', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Sync to local response:', data);
-        if (data.success) {
-            showNotification('success', data.message || `${itemType} imported successfully`);
-            setTimeout(() => {
-                if (typeof loadGlossaryData === 'function') {
-                    loadGlossaryData();
-                } else {
-                    window.location.reload();
-                }
-            }, 1000);
-        } else {
-            throw new Error(data.error || 'Unknown error occurred');
-        }
-    })
-    .catch(error => {
-        console.error('Error syncing item to local:', error);
-        showNotification('error', `Error importing ${itemType.toLowerCase()}: ${error.message}`);
-    });
-}
-
-/**
- * Download item as JSON
- * @param {Object} item - The item object
- */
-function downloadItemJson(item) {
-    console.log('downloadItemJson called with:', item);
-    
-    const itemType = item.type === 'node' ? 'Node' : 'Term';
-    const itemName = item.name || 'Unknown';
-    
-    // Create a clean JSON representation
-    const jsonData = {
-        urn: item.urn,
-        name: item.name,
-        description: item.description,
-        type: item.type,
-        sync_status: item.sync_status,
-        properties: item.properties || {},
-        ownership: item.ownership || [],
-        custom_properties: item.custom_properties || {},
-        structured_properties: item.structured_properties || {},
-        relationships: item.relationships || [],
-        institutional_memory: item.institutional_memory || {}
-    };
-    
-    // Create and download the file
-    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${itemType.toLowerCase()}_${itemName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    showNotification('success', `${itemType} JSON downloaded successfully`);
-}
-
-/**
- * Add item to staged changes
- * @param {Object} item - The item object
- */
-function addToStagedChanges(item) {
-    console.log('addToStagedChanges called with:', item);
-    
-    if (!item.id) {
-        console.error('Cannot add item to staged changes without an ID:', item);
-        showError('Error adding to staged changes: Missing item ID.');
-        return;
-    }
-    
-    const itemType = item.type === 'node' ? 'Node' : 'Term';
-    const itemName = item.name || 'Unknown';
-    
-    // Show loading notification
-    showNotification('info', `Adding ${itemType.toLowerCase()} "${itemName}" to staged changes...`);
-    
-    // Use the git push endpoint
-    const pushUrl = item.type === 'node' ? 
-        `/metadata/glossary/nodes/${item.id}/git_push/` : 
-        `/metadata/glossary/terms/${item.id}/git_push/`;
-    
-    fetch(pushUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Add to staged changes response:', data);
-        if (data.success) {
-            showNotification('success', data.message || `${itemType} added to staged changes successfully`);
-        } else {
-            throw new Error(data.error || 'Unknown error occurred');
-        }
-    })
-    .catch(error => {
-        console.error('Error adding item to staged changes:', error);
-        showNotification('error', `Error adding ${itemType.toLowerCase()} to staged changes: ${error.message}`);
-    });
-}
-
-/**
- * Delete local item
- * @param {Object} item - The item object
- */
-function deleteLocalItem(item) {
-    console.log('deleteLocalItem called with:', item);
-    
-    if (!item.id) {
-        console.error('Cannot delete item without an ID:', item);
-        showError('Error deleting item: Missing item ID.');
-        return;
-    }
-    
-    const itemType = item.type === 'node' ? 'Node' : 'Term';
-    const itemName = item.name || 'Unknown';
-    
-    if (!confirm(`Are you sure you want to delete the local ${itemType.toLowerCase()} "${itemName}"? This action cannot be undone.`)) {
-        return;
-    }
-    
-    // Show loading notification
-    showNotification('info', `Deleting local ${itemType.toLowerCase()} "${itemName}"...`);
-    
-    // Use the delete endpoint
-    const deleteUrl = item.type === 'node' ? 
-        `/metadata/glossary/nodes/${item.id}/` : 
-        `/metadata/glossary/terms/${item.id}/`;
-    
-    fetch(deleteUrl, {
-        method: 'DELETE',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Delete local item response:', data);
-        if (data.success) {
-            showNotification('success', data.message || `${itemType} deleted successfully`);
-            setTimeout(() => {
-                if (typeof loadGlossaryData === 'function') {
-                    loadGlossaryData();
-                } else {
-                    window.location.reload();
-                }
-            }, 1000);
-        } else {
-            throw new Error(data.error || 'Unknown error occurred');
-        }
-    })
-    .catch(error => {
-        console.error('Error deleting local item:', error);
-        showNotification('error', `Error deleting ${itemType.toLowerCase()}: ${error.message}`);
-    });
-}
-
-/**
- * Show notification to user
- * @param {string} type - The notification type (success, error, info, warning)
- * @param {string} message - The message to display
- */
-function showNotification(type, message) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    notification.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    
-    // Add to page
-    document.body.appendChild(notification);
-    
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, 5000);
-}
-
-// Checkbox and bulk action handlers
-function attachCheckboxHandlers(content, tabType) {
-    // Attach individual checkbox handlers
-    content.querySelectorAll('.item-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            updateBulkActionsVisibility(tabType);
+    // Load and populate parent node dropdown
+    if (!window.glossaryNodesCache || window.glossaryNodesCache.length === 0) {
+        loadGlossaryNodes().then(() => {
+            populateParentNodeDropdowns();
+            // Set the current parent if it exists
+            if (nodeData.parent_id) {
+                document.getElementById('node-parent').value = nodeData.parent_id;
+            }
         });
-    });
+        } else {
+        populateParentNodeDropdowns();
+        // Set the current parent if it exists
+        if (nodeData.parent_id) {
+            document.getElementById('node-parent').value = nodeData.parent_id;
+        }
+    }
     
-    // Attach select-all checkbox handler
-    const selectAllCheckbox = content.querySelector('.select-all-checkbox');
-    if (selectAllCheckbox) {
-        selectAllCheckbox.addEventListener('change', function() {
-            const checkboxes = content.querySelectorAll('.item-checkbox');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = this.checked;
+    // Clear existing ownership sections and setup interface
+    setupNodeOwnershipInterface();
+    
+    // Wait for users/groups to load if not already loaded, then populate ownership data
+    const populateOwnership = () => {
+        const ownershipData = nodeData.ownership_data || nodeData.ownership;
+        console.log('Populating ownership for edit mode:', ownershipData);
+        
+        // Clear existing ownership sections
+        const ownershipContainer = document.getElementById('node-ownership-sections-container');
+        if (ownershipContainer) {
+            ownershipContainer.innerHTML = '';
+        }
+        
+        if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
+            // Group owners by ownership type to create separate sections
+            const ownersByType = {};
+            
+            ownershipData.owners.forEach(ownerInfo => {
+                let ownerUrn, ownershipTypeUrn;
+                
+                // Handle different data structures
+                if (ownerInfo.owner_urn && ownerInfo.ownership_type_urn) {
+                    // Local storage format
+                    ownerUrn = ownerInfo.owner_urn;
+                    ownershipTypeUrn = ownerInfo.ownership_type_urn;
+                } else if (ownerInfo.owner && ownerInfo.ownershipType) {
+                    // GraphQL format
+                    ownerUrn = ownerInfo.owner.urn;
+                    ownershipTypeUrn = ownerInfo.ownershipType.urn;
+                } else if (ownerInfo.ownerUrn && ownerInfo.type) {
+                    // Remote-only format
+                    ownerUrn = ownerInfo.ownerUrn;
+                    ownershipTypeUrn = ownerInfo.type;
+                } else {
+                    console.warn('Unrecognized owner info format:', ownerInfo);
+        return;
+    }
+    
+                if (!ownersByType[ownershipTypeUrn]) {
+                    ownersByType[ownershipTypeUrn] = [];
+                }
+                ownersByType[ownershipTypeUrn].push(ownerUrn);
             });
-            updateBulkActionsVisibility(tabType);
-        });
-    }
-}
-
-function updateBulkActionsVisibility(tabType) {
-    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
-    const bulkActions = document.getElementById(`${tabType}-bulk-actions`);
-    const selectedCount = document.getElementById(`${tabType}-selected-count`);
-    
-    if (checkboxes.length > 0) {
-        bulkActions.classList.add('show');
-        selectedCount.textContent = checkboxes.length;
-    } else {
-        bulkActions.classList.remove('show');
-        selectedCount.textContent = '0';
-    }
-}
-
-function getSelectedItems(tabType) {
-    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
-    const selectedItems = [];
-    
-    checkboxes.forEach(checkbox => {
-        const row = checkbox.closest('tr');
-        if (row && row.dataset.item) {
-            // Parse the minimal item data from the row
-            const rawData = row.dataset.item
-                .replace(/&quot;/g, '"')
-                .replace(/&apos;/g, "'");
             
-            let minimalItemData;
-            try {
-                minimalItemData = JSON.parse(rawData);
-            } catch (error) {
-                console.error('Failed to parse minimal item data in bulk selection:', error);
-                return;
-            }
-            
-            if (minimalItemData) {
-                // Look up the full item data from the cache
-                const cacheKey = minimalItemData.urn || minimalItemData.id;
-                const fullItemData = window.glossaryDataCache && window.glossaryDataCache[cacheKey] ? 
-                                   window.glossaryDataCache[cacheKey] : minimalItemData;
-                selectedItems.push(fullItemData);
-            }
+            // Create ownership sections for each type
+            Object.entries(ownersByType).forEach(([ownershipTypeUrn, ownerUrns]) => {
+                console.log(`Creating ownership section for type ${ownershipTypeUrn} with owners:`, ownerUrns);
+                
+                // Add a new ownership section
+                addNodeOwnershipSection();
+                
+                // Get the last added section (the one we just created)
+                const sections = document.querySelectorAll('#node-ownership-sections-container .card');
+                const section = sections[sections.length - 1];
+                
+                if (section) {
+                    // Set the ownership type
+                    const ownershipTypeSelect = section.querySelector('.ownership-type-select');
+                    if (ownershipTypeSelect) {
+                        ownershipTypeSelect.value = ownershipTypeUrn;
+                        
+                        // If the ownership type is not in the current list, add it with a warning
+                        if (!ownershipTypeSelect.querySelector(`option[value="${ownershipTypeUrn}"]`)) {
+                            const missingOption = document.createElement('option');
+                            missingOption.value = ownershipTypeUrn;
+                            const typeName = ownershipTypeUrn.split(':').pop() || 'Unknown Type';
+                            missingOption.textContent = `⚠️ ${typeName} (not in current DataHub)`;
+                            missingOption.className = 'text-warning';
+                            missingOption.selected = true;
+                            ownershipTypeSelect.appendChild(missingOption);
+                            console.log('Added missing ownership type:', ownershipTypeUrn);
+                        }
+                    }
+                    
+                    // Set the owners using Select2
+                    const ownersSelect = section.querySelector('.owners-select');
+                    if (ownersSelect && ownerUrns.length > 0) {
+                        console.log('Setting owners in Select2:', ownerUrns);
+                        
+                        // Check for missing owners and add them to the dropdown
+                        ownerUrns.forEach(ownerUrn => {
+                            const existingOption = ownersSelect.querySelector(`option[value="${ownerUrn}"]`);
+                            if (!existingOption) {
+                                // Add missing owner with warning
+                                const missingOption = document.createElement('option');
+                                missingOption.value = ownerUrn;
+                                const ownerName = ownerUrn.split(':').pop() || ownerUrn;
+                                const isUser = ownerUrn.includes(':corpuser:');
+                                const icon = isUser ? '👤' : '👥';
+                                missingOption.textContent = `⚠️ ${icon} ${ownerName} (not in current DataHub)`;
+                                missingOption.className = 'text-warning';
+                                missingOption.dataset.type = isUser ? 'user' : 'group';
+                                missingOption.dataset.urn = ownerUrn;
+                                missingOption.title = `⚠️ This ${isUser ? 'user' : 'group'} is not available in the current DataHub connection. URN: ${ownerUrn}`;
+                                ownersSelect.appendChild(missingOption);
+                                console.log('Added missing owner:', ownerUrn);
+                            }
+                        });
+                        
+                        // Ensure Select2 is initialized first
+                        if (!$(ownersSelect).hasClass('select2-hidden-accessible')) {
+                            console.log('Select2 not initialized yet, waiting...');
+                            // Select2 not initialized yet, wait a bit
+            setTimeout(() => {
+                                console.log('Setting owners after delay');
+                                $(ownersSelect).val(ownerUrns).trigger('change');
+                            }, 100);
+                } else {
+                            console.log('Select2 already initialized, setting owners immediately');
+                            $(ownersSelect).val(ownerUrns).trigger('change');
+                        }
+                    }
+                }
+            });
+        } else {
+            // No ownership data, hide the ownership section
+            hideNodeOwnershipSectionIfEmpty();
         }
-    });
-    
-    return selectedItems;
-}
-
-// Bulk action functions
-function bulkResyncItems(tabType) {
-    const selectedItems = getSelectedItems(tabType);
-    if (selectedItems.length === 0) {
-        showNotification('warning', 'No items selected for resync');
-        return;
-    }
-    
-    if (!confirm(`Are you sure you want to resync ${selectedItems.length} selected items?`)) {
-        return;
-    }
-    
-    // Process each item
-    selectedItems.forEach(item => {
-        resyncItem(item);
-    });
-    
-    showNotification('success', `Started resync for ${selectedItems.length} items`);
-}
-
-function bulkDeployItems(tabType) {
-    const selectedItems = getSelectedItems(tabType);
-    if (selectedItems.length === 0) {
-        showNotification('warning', 'No items selected for deployment');
-        return;
-    }
-    
-    if (!confirm(`Are you sure you want to deploy ${selectedItems.length} selected items to DataHub?`)) {
-        return;
-    }
-    
-    // Process each item
-    selectedItems.forEach(item => {
-        deployToDataHub(item);
-    });
-    
-    showNotification('success', `Started deployment for ${selectedItems.length} items`);
-}
-
-function bulkSyncToLocal(tabType) {
-    const selectedItems = getSelectedItems(tabType);
-    if (selectedItems.length === 0) {
-        showNotification('warning', 'No items selected for sync to local');
-        return;
-    }
-    
-    if (!confirm(`Are you sure you want to sync ${selectedItems.length} selected items to local?`)) {
-        return;
-    }
-    
-    // Process each item
-    selectedItems.forEach(item => {
-        syncToLocal(item);
-    });
-    
-    showNotification('success', `Started sync to local for ${selectedItems.length} items`);
-}
-
-function bulkDownloadJson(tabType) {
-    const selectedItems = getSelectedItems(tabType);
-    if (selectedItems.length === 0) {
-        showNotification('warning', 'No items selected for download');
-        return;
-    }
-    
-    // Create a combined JSON file
-    const combinedData = {
-        items: selectedItems,
-        exported_at: new Date().toISOString(),
-        count: selectedItems.length,
-        type: 'glossary_bulk_export'
     };
     
-    const blob = new Blob([JSON.stringify(combinedData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `glossary_bulk_export_${selectedItems.length}_items_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // If users/groups are already loaded, populate immediately
+    if (usersAndGroupsCache.users.length > 0 || usersAndGroupsCache.groups.length > 0) {
+        setTimeout(populateOwnership, 100); // Small delay to ensure Select2 is initialized
+    } else {
+        // Wait for users/groups to load
+        const checkAndPopulate = () => {
+            if (usersAndGroupsCache.users.length > 0 || usersAndGroupsCache.groups.length > 0) {
+                setTimeout(populateOwnership, 100);
+            } else {
+                setTimeout(checkAndPopulate, 100);
+            }
+        };
+        checkAndPopulate();
+    }
     
-    showNotification('success', `Downloaded ${selectedItems.length} items as JSON`);
+    // Update the form to be in edit mode
+    const form = document.getElementById('createNodeForm');
+    form.dataset.editMode = 'true';
+    form.dataset.nodeId = nodeId;
+    
+    // Change form action to edit endpoint
+    form.action = `/metadata/glossary/nodes/${nodeId}/edit/`;
+    
+    // Update modal title and button text
+    document.querySelector('#createNodeModal .modal-title').textContent = 'Edit Glossary Node';
+    document.querySelector('#createNodeModal .btn-primary').textContent = 'Update Node';
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('createNodeModal'));
+    modal.show();
 }
 
-function bulkAddToPR(tabType) {
-    const selectedItems = getSelectedItems(tabType);
-    if (selectedItems.length === 0) {
-        showNotification('warning', 'No items selected for adding to staged changes');
+function editTerm(term) {
+    console.log('editTerm called with:', term);
+    
+    // Get term data
+    const termData = term.combined || term;
+    const termId = termData.id;
+    
+    if (!termId) {
+        console.error('Cannot edit term without a database ID:', termData);
+        showNotification('error', 'Error editing term: Missing term database ID.');
         return;
     }
     
-    if (!confirm(`Are you sure you want to add ${selectedItems.length} selected items to staged changes?`)) {
-        return;
+    // Ensure users and groups are loaded
+    if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
+        loadUsersAndGroups();
     }
     
-    // Process each item
-    selectedItems.forEach(item => {
-        addToStagedChanges(item);
-    });
+    // Populate the form with existing data
+    document.getElementById('term-name').value = termData.name || '';
+    document.getElementById('term-description').value = termData.description || '';
     
-    showNotification('success', `Added ${selectedItems.length} items to staged changes`);
-}
-
-function bulkDeleteLocal(tabType) {
-    const selectedItems = getSelectedItems(tabType);
-    if (selectedItems.length === 0) {
-        showNotification('warning', 'No items selected for deletion');
-        return;
-    }
-    
-    if (!confirm(`Are you sure you want to delete ${selectedItems.length} selected local items? This action cannot be undone.`)) {
-        return;
-    }
-    
-    // Process each item
-    selectedItems.forEach(item => {
-        deleteLocalItem(item);
-    });
-    
-    showNotification('success', `Deleted ${selectedItems.length} local items`);
-}
-
-// Modal initialization functions
-async function initializeCreateModals() {
-    console.log('Initializing create modals...');
-    
-    // Load users and groups data first
-    try {
-        await loadUsersAndGroups();
-        console.log('Users and groups loaded successfully');
-    } catch (error) {
-        console.error('Error loading users and groups:', error);
-    }
-    
-    // Initialize create node modal
-    const createNodeModal = document.getElementById('createNodeModal');
-    console.log('createNodeModal found:', !!createNodeModal);
-    if (createNodeModal) {
-        createNodeModal.addEventListener('show.bs.modal', function() {
-            console.log('Node modal opening...');
-            // Load parent node options
-            populateParentNodeOptions('node-parent', false); // false = optional parent
-            
-            // Set up the ownership interface
-            setupNodeOwnershipInterface();
-            
-            // Hide ownership section by default
-            hideNodeOwnershipSectionIfEmpty();
+    // Load and populate parent node dropdown
+    if (!window.glossaryNodesCache || window.glossaryNodesCache.length === 0) {
+        loadGlossaryNodes().then(() => {
+            populateParentNodeDropdowns();
+            // Set the current parent if it exists
+            if (termData.parent_id) {
+                document.getElementById('term-parent-node').value = termData.parent_id;
+            }
         });
+    } else {
+        populateParentNodeDropdowns();
+        // Set the current parent if it exists
+        if (termData.parent_id) {
+            document.getElementById('term-parent-node').value = termData.parent_id;
+        }
+    }
+    
+    // Load and populate domain dropdown
+    const domainCache = getCurrentDomainCache();
+    if (!domainCache.domains || domainCache.domains.length === 0) {
+        loadDomains().then(() => {
+            populateDomainDropdown();
+            // Set the current domain if it exists
+            if (termData.domain_urn) {
+                document.getElementById('term-domain').value = termData.domain_urn;
+            }
+        });
+    } else {
+        populateDomainDropdown();
+        // Set the current domain if it exists
+        if (termData.domain_urn) {
+            document.getElementById('term-domain').value = termData.domain_urn;
+        }
+    }
+    
+    // Clear existing ownership sections and setup interface
+    setupTermOwnershipInterface();
+    
+    // Wait for users/groups to load if not already loaded, then populate ownership data
+    const populateOwnership = () => {
+        const ownershipData = termData.ownership_data || termData.ownership;
+        console.log('Populating ownership for edit mode:', ownershipData);
         
-        // Clean up when modal is closed
-        createNodeModal.addEventListener('hidden.bs.modal', function() {
-            resetNodeModal();
-        });
+        // Clear existing ownership sections
+        const ownershipContainer = document.getElementById('term-ownership-sections-container');
+        if (ownershipContainer) {
+            ownershipContainer.innerHTML = '';
+        }
+        
+        if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
+            // Group owners by ownership type to create separate sections
+            const ownersByType = {};
+            
+            ownershipData.owners.forEach(ownerInfo => {
+                let ownerUrn, ownershipTypeUrn;
+                
+                // Handle different data structures
+                if (ownerInfo.owner_urn && ownerInfo.ownership_type_urn) {
+                    // Local storage format
+                    ownerUrn = ownerInfo.owner_urn;
+                    ownershipTypeUrn = ownerInfo.ownership_type_urn;
+                } else if (ownerInfo.owner && ownerInfo.ownershipType) {
+                    // GraphQL format
+                    ownerUrn = ownerInfo.owner.urn;
+                    ownershipTypeUrn = ownerInfo.ownershipType.urn;
+                } else if (ownerInfo.ownerUrn && ownerInfo.type) {
+                    // Remote-only format
+                    ownerUrn = ownerInfo.ownerUrn;
+                    ownershipTypeUrn = ownerInfo.type;
+                } else {
+                    console.warn('Unrecognized owner info format:', ownerInfo);
+        return;
     }
     
-    // Initialize create term modal
-    const createTermModal = document.getElementById('createTermModal');
-    console.log('createTermModal found:', !!createTermModal);
-    if (createTermModal) {
-        createTermModal.addEventListener('show.bs.modal', function() {
-            console.log('Term modal opening...');
-            // Load parent node options
-            populateParentNodeOptions('term-parent-node', true); // true = required parent
+                if (!ownersByType[ownershipTypeUrn]) {
+                    ownersByType[ownershipTypeUrn] = [];
+                }
+                ownersByType[ownershipTypeUrn].push(ownerUrn);
+            });
             
-            // Load relationship options
-            populateTermRelationshipOptions();
-            
-            // Set up the ownership interface
-            setupTermOwnershipInterface();
-            
-            // Hide ownership section by default
+            // Create ownership sections for each type
+            Object.entries(ownersByType).forEach(([ownershipTypeUrn, ownerUrns]) => {
+                console.log(`Creating ownership section for type ${ownershipTypeUrn} with owners:`, ownerUrns);
+                
+                // Add a new ownership section
+                addTermOwnershipSection();
+                
+                // Get the last added section (the one we just created)
+                const sections = document.querySelectorAll('#term-ownership-sections-container .card');
+                const section = sections[sections.length - 1];
+                
+                if (section) {
+                    // Set the ownership type
+                    const ownershipTypeSelect = section.querySelector('.ownership-type-select');
+                    if (ownershipTypeSelect) {
+                        ownershipTypeSelect.value = ownershipTypeUrn;
+                        
+                        // If the ownership type is not in the current list, add it with a warning
+                        if (!ownershipTypeSelect.querySelector(`option[value="${ownershipTypeUrn}"]`)) {
+                            const missingOption = document.createElement('option');
+                            missingOption.value = ownershipTypeUrn;
+                            const typeName = ownershipTypeUrn.split(':').pop() || 'Unknown Type';
+                            missingOption.textContent = `⚠️ ${typeName} (not in current DataHub)`;
+                            missingOption.className = 'text-warning';
+                            missingOption.selected = true;
+                            ownershipTypeSelect.appendChild(missingOption);
+                            console.log('Added missing ownership type:', ownershipTypeUrn);
+                        }
+                    }
+                    
+                    // Set the owners using Select2
+                    const ownersSelect = section.querySelector('.owners-select');
+                    if (ownersSelect && ownerUrns.length > 0) {
+                        console.log('Setting owners in Select2:', ownerUrns);
+                        
+                        // Check for missing owners and add them to the dropdown
+                        ownerUrns.forEach(ownerUrn => {
+                            const existingOption = ownersSelect.querySelector(`option[value="${ownerUrn}"]`);
+                            if (!existingOption) {
+                                // Add missing owner with warning
+                                const missingOption = document.createElement('option');
+                                missingOption.value = ownerUrn;
+                                const ownerName = ownerUrn.split(':').pop() || ownerUrn;
+                                const isUser = ownerUrn.includes(':corpuser:');
+                                const icon = isUser ? '👤' : '👥';
+                                missingOption.textContent = `⚠️ ${icon} ${ownerName} (not in current DataHub)`;
+                                missingOption.className = 'text-warning';
+                                missingOption.dataset.type = isUser ? 'user' : 'group';
+                                missingOption.dataset.urn = ownerUrn;
+                                missingOption.title = `⚠️ This ${isUser ? 'user' : 'group'} is not available in the current DataHub connection. URN: ${ownerUrn}`;
+                                ownersSelect.appendChild(missingOption);
+                                console.log('Added missing owner:', ownerUrn);
+                            }
+                        });
+                        
+                        // Ensure Select2 is initialized first
+                        if (!$(ownersSelect).hasClass('select2-hidden-accessible')) {
+                            console.log('Select2 not initialized yet, waiting...');
+                            // Select2 not initialized yet, wait a bit
+                            setTimeout(() => {
+                                console.log('Setting owners after delay');
+                                $(ownersSelect).val(ownerUrns).trigger('change');
+                            }, 100);
+                        } else {
+                            console.log('Select2 already initialized, setting owners immediately');
+                            $(ownersSelect).val(ownerUrns).trigger('change');
+                        }
+                    }
+                }
+            });
+        } else {
+            // No ownership data, hide the ownership section
             hideTermOwnershipSectionIfEmpty();
-        });
-        
-        // Clean up when modal is closed
-        createTermModal.addEventListener('hidden.bs.modal', function() {
-            resetTermModal();
-        });
+        }
+    };
+    
+    // If users/groups are already loaded, populate immediately
+    if (usersAndGroupsCache.users.length > 0 || usersAndGroupsCache.groups.length > 0) {
+        setTimeout(populateOwnership, 100); // Small delay to ensure Select2 is initialized
+    } else {
+        // Wait for users/groups to load
+        const checkAndPopulate = () => {
+            if (usersAndGroupsCache.users.length > 0 || usersAndGroupsCache.groups.length > 0) {
+                setTimeout(populateOwnership, 100);
+            } else {
+                setTimeout(checkAndPopulate, 100);
+            }
+        };
+        checkAndPopulate();
     }
     
-    console.log('Create modals initialization complete');
-}
-
-function populateParentNodeOptions(selectId, required = false) {
-    const select = document.getElementById(selectId);
-    if (!select) return;
+    // Update the form to be in edit mode
+    const form = document.getElementById('createTermForm');
+    form.dataset.editMode = 'true';
+    form.dataset.termId = termId;
     
-    // Clear existing options (except the first placeholder)
-    while (select.children.length > 1) {
-        select.removeChild(select.lastChild);
-    }
+    // Change form action to edit endpoint
+    form.action = `/metadata/glossary/terms/${termId}/edit/`;
     
-    // Get all available nodes from the current data
-    const allNodes = [];
+    // Update modal title and button text
+    document.querySelector('#createTermModal .modal-title').textContent = 'Edit Glossary Term';
+    document.querySelector('#createTermModal .btn-primary').textContent = 'Update Term';
     
-    // Collect nodes from all tabs
-    ['synced', 'local', 'remote'].forEach(tabType => {
-        const tabData = glossaryData[tabType] || [];
-        tabData.forEach(item => {
-            if (determineEntityType(item) === 'glossaryNode') {
-                allNodes.push({
-                    id: item.id,
-                    name: item.name,
-                    urn: item.urn,
-                    tabType: tabType
-                });
-            }
-        });
-    });
-    
-    // Sort nodes by name
-    allNodes.sort((a, b) => a.name.localeCompare(b.name));
-    
-    // Add nodes to select
-    allNodes.forEach(node => {
-        const option = document.createElement('option');
-        option.value = node.id;
-        option.textContent = `${node.name} (${node.tabType})`;
-        select.appendChild(option);
-    });
-    
-    // Update required attribute
-    select.required = required;
-}
-
-function populateTermRelationshipOptions() {
-    const isASelect = document.getElementById('term-is-a');
-    const hasASelect = document.getElementById('term-has-a');
-    
-    if (!isASelect || !hasASelect) return;
-    
-    // Clear existing options
-    isASelect.innerHTML = '';
-    hasASelect.innerHTML = '';
-    
-    // Get all available terms from the current data
-    const allTerms = [];
-    
-    // Collect terms from all tabs
-    ['synced', 'local', 'remote'].forEach(tabType => {
-        const tabData = glossaryData[tabType] || [];
-        tabData.forEach(item => {
-            if (determineEntityType(item) === 'glossaryTerm') {
-                allTerms.push({
-                    id: item.id,
-                    name: item.name,
-                    urn: item.urn,
-                    tabType: tabType
-                });
-            }
-        });
-    });
-    
-    // Sort terms by name
-    allTerms.sort((a, b) => a.name.localeCompare(b.name));
-    
-    // Add terms to both selects
-    allTerms.forEach(term => {
-        const isAOption = document.createElement('option');
-        isAOption.value = term.urn;
-        isAOption.textContent = `${term.name} (${term.tabType})`;
-        isASelect.appendChild(isAOption);
-        
-        const hasAOption = document.createElement('option');
-        hasAOption.value = term.urn;
-        hasAOption.textContent = `${term.name} (${term.tabType})`;
-        hasASelect.appendChild(hasAOption);
-    });
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('createTermModal'));
+    modal.show();
 }
 
 // Glossary Ownership Management Functions (similar to tags)
@@ -2637,6 +2744,18 @@ async function loadUsersAndGroups() {
             body: JSON.stringify({ type: 'all' })
         });
         
+        console.log('Users-groups response status:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        // Check if the response is actually JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Expected JSON response but got: ${contentType}`);
+        }
+        
         const data = await response.json();
         console.log('Users and groups API response:', data);
         
@@ -2656,31 +2775,282 @@ async function loadUsersAndGroups() {
     }
 }
 
+// Load domains from both remote DataHub and local database
+async function loadDomains() {
+    console.log('Loading domains for glossary...');
+    try {
+        const csrfToken = getCsrfToken();
+        console.log('Using CSRF token for domains:', csrfToken);
+        
+        const response = await fetch('/metadata/api/search-domains/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({
+                input: {
+                    start: 0,
+                    count: 1000, // Get a large number of domains
+                    query: "*",
+                    types: ["DOMAIN"]
+                }
+            })
+        });
+        
+        console.log('Domains response status:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Expected JSON response but got: ${contentType}`);
+        }
+        
+        const data = await response.json();
+        console.log('Domains API response:', data);
+        
+        if (data.success) {
+            // Use the domain cache
+            const cache = getCurrentDomainCache();
+            
+            // Process remote domains from GraphQL response
+            const remoteDomains = [];
+            if (data.data && data.data.searchAcrossEntities && data.data.searchAcrossEntities.searchResults) {
+                data.data.searchAcrossEntities.searchResults.forEach(result => {
+                    if (result.entity && result.entity.type === 'DOMAIN') {
+                        remoteDomains.push({
+                            urn: result.entity.urn,
+                            name: result.entity.properties?.name || 'Unknown Domain',
+                            description: result.entity.properties?.description || '',
+                            type: 'remote'
+                        });
+                    }
+                });
+            }
+            
+            // Get local domains
+            const localDomains = data.local_domains || [];
+            
+            // Combine and deduplicate domains
+            const allDomains = [];
+            const seenUrns = new Set();
+            
+            // Add remote domains first
+            remoteDomains.forEach(domain => {
+                if (!seenUrns.has(domain.urn)) {
+                    allDomains.push(domain);
+                    seenUrns.add(domain.urn);
+                }
+            });
+            
+            // Add local domains that aren't already in remote
+            localDomains.forEach(domain => {
+                if (!seenUrns.has(domain.urn)) {
+                    allDomains.push({
+                        ...domain,
+                        type: 'local'
+                    });
+                    seenUrns.add(domain.urn);
+                }
+            });
+            
+            cache.domains = allDomains;
+            cache.lastFetched = Date.now();
+            console.log('Loaded domains:', cache.domains);
+        } else {
+            throw new Error(data.error || 'Failed to load domains');
+        }
+    } catch (error) {
+        console.error('Error loading domains:', error);
+        // Don't throw error - domains are not critical for basic functionality
+        const cache = getCurrentDomainCache();
+        cache.domains = [];
+        cache.lastFetched = Date.now();
+    }
+}
+
+// Load glossary nodes for parent selection dropdowns
+async function loadGlossaryNodes() {
+    console.log('Loading glossary nodes for parent selection...');
+    try {
+        const response = await fetch('/metadata/glossary/data/');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+            // Extract all nodes from the data
+            const allNodes = [];
+            
+            // Add synced nodes
+            if (data.data.synced_items) {
+                data.data.synced_items.forEach(item => {
+                    if (item.local && item.local.type === 'node') {
+                        allNodes.push({
+                            id: item.local.id,
+                            name: item.local.name,
+                            urn: item.local.urn,
+                            type: 'synced'
+                        });
+                    }
+                });
+            }
+            
+            // Add local-only nodes
+            if (data.data.local_only_items) {
+                data.data.local_only_items.forEach(item => {
+                    if (item.type === 'node') {
+                        allNodes.push({
+                            id: item.id,
+                            name: item.name,
+                            urn: item.urn,
+                            type: 'local'
+                        });
+                    }
+                });
+            }
+            
+            // Add remote-only nodes
+            if (data.data.remote_only_items) {
+                data.data.remote_only_items.forEach(item => {
+                    if (item.type === 'node') {
+                        allNodes.push({
+                            id: item.id || 'remote-' + Date.now(),
+                            name: item.name,
+                            urn: item.urn,
+                            type: 'remote'
+                        });
+                    }
+                });
+            }
+            
+            // Store in a global variable for easy access
+            window.glossaryNodesCache = allNodes;
+            console.log('Loaded glossary nodes for parent selection:', allNodes);
+            
+            // Populate existing dropdowns
+            populateParentNodeDropdowns();
+            
+            return allNodes;
+        } else {
+            throw new Error(data.error || 'Failed to load glossary data');
+        }
+    } catch (error) {
+        console.error('Error loading glossary nodes:', error);
+        window.glossaryNodesCache = [];
+        return [];
+    }
+}
+
+// Populate parent node dropdowns with available nodes
+function populateParentNodeDropdowns() {
+    const nodes = window.glossaryNodesCache || [];
+    
+    // Populate node parent dropdown
+    const nodeParentSelect = document.getElementById('node-parent');
+    if (nodeParentSelect) {
+        // Clear existing options except the first one
+        while (nodeParentSelect.children.length > 1) {
+            nodeParentSelect.removeChild(nodeParentSelect.lastChild);
+        }
+        
+        // Add node options
+        nodes.forEach(node => {
+            const option = document.createElement('option');
+            option.value = node.id;
+            option.textContent = node.name;
+            nodeParentSelect.appendChild(option);
+        });
+    }
+    
+    // Populate term parent dropdown
+    const termParentSelect = document.getElementById('term-parent-node');
+    if (termParentSelect) {
+        // Clear existing options except the first one
+        while (termParentSelect.children.length > 1) {
+            termParentSelect.removeChild(termParentSelect.lastChild);
+        }
+        
+        // Add node options
+        nodes.forEach(node => {
+            const option = document.createElement('option');
+            option.value = node.id;
+            option.textContent = node.name;
+            termParentSelect.appendChild(option);
+        });
+    }
+}
+
+// Populate domain dropdown with available domains
+function populateDomainDropdown() {
+    const cache = getCurrentDomainCache();
+    const domains = cache.domains || [];
+    
+    const domainSelect = document.getElementById('term-domain');
+    if (domainSelect) {
+        // Clear existing options except the first one
+        while (domainSelect.children.length > 1) {
+            domainSelect.removeChild(domainSelect.lastChild);
+        }
+        
+        // Add domain options
+        domains.forEach(domain => {
+            const option = document.createElement('option');
+            option.value = domain.urn;
+            option.textContent = domain.name;
+            domainSelect.appendChild(option);
+        });
+        
+        console.log('Populated domain dropdown with', domains.length, 'domains');
+    }
+}
+
 // Setup the ownership interface for nodes
 function setupNodeOwnershipInterface() {
     const container = document.getElementById('node-ownership-sections-container');
     const addButton = document.getElementById('add-node-ownership-section');
     
-    if (!container || !addButton) return;
+    if (!container || !addButton) {
+        console.warn('Node ownership interface elements not found');
+        console.log('Container:', container);
+        console.log('Add button:', addButton);
+        return;
+    }
+    
+    console.log('Setting up node ownership interface...');
+    console.log('Container found:', container);
+    console.log('Add button found:', addButton);
     
     // Clear existing sections
     container.innerHTML = '';
     
-    // Remove any existing event listeners to prevent multiple handlers
+    // Remove any existing event listeners by cloning and replacing
     const newAddButton = addButton.cloneNode(true);
     addButton.parentNode.replaceChild(newAddButton, addButton);
     
-    // Setup add ownership section button
-    newAddButton.addEventListener('click', (e) => {
+    console.log('Button replaced with new button:', newAddButton);
+    
+    // Setup add ownership section button with a single event listener
+    newAddButton.addEventListener('click', function(e) {
         e.preventDefault();
+        e.stopPropagation();
+        console.log('Add node ownership section clicked');
         addNodeOwnershipSection();
         showNodeOwnershipSection();
         // Add a subtle animation to the button
-        newAddButton.style.transform = 'scale(0.95)';
+        this.style.transform = 'scale(0.95)';
         setTimeout(() => {
-            newAddButton.style.transform = 'scale(1)';
+            this.style.transform = 'scale(1)';
         }, 150);
     });
+    
+    console.log('Node ownership interface setup complete');
 }
 
 // Setup the ownership interface for terms
@@ -2688,26 +3058,41 @@ function setupTermOwnershipInterface() {
     const container = document.getElementById('term-ownership-sections-container');
     const addButton = document.getElementById('add-term-ownership-section');
     
-    if (!container || !addButton) return;
+    if (!container || !addButton) {
+        console.warn('Term ownership interface elements not found');
+        console.log('Container:', container);
+        console.log('Add button:', addButton);
+        return;
+    }
+    
+    console.log('Setting up term ownership interface...');
+    console.log('Container found:', container);
+    console.log('Add button found:', addButton);
     
     // Clear existing sections
     container.innerHTML = '';
     
-    // Remove any existing event listeners to prevent multiple handlers
+    // Remove any existing event listeners by cloning and replacing
     const newAddButton = addButton.cloneNode(true);
     addButton.parentNode.replaceChild(newAddButton, addButton);
     
-    // Setup add ownership section button
-    newAddButton.addEventListener('click', (e) => {
+    console.log('Button replaced with new button:', newAddButton);
+    
+    // Setup add ownership section button with a single event listener
+    newAddButton.addEventListener('click', function(e) {
         e.preventDefault();
+        e.stopPropagation();
+        console.log('Add term ownership section clicked');
         addTermOwnershipSection();
         showTermOwnershipSection();
         // Add a subtle animation to the button
-        newAddButton.style.transform = 'scale(0.95)';
+        this.style.transform = 'scale(0.95)';
         setTimeout(() => {
-            newAddButton.style.transform = 'scale(1)';
+            this.style.transform = 'scale(1)';
         }, 150);
     });
+    
+    console.log('Term ownership interface setup complete');
 }
 
 // Add a new ownership section for nodes
@@ -2759,6 +3144,22 @@ function addNodeOwnershipSection() {
     // Populate the dropdowns
     populateOwnersSelect(ownersSelect);
     populateOwnershipTypeSelect(ownershipTypeSelect);
+    
+    // Initialize Select2 for the owners dropdown
+    $(ownersSelect).select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Search and select owners...',
+        allowClear: true,
+        dropdownParent: $(newSection),
+        templateResult: formatOwnerOption,
+        templateSelection: formatOwnerSelection
+    });
+    
+    // Add change listener to ownership type select to refresh other dropdowns
+    ownershipTypeSelect.addEventListener('change', function() {
+        refreshAllNodeOwnershipTypeDropdowns();
+    });
     
     updateNodeRemoveButtons();
 }
@@ -2812,6 +3213,22 @@ function addTermOwnershipSection() {
     // Populate the dropdowns
     populateOwnersSelect(ownersSelect);
     populateOwnershipTypeSelect(ownershipTypeSelect);
+    
+    // Initialize Select2 for the owners dropdown
+    $(ownersSelect).select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Search and select owners...',
+        allowClear: true,
+        dropdownParent: $(newSection),
+        templateResult: formatOwnerOption,
+        templateSelection: formatOwnerSelection
+    });
+    
+    // Add change listener to ownership type select to refresh other dropdowns
+    ownershipTypeSelect.addEventListener('change', function() {
+        refreshAllTermOwnershipTypeDropdowns();
+    });
     
     updateTermRemoveButtons();
 }
@@ -2873,18 +3290,46 @@ function populateOwnershipTypeSelect(selectElement) {
 function removeNodeSection(sectionId) {
     const section = document.getElementById(sectionId);
     if (section) {
+        // Clean up Select2 instances in this section
+        const select2Elements = section.querySelectorAll('.select2-hidden-accessible');
+        select2Elements.forEach(element => {
+            $(element).select2('destroy');
+        });
+        
         section.remove();
         updateNodeRemoveButtons();
-        hideNodeOwnershipSectionIfEmpty();
+        
+        // Check if container is now empty and hide ownership section if so
+        const container = document.getElementById('node-ownership-sections-container');
+        if (container && container.children.length === 0) {
+            hideNodeOwnershipSectionIfEmpty();
+        }
+        
+        // Refresh all ownership type dropdowns to make removed options available again
+        refreshAllNodeOwnershipTypeDropdowns();
     }
 }
 
 function removeTermSection(sectionId) {
     const section = document.getElementById(sectionId);
     if (section) {
+        // Clean up Select2 instances in this section
+        const select2Elements = section.querySelectorAll('.select2-hidden-accessible');
+        select2Elements.forEach(element => {
+            $(element).select2('destroy');
+        });
+        
         section.remove();
         updateTermRemoveButtons();
-        hideTermOwnershipSectionIfEmpty();
+        
+        // Check if container is now empty and hide ownership section if so
+        const container = document.getElementById('term-ownership-sections-container');
+        if (container && container.children.length === 0) {
+            hideTermOwnershipSectionIfEmpty();
+        }
+        
+        // Refresh all ownership type dropdowns to make removed options available again
+        refreshAllTermOwnershipTypeDropdowns();
     }
 }
 
@@ -3065,4 +3510,1078 @@ function setupBulkActions() {
             });
         }
     });
+}
+
+
+
+/**
+ * Delete remote item from DataHub
+ * @param {Object} item - The item object
+ */
+function deleteRemoteItem(item) {
+    console.log('deleteRemoteItem called with:', item);
+    
+    if (!item.urn) {
+        console.error('Cannot delete remote item without URN:', item);
+        showError('Error deleting item: Missing URN.');
+        return;
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Check if item can be deleted (nodes must have no children)
+    const entityType = determineEntityType(item);
+    if (entityType === 'glossaryNode' && item.children && item.children.length > 0) {
+        showNotification('error', `Cannot delete node "${itemName}" because it has child items. Please delete all child items first.`);
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to permanently delete the ${itemType.toLowerCase()} "${itemName}" from DataHub? This action cannot be undone.`)) {
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('info', `Deleting ${itemType.toLowerCase()} "${itemName}" from DataHub...`);
+    
+    // Use the DataHub REST client to delete the item
+    // This would need to be implemented via an endpoint that calls the DataHub API
+    const deleteUrl = `/metadata/glossary/delete-remote/`;
+    
+    fetch(deleteUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            urn: item.urn,
+            type: itemType.toLowerCase()
+        })
+    })
+    .then(response => {
+        console.log('Delete remote response status:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        // Check if the response is actually JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Expected JSON response but got: ${contentType}`);
+        }
+        
+        return response.json();
+    })
+    .then(data => {
+        console.log('Delete remote item response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `${itemType} deleted from DataHub successfully`);
+            setTimeout(() => {
+                if (typeof loadGlossaryData === 'function') {
+                    loadGlossaryData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting remote item:', error);
+        showNotification('error', `Error deleting ${itemType.toLowerCase()}: ${error.message}`);
+    });
+}
+
+// Format owner option for Select2
+function formatOwnerOption(option) {
+    if (!option.id) return option.text;
+    
+    const isGroup = option.id.includes(':corpGroup:');
+    const icon = isGroup ? 'fas fa-users' : 'fas fa-user';
+    const type = isGroup ? 'Group' : 'User';
+    
+    return $(`<span><i class="${icon} me-2"></i>${option.text} <small class="text-muted">(${type})</small></span>`);
+}
+
+// Format owner selection for Select2
+function formatOwnerSelection(option) {
+    if (!option.id) return option.text;
+    
+    const isGroup = option.id.includes(':corpGroup:');
+    const icon = isGroup ? 'fas fa-users' : 'fas fa-user';
+    
+    return $(`<span><i class="${icon} me-1"></i>${option.text}</span>`);
+}
+
+// Refresh ownership type dropdowns for nodes
+function refreshAllNodeOwnershipTypeDropdowns() {
+    const container = document.getElementById('node-ownership-sections-container');
+    if (!container) return;
+    
+    const ownershipTypeSelects = container.querySelectorAll('.ownership-type-select');
+    ownershipTypeSelects.forEach(select => {
+        const currentValue = select.value;
+        populateOwnershipTypeSelect(select);
+        select.value = currentValue; // Restore the current selection
+    });
+}
+
+// Refresh ownership type dropdowns for terms
+function refreshAllTermOwnershipTypeDropdowns() {
+    const container = document.getElementById('term-ownership-sections-container');
+    if (!container) return;
+    
+    const ownershipTypeSelects = container.querySelectorAll('.ownership-type-select');
+    ownershipTypeSelects.forEach(select => {
+        const currentValue = select.value;
+        populateOwnershipTypeSelect(select);
+        select.value = currentValue; // Restore the current selection
+    });
+}
+
+// Global sort state
+let currentSort = {
+    column: null,
+    direction: 'asc',
+    tabType: null
+};
+
+// Attach sorting handlers to table headers
+function attachSortingHandlers(content, tabType) {
+    const sortableHeaders = content.querySelectorAll('.sortable-header');
+    
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const sortColumn = this.dataset.sort;
+            
+            // Toggle sort direction
+            if (currentSort.column === sortColumn && currentSort.tabType === tabType) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = sortColumn;
+                currentSort.direction = 'asc';
+                currentSort.tabType = tabType;
+            }
+            
+            // Re-render the table with sorting
+            displayTabContent(tabType);
+        });
+    });
+}
+
+// Restore sort state visual indicators
+function restoreSortState(content, tabType) {
+    if (currentSort.column && currentSort.tabType === tabType) {
+        const tableHeaders = content.querySelectorAll('.sortable-header');
+        tableHeaders.forEach(h => {
+            h.classList.remove('sort-asc', 'sort-desc');
+            if (h.dataset.sort === currentSort.column) {
+                h.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        });
+    }
+}
+
+// Get sort value from glossary item data
+function getSortValue(item, column) {
+    const itemData = item.combined || item;
+    
+    switch(column) {
+        case 'name':
+            return (itemData.name || '').toLowerCase();
+        case 'description':
+            return (itemData.description || '').toLowerCase();
+        case 'domain':
+            return (itemData.domain_name || itemData.domain || '').toLowerCase();
+        case 'owners_count':
+            return itemData.owners_count || 0;
+        case 'custom_properties_count':
+            return itemData.custom_properties_count || 0;
+        case 'structured_properties_count':
+            return itemData.structured_properties_count || 0;
+        case 'deprecated':
+            return itemData.deprecated ? 1 : 0;
+        case 'sync_status':
+            const syncStatus = itemData.sync_status || 'UNKNOWN';
+            // Define sort order: SYNCED -> MODIFIED -> LOCAL_ONLY -> REMOTE_ONLY -> UNKNOWN
+            const statusOrder = {
+                'SYNCED': 1,
+                'MODIFIED': 2,
+                'LOCAL_ONLY': 3,
+                'REMOTE_ONLY': 4,
+                'UNKNOWN': 5
+            };
+            return statusOrder[syncStatus] || 5;
+        case 'urn':
+            return (itemData.urn || '').toLowerCase();
+        default:
+            return '';
+    }
+}
+
+// Sort items array
+function sortItems(items, column, direction) {
+    return items.sort((a, b) => {
+        const aVal = getSortValue(a, column);
+        const bVal = getSortValue(b, column);
+        
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return direction === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        
+        if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+/**
+ * Deploy item to DataHub
+ * @param {Object} item - The item object
+ */
+async function deployToDataHub(item, suppressReload = false) {
+    console.log('deployToDataHub called with:', item);
+    
+    if (!item.id) {
+        console.error('Cannot deploy item without an ID:', item);
+        showNotification('error', 'Error deploying item: Missing item ID.');
+        throw new Error('Missing item ID');
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Show loading notification
+    showNotification('info', `Deploying ${itemType.toLowerCase()} "${itemName}" to DataHub...`);
+    
+    // Make the API call to deploy this item to DataHub
+    const deployUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/deploy/` : 
+        `/metadata/glossary/terms/${item.id}/deploy/`;
+    
+    try {
+        const response = await fetch(deployUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showNotification('success', data.message || `${itemType} "${itemName}" deployed successfully!`);
+            
+            if (!suppressReload) {
+                setTimeout(() => {
+                    if (typeof loadGlossaryData === 'function') {
+                        loadGlossaryData();
+                    } else {
+                        window.location.reload();
+                    }
+                }, 1000);
+            }
+        } else {
+            const errorMessage = data.error || data.message || 'Unknown error occurred';
+            showNotification('error', `Error deploying ${itemType.toLowerCase()}: ${errorMessage}`);
+            throw new Error(errorMessage);
+        }
+    } catch (error) {
+        console.error(`Error deploying ${itemType.toLowerCase()}:`, error);
+        showNotification('error', `Error deploying ${itemType.toLowerCase()}: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Resync an item from DataHub
+ * @param {Object} item - The item object
+ */
+async function resyncItem(item, suppressReload = false) {
+    console.log('resyncItem called with:', item);
+    
+    if (!item.id) {
+        console.error('Cannot resync item without an ID:', item);
+        showNotification('error', 'Error resyncing item: Missing item ID.');
+        throw new Error('Missing item ID');
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Show loading notification
+    showNotification('info', `Resyncing ${itemType.toLowerCase()} "${itemName}" from DataHub...`);
+    
+    // Make the API call to resync this item from DataHub
+    const resyncUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/resync/` : 
+        `/metadata/glossary/terms/${item.id}/resync/`;
+    
+    try {
+        const response = await fetch(resyncUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showNotification('success', data.message || `${itemType} "${itemName}" resynced successfully!`);
+            
+            if (!suppressReload) {
+                setTimeout(() => {
+                    if (typeof loadGlossaryData === 'function') {
+                        loadGlossaryData();
+                    } else {
+                        window.location.reload();
+                    }
+                }, 1000);
+            }
+        } else {
+            const errorMessage = data.error || data.message || 'Unknown error occurred';
+            showNotification('error', `Error resyncing ${itemType.toLowerCase()}: ${errorMessage}`);
+            throw new Error(errorMessage);
+        }
+    } catch (error) {
+        console.error(`Error resyncing ${itemType.toLowerCase()}:`, error);
+        showNotification('error', `Error resyncing ${itemType.toLowerCase()}: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Sync item to local
+ * @param {Object} item - The item object
+ */
+async function syncToLocal(item, suppressReload = false) {
+    console.log('syncToLocal called with:', item);
+    
+    if (!item.urn) {
+        console.error('Cannot sync item without a URN:', item);
+        showNotification('error', 'Error syncing item to local: Missing item URN.');
+        throw new Error('Missing item URN');
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Show loading notification
+    showNotification('info', `Syncing ${itemType.toLowerCase()} "${itemName}" to local...`);
+    
+    // Make the API call to sync this item to local
+    const syncUrl = '/metadata/glossary/pull/';
+    
+    try {
+        const formData = new FormData();
+        if (item.type === 'node') {
+            formData.append('node_urns', item.urn);
+        } else {
+            formData.append('term_urns', item.urn);
+        }
+        
+        const response = await fetch(syncUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+            },
+            body: formData,
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showNotification('success', data.message || `${itemType} "${itemName}" synced to local successfully!`);
+            
+            if (!suppressReload) {
+                setTimeout(() => {
+                    if (typeof loadGlossaryData === 'function') {
+                        loadGlossaryData();
+                    } else {
+                        window.location.reload();
+                    }
+                }, 1000);
+            }
+        } else {
+            const errorMessage = data.error || data.message || 'Unknown error occurred';
+            showNotification('error', `Error syncing ${itemType.toLowerCase()} to local: ${errorMessage}`);
+            throw new Error(errorMessage);
+        }
+    } catch (error) {
+        console.error(`Error syncing ${itemType.toLowerCase()} to local:`, error);
+        showNotification('error', `Error syncing ${itemType.toLowerCase()} to local: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Download item as JSON
+ * @param {Object} item - The item object
+ */
+function downloadItemJson(item) {
+    console.log('downloadItemJson called with:', item);
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Create a clean JSON representation
+    const jsonData = {
+        urn: item.urn,
+        name: item.name,
+        description: item.description,
+        type: item.type,
+        sync_status: item.sync_status,
+        properties: item.properties || {},
+        ownership: item.ownership || [],
+        custom_properties: item.custom_properties || {},
+        structured_properties: item.structured_properties || {},
+        relationships: item.relationships || [],
+        institutional_memory: item.institutional_memory || {}
+    };
+    
+    // Create and download the file
+    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${itemType.toLowerCase()}_${itemName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showNotification('success', `${itemType} JSON downloaded successfully`);
+}
+
+/**
+ * Add item to staged changes
+ * @param {Object} item - The item object
+ */
+function addToStagedChanges(item) {
+    console.log('addToStagedChanges called with:', item);
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    // Check if this is a remote-only item that needs to be staged directly
+    if (item.sync_status === 'REMOTE_ONLY' || !item.id) {
+        console.log(`Item "${itemName}" is remote-only, staging directly...`);
+        
+        // Show loading notification
+        showNotification('info', `Adding remote ${itemType.toLowerCase()} "${itemName}" to staged changes...`);
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        // Use the remote staging endpoint
+        fetch('/metadata/glossary/remote/stage_changes/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                item_data: item,
+                environment: currentEnvironment.name,
+                mutation_name: mutationName
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Add remote to staged changes response:', data);
+            if (data.status === 'success') {
+                showNotification('success', data.message || `Remote ${itemType} added to staged changes successfully`);
+                if (data.files_created && data.files_created.length > 0) {
+                    console.log('Created files:', data.files_created);
+                }
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding remote item to staged changes:', error);
+            showNotification('error', `Error adding remote ${itemType.toLowerCase()} to staged changes: ${error.message}`);
+        });
+        return;
+    }
+    
+    if (!item.id) {
+        console.error('Cannot add item to staged changes without an ID:', item);
+        showNotification('error', 'Error adding to staged changes: Missing item ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('info', `Adding ${itemType.toLowerCase()} "${itemName}" to staged changes...`);
+    
+    // Get current environment and mutation from global state or settings
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = currentEnvironment.mutation_name || null;
+    
+    // Use the staged changes endpoint
+    const stageUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/stage_changes/` : 
+        `/metadata/glossary/terms/${item.id}/stage_changes/`;
+    
+    fetch(stageUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Add to staged changes response:', data);
+        if (data.status === 'success') {
+            showNotification('success', data.message || `${itemType} added to staged changes successfully`);
+            if (data.files_created && data.files_created.length > 0) {
+                console.log('Created files:', data.files_created);
+            }
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding item to staged changes:', error);
+        showNotification('error', `Error adding ${itemType.toLowerCase()} to staged changes: ${error.message}`);
+    });
+}
+
+/**
+ * Delete local item
+ * @param {Object} item - The item object
+ */
+function deleteLocalItem(item, suppressNotification = false) {
+    console.log('deleteLocalItem called with:', item);
+    
+    if (!item.id) {
+        console.error('Cannot delete item without an ID:', item);
+        if (!suppressNotification) showNotification('error', 'Error deleting item: Missing item ID.');
+        return Promise.reject(new Error('Missing item ID'));
+    }
+    
+    const itemType = item.type === 'node' ? 'Node' : 'Term';
+    const itemName = item.name || 'Unknown';
+    
+    if (!suppressNotification && !confirm(`Are you sure you want to delete the local ${itemType.toLowerCase()} "${itemName}"? This action cannot be undone.`)) {
+        return Promise.reject(new Error('User cancelled deletion'));
+    }
+    
+    // Show loading notification
+    if (!suppressNotification) showNotification('info', `Deleting local ${itemType.toLowerCase()} "${itemName}"...`);
+    
+    // Use the correct delete endpoint
+    const deleteUrl = item.type === 'node' ? 
+        `/metadata/glossary/nodes/${item.id}/delete/` : 
+        `/metadata/glossary/terms/${item.id}/delete/`;
+    
+    return fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        console.log('Delete response status:', response.status, response.statusText);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Expected JSON response but got: ${contentType}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Delete local item response:', data);
+        if (data.success) {
+            if (!suppressNotification) {
+                showNotification('success', data.message || `${itemType} deleted successfully`);
+                setTimeout(() => {
+                    if (typeof loadGlossaryData === 'function') {
+                        loadGlossaryData();
+                    } else {
+                        window.location.reload();
+                    }
+                }, 1000);
+            }
+            return true;
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting local item:', error);
+        if (!suppressNotification) showNotification('error', `Error deleting ${itemType.toLowerCase()}: ${error.message}`);
+        return Promise.reject(error);
+    });
+}
+
+/**
+ * Show notification to user
+ * @param {string} type - The notification type (success, error, info, warning)
+ * @param {string} message - The message to display
+ */
+function showNotification(type, message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    // Add to page
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 5000);
+}
+
+// Checkbox and bulk action handlers
+function attachCheckboxHandlers(content, tabType) {
+    // Attach individual checkbox handlers
+    content.querySelectorAll('.item-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            // If checking a checkbox, also check all parent checkboxes
+            if (this.checked) {
+                selectParentCheckboxes(this, content);
+            }
+            updateBulkActionsVisibility(tabType);
+        });
+    });
+    
+    // Attach select-all checkbox handler
+    const selectAllCheckbox = content.querySelector('.select-all-checkbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = content.querySelectorAll('.item-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            updateBulkActionsVisibility(tabType);
+        });
+    }
+}
+
+/**
+ * Recursively select parent checkboxes when a child is selected
+ * @param {HTMLElement} checkbox - The checkbox that was selected
+ * @param {HTMLElement} content - The content container
+ */
+function selectParentCheckboxes(checkbox, content) {
+    const row = checkbox.closest('tr');
+    if (!row) return;
+    
+    // Get the parent node URN/ID from data attributes
+    const parentNodeUrn = row.dataset.parentNode;
+    if (!parentNodeUrn) return; // This is a root item
+    
+    // Find the parent row
+    const parentRow = content.querySelector(`[data-node-urn="${parentNodeUrn}"]`);
+    if (!parentRow) return; // Parent not found in current view
+    
+    // Get the parent's checkbox
+    const parentCheckbox = parentRow.querySelector('.item-checkbox');
+    if (!parentCheckbox) return;
+    
+    // Check the parent checkbox if it's not already checked
+    if (!parentCheckbox.checked) {
+        parentCheckbox.checked = true;
+        // Recursively check the parent's parents
+        selectParentCheckboxes(parentCheckbox, content);
+    }
+}
+
+function updateBulkActionsVisibility(tabType) {
+    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
+    const bulkActions = document.getElementById(`${tabType}-bulk-actions`);
+    const selectedCount = document.getElementById(`${tabType}-selected-count`);
+    
+    if (checkboxes.length > 0) {
+        bulkActions.classList.add('show');
+        selectedCount.textContent = checkboxes.length;
+    } else {
+        bulkActions.classList.remove('show');
+        selectedCount.textContent = '0';
+    }
+}
+
+function getSelectedItems(tabType) {
+    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
+    const selectedItems = [];
+    
+    checkboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        if (row && row.dataset.item) {
+            // Parse the minimal item data from the row
+            const rawData = row.dataset.item
+                .replace(/&quot;/g, '"')
+                .replace(/&apos;/g, "'");
+            
+            let minimalItemData;
+            try {
+                minimalItemData = JSON.parse(rawData);
+            } catch (error) {
+                console.error('Failed to parse minimal item data in bulk selection:', error);
+                return;
+            }
+            
+            if (minimalItemData) {
+                // Look up the full item data from the cache
+                const cacheKey = minimalItemData.urn || minimalItemData.id;
+                const fullItemData = window.glossaryDataCache && window.glossaryDataCache[cacheKey] ? 
+                                   window.glossaryDataCache[cacheKey] : minimalItemData;
+                selectedItems.push(fullItemData);
+            }
+        }
+    });
+    
+    return selectedItems;
+}
+
+function getAllSelectedItems() {
+    // Get selected items from all tabs that support local deletion (synced and local)
+    const allSelectedItems = [];
+    const tabs = ['synced', 'local'];
+    
+    tabs.forEach(tabType => {
+        const tabItems = getSelectedItems(tabType);
+        allSelectedItems.push(...tabItems);
+    });
+    
+    return allSelectedItems;
+}
+
+// Bulk action functions
+async function bulkResyncItems(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for resync');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to resync ${selectedItems.length} selected items?`)) {
+        return;
+    }
+    
+    // Process items sequentially to avoid database locking
+    let successCount = 0;
+    let errorCount = 0;
+    
+    showNotification('info', `Starting resync of ${selectedItems.length} items from DataHub...`);
+    
+    for (const item of selectedItems) {
+        try {
+            await resyncItem(item, true); // Suppress reload
+            successCount++;
+        } catch (error) {
+            console.error(`Error resyncing item ${item.name}:`, error);
+            errorCount++;
+        }
+    }
+    
+    // Reload data once at the end
+    await loadGlossaryData();
+    
+    if (errorCount === 0) {
+        showNotification('success', `Successfully resynced ${successCount} items from DataHub`);
+    } else {
+        showNotification('warning', `Completed: ${successCount} items resynced successfully, ${errorCount} failed`);
+    }
+}
+
+async function bulkDeployItems(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for deployment');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to deploy ${selectedItems.length} selected items to DataHub?`)) {
+        return;
+    }
+    
+    // Process items sequentially to avoid database locking
+    let successCount = 0;
+    let errorCount = 0;
+    
+    showNotification('info', `Starting deployment of ${selectedItems.length} items to DataHub...`);
+    
+    for (const item of selectedItems) {
+        try {
+            await deployToDataHub(item, true); // Suppress reload
+            successCount++;
+        } catch (error) {
+            console.error(`Error deploying item ${item.name}:`, error);
+            errorCount++;
+        }
+    }
+    
+    // Reload data once at the end
+    await loadGlossaryData();
+    
+    if (errorCount === 0) {
+        showNotification('success', `Successfully deployed ${successCount} items to DataHub`);
+    } else {
+        showNotification('warning', `Completed: ${successCount} items deployed successfully, ${errorCount} failed`);
+    }
+}
+
+async function bulkSyncToLocal(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for sync to local');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to sync ${selectedItems.length} selected items to local?`)) {
+        return;
+    }
+    
+    // Process items sequentially to avoid database locking
+    let successCount = 0;
+    let errorCount = 0;
+    
+    showNotification('info', `Starting sync of ${selectedItems.length} items to local...`);
+    
+    for (const item of selectedItems) {
+        try {
+            await syncToLocal(item, true); // Suppress reload
+            successCount++;
+        } catch (error) {
+            console.error(`Error syncing item ${item.name}:`, error);
+            errorCount++;
+        }
+    }
+    
+    // Reload data once at the end
+    await loadGlossaryData();
+    
+    if (errorCount === 0) {
+        showNotification('success', `Successfully synced ${successCount} items to local`);
+    } else {
+        showNotification('warning', `Completed: ${successCount} items synced successfully, ${errorCount} failed`);
+    }
+}
+
+function bulkDownloadJson(tabType) {
+    const selectedItems = tabType === 'global' ? getAllSelectedItems() : getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for download');
+        return;
+    }
+    
+    // Create a combined JSON file
+    const combinedData = {
+        items: selectedItems,
+        exported_at: new Date().toISOString(),
+        count: selectedItems.length,
+        type: 'glossary_bulk_export'
+    };
+    
+    const blob = new Blob([JSON.stringify(combinedData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `glossary_bulk_export_${selectedItems.length}_items_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showNotification('success', `Downloaded ${selectedItems.length} items as JSON`);
+}
+
+function bulkAddToPR(tabType) {
+    const selectedItems = tabType === 'global' ? getAllSelectedItems() : getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for adding to staged changes');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to add ${selectedItems.length} selected items to staged changes?`)) {
+        return;
+    }
+    
+    // Process each item sequentially
+    let successCount = 0;
+    let errorCount = 0;
+    
+    selectedItems.forEach(item => {
+        try {
+            addToStagedChanges(item);
+            successCount++;
+        } catch (error) {
+            console.error(`Error adding item ${item.name} to staged changes:`, error);
+            errorCount++;
+        }
+    });
+    
+    if (errorCount > 0) {
+        showNotification('warning', `Added ${successCount} items to staged changes, ${errorCount} errors`);
+    } else {
+        showNotification('success', `Added ${successCount} items to staged changes`);
+    }
+}
+
+function bulkDeleteLocal(tabType) {
+    const selectedItems = getSelectedItems(tabType);
+    if (selectedItems.length === 0) {
+        showNotification('warning', 'No items selected for deletion');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete ${selectedItems.length} selected items? This action cannot be undone.`)) {
+        return;
+    }
+    
+    // Get deletion order (children before parents)
+    const deletionOrder = getDeletionOrder(selectedItems);
+    
+    showNotification('info', `Starting deletion of ${deletionOrder.length} items in dependency order...`);
+    
+    // Process items in dependency order
+    let successCount = 0;
+    let errorCount = 0;
+    
+    function processNextItem(index) {
+        if (index >= deletionOrder.length) {
+            // All items processed
+            if (errorCount === 0) {
+                showNotification('success', `Successfully deleted ${successCount} items`);
+            } else {
+                showNotification('warning', `Completed: ${successCount} items deleted successfully, ${errorCount} failed`);
+            }
+            
+            // Reload data once at the end
+            setTimeout(() => {
+                if (typeof loadGlossaryData === 'function') {
+                    loadGlossaryData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000);
+            return;
+        }
+        
+        const item = deletionOrder[index];
+        deleteLocalItem(item, true) // Suppress individual notifications
+            .then(() => {
+                successCount++;
+                processNextItem(index + 1);
+            })
+            .catch((error) => {
+                console.error(`Error deleting item ${item.name}:`, error);
+                errorCount++;
+                processNextItem(index + 1);
+            });
+    }
+    
+    processNextItem(0);
+}
+
+/**
+ * Get the proper deletion order for glossary items (children before parents)
+ * @param {Array} items - Array of selected glossary items
+ * @returns {Array} Items in deletion order (children first, then parents)
+ */
+function getDeletionOrder(items) {
+    if (!items || items.length === 0) return [];
+    
+    // Create a map of URNs to items for quick lookup
+    const urnToItem = {};
+    items.forEach(item => {
+        if (item.urn) {
+            urnToItem[item.urn] = item;
+        }
+    });
+    
+    // Build child-to-parent and parent-to-children maps
+    const childrenMap = {};
+    const parentMap = {};
+    
+    items.forEach(item => {
+        const parentUrn = item.parent_urn || item.parent_node_urn;
+        if (parentUrn && urnToItem[parentUrn]) {
+            // This item has a parent in the selection
+            if (!childrenMap[parentUrn]) {
+                childrenMap[parentUrn] = [];
+            }
+            childrenMap[parentUrn].push(item.urn);
+            parentMap[item.urn] = parentUrn;
+        }
+    });
+    
+    // Use topological sort (post-order traversal) to get deletion order
+    const visited = new Set();
+    const order = [];
+    
+    function visit(urn) {
+        if (visited.has(urn)) return;
+        visited.add(urn);
+        
+        // Visit all children first
+        if (childrenMap[urn]) {
+            childrenMap[urn].forEach(childUrn => {
+                if (urnToItem[childUrn]) {
+                    visit(childUrn);
+                }
+            });
+        }
+        
+        // Add this item to the order (children will be deleted before parents)
+        if (urnToItem[urn]) {
+            order.push(urnToItem[urn]);
+        }
+    }
+    
+    // Start with items that have no parents in the selection (root items)
+    items.forEach(item => {
+        const parentUrn = item.parent_urn || item.parent_node_urn;
+        if (!parentUrn || !urnToItem[parentUrn]) {
+            // This is a root item (no parent in selection)
+            visit(item.urn);
+        }
+    });
+    
+    // Also visit any remaining items (in case of cycles or isolated items)
+    items.forEach(item => {
+        if (item.urn && !visited.has(item.urn)) {
+            visit(item.urn);
+        }
+    });
+    
+    console.log('Deletion order:', order.map(item => `${item.name} (${item.type})`));
+    return order;
 }

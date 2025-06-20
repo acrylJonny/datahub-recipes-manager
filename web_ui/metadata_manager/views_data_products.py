@@ -117,7 +117,7 @@ def get_remote_data_products_data(request):
 
         # Get local data products for comparison
         local_data_products = list(DataProduct.objects.all())
-        local_urns = {dp.deterministic_urn for dp in local_data_products}
+        local_urns = {dp.urn for dp in local_data_products}
 
         # Fetch remote data products
         remote_data_products = []
@@ -132,37 +132,21 @@ def get_remote_data_products_data(request):
                 datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
 
             # Get data products from DataHub using the new method
-            result = client.get_data_products(start=0, count=1000, query="*")
+            result = client.list_data_products(start=0, count=1000, query="*")
 
-            if result and result.get("success", False):
-                remote_data_products_data = result.get("data", {}).get("searchResults", [])
+            if result:
+                remote_data_products_data = result
                 logger.debug(f"Fetched {len(remote_data_products_data)} remote data products")
 
                 # Process the data products
                 if remote_data_products_data:
-                    for product_result in remote_data_products_data:
+                    for product_data in remote_data_products_data:
                         try:
-                            product_data = product_result.get("entity", {}) if product_result else {}
                             if product_data:
                                 # Calculate statistics for each product
-                                product_data['owners_count'] = 0
-                                product_data['relationships_count'] = 0
-                                product_data['entities_count'] = 0
-                                
-                                # Count owners
-                                ownership_data = product_data.get('ownership', {})
-                                if ownership_data and ownership_data.get('owners'):
-                                    product_data['owners_count'] = len(ownership_data['owners'])
-                                
-                                # Count relationships
-                                relationships_data = product_data.get('relationships', {})
-                                if relationships_data and relationships_data.get('relationships'):
-                                    product_data['relationships_count'] = len(relationships_data['relationships'])
-                                
-                                # Count entities
-                                entities_data = product_data.get('entities', {})
-                                if entities_data and entities_data.get('total'):
-                                    product_data['entities_count'] = entities_data['total']
+                                product_data['owners_count'] = product_data.get('owners_count', 0)
+                                product_data['relationships_count'] = 0  # Not available in current query
+                                product_data['entities_count'] = product_data.get('numAssets', 0)
                                 
                                 # Add sync status
                                 product_data['sync_status'] = 'REMOTE_ONLY'
@@ -195,18 +179,17 @@ def get_remote_data_products_data(request):
                     local_dp.sync_status, local_dp.sync_status
                 )
                 
-                logger.debug(f"Processing local product: {local_dp.name}, original_urn: {local_dp.original_urn}, sync_status: {local_dp.sync_status}")
+                logger.debug(f"Processing local product: {local_dp.name}, urn: {local_dp.urn}, sync_status: {local_dp.sync_status}")
                 
                 # Check if this local item exists in remote
                 matching_remote = None
-                if local_dp.original_urn:  # Only try to match if there's an original URN
+                if local_dp.urn:  # Only try to match if there's a URN
                     for remote_dp in remote_data_products:
-                        if remote_dp.get('urn') == local_dp.original_urn:
+                        if remote_dp.get('urn') == local_dp.urn:
                             matching_remote = remote_dp
                             # Remove from remote_only_items since it's synced
                             if remote_dp in remote_only_items:
                                 remote_only_items.remove(remote_dp)
-                            logger.debug(f"Found matching remote product for {local_dp.name}")
                             break
                 
                 if matching_remote:
@@ -297,7 +280,7 @@ def create_local_data_product(request, data_product_data):
         deterministic_urn = get_full_urn_from_name("dataProduct", name)
         
         # Check if data product already exists
-        if DataProduct.objects.filter(deterministic_urn=deterministic_urn).exists():
+        if DataProduct.objects.filter(urn=deterministic_urn).exists():
             messages.error(request, f"Data product with name '{name}' already exists")
             return JsonResponse({"success": False, "error": "Data product already exists"})
         
@@ -305,7 +288,7 @@ def create_local_data_product(request, data_product_data):
         data_product = DataProduct.objects.create(
             name=name,
             description=description,
-            deterministic_urn=deterministic_urn,
+            urn=deterministic_urn,
             external_url=external_url,
             domain_urn=domain_urn,
             entity_urns=entity_urns,
@@ -411,14 +394,13 @@ def add_data_product_to_pr_comprehensive(request, data_product_id):
                 self.entity_urns = data_product.entity_urns
                 self.environment = environment
                 self.sync_status = data_product.sync_status
-                self.deterministic_urn = data_product.deterministic_urn
-                self.original_urn = data_product.original_urn
+                self.urn = data_product.urn
                 
             def to_dict(self):
                 """Convert data product to DataHub GraphQL format for file output"""
                 # Determine operation based on sync status
                 operation = "create"  # Default for local data products
-                if self.sync_status == "SYNCED" or self.original_urn:
+                if self.sync_status == "SYNCED" or self.urn:
                     operation = "update"
                 
                 data_product_data = {
@@ -429,8 +411,7 @@ def add_data_product_to_pr_comprehensive(request, data_product_id):
                     "external_url": self.external_url,
                     "domain_urn": self.domain_urn,
                     "entity_urns": self.entity_urns or [],
-                    "deterministic_urn": self.deterministic_urn,
-                    "original_urn": self.original_urn,
+                    "urn": self.urn,
                     "local_id": str(self.id),
                     "created_at": datetime.now().isoformat(),
                     # Add unique filename for this data product to prevent overwrites
@@ -444,7 +425,7 @@ def add_data_product_to_pr_comprehensive(request, data_product_id):
                         "input": {
                             "name": self.name,
                             "description": self.description,
-                            "id": self.name.lower().replace(' ', '_').replace('/', '_'),
+                            "urn": self.urn,
                             "externalUrl": self.external_url,
                             "domainUrn": self.domain_urn,
                         }
@@ -453,7 +434,7 @@ def add_data_product_to_pr_comprehensive(request, data_product_id):
                     data_product_data["graphql_input"] = {
                         "mutation": "updateDataProduct", 
                         "variables": {
-                            "urn": self.original_urn,
+                            "urn": self.urn,
                             "input": {
                                 "name": self.name,
                                 "description": self.description,
@@ -546,7 +527,7 @@ def add_data_product_to_pr(request, data_product_id):
             "data_product_type": "DATA_PRODUCT",
             "name": data_product.name,
             "description": data_product.description,
-            "deterministic_urn": data_product.deterministic_urn,
+            "urn": data_product.urn,
             "external_url": data_product.external_url,
             "domain_urn": data_product.domain_urn,
             "entity_urns": data_product.entity_urns,
@@ -556,7 +537,7 @@ def add_data_product_to_pr(request, data_product_id):
                 "input": {
                     "name": data_product.name,
                     "description": data_product.description,
-                    "urn": data_product.deterministic_urn,
+                    "urn": data_product.urn,
                     "externalUrl": data_product.external_url,
                     "domainUrn": data_product.domain_urn,
                     "entityUrns": data_product.entity_urns,
@@ -761,9 +742,9 @@ def sync_data_product_to_local(request, data_product_id=None):
             # Called from detail view with data_product_id in URL
             try:
                 data_product = DataProduct.objects.get(id=data_product_id)
-                product_urn = data_product.original_urn
+                product_urn = data_product.urn
                 if not product_urn:
-                    return JsonResponse({"success": False, "error": "Data product has no original URN to sync from"})
+                    return JsonResponse({"success": False, "error": "Data product has no URN to sync from"})
             except DataProduct.DoesNotExist:
                 return JsonResponse({"success": False, "error": "Data product not found"})
         else:
@@ -782,47 +763,31 @@ def sync_data_product_to_local(request, data_product_id=None):
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
         # Fetch the data product details from DataHub
-        logger.info(f"Calling client.get_data_products with query: {product_urn}")
-        result = client.get_data_products(query=product_urn, start=0, count=1)
+        logger.info(f"Calling client.list_data_products with query: {product_urn}")
+        result = client.list_data_products(query=product_urn, start=0, count=1)
         
-        logger.info(f"get_data_products returned: {type(result)} - {result}")
+        logger.info(f"list_data_products returned: {type(result)} - {result}")
         
         if result is None:
-            logger.error("get_data_products returned None")
+            logger.error("list_data_products returned None")
             return JsonResponse({"success": False, "error": "No response from DataHub API"})
         
-        if not isinstance(result, dict):
-            logger.error(f"get_data_products returned unexpected type: {type(result)}")
+        if not isinstance(result, list):
+            logger.error(f"list_data_products returned unexpected type: {type(result)}")
             return JsonResponse({"success": False, "error": f"Invalid response type from DataHub: {type(result)}"})
         
-        if not result.get("success", False):
-            error_msg = result.get('error', 'Failed to fetch data product from DataHub') if result else 'No response from DataHub'
-            logger.error(f"Failed to fetch data product from DataHub: {error_msg}")
-            return JsonResponse({"success": False, "error": error_msg})
-        
-        data_section = result.get("data")
-        if data_section is None:
-            logger.error("No 'data' section in DataHub response")
-            return JsonResponse({"success": False, "error": "Invalid DataHub response: missing data section"})
-        
-        search_results = data_section.get("searchResults", [])
-        if not search_results:
-            logger.warning(f"No search results found for URN: {product_urn}")
+        if not result:
+            logger.error("list_data_products returned empty list")
             return JsonResponse({"success": False, "error": "Data product not found in DataHub"})
         
         # Get the first (and should be only) result
-        first_result = search_results[0]
-        if first_result is None:
-            logger.error("First search result is None")
-            return JsonResponse({"success": False, "error": "Invalid search result from DataHub"})
-        
-        product_data = first_result.get("entity", {})
+        product_data = result[0]
         if not product_data:
-            logger.error(f"No entity data in search result: {first_result}")
+            logger.error("First data product result is None")
             return JsonResponse({"success": False, "error": "Invalid data product data from DataHub"})
         
         # Extract relevant information with defensive programming
-        properties = product_data.get('properties')
+        properties = product_data.get('properties', {})
         if properties is None:
             logger.warning(f"No properties section in product data: {product_data}")
             properties = {}
@@ -856,8 +821,8 @@ def sync_data_product_to_local(request, data_product_id=None):
         
         # Check if data product already exists locally
         existing_product = DataProduct.objects.filter(
-            models.Q(deterministic_urn=deterministic_urn) | 
-            models.Q(original_urn=product_urn)
+            models.Q(urn=deterministic_urn) | 
+            models.Q(urn=product_urn)
         ).first()
         
         if existing_product:
@@ -867,8 +832,6 @@ def sync_data_product_to_local(request, data_product_id=None):
             existing_product.external_url = external_url
             existing_product.domain_urn = domain_urn
             existing_product.entity_urns = entity_urns
-            existing_product.entities_count = len(entity_urns)
-            existing_product.original_urn = product_urn
             existing_product.sync_status = "SYNCED"
             existing_product.last_synced = timezone.now()
             
@@ -876,7 +839,6 @@ def sync_data_product_to_local(request, data_product_id=None):
             existing_product.properties_data = properties
             ownership_data = product_data.get('ownership')
             existing_product.ownership_data = ownership_data
-            existing_product.owners_count = len(ownership_data.get('owners', [])) if ownership_data else 0
             existing_product.entities_data = product_data.get('entities')
             existing_product.tags_data = product_data.get('tags')
             existing_product.glossary_terms_data = product_data.get('glossaryTerms')
@@ -894,19 +856,16 @@ def sync_data_product_to_local(request, data_product_id=None):
             new_product = DataProduct.objects.create(
                 name=name,
                 description=description,
-                deterministic_urn=deterministic_urn,
-                original_urn=product_urn,
+                urn=deterministic_urn,
                 external_url=external_url,
                 domain_urn=domain_urn,
                 entity_urns=entity_urns,
-                entities_count=len(entity_urns),
                 sync_status="SYNCED",
                 last_synced=timezone.now(),
                 
                 # Store comprehensive data
                 properties_data=properties,
                 ownership_data=product_data.get('ownership'),
-                owners_count=len(product_data.get('ownership').get('owners', [])) if product_data.get('ownership') else 0,
                 entities_data=product_data.get('entities'),
                 tags_data=product_data.get('tags'),
                 glossary_terms_data=product_data.get('glossaryTerms'),
@@ -950,7 +909,7 @@ def push_data_product_to_datahub(request, data_product_id):
         data_product_data = {
             "name": data_product.name,
             "description": data_product.description,
-            "id": data_product.name.lower().replace(' ', '_').replace('/', '_'),
+            "urn": data_product.urn,
         }
         
         # Add optional fields
@@ -963,10 +922,10 @@ def push_data_product_to_datahub(request, data_product_id):
         if data_product.entity_urns:
             data_product_data["entity_urns"] = data_product.entity_urns
         
-        # Try to create or update the data product in DataHub
-        if data_product.original_urn:
+        # Determine if this is an update or create operation
+        if data_product.urn:
             # Update existing data product
-            result = client.update_data_product(data_product.original_urn, data_product_data)
+            result = client.update_data_product(data_product.urn, data_product_data)
         else:
             # Create new data product
             result = client.create_data_product(data_product_data)
@@ -974,8 +933,8 @@ def push_data_product_to_datahub(request, data_product_id):
         if result and result.get("success"):
             # Update local record with successful push
             created_urn = result.get("urn")
-            if created_urn and not data_product.original_urn:
-                data_product.original_urn = created_urn
+            if created_urn and not data_product.urn:
+                data_product.urn = created_urn
             
             data_product.sync_status = "SYNCED"
             data_product.last_synced = timezone.now()
@@ -985,7 +944,7 @@ def push_data_product_to_datahub(request, data_product_id):
             return JsonResponse({
                 "success": True,
                 "message": f"Data product '{data_product.name}' pushed to DataHub successfully",
-                "datahub_urn": created_urn or data_product.original_urn
+                "datahub_urn": created_urn or data_product.urn
             })
         else:
             error_msg = result.get("error", "Unknown error") if result else "No response from DataHub"
@@ -1016,30 +975,23 @@ def resync_data_product(request, data_product_id):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
-        # Check if we have an original URN to resync
-        if not data_product.original_urn:
+        # Check if we have a URN to resync
+        if not data_product.urn:
             return JsonResponse({
                 "success": False, 
-                "error": "Cannot resync: no original DataHub URN found for this data product"
+                "error": "Cannot resync: no DataHub URN found for this data product"
             })
         
         # Fetch the latest data from DataHub
-        result = client.get_data_products(query=data_product.original_urn, start=0, count=1)
+        result = client.list_data_products(query=data_product.urn, start=0, count=1)
         
-        if not result or not result.get("success", False):
-            error_msg = result.get('error', 'Failed to fetch data product from DataHub') if result else 'No response from DataHub'
+        if not result:
+            error_msg = 'Failed to fetch data product from DataHub'
             logger.error(f"Failed to fetch data product from DataHub during resync: {error_msg}")
             return JsonResponse({"success": False, "error": error_msg})
         
-        search_results = result.get("data", {}).get("searchResults", [])
-        if not search_results:
-            return JsonResponse({
-                "success": False, 
-                "error": "Data product not found in DataHub (may have been deleted)"
-            })
-        
         # Get the updated data product data
-        product_data = search_results[0].get("entity", {})
+        product_data = result[0]
         if not product_data:
             return JsonResponse({"success": False, "error": "Invalid data product data from DataHub"})
         
@@ -1119,7 +1071,7 @@ def delete_remote_data_product(request):
             
             # Also remove from local storage if it exists
             try:
-                local_product = DataProduct.objects.filter(original_urn=product_urn).first()
+                local_product = DataProduct.objects.filter(urn=product_urn).first()
                 if local_product:
                     local_product_name = local_product.name
                     local_product.delete()
@@ -1169,19 +1121,19 @@ def add_remote_data_product_to_pr(request):
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
         # Fetch the data product details from DataHub
-        result = client.get_data_products(query=product_urn, start=0, count=1)
+        result = client.list_data_products(query=product_urn, start=0, count=1)
         
-        if not result or not result.get("success", False):
-            error_msg = result.get('error', 'Failed to fetch data product from DataHub') if result else 'No response from DataHub'
+        if not result:
+            error_msg = 'Failed to fetch data product from DataHub'
             logger.error(f"Failed to fetch data product from DataHub: {error_msg}")
             return JsonResponse({"success": False, "error": error_msg})
         
-        search_results = result.get("data", {}).get("searchResults", [])
+        search_results = result
         if not search_results:
             return JsonResponse({"success": False, "error": "Data product not found in DataHub"})
         
         # Get the data product data
-        product_data = search_results[0].get("entity", {})
+        product_data = search_results[0]
         if not product_data:
             return JsonResponse({"success": False, "error": "Invalid data product data from DataHub"})
         
@@ -1216,7 +1168,7 @@ def add_remote_data_product_to_pr(request):
         json_data = {
             "operation": "sync_remote",
             "data_product_type": "DATA_PRODUCT",
-            "original_urn": product_urn,
+            "urn": product_urn,
             "name": name,
             "description": description,
             "external_url": external_url,
@@ -1293,8 +1245,7 @@ def edit_data_product(request, data_product_id):
                     "domain_urn": data_product.domain_urn,
                     "entity_urns": data_product.entity_urns or [],
                     "sync_status": data_product.sync_status,
-                    "deterministic_urn": data_product.deterministic_urn,
-                    "original_urn": data_product.original_urn,
+                    "urn": data_product.urn,
                 }
             })
         
@@ -1388,7 +1339,7 @@ def create_local_data_product_comprehensive(request):
         deterministic_urn = get_full_urn_from_name("dataProduct", name)
         
         # Check if data product already exists
-        if DataProduct.objects.filter(deterministic_urn=deterministic_urn).exists():
+        if DataProduct.objects.filter(urn=deterministic_urn).exists():
             return JsonResponse({
                 "success": False,
                 "error": f"Data product with name '{name}' already exists"
@@ -1398,7 +1349,7 @@ def create_local_data_product_comprehensive(request):
         data_product = DataProduct.objects.create(
             name=name,
             description=description,
-            deterministic_urn=deterministic_urn,
+            urn=deterministic_urn,
             external_url=external_url if external_url else None,
             domain_urn=domain_urn if domain_urn else None,
             entity_urns=entity_urns,
@@ -1406,13 +1357,13 @@ def create_local_data_product_comprehensive(request):
             sync_status="LOCAL_ONLY"  # Mark as local-only
         )
         
-        logger.info(f"Successfully created local data product: {data_product.name} with URN: {data_product.deterministic_urn}")
+        logger.info(f"Successfully created local data product: {data_product.name} with URN: {data_product.urn}")
         
         return JsonResponse({
             "success": True,
             "message": f"Local data product '{name}' created successfully",
             "data_product_id": str(data_product.id),
-            "urn": data_product.deterministic_urn
+            "urn": data_product.urn
         })
         
     except Exception as e:
@@ -1452,25 +1403,23 @@ def get_data_products(request):
             }, status=400)
             
         # Get data products from DataHub
-        result = client.get_data_products(
-            start=start,
-            count=count,
-            query=query
+        result = client.list_data_products(
+            query=query, start=start, count=count
         )
         
-        if not result.get("success", False):
-            logger.error(f"Error getting data products from DataHub: {result.get('error', 'Unknown error')}")
+        if not result:
+            logger.error(f"Error getting data products from DataHub: No results returned")
             return JsonResponse({
                 "success": False,
-                "error": result.get("error", "Failed to get data products from DataHub")
+                "error": "Failed to get data products from DataHub"
             }, status=500)
             
         # Structure the response  
         response_data = {
-            "start": result["data"].get("start", 0),
-            "count": result["data"].get("count", 0),
-            "total": result["data"].get("total", 0),
-            "searchResults": result["data"].get("searchResults", [])
+            "start": start,
+            "count": len(result),
+            "total": len(result),  # We don't have total count from this method
+            "searchResults": [{"entity": product} for product in result]
         }
         
         # Wrap in the expected structure for the frontend
@@ -1479,7 +1428,7 @@ def get_data_products(request):
             "data": response_data
         }
         
-        logger.info(f"Found {len(response_data['searchResults'])} data products")
+        logger.info(f"Found {len(result)} data products")
         
         return JsonResponse(response)
     except Exception as e:

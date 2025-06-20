@@ -230,6 +230,12 @@ urlpatterns = [
         views_glossary.glossary_csv_upload,
         name="glossary_csv_upload",
     ),
+    # API endpoint for domain search
+    path(
+        "api/search-domains/",
+        views_glossary.search_domains,
+        name="search_domains",
+    ),
     path(
         "glossary/pull/",
         views_glossary.GlossaryPullView.as_view(),
@@ -267,6 +273,11 @@ urlpatterns = [
         views_glossary.GlossaryNodeGitPushView.as_view(),
         name="glossary_node_push_github",
     ),
+    path(
+        "glossary/nodes/<uuid:node_id>/resync/",
+        views_glossary.GlossaryNodeResyncView.as_view(),
+        name="glossary_node_resync",
+    ),
     # Glossary Terms
     path(
         "glossary/terms/create/",
@@ -298,6 +309,29 @@ urlpatterns = [
         views_glossary.GlossaryTermGitPushView.as_view(),
         name="glossary_term_push_github",
     ),
+    path(
+        "glossary/terms/<uuid:term_id>/resync/",
+        views_glossary.GlossaryTermResyncView.as_view(),
+        name="glossary_term_resync",
+    ),
+    
+    # Glossary Staged Changes API endpoints
+    path(
+        "glossary/nodes/<uuid:node_id>/stage_changes/",
+        views_glossary.GlossaryNodeAddToStagedChangesView.as_view(),
+        name="glossary_node_add_to_staged_changes",
+    ),
+    path(
+        "glossary/terms/<uuid:term_id>/stage_changes/",
+        views_glossary.GlossaryTermAddToStagedChangesView.as_view(),
+        name="glossary_term_add_to_staged_changes",
+    ),
+    path(
+        "glossary/remote/stage_changes/",
+        views_glossary.GlossaryRemoteAddToStagedChangesView.as_view(),
+        name="glossary_remote_add_to_staged_changes",
+    ),
+
     # Domains
     path("domains/", views_domains.DomainListView.as_view(), name="domain_list"),
     path(
@@ -369,6 +403,11 @@ urlpatterns = [
         "domains/add-to-pr/",
         views_domains.add_remote_domain_to_pr,
         name="domain_add_remote_to_pr",
+    ),
+    path(
+        "domains/<uuid:domain_id>/stage_changes/",
+        views_domains.add_domain_to_staged_changes,
+        name="domain_add_to_staged_changes",
     ),
     # Data Contracts
     path(

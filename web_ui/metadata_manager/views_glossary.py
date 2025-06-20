@@ -3,6 +3,7 @@ from django.views import View
 from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.db import models
 import json
@@ -23,7 +24,7 @@ from utils.datahub_utils import get_datahub_client, test_datahub_connection, get
 from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import Environment as DjangoEnvironment
 from web_ui.models import GitSettings, GitIntegration
-from .models import GlossaryNode, GlossaryTerm, Environment
+from .models import GlossaryNode, GlossaryTerm, Environment, Domain
 
 logger = logging.getLogger(__name__)
 
@@ -532,7 +533,8 @@ class GlossaryListView(View):
                 # Default behavior: create a new glossary node
                 name = request.POST.get("name")
                 description = request.POST.get("description", "")
-                parent_id = request.POST.get("parent_id")
+                parent_id = request.POST.get("parent_node")
+                domain_id = request.POST.get("domain_id")
                 
                 if not name:
                     messages.error(request, "Glossary node name is required")
@@ -545,6 +547,16 @@ class GlossaryListView(View):
                         parent = GlossaryNode.objects.get(id=parent_id)
                     except GlossaryNode.DoesNotExist:
                         messages.error(request, "Parent node not found")
+                        return redirect("metadata_manager:glossary_list")
+                
+                # Handle domain if specified
+                domain = None
+                if domain_id:
+                    try:
+                        from .models import Domain
+                        domain = Domain.objects.get(id=domain_id)
+                    except Domain.DoesNotExist:
+                        messages.error(request, "Domain not found")
                         return redirect("metadata_manager:glossary_list")
                 
                 # Generate URN
@@ -572,6 +584,7 @@ class GlossaryListView(View):
                     description=description,
                     parent=parent,
                     urn=urn,
+                    domain=domain
                 )
 
                 messages.success(
@@ -975,11 +988,21 @@ class GlossaryPullView(View):
             return redirect("metadata_manager:glossary_list")
     
     def post(self, request):
+        # Check if this is an AJAX request expecting JSON response
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+                  request.content_type == 'application/json' or \
+                  'application/json' in request.headers.get('Accept', '')
+        
+        from django.db import transaction
+        
         try:
             # Get DataHub client
             connected, client = test_datahub_connection(request)
             if not connected or not client:
-                messages.error(request, "Could not connect to DataHub")
+                error_msg = "Could not connect to DataHub"
+                if is_ajax:
+                    return JsonResponse({"success": False, "error": error_msg})
+                messages.error(request, error_msg)
                 return redirect("metadata_manager:glossary_list")
             
             # Get selected items to pull
@@ -987,36 +1010,162 @@ class GlossaryPullView(View):
             term_urns = request.POST.getlist("term_urns", [])
             
             if not node_urns and not term_urns:
-                messages.error(request, "Please select at least one item to pull")
+                error_msg = "Please select at least one item to pull"
+                if is_ajax:
+                    return JsonResponse({"success": False, "error": error_msg})
+                messages.error(request, error_msg)
                 return redirect("metadata_manager:glossary_pull")
+            
+            pulled_items = []
+            errors = []
+            
+            # Get current connection from request session
+            current_connection = None
+            try:
+                from web_ui.views import get_current_connection
+                current_connection = get_current_connection(request)
+                logger.info(f"Using connection: {current_connection.name if current_connection else 'None'}")
+            except Exception as e:
+                logger.warning(f"Could not get current connection: {str(e)}")
             
             # Pull nodes
             for urn in node_urns:
                 try:
                     node_info = client.get_glossary_node(urn)
                     if node_info:
-                        # Create or update node
-                        GlossaryNode.create_from_datahub(node_info)
+                        # Create or update node with database transaction
+                        with transaction.atomic():
+                            node = GlossaryNode.create_from_datahub(node_info, connection=current_connection)
+                            pulled_items.append(f"Node: {node.name}")
+                    else:
+                        # Node doesn't exist in DataHub anymore, create a placeholder local node
+                        try:
+                            with transaction.atomic():
+                                # Extract name from URN using the same logic as tags
+                                node_name = None
+                                try:
+                                    # Extract the part after the last colon (e.g., "NodeName" from "urn:li:glossaryNode:NodeName")
+                                    node_parts = urn.split(":")
+                                    if len(node_parts) >= 4:
+                                        # Handle complex nodes like "urn:li:glossaryNode:namespace:NodeName"
+                                        if len(node_parts) > 4:
+                                            # For nodes with namespaces like "namespace:NodeName"
+                                            node_name = ":".join(node_parts[3:])
+                                        else:
+                                            node_name = node_parts[-1]
+                                        logger.info(f"Generated name '{node_name}' from urn {urn}")
+                                    else:
+                                        node_name = node_parts[-1]
+                                        logger.info(f"Generated name '{node_name}' from urn {urn}")
+                                except Exception as e:
+                                    logger.warning(f"Failed to extract name from urn {urn}: {str(e)}")
+                                    node_name = urn.split(":")[-1] if ":" in urn else urn
+                                
+                                # Check if we already have this node locally
+                                existing_node = GlossaryNode.objects.filter(urn=urn).first()
+                                if existing_node:
+                                    pulled_items.append(f"Node: {existing_node.name} (already exists locally)")
+                                else:
+                                    # Create new local node with placeholder data
+                                    node = GlossaryNode.objects.create(
+                                        name=node_name,
+                                        description=f"Node imported from DataHub (original may have been deleted)",
+                                        urn=urn,
+                                        connection=current_connection,
+                                        sync_status="SYNCED"
+                                    )
+                                    pulled_items.append(f"Node: {node.name} (created as placeholder)")
+                        except Exception as create_error:
+                            logger.error(f"Error creating placeholder node for {urn}: {str(create_error)}")
+                            errors.append(f"Node {urn} not found in DataHub and could not create placeholder: {str(create_error)}")
                 except Exception as e:
                     logger.error(f"Error pulling node {urn}: {str(e)}")
-                    messages.error(request, f"Error pulling node {urn}")
+                    errors.append(f"Error pulling node {urn}: {str(e)}")
             
             # Pull terms
             for urn in term_urns:
                 try:
                     term_info = client.get_glossary_term(urn)
                     if term_info:
-                        # Create or update term
-                        GlossaryTerm.create_from_datahub(term_info)
+                        # Create or update term with database transaction
+                        with transaction.atomic():
+                            term = GlossaryTerm.create_from_datahub(term_info, connection=current_connection)
+                            pulled_items.append(f"Term: {term.name}")
+                    else:
+                        # Term doesn't exist in DataHub anymore, create a placeholder local term
+                        try:
+                            with transaction.atomic():
+                                # Extract name from URN using the same logic as tags
+                                term_name = None
+                                try:
+                                    # Extract the part after the last colon (e.g., "TermName" from "urn:li:glossaryTerm:TermName")
+                                    term_parts = urn.split(":")
+                                    if len(term_parts) >= 4:
+                                        # Handle complex terms like "urn:li:glossaryTerm:namespace:TermName"
+                                        if len(term_parts) > 4:
+                                            # For terms with namespaces like "namespace:TermName"
+                                            term_name = ":".join(term_parts[3:])
+                                        else:
+                                            term_name = term_parts[-1]
+                                        logger.info(f"Generated name '{term_name}' from urn {urn}")
+                                    else:
+                                        term_name = term_parts[-1]
+                                        logger.info(f"Generated name '{term_name}' from urn {urn}")
+                                except Exception as e:
+                                    logger.warning(f"Failed to extract name from urn {urn}: {str(e)}")
+                                    term_name = urn.split(":")[-1] if ":" in urn else urn
+                                
+                                # Check if we already have this term locally
+                                existing_term = GlossaryTerm.objects.filter(urn=urn).first()
+                                if existing_term:
+                                    pulled_items.append(f"Term: {existing_term.name} (already exists locally)")
+                                else:
+                                    # Create new local term with placeholder data
+                                    term = GlossaryTerm.objects.create(
+                                        name=term_name,
+                                        description=f"Term imported from DataHub (original may have been deleted)",
+                                        urn=urn,
+                                        connection=current_connection,
+                                        sync_status="SYNCED"
+                                    )
+                                    pulled_items.append(f"Term: {term.name} (created as placeholder)")
+                        except Exception as create_error:
+                            logger.error(f"Error creating placeholder term for {urn}: {str(create_error)}")
+                            errors.append(f"Term {urn} not found in DataHub and could not create placeholder: {str(create_error)}")
                 except Exception as e:
                     logger.error(f"Error pulling term {urn}: {str(e)}")
-                    messages.error(request, f"Error pulling term {urn}")
+                    errors.append(f"Error pulling term {urn}: {str(e)}")
             
-            messages.success(request, "Successfully pulled selected items from DataHub")
+            if is_ajax:
+                if errors:
+                    return JsonResponse({
+                        "success": False, 
+                        "error": f"Some items failed to import. Errors: {'; '.join(errors)}",
+                        "pulled_items": pulled_items
+                    })
+                else:
+                    return JsonResponse({
+                        "success": True, 
+                        "message": f"Successfully imported {len(pulled_items)} items from DataHub",
+                        "pulled_items": pulled_items
+                    })
+            
+            # Handle non-AJAX requests (traditional form submissions)
+            if errors:
+                for error in errors:
+                    messages.error(request, error)
+            
+            if pulled_items:
+                messages.success(request, f"Successfully pulled {len(pulled_items)} items from DataHub")
+            
             return redirect("metadata_manager:glossary_list")
+            
         except Exception as e:
             logger.error(f"Error in glossary pull view: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
+            error_msg = f"An error occurred: {str(e)}"
+            if is_ajax:
+                return JsonResponse({"success": False, "error": error_msg})
+            messages.error(request, error_msg)
             return redirect("metadata_manager:glossary_list")
 
 
@@ -1026,14 +1175,18 @@ class GlossaryNodeCreateView(View):
         """Render the create node form."""
         # Get all nodes for parent selection
         nodes = GlossaryNode.objects.all().order_by("name")
-        context = {"page_title": "Create Glossary Node", "nodes": nodes}
+        context = {
+            "page_title": "Create Glossary Node", 
+            "nodes": nodes
+        }
         return render(request, "metadata_manager/glossary/node_form.html", context)
 
     def post(self, request):
         try:
             name = request.POST.get("name")
             description = request.POST.get("description", "")
-            parent_id = request.POST.get("parent_id")
+            parent_id = request.POST.get("parent_node")
+            deprecated = request.POST.get("deprecated", "false") == "true"
             
             # Get ownership data
             owners = request.POST.getlist("owners")
@@ -1052,9 +1205,13 @@ class GlossaryNodeCreateView(View):
                     messages.error(request, "Parent node not found")
                     return redirect("metadata_manager:glossary_list")
             
-            # Create the node
+            # Create the node with LOCAL_ONLY status
             node = GlossaryNode.objects.create(
-                name=name, description=description, parent=parent
+                name=name, 
+                description=description, 
+                parent=parent,
+                deprecated=deprecated,
+                sync_status="LOCAL_ONLY"
             )
             
             # Handle ownership data if provided
@@ -1067,10 +1224,9 @@ class GlossaryNodeCreateView(View):
                             "ownershipType": ownership_type
                         })
                 
-                # Store ownership data as JSON in a field (if the model supports it)
-                # or handle it through DataHub API when deploying
-                if hasattr(node, 'ownership_data'):
-                    node.ownership_data = json.dumps(ownership_data)
+                # Store ownership data as dictionary in JSONField
+                if ownership_data:
+                    node.ownership_data = ownership_data
                     node.save()
             
             messages.success(request, f"Glossary node '{name}' created successfully")
@@ -1085,7 +1241,13 @@ class GlossaryNodeDetailView(View):
     def get(self, request, node_id):
         try:
             node = get_object_or_404(GlossaryNode, id=node_id)
-            context = {"page_title": f"Glossary Node: {node.name}", "node": node}
+            # Get all nodes for parent selection (excluding self to prevent circular references)
+            nodes = GlossaryNode.objects.exclude(id=node_id).order_by("name")
+            context = {
+                "page_title": f"Glossary Node: {node.name}", 
+                "node": node,
+                "nodes": nodes
+            }
             return render(
                 request, "metadata_manager/glossary/node_detail.html", context
             )
@@ -1099,8 +1261,13 @@ class GlossaryNodeDetailView(View):
             node = get_object_or_404(GlossaryNode, id=node_id)
             name = request.POST.get("name")
             description = request.POST.get("description", "")
-            parent_id = request.POST.get("parent_id")
+            parent_id = request.POST.get("parent_node")
             color_hex = request.POST.get("color_hex", "")
+            deprecated = request.POST.get("deprecated", "false") == "true"
+            
+            # Get ownership data
+            owners = request.POST.getlist("owners")
+            ownership_types = request.POST.getlist("ownership_types")
             
             if not name:
                 messages.error(request, "Glossary node name is required")
@@ -1111,6 +1278,7 @@ class GlossaryNodeDetailView(View):
             # Update the node
             node.name = name
             node.description = description
+            node.deprecated = deprecated
             
             # Handle color_hex field safely (may not exist in database schema)
             try:
@@ -1128,6 +1296,23 @@ class GlossaryNodeDetailView(View):
                     return redirect(
                         "metadata_manager:glossary_node_detail", node_id=node_id
                     )
+            else:
+                node.parent = None
+            
+            # Handle ownership data if provided
+            if owners and ownership_types and len(owners) == len(ownership_types):
+                ownership_data = []
+                for owner, ownership_type in zip(owners, ownership_types):
+                    if owner and ownership_type:  # Skip empty entries
+                        ownership_data.append({
+                            "owner": owner,
+                            "ownershipType": ownership_type
+                        })
+                
+                # Store ownership data as dictionary in JSONField
+                node.ownership_data = ownership_data if ownership_data else None
+            else:
+                node.ownership_data = None
             
             node.save()
             messages.success(request, f"Glossary node '{name}' updated successfully")
@@ -1139,13 +1324,30 @@ class GlossaryNodeDetailView(View):
     
     def delete(self, request, node_id):
         try:
-            # ... existing implementation ...
-            messages.success(request, f"Glossary node '{name}' deleted successfully")
-            return redirect("metadata_manager:glossary_list")
+            node = get_object_or_404(GlossaryNode, id=node_id)
+            node_name = node.name
+            
+            # Check if node has children (terms or other nodes)
+            child_nodes_count = GlossaryNode.objects.filter(parent=node).count()
+            child_terms_count = GlossaryTerm.objects.filter(parent_node=node).count()
+            
+            if child_nodes_count > 0 or child_terms_count > 0:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Cannot delete node '{node_name}' because it has {child_nodes_count + child_terms_count} child items. Please delete all child items first."
+                })
+            
+            node.delete()
+            return JsonResponse({
+                "success": True,
+                "message": f"Glossary node '{node_name}' deleted successfully"
+            })
         except Exception as e:
             logger.error(f"Error deleting glossary node: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:glossary_list")
+            return JsonResponse({
+                "success": False,
+                "error": f"An error occurred: {str(e)}"
+            })
 
 
 class GlossaryNodeDeployView(View):
@@ -1158,35 +1360,38 @@ class GlossaryNodeDeployView(View):
             node = get_object_or_404(GlossaryNode, id=node_id)
             
             if not node.can_deploy:
-                messages.error(request, f"Node '{node.name}' cannot be deployed")
-                return redirect(
-                    "metadata_manager:glossary_node_detail", node_id=node_id
-                )
+                return JsonResponse({
+                    "success": False, 
+                    "error": f"Node '{node.name}' cannot be deployed"
+                })
             
             # Get DataHub client
             connected, client = test_datahub_connection(request)
             if not connected or not client:
-                messages.error(request, "Could not connect to DataHub")
-                return redirect(
-                    "metadata_manager:glossary_node_detail", node_id=node_id
-                )
+                return JsonResponse({
+                    "success": False, 
+                    "error": "Could not connect to DataHub"
+                })
             
             # Deploy the node
             success = node.deploy_to_datahub(client)
             if success:
-                messages.success(
-                    request, f"Successfully deployed node '{node.name}' to DataHub"
-                )
+                return JsonResponse({
+                    "success": True,
+                    "message": f"Successfully deployed node '{node.name}' to DataHub"
+                })
             else:
-                messages.error(
-                    request, f"Failed to deploy node '{node.name}' to DataHub"
-                )
-            
-            return redirect("metadata_manager:glossary_node_detail", node_id=node_id)
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Failed to deploy node '{node.name}' to DataHub"
+                })
+                
         except Exception as e:
             logger.error(f"Error in glossary node deploy view: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:glossary_list")
+            return JsonResponse({
+                "success": False, 
+                "error": f"An error occurred: {str(e)}"
+            })
 
 
 class GlossaryTermCreateView(View):
@@ -1194,15 +1399,23 @@ class GlossaryTermCreateView(View):
         """Render the create term form."""
         # Get all nodes for parent selection
         nodes = GlossaryNode.objects.all().order_by("name")
-        context = {"page_title": "Create Glossary Term", "nodes": nodes}
+        # Get all domains for domain selection
+        domains = Domain.objects.all().order_by("name")
+        context = {
+            "page_title": "Create Glossary Term", 
+            "nodes": nodes,
+            "domains": domains
+        }
         return render(request, "metadata_manager/glossary/term_form.html", context)
 
     def post(self, request):
         try:
             name = request.POST.get("name")
             description = request.POST.get("description", "")
-            parent_node_id = request.POST.get("parent_node_id")
+            parent_node_id = request.POST.get("parent_node")
+            domain_id = request.POST.get("domain")
             term_source = request.POST.get("term_source", "")
+            deprecated = request.POST.get("deprecated", "false") == "true"
             
             # Get ownership data
             owners = request.POST.getlist("owners")
@@ -1221,12 +1434,24 @@ class GlossaryTermCreateView(View):
                     messages.error(request, "Parent node not found")
                     return redirect("metadata_manager:glossary_list")
             
-            # Create the term
+            # Handle domain if specified
+            domain = None
+            if domain_id:
+                try:
+                    domain = Domain.objects.get(id=domain_id)
+                except Domain.DoesNotExist:
+                    messages.error(request, "Domain not found")
+                    return redirect("metadata_manager:glossary_list")
+            
+            # Create the term with LOCAL_ONLY status
             term = GlossaryTerm.objects.create(
                 name=name,
                 description=description,
                 parent_node=parent_node,
+                domain=domain,
                 term_source=term_source,
+                deprecated=deprecated,
+                sync_status="LOCAL_ONLY"
             )
             
             # Handle ownership data if provided
@@ -1239,10 +1464,9 @@ class GlossaryTermCreateView(View):
                             "ownershipType": ownership_type
                         })
                 
-                # Store ownership data as JSON in a field (if the model supports it)
-                # or handle it through DataHub API when deploying
-                if hasattr(term, 'ownership_data'):
-                    term.ownership_data = json.dumps(ownership_data)
+                # Store ownership data as dictionary in JSONField
+                if ownership_data:
+                    term.ownership_data = ownership_data
                     term.save()
             
             messages.success(request, f"Glossary term '{name}' created successfully")
@@ -1257,7 +1481,16 @@ class GlossaryTermDetailView(View):
     def get(self, request, term_id):
         try:
             term = get_object_or_404(GlossaryTerm, id=term_id)
-            context = {"page_title": f"Glossary Term: {term.name}", "term": term}
+            # Get all nodes for parent selection
+            nodes = GlossaryNode.objects.all().order_by("name")
+            # Get all domains for domain selection
+            domains = Domain.objects.all().order_by("name")
+            context = {
+                "page_title": f"Glossary Term: {term.name}", 
+                "term": term,
+                "nodes": nodes,
+                "domains": domains
+            }
             return render(
                 request, "metadata_manager/glossary/term_detail.html", context
             )
@@ -1271,17 +1504,24 @@ class GlossaryTermDetailView(View):
             term = get_object_or_404(GlossaryTerm, id=term_id)
             name = request.POST.get("name")
             description = request.POST.get("description", "")
-            parent_node_id = request.POST.get("parent_node_id")
+            parent_node_id = request.POST.get("parent_node")
+            domain_id = request.POST.get("domain")
             term_source = request.POST.get("term_source", "")
+            deprecated = request.POST.get("deprecated", "false") == "true"
+            
+            # Get ownership data
+            owners = request.POST.getlist("owners")
+            ownership_types = request.POST.getlist("ownership_types")
             
             if not name:
                 messages.error(request, "Glossary term name is required")
-            return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
+                return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
             
             # Update the term
             term.name = name
             term.description = description
             term.term_source = term_source
+            term.deprecated = deprecated
                 
             # Handle parent node if specified
             if parent_node_id:
@@ -1293,14 +1533,44 @@ class GlossaryTermDetailView(View):
                     return redirect(
                         "metadata_manager:glossary_term_detail", term_id=term_id
                     )
+            else:
+                term.parent_node = None
             
-                    term.save()
+            # Handle domain if specified
+            if domain_id:
+                try:
+                    domain = Domain.objects.get(id=domain_id)
+                    term.domain = domain
+                except Domain.DoesNotExist:
+                    messages.error(request, "Domain not found")
+                    return redirect(
+                        "metadata_manager:glossary_term_detail", term_id=term_id
+                    )
+            else:
+                term.domain = None
+            
+            # Handle ownership data if provided
+            if owners and ownership_types and len(owners) == len(ownership_types):
+                ownership_data = []
+                for owner, ownership_type in zip(owners, ownership_types):
+                    if owner and ownership_type:  # Skip empty entries
+                        ownership_data.append({
+                            "owner": owner,
+                            "ownershipType": ownership_type
+                        })
+                
+                # Store ownership data as dictionary in JSONField
+                term.ownership_data = ownership_data if ownership_data else None
+            else:
+                term.ownership_data = None
+            
+            term.save()
             messages.success(request, f"Glossary term '{name}' updated successfully")
             return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
         except Exception as e:
             logger.error(f"Error updating glossary term: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:glossary_list")
+            return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
             
     def delete(self, request, term_id):
         try:
@@ -1330,35 +1600,38 @@ class GlossaryTermDeployView(View):
             term = get_object_or_404(GlossaryTerm, id=term_id)
             
             if not term.can_deploy:
-                messages.error(request, f"Term '{term.name}' cannot be deployed")
-                return redirect(
-                    "metadata_manager:glossary_term_detail", term_id=term_id
-                )
+                return JsonResponse({
+                    "success": False, 
+                    "error": f"Term '{term.name}' cannot be deployed"
+                })
             
             # Get DataHub client
             connected, client = test_datahub_connection(request)
             if not connected or not client:
-                messages.error(request, "Could not connect to DataHub")
-                return redirect(
-                    "metadata_manager:glossary_term_detail", term_id=term_id
-                )
+                return JsonResponse({
+                    "success": False, 
+                    "error": "Could not connect to DataHub"
+                })
             
             # Deploy the term
             success = term.deploy_to_datahub(client)
             if success:
-                messages.success(
-                    request, f"Successfully deployed term '{term.name}' to DataHub"
-                )
+                return JsonResponse({
+                    "success": True,
+                    "message": f"Successfully deployed term '{term.name}' to DataHub"
+                })
             else:
-                messages.error(
-                    request, f"Failed to deploy term '{term.name}' to DataHub"
-                )
-            
-            return redirect("metadata_manager:glossary_term_detail", term_id=term_id)
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Failed to deploy term '{term.name}' to DataHub"
+                })
+                
         except Exception as e:
             logger.error(f"Error in glossary term deploy view: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:glossary_list")
+            return JsonResponse({
+                "success": False, 
+                "error": f"An error occurred: {str(e)}"
+            })
 
 
 class GlossaryTermGitPushView(View):
@@ -1571,6 +1844,18 @@ def get_remote_glossary_data(request):
                 custom_properties = remote_match.get("customProperties", []) or []
                 properties = remote_match.get("properties", {}) or {}
                 
+                # Sync ownership data to local database if it exists
+                if ownership_data and ownership_data != local_node.ownership_data:
+                    local_node.ownership_data = ownership_data
+                    local_node.save(update_fields=["ownership_data"])
+                    logger.debug(f"Updated node {local_node.name} ownership data")
+                
+                # Sync relationships data to local database if it exists
+                if relationships_data and relationships_data != local_node.relationships_data:
+                    local_node.relationships_data = relationships_data
+                    local_node.save(update_fields=["relationships_data"])
+                    logger.debug(f"Updated node {local_node.name} relationships data")
+                
                 # Process the comprehensive data
                 processed_data = {
                     "owners_count": len(ownership_data),
@@ -1630,6 +1915,9 @@ def get_remote_glossary_data(request):
                 "parent_node_urn": str(local_term.parent_node.urn) if local_term.parent_node and local_term.parent_node.urn else None,
                 "parent_node_id": str(local_term.parent_node.id) if local_term.parent_node else None,
                 "term_source": getattr(local_term, 'term_source', '') or "",
+                # Domain information for terms
+                "domain_urn": local_term.domain_urn if hasattr(local_term, 'domain_urn') else None,
+                "domain_name": local_term.domain.name if hasattr(local_term, 'domain') and local_term.domain else None,
                 # Initialize empty ownership and relationships for local-only items
                 "owners_count": 0,
                 "owner_names": [],
@@ -1664,6 +1952,23 @@ def get_remote_glossary_data(request):
                 custom_properties = remote_match.get("customProperties", []) or []
                 properties = remote_match.get("properties", {}) or {}
                 
+                # Extract domain information for terms - use the processed domain data from comprehensive query
+                domain_info = remote_match.get("domain", {}) or {}
+                domain_urn = domain_info.get("urn") if domain_info else None
+                domain_name = domain_info.get("name") if domain_info else None
+                
+                # Sync ownership data to local database if it exists
+                if ownership_data and ownership_data != local_term.ownership_data:
+                    local_term.ownership_data = ownership_data
+                    local_term.save(update_fields=["ownership_data"])
+                    logger.debug(f"Updated term {local_term.name} ownership data")
+                
+                # Sync relationships data to local database if it exists
+                if relationships_data and relationships_data != local_term.relationships_data:
+                    local_term.relationships_data = relationships_data
+                    local_term.save(update_fields=["relationships_data"])
+                    logger.debug(f"Updated term {local_term.name} relationships data")
+                
                 # Process the comprehensive data
                 processed_data = {
                     "owners_count": len(ownership_data),
@@ -1679,6 +1984,8 @@ def get_remote_glossary_data(request):
                 local_item_data.update({
                     "sync_status": local_term.sync_status,
                     "sync_status_display": local_term.get_sync_status_display(),
+                    "domain_urn": domain_urn,
+                    "domain_name": domain_name,
                     "owners_count": processed_data["owners_count"],
                     "owner_names": processed_data["owner_names"],
                     "relationships_count": processed_data["relationships_count"],
@@ -1759,6 +2066,11 @@ def get_remote_glossary_data(request):
                 name = properties.get("name", "Unknown")
                 description = properties.get("description", "")
                 
+                # Extract domain information for remote-only terms - use processed domain data
+                domain_info = remote_term.get("domain", {}) or {}
+                domain_urn = domain_info.get("urn") if domain_info else None
+                domain_name = domain_info.get("name") if domain_info else None
+                
                 # Process comprehensive data
                 processed_data = {
                     "owners_count": len(ownership_data),
@@ -1779,6 +2091,8 @@ def get_remote_glossary_data(request):
                     "sync_status_display": "Remote Only",
                     "parent_node_urn": remote_term.get("parentNodes", [{}])[0].get("urn") if remote_term.get("parentNodes") else None,
                     "term_source": remote_term.get("termSource", "INTERNAL"),
+                    "domain_urn": domain_urn,
+                    "domain_name": domain_name,
                     "owners_count": processed_data["owners_count"],
                     "owner_names": processed_data["owner_names"],
                     "relationships_count": processed_data["relationships_count"],
@@ -1870,6 +2184,126 @@ def get_remote_glossary_data(request):
             "error": str(e)
         })
 
+
+@csrf_exempt
+def search_domains(request):
+    """Search for domains in DataHub and return combined remote + local results"""
+    try:
+        if request.method != 'POST':
+            return JsonResponse({
+                "success": False,
+                "error": "Only POST method allowed"
+            })
+        
+        try:
+            data = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            logger.error("Invalid JSON in request body")
+            data = {}
+        
+        # Extract GraphQL query parameters
+        input_data = data.get('input', {})
+        query = input_data.get('query', '*')
+        start = input_data.get('start', 0)
+        count = input_data.get('count', 100)
+        types = input_data.get('types', ['DOMAIN'])
+        
+        # Get DataHub client
+        client = get_datahub_client_from_request(request)
+        if not client or not client.test_connection():
+            # Return local domains only if no DataHub connection
+            local_domains = Domain.objects.all().values('urn', 'name', 'description')
+            return JsonResponse({
+                "success": True,
+                "data": {
+                    "searchAcrossEntities": {
+                        "start": 0,
+                        "count": len(local_domains),
+                        "total": len(local_domains),
+                        "searchResults": []
+                    }
+                },
+                "local_domains": list(local_domains)
+            })
+        
+        # Search domains in DataHub using GraphQL
+        try:
+            # Use the GraphQL query format expected by the frontend
+            graphql_query = """
+            query GetDomains($input: SearchAcrossEntitiesInput!) {
+                searchAcrossEntities(input: $input) {
+                    start
+                    count
+                    total
+                    searchResults {
+                        entity {
+                            urn
+                            type
+                            ... on Domain {
+                                properties {
+                                    name
+                                    description
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            """
+            
+            variables = {
+                "input": {
+                    "start": start,
+                    "count": count,
+                    "query": query,
+                    "types": types
+                }
+            }
+            
+            # Execute GraphQL query
+            result = client.execute_graphql(graphql_query, variables)
+            
+            if not result or 'data' not in result:
+                logger.warning("No data returned from domains GraphQL query")
+                result = {
+                    "data": {
+                        "searchAcrossEntities": {
+                            "start": 0,
+                            "count": 0,
+                            "total": 0,
+                            "searchResults": []
+                        }
+                    }
+                }
+        
+        except Exception as e:
+            logger.error(f"Error executing domains GraphQL query: {e}")
+            result = {
+                "data": {
+                    "searchAcrossEntities": {
+                        "start": 0,
+                        "count": 0,
+                        "total": 0,
+                        "searchResults": []
+                    }
+                }
+            }
+        
+        # Get local domains
+        local_domains = Domain.objects.all().values('urn', 'name', 'description')
+        
+        return JsonResponse({
+            "success": True,
+            "data": result.get("data", {}),
+            "local_domains": list(local_domains)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in search_domains: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
 
 @require_POST
 def glossary_csv_upload(request):
@@ -2068,3 +2502,463 @@ def glossary_csv_upload(request):
             "success": False,
             "error": str(e)
         })
+
+
+class GlossaryDeleteRemoteView(View):
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            urn = data.get('urn')
+            item_type = data.get('type', '').lower()
+            
+            if not urn:
+                return JsonResponse({
+                    "success": False,
+                    "error": "URN is required"
+                })
+            
+            if item_type not in ['term', 'node']:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Invalid item type. Must be 'term' or 'node'"
+                })
+            
+            # Get DataHub client
+            connected, client = test_datahub_connection(request)
+            if not connected or not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Not connected to DataHub"
+                })
+            
+            # Delete from DataHub
+            try:
+                if item_type == 'term':
+                    # For now, we don't have a delete_glossary_term method in the client
+                    # This would need to be implemented in the DataHub REST client
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Deleting glossary terms from DataHub is not yet implemented"
+                    })
+                else:
+                    # For now, we don't have a delete_glossary_node method in the client
+                    # This would need to be implemented in the DataHub REST client
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Deleting glossary nodes from DataHub is not yet implemented"
+                    })
+                
+            except Exception as e:
+                logger.error(f"Error deleting {item_type} from DataHub: {str(e)}")
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Error deleting {item_type} from DataHub: {str(e)}"
+                })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                "success": False,
+                "error": "Invalid JSON data"
+            })
+        except Exception as e:
+            logger.error(f"Error in delete remote: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"An error occurred: {str(e)}"
+            })
+
+
+class GlossaryNodeResyncView(View):
+    """View to resync a glossary node from DataHub"""
+    
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request, node_id):
+        try:
+            # Get the node
+            try:
+                node = GlossaryNode.objects.get(id=node_id)
+            except GlossaryNode.DoesNotExist:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Glossary node not found"
+                })
+            
+            # Get DataHub client
+            connected, client = test_datahub_connection(request)
+            if not connected or not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Not connected to DataHub"
+                })
+            
+            # Resync from DataHub
+            try:
+                if node.urn:
+                    # Get fresh data from DataHub
+                    node_data = client.get_glossary_node(node.urn)
+                    if node_data:
+                        # Update the node with fresh data
+                        updated_node = GlossaryNode.create_from_datahub(node_data, connection=node.connection)
+                        return JsonResponse({
+                            "success": True,
+                            "message": f"Node '{updated_node.name}' resynced successfully from DataHub"
+                        })
+                    else:
+                        return JsonResponse({
+                            "success": False,
+                            "error": f"Node '{node.name}' not found in DataHub"
+                        })
+                else:
+                    return JsonResponse({
+                        "success": False,
+                        "error": f"Node '{node.name}' has no URN and cannot be resynced"
+                    })
+                
+            except Exception as e:
+                logger.error(f"Error resyncing node {node.name}: {str(e)}")
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Error resyncing node from DataHub: {str(e)}"
+                })
+            
+        except Exception as e:
+            logger.error(f"Error in node resync: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"An error occurred: {str(e)}"
+            })
+
+
+class GlossaryTermResyncView(View):
+    """View to resync a glossary term from DataHub"""
+    
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request, term_id):
+        try:
+            # Get the term
+            try:
+                term = GlossaryTerm.objects.get(id=term_id)
+            except GlossaryTerm.DoesNotExist:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Glossary term not found"
+                })
+            
+            # Get DataHub client
+            connected, client = test_datahub_connection(request)
+            if not connected or not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Not connected to DataHub"
+                })
+            
+            # Resync from DataHub
+            try:
+                if term.urn:
+                    # Get fresh data from DataHub
+                    term_data = client.get_glossary_term(term.urn)
+                    if term_data:
+                        # Update the term with fresh data
+                        updated_term = GlossaryTerm.create_from_datahub(term_data, connection=term.connection)
+                        return JsonResponse({
+                            "success": True,
+                            "message": f"Term '{updated_term.name}' resynced successfully from DataHub"
+                        })
+                    else:
+                        return JsonResponse({
+                            "success": False,
+                            "error": f"Term '{term.name}' not found in DataHub"
+                        })
+                else:
+                    return JsonResponse({
+                        "success": False,
+                        "error": f"Term '{term.name}' has no URN and cannot be resynced"
+                    })
+                
+            except Exception as e:
+                logger.error(f"Error resyncing term {term.name}: {str(e)}")
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Error resyncing term from DataHub: {str(e)}"
+                })
+            
+        except Exception as e:
+            logger.error(f"Error in term resync: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"An error occurred: {str(e)}"
+            })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class GlossaryNodeAddToStagedChangesView(View):
+    """API endpoint to add a glossary node to staged changes"""
+    
+    def post(self, request, node_id):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.glossary_actions import add_glossary_to_staged_changes
+            
+            # Get the node
+            try:
+                node = GlossaryNode.objects.get(id=node_id)
+            except GlossaryNode.DoesNotExist:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Glossary node with ID {node_id} not found"
+                }, status=404)
+            
+            logger.info(f"Found glossary node: {node.name} (ID: {node.id})")
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Create node data dictionary
+            node_data = {
+                "id": str(node.id),
+                "name": node.name,
+                "description": node.description,
+                "urn": node.urn,
+                "parent_id": str(node.parent.id) if node.parent else None,
+                "parent_urn": node.parent.urn if node.parent else None,
+            }
+            
+            if node.ownership_data:
+                node_data["ownership_data"] = node.ownership_data
+            
+            # Add node to staged changes using the correct function
+            result = add_glossary_to_staged_changes(
+                entity_data=node_data,
+                entity_type="node",
+                environment=environment_name,
+                owner=owner,
+                base_dir=None,  # Let the function determine the base directory
+                mutation_name=mutation_name
+            )
+            
+            # Provide feedback about files created
+            files_created = list(result.values())
+            files_created_count = len(files_created)
+            
+            # Calculate expected files (now 1 combined MCP file instead of separate files)
+            expected_files = 1  # single combined MCP file
+            
+            files_skipped_count = expected_files - files_created_count
+            
+            if files_skipped_count > 0:
+                message = f"Glossary node added to staged changes: {files_created_count} file created, {files_skipped_count} file skipped (unchanged)"
+            else:
+                message = f"Glossary node added to staged changes: {files_created_count} file created"
+            
+            # Return success response
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "files_skipped_count": files_skipped_count
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding glossary node to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class GlossaryTermAddToStagedChangesView(View):
+    """API endpoint to add a glossary term to staged changes"""
+    
+    def post(self, request, term_id):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.glossary_actions import add_glossary_to_staged_changes
+            
+            # Get the term
+            try:
+                term = GlossaryTerm.objects.get(id=term_id)
+            except GlossaryTerm.DoesNotExist:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Glossary term with ID {term_id} not found"
+                }, status=404)
+            
+            logger.info(f"Found glossary term: {term.name} (ID: {term.id})")
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Create term data dictionary
+            term_data = {
+                "id": str(term.id),
+                "name": term.name,
+                "description": term.description,
+                "urn": term.urn,
+                "parent_id": str(term.parent_node.id) if term.parent_node else None,
+                "parent_urn": term.parent_node.urn if term.parent_node else None,
+                "source_ref": term.term_source,  # Use the correct field name
+            }
+            
+            if term.ownership_data:
+                term_data["ownership_data"] = term.ownership_data
+            
+            # Add term to staged changes using the correct function
+            result = add_glossary_to_staged_changes(
+                entity_data=term_data,
+                entity_type="term",
+                environment=environment_name,
+                owner=owner,
+                base_dir=None,  # Let the function determine the base directory
+                mutation_name=mutation_name
+            )
+            
+            # Provide feedback about files created
+            files_created = list(result.values())
+            files_created_count = len(files_created)
+            
+            # Calculate expected files (now 1 combined MCP file instead of separate files)
+            expected_files = 1  # single combined MCP file
+            
+            files_skipped_count = expected_files - files_created_count
+            
+            if files_skipped_count > 0:
+                message = f"Glossary term added to staged changes: {files_created_count} file created, {files_skipped_count} file skipped (unchanged)"
+            else:
+                message = f"Glossary term added to staged changes: {files_created_count} file created"
+            
+            # Return success response
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "files_skipped_count": files_skipped_count
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding glossary term to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class GlossaryRemoteAddToStagedChangesView(View):
+    """API endpoint to add a remote glossary item to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.glossary_actions import add_glossary_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get the item data from the request
+            item_data = data.get('item_data')
+            if not item_data:
+                return JsonResponse({
+                    "success": False,
+                    "error": "No item_data provided"
+                }, status=400)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Extract entity type from the item data
+            entity_type = item_data.get('type')  # 'node' or 'term'
+            if not entity_type:
+                return JsonResponse({
+                    "success": False,
+                    "error": "No entity type specified in item_data"
+                }, status=400)
+            
+            # Add remote item to staged changes using the correct function
+            result = add_glossary_to_staged_changes(
+                entity_data=item_data,
+                entity_type=entity_type,
+                environment=environment_name,
+                owner=owner,
+                base_dir=None,  # Let the function determine the base directory
+                mutation_name=mutation_name
+            )
+            
+            # Provide feedback about files created
+            files_created = list(result.values())
+            files_created_count = len(files_created)
+            
+            # Calculate expected files (now 1 combined MCP file instead of separate files)
+            expected_files = 1  # single combined MCP file
+            
+            files_skipped_count = expected_files - files_created_count
+            
+            if files_skipped_count > 0:
+                message = f"Remote glossary {entity_type} added to staged changes: {files_created_count} file created, {files_skipped_count} file skipped (unchanged)"
+            else:
+                message = f"Remote glossary {entity_type} added to staged changes: {files_created_count} file created"
+            
+            # Return success response
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "files_skipped_count": files_skipped_count
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding remote glossary item to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+

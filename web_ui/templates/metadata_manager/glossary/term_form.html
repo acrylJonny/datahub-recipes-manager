@@ -32,6 +32,8 @@
                                 <option value="">-- No Parent --</option>
                                 {% for node in nodes %}
                                     <option value="{{ node.id }}">{{ node.name }}</option>
+                                {% empty %}
+                                    <option value="" disabled>No nodes available</option>
                                 {% endfor %}
                             </select>
                         </div>

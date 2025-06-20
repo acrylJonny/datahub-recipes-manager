@@ -86,6 +86,8 @@ TEMPLATES = [
                 "web_ui.context_processors.default_environment",
                 # Make connections available in all templates
                 "web_ui.context_processors.connections_context",
+                # Add cache busting for static files
+                "web_ui.context_processors.cache_busting",
             ],
         },
     },

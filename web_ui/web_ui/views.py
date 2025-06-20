@@ -182,20 +182,22 @@ def dashboard_data(request):
                 'name': env.name,
                 'description': env.description or '',
                 'is_default': env.is_default,
-                'datahub_url': env.datahub_url,
-                'git_branch': env.git_branch,
                 'connected': False,
                 'recipes_count': 0,
                 'policies_count': 0
             }
             
-            # Test connection for this environment if it has DataHub config
-            if env.datahub_url and env.datahub_token:
-                try:
+            # Test connection using the default DataHub connection
+            # Note: Environment objects don't have datahub_url/datahub_token fields.
+            # Using the default connection for now.
+            try:
+                from web_ui.models import Connection
+                default_connection = Connection.get_default()
+                if default_connection and default_connection.datahub_url and default_connection.datahub_token:
                     from utils.datahub_utils import DataHubClient
                     env_client = DataHubClient(
-                        server=env.datahub_url,
-                        token=env.datahub_token
+                        server=default_connection.datahub_url,
+                        token=default_connection.datahub_token
                     )
                     env_data['connected'] = env_client.test_connection()
                     
@@ -206,8 +208,8 @@ def dashboard_data(request):
                             env_data['recipes_count'] = len(env_recipes) if env_recipes else 0
                         except:
                             pass
-                except Exception as e:
-                    logger.debug(f"Error testing environment {env.name}: {str(e)}")
+            except Exception as e:
+                logger.debug(f"Error testing connection for environment {env.name}: {str(e)}")
             
             environments_data.append(env_data)
     except Exception as e:

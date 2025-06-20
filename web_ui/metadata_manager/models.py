@@ -3,6 +3,7 @@ from django.utils import timezone
 import uuid
 from django.contrib.sessions.models import Session
 import json
+import logging
 
 
 class BaseMetadataModel(models.Model):
@@ -21,8 +22,8 @@ class BaseMetadataModel(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
 
-    # URN handling
-    urn = models.CharField(max_length=255, unique=True)
+    # URN handling - NULL for local items not yet deployed
+    urn = models.CharField(max_length=255, null=True, blank=True)
 
     # Status tracking
     datahub_id = models.CharField(
@@ -44,6 +45,13 @@ class BaseMetadataModel(models.Model):
 
     class Meta:
         abstract = True
+        constraints = [
+            models.UniqueConstraint(
+                fields=['urn'],
+                condition=models.Q(urn__isnull=False),
+                name='unique_urn_when_not_null'
+            )
+        ]
 
     def __str__(self):
         return self.name
@@ -124,12 +132,17 @@ class GlossaryNode(BaseMetadataModel):
     parent = models.ForeignKey(
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children"
     )
+    
     color_hex = models.CharField(
         max_length=20,
         blank=True,
         null=True,
         help_text="Color in hex format (e.g. #FF5733)",
     )
+    deprecated = models.BooleanField(default=False, help_text="Whether this node is deprecated")
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
 
     class Meta:
         verbose_name = "Glossary Node"
@@ -152,6 +165,10 @@ class GlossaryNode(BaseMetadataModel):
 
         if self.parent:
             data["parent_urn"] = self.parent.urn
+            
+        # Add ownership information if available
+        if self.ownership_data:
+            data["ownership_data"] = self.ownership_data
 
         return data
 
@@ -159,6 +176,98 @@ class GlossaryNode(BaseMetadataModel):
     def can_deploy(self):
         """Check if this node can be deployed to DataHub"""
         return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @classmethod
+    def create_from_datahub(cls, node_data, connection=None):
+        """Create or update a glossary node from DataHub data"""
+        import json
+        from django.utils import timezone
+        
+        # Extract basic properties - use the already processed fields first, fallback to properties
+        name = node_data.get("name") or node_data.get("properties", {}).get("name", "Unknown")
+        description = node_data.get("description") or node_data.get("properties", {}).get("description", "")
+        urn = node_data.get("urn", "")
+        
+        if not urn:
+            raise ValueError("Node URN is required")
+        
+        # Convert empty string to None for proper NULL handling
+        urn = urn if urn else None
+        
+        # Extract datahub_id from URN (last part after colon)
+        datahub_id = urn.split(":")[-1] if urn and ":" in urn else None
+        
+        # Handle parent node
+        parent = None
+        parent_nodes = node_data.get("parentNodes", [])
+        if parent_nodes and len(parent_nodes) > 0:
+            parent_urn = parent_nodes[0].get("urn")
+            if parent_urn:
+                try:
+                    parent = cls.objects.get(urn=parent_urn)
+                except cls.DoesNotExist:
+                    # Parent doesn't exist locally yet, we'll handle this later
+                    pass
+        
+        # Extract ownership data
+        ownership_data = None
+        if "ownership" in node_data and "owners" in node_data["ownership"]:
+            ownership_data = node_data["ownership"]["owners"]
+        
+        # Create or update the node
+        node, created = cls.objects.update_or_create(
+            urn=urn,
+            defaults={
+                "name": name,
+                "description": description,
+                "datahub_id": datahub_id,
+                "parent": parent,
+                "ownership_data": ownership_data,
+                "connection": connection,
+                "sync_status": "SYNCED",
+                "last_synced": timezone.now(),
+            }
+        )
+        
+        return node
+
+    def deploy_to_datahub(self, client):
+        """Deploy this glossary node to DataHub"""
+        try:
+            # Prepare node data for deployment
+            node_data = {
+                "properties": {
+                    "name": self.name,
+                    "description": self.description or "",
+                }
+            }
+            
+            # Add parent node if exists
+            if self.parent and self.parent.urn:
+                node_data["parentNode"] = {"urn": self.parent.urn}
+            
+            # Add ownership data if exists
+            if self.ownership_data:
+                node_data["ownership"] = {"owners": self.ownership_data}
+            
+            # Deploy using the client
+            success = client.import_glossary_node(node_data)
+            
+            if success:
+                # Update sync status
+                from django.utils import timezone
+                self.sync_status = "SYNCED"
+                self.last_synced = timezone.now()
+                self.save()
+                return True
+            
+            return False
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error deploying glossary node {self.name}: {str(e)}")
+            return False
 
 
 class GlossaryTerm(BaseMetadataModel):
@@ -171,8 +280,25 @@ class GlossaryTerm(BaseMetadataModel):
         blank=True,
         related_name="terms",
     )
+    
+    # Domain relationship - only terms can be associated with domains
+    domain = models.ForeignKey(
+        "Domain", 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="glossary_terms"
+    )
+    
     domain_urn = models.CharField(max_length=255, blank=True, null=True)
     term_source = models.CharField(max_length=255, blank=True, null=True)
+    deprecated = models.BooleanField(default=False, help_text="Whether this term is deprecated")
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
+    
+    # Store relationships data
+    relationships_data = models.JSONField(blank=True, null=True)
 
     class Meta:
         verbose_name = "Glossary Term"
@@ -189,11 +315,134 @@ class GlossaryTerm(BaseMetadataModel):
 
         if self.parent_node:
             data["parent_node_urn"] = self.parent_node.urn
-
-        if self.domain_urn:
+            data["parent_node_id"] = str(self.parent_node.id)
+            
+        if self.domain:
+            data["domain_urn"] = self.domain.urn
+            data["domain_id"] = str(self.domain.id)
+            data["domain_name"] = self.domain.name
+        elif self.domain_urn:
             data["domain_urn"] = self.domain_urn
+            
+        # Add ownership information if available
+        if self.ownership_data:
+            data["ownership_data"] = self.ownership_data
+            
+        # Add relationships information if available
+        if self.relationships_data:
+            data["relationships_data"] = self.relationships_data
 
         return data
+
+    @property
+    def can_deploy(self):
+        """Check if this term can be deployed to DataHub"""
+        return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @classmethod
+    def create_from_datahub(cls, term_data, connection=None):
+        """Create or update a glossary term from DataHub data"""
+        import json
+        from django.utils import timezone
+        
+        # Extract basic properties - use the already processed fields first, fallback to properties
+        name = term_data.get("name") or term_data.get("properties", {}).get("name", "Unknown")
+        description = term_data.get("description") or term_data.get("properties", {}).get("description", "")
+        urn = term_data.get("urn", "")
+        term_source = term_data.get("term_source") or term_data.get("properties", {}).get("termSource", "INTERNAL")
+        
+        if not urn:
+            raise ValueError("Term URN is required")
+        
+        # Convert empty string to None for proper NULL handling
+        urn = urn if urn else None
+        
+        # Extract datahub_id from URN (last part after colon)
+        datahub_id = urn.split(":")[-1] if urn and ":" in urn else None
+        
+        # Handle parent node
+        parent_node = None
+        parent_nodes = term_data.get("parentNodes", [])
+        if parent_nodes and len(parent_nodes) > 0:
+            parent_urn = parent_nodes[0].get("urn")
+            if parent_urn:
+                try:
+                    # Import here to avoid circular import
+                    parent_node = GlossaryNode.objects.get(urn=parent_urn)
+                except GlossaryNode.DoesNotExist:
+                    # Parent doesn't exist locally yet, we'll handle this later
+                    pass
+        
+        # Extract ownership data
+        ownership_data = None
+        if "ownership" in term_data and "owners" in term_data["ownership"]:
+            ownership_data = term_data["ownership"]["owners"]
+        
+        # Extract relationships data
+        relationships_data = None
+        if "relationships" in term_data:
+            relationships_data = term_data["relationships"]
+        
+        # Create or update the term
+        term, created = cls.objects.update_or_create(
+            urn=urn,
+            defaults={
+                "name": name,
+                "description": description,
+                "datahub_id": datahub_id,
+                "parent_node": parent_node,
+                "term_source": term_source,
+                "ownership_data": ownership_data,
+                "relationships_data": relationships_data,
+                "connection": connection,
+                "sync_status": "SYNCED",
+                "last_synced": timezone.now(),
+            }
+        )
+        
+        return term
+
+    def deploy_to_datahub(self, client):
+        """Deploy this glossary term to DataHub"""
+        try:
+            # Prepare term data for deployment
+            term_data = {
+                "properties": {
+                    "name": self.name,
+                    "description": self.description or "",
+                }
+            }
+            
+            # Add term source if exists
+            if self.term_source:
+                term_data["properties"]["termSource"] = self.term_source
+            
+            # Add parent node if exists
+            if self.parent_node and self.parent_node.urn:
+                term_data["parentNode"] = {"urn": self.parent_node.urn}
+            
+            # Add ownership data if exists
+            if self.ownership_data:
+                term_data["ownership"] = {"owners": self.ownership_data}
+            
+            # Deploy using the client
+            success = client.import_glossary_term(term_data)
+            
+            if success:
+                # Update sync status
+                from django.utils import timezone
+                self.sync_status = "SYNCED"
+                self.last_synced = timezone.now()
+                self.save()
+                return True
+            
+            return False
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error deploying glossary term {self.name}: {str(e)}")
+            return False
 
 
 class Domain(BaseMetadataModel):
@@ -217,6 +466,9 @@ class Domain(BaseMetadataModel):
     relationships_count = models.IntegerField(default=0)
     entities_count = models.IntegerField(default=0)
     
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
+    
     # Store raw GraphQL data for comprehensive details
     raw_data = models.JSONField(blank=True, null=True)
 
@@ -236,6 +488,10 @@ class Domain(BaseMetadataModel):
         # Add parent domain if exists
         if self.parent_domain_urn:
             data["parentDomains"] = {"domains": [{"urn": self.parent_domain_urn}]}
+        
+        # Add ownership data if exists
+        if self.ownership_data:
+            data["ownership"] = self.ownership_data
         
         # Add display properties if they exist
         if self.color_hex or self.icon_name:
