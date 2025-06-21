@@ -135,6 +135,18 @@
         margin-bottom: 3px !important;
     }
     
+    /* Bulk Actions Styling */
+    .bulk-actions {
+        display: none;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+    }
+
     /* Unified Filter Statistics Styling */
     .filter-row {
         min-height: 70px;
@@ -402,51 +414,51 @@
                             <div class="row g-0 filter-row">
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Overview</strong>
-                            </div>
-                                <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="total" data-category="overview">
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
                                         <div class="h5 mb-0" id="total-items">0</div>
                                         <div class="text-muted">Total</div>
-                        </div>
-                    </div>
-                                <div class="col-md-2-5">
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
                                         <div class="h5 mb-0" id="synced-count">0</div>
                                         <div class="text-muted">Synced</div>
-                            </div>
-                        </div>
-                                <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="local" data-category="overview">
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
                                         <div class="h5 mb-0" id="local-count">0</div>
                                         <div class="text-muted">Local Only</div>
-                    </div>
-                            </div>
+                                    </div>
+                                </div>
                                 <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="remote" data-category="overview">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
                                         <div class="h5 mb-0" id="remote-count">0</div>
                                         <div class="text-muted">Remote Only</div>
-                        </div>
-                    </div>
+                                    </div>
+                                </div>
                             </div>
                             
                             <!-- Row 2: Content Filters -->
                             <div class="row g-0 filter-row border-top">
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Filters</strong>
-                        </div>
-                                <div class="col-md-2-5">
+                                </div>
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-entities" data-category="content">
                                         <div class="h6 mb-0" id="products-with-entities">0</div>
                                         <div class="text-muted">With Entities</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-owners" data-category="content">
                                         <div class="h6 mb-0" id="products-with-owners">0</div>
                                         <div class="text-muted">With Owners</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-domain" data-category="content">
                                         <div class="h6 mb-0" id="products-with-domain">0</div>
                                         <div class="text-muted">With Domain</div>
@@ -463,26 +475,7 @@
                     </div>
                 </div>
                 
-                <!-- Bulk Actions Bar -->
-                <div class="bulk-actions-bar" id="bulkActionsBar">
-                    <div class="selection-info">
-                        <span id="selectedCount">0</span> data products selected
-                    </div>
-                    <div class="bulk-actions">
-                        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkSync">
-                            <i class="fas fa-sync me-1"></i> Sync
-                        </button>
-                        <button type="button" class="btn btn-outline-success btn-sm" id="bulkAddToPR">
-                            <i class="fas fa-code-branch me-1"></i> Add to PR
-                        </button>
-                        <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDelete">
-                            <i class="fas fa-trash me-1"></i> Delete
-                        </button>
-                        <button type="button" class="btn btn-outline-info btn-sm" id="bulkDownload">
-                            <i class="fas fa-download me-1"></i> Download
-                        </button>
-                    </div>
-                </div>
+
             
                 <!-- Products Tabs -->
                 <ul class="nav nav-tabs mb-4" id="productTabs" role="tablist">
@@ -514,10 +507,7 @@
                     <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllSynced">
                                 <h5 class="card-title mb-0">Synced Products</h5>
-                                </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="synced-search" class="form-control" placeholder="Search synced products...">
@@ -526,6 +516,33 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> product(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncProducts('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkSyncToDataHub('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -536,10 +553,7 @@
                     <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllLocal">
                                 <h5 class="card-title mb-0">Local Only Products</h5>
-                                </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="local-search" class="form-control" placeholder="Search local products...">
@@ -548,6 +562,30 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> product(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkSyncToDataHub('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Sync to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -558,10 +596,7 @@
                     <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllRemote">
                                 <h5 class="card-title mb-0">Remote Only Products</h5>
-                                </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="remote-search" class="form-control" placeholder="Search remote products...">
@@ -570,6 +605,30 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> product(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemote('remote')">
+                                            <i class="fas fa-trash me-1"></i> Delete Remote
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -711,9 +770,13 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Data Products Enhanced JavaScript -->
+<script src="{% static 'metadata_manager/data_products/data_products_enhanced.js' %}"></script>
+
+<!-- Keep existing inline code for now -->
 <script>
-// Global variables
-let productsData = null;
+// Legacy global variables
+let currentTab = 'synced';
 let currentFilters = {
     overview: null,  // single select for overview (total, synced, local, remote)
     content: []      // multi-select for content filters (has-entities, has-owners, has-domain, has-external-url)

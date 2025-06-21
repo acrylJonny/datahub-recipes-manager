@@ -456,8 +456,8 @@ function populateEditModal(property) {
         document.getElementById('editAllowedValuesSection').style.display = 'block';
         
         // Populate allowed values if available
-        if (property.allowed_values && property.allowed_values.length > 0) {
-            populateAllowedValues('edit', property.allowed_values);
+        if (property.allowedValues && property.allowedValues.length > 0) {
+            populateAllowedValues('edit', property.allowedValues);
         }
     }
     

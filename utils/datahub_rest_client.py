@@ -9134,70 +9134,186 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
 
     def import_glossary_term(self, term_data: Dict[str, Any]) -> Optional[str]:
         """
-        Import a glossary term using direct GraphQL mutation.
-
-        Args:
-            term_data: Glossary term data containing properties, parentNode, ownership, etc.
-
-        Returns:
-            Glossary term URN if successful, None otherwise
-        """
-        self.logger.info(f"Importing glossary term: {term_data.get('properties', {}).get('name', 'Unknown')}")
+        Import a glossary term to DataHub.
         
+        Args:
+            term_data: Dictionary containing term data with keys like 'id', 'name', 'description', etc.
+            
+        Returns:
+            URN of the created/updated term if successful, None otherwise
+        """
         try:
-            # Extract data from nested structure
-            properties = term_data.get('properties', {})
-            name = properties.get('name')
-            description = properties.get('description', '')
-            term_source = properties.get('termSource', 'INTERNAL')
-            urn = term_data.get('urn')
-            
-            if not name:
-                self.logger.error("Glossary term name is required")
+            term_id = term_data.get('id') or term_data.get('qualified_name')
+            if not term_id:
+                self.logger.error("Term data must contain 'id' or 'qualified_name'")
                 return None
+                
+            term_urn = f"urn:li:glossaryTerm:{term_id}"
             
-            # Build mutation variables
-            variables = {
-                "input": {
-                    "name": name,
-                    "description": description,
-                    "termSource": term_source,
-                }
-            }
-            
-            # Add URN if provided
-            if urn:
-                variables["input"]["urn"] = urn
-            
-            # Add parent node if exists
-            parent_node = term_data.get('parentNode')
-            if parent_node and parent_node.get('urn'):
-                variables["input"]["parentNode"] = parent_node.get('urn')
-            
-            # Add ownership if exists
-            ownership = term_data.get('ownership')
-            if ownership and ownership.get('owners'):
-                variables["input"]["ownership"] = ownership
-            
-            # Execute GraphQL mutation
             mutation = """
             mutation createGlossaryTerm($input: CreateGlossaryTermInput!) {
-                createGlossaryTerm(input: $input) {
-                    urn
-                }
+                createGlossaryTerm(input: $input)
             }
             """
             
-            result = self._execute_graphql_query(mutation, variables)
+            variables = {
+                "input": {
+                    "id": term_id,
+                    "name": term_data.get('name', term_id),
+                    "description": term_data.get('description', ''),
+                    "parentNode": term_data.get('parent_node_urn')
+                }
+            }
             
-            if result and 'data' in result and 'createGlossaryTerm' in result['data']:
-                created_urn = result['data']['createGlossaryTerm']['urn']
-                self.logger.info(f"Successfully created glossary term: {created_urn}")
-                return created_urn
-            else:
-                self.logger.error(f"Failed to create glossary term: {result}")
-                return None
-                
+            result = self.execute_graphql(mutation, variables)
+            
+            if result and "data" in result and "createGlossaryTerm" in result["data"]:
+                created_urn = result["data"]["createGlossaryTerm"]
+                if created_urn:
+                    self.logger.info(f"Successfully imported glossary term: {created_urn}")
+                    return created_urn
+            
+            if result and "errors" in result:
+                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                self.logger.error(f"GraphQL errors when importing glossary term: {', '.join(error_messages)}")
+            
+            return None
+            
         except Exception as e:
             self.logger.error(f"Error importing glossary term: {str(e)}")
+            return None
+
+    def delete_structured_property(self, property_urn: str) -> bool:
+        """
+        Delete a structured property from DataHub.
+
+        Args:
+            property_urn (str): Structured Property URN to delete
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Deleting structured property: {property_urn}")
+
+        mutation = """
+        mutation deleteStructuredProperty($urn: String!) {
+          deleteStructuredProperty(urn: $urn)
+        }
+        """
+
+        variables = {"urn": property_urn}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+            self.logger.debug(f"Delete structured property GraphQL result: {result}")
+
+            # Check for explicit errors first
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when deleting structured property: {', '.join(error_messages)}"
+                )
+                return False
+
+            # If we have a result with data and no errors, consider it successful
+            if result and "data" in result:
+                delete_result = result["data"].get("deleteStructuredProperty")
+                self.logger.debug(f"Delete structured property success value: {delete_result}")
+                
+                # For delete operations, we'll be very permissive:
+                # - True = explicit success
+                # - None/null = likely success (common in GraphQL mutations)
+                # - Only False = explicit failure
+                if delete_result is not False:
+                    self.logger.info(f"Successfully deleted structured property {property_urn} (result: {delete_result})")
+                    return True
+                else:
+                    self.logger.warning(f"Structured property deletion returned explicit False: {property_urn}")
+                    return False
+
+            # If we have any result without errors, assume success
+            if result:
+                self.logger.info(f"Structured property deletion assumed successful (no errors): {property_urn}")
+                return True
+
+            self.logger.warning(f"No result returned for structured property deletion: {property_urn}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error deleting structured property: {str(e)}")
+            return False
+
+    def create_structured_property(
+        self, display_name: str, description: str = "",
+        value_type: str = "STRING", cardinality: str = "SINGLE",
+        entity_types: List[str] = None, allowedValues: List[Any] = None,
+        qualified_name: str = None, **kwargs):
+        """
+        Create a structured property in DataHub
+        
+        Args:
+            display_name (str): Display name for the property
+            description (str): Description for the property  
+            value_type (str): Value type (STRING, NUMBER, etc.)
+            cardinality (str): Cardinality (SINGLE, MULTIPLE)
+            entity_types (List[str]): List of entity types this property applies to
+            allowedValues (List[Any]): List of allowed values
+            qualified_name (str): Qualified name for the property
+            **kwargs: Additional arguments
+            
+        Returns:
+            str: The URN of the created property
+        """
+        self.logger.info(f"Creating structured property: {display_name}")
+
+        mutation = """
+        mutation createStructuredProperty($input: CreateStructuredPropertyInput!) {
+          createStructuredProperty(input: $input)
+        }
+        """
+
+        # Build property definition
+        property_definition = {
+            "qualifiedName": qualified_name or display_name,
+            "displayName": display_name,
+            "description": description,
+            "valueType": value_type,
+            "cardinality": cardinality
+        }
+
+        if entity_types:
+            property_definition["entityTypes"] = entity_types
+
+        if allowedValues:
+            property_definition["allowedValues"] = allowedValues
+
+        variables = {
+            "input": {
+                "id": display_name,
+                "definition": property_definition
+            }
+        }
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+            self.logger.debug(f"Create structured property GraphQL result: {result}")
+
+            if result and "data" in result and "createStructuredProperty" in result["data"]:
+                created_urn = result["data"]["createStructuredProperty"]
+                if created_urn:
+                    self.logger.info(f"Successfully created structured property: {created_urn}")
+                    return created_urn
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when creating structured property: {', '.join(error_messages)}"
+                )
+
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating structured property: {str(e)}")
             return None

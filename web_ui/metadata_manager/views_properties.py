@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views import View
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 import logging
 import os
 import sys
@@ -31,6 +31,133 @@ except ImportError:
     GIT_INTEGRATION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _process_entity_types(entity_types_info):
+    """
+    Process entity types from remote structured property data.
+    Extracts clean display names from nested structures.
+    
+    Args:
+        entity_types_info: List of entity type objects from DataHub API
+        
+    Returns:
+        List of clean entity type names (e.g., "Dataset", "Dashboard")
+    """
+    entity_types = []
+    for et in entity_types_info:
+        if isinstance(et, dict):
+            # Handle nested structure: {"urn": "...", "type": "ENTITY_TYPE", "info": {"type": "DATASET"}}
+            if "info" in et and isinstance(et["info"], dict):
+                entity_type = et["info"].get("type")
+            # Handle direct structure: {"type": "DATASET"}
+            elif "type" in et:
+                entity_type = et["type"]
+            else:
+                entity_type = None
+            
+            if entity_type:
+                # Convert to display-friendly format
+                display_type = _format_entity_type_for_display(entity_type)
+                entity_types.append(display_type)
+        elif isinstance(et, str):
+            # Handle direct string entity types
+            display_type = _format_entity_type_for_display(et)
+            entity_types.append(display_type)
+    
+    return entity_types
+
+
+def _format_entity_type_for_display(entity_type):
+    """
+    Format entity type for display purposes.
+    
+    Args:
+        entity_type: Entity type string (e.g., "DATASET", "urn:li:entityType:datahub.dataset")
+        
+    Returns:
+        Display-friendly entity type (e.g., "Dataset")
+    """
+    if entity_type.startswith("urn:li:entityType:"):
+        # Extract from URN format
+        entity_type = entity_type.replace("urn:li:entityType:", "")
+        if entity_type.startswith("datahub."):
+            entity_type = entity_type.replace("datahub.", "")
+    
+    # Handle special cases and formatting
+    entity_type = entity_type.upper()
+    
+    # Map common entity types to proper display names
+    entity_type_map = {
+        "DATASET": "Dataset",
+        "DASHBOARD": "Dashboard", 
+        "CHART": "Chart",
+        "DATA_FLOW": "Data Flow",
+        "DATA_JOB": "Data Job",
+        "SCHEMA_FIELD": "Schema Field",
+        "CONTAINER": "Container",
+        "DOMAIN": "Domain",
+        "GLOSSARY_TERM": "Glossary Term",
+        "TAG": "Tag",
+        "CORP_USER": "User",
+        "CORP_GROUP": "Group"
+    }
+    
+    return entity_type_map.get(entity_type, entity_type.replace("_", " ").title())
+
+
+def _process_value_type(value_type_info):
+    """
+    Process value type from remote structured property data.
+    Extracts clean display name from nested structure.
+    
+    Args:
+        value_type_info: Value type object from DataHub API
+        
+    Returns:
+        Clean value type name (e.g., "String", "Number")
+    """
+    if isinstance(value_type_info, dict):
+        # Extract from nested info structure: valueType.info.type
+        info = value_type_info.get('info', {}) or {}
+        if isinstance(info, dict) and 'type' in info:
+            value_type = info.get('type', 'STRING')
+        else:
+            value_type = value_type_info.get('type', 'STRING')
+    else:
+        value_type = str(value_type_info) if value_type_info else 'STRING'
+    
+    return _format_value_type_for_display(value_type)
+
+
+def _format_value_type_for_display(value_type):
+    """
+    Format value type for display purposes.
+    
+    Args:
+        value_type: Value type string (e.g., "STRING", "NUMBER")
+        
+    Returns:
+        Display-friendly value type (e.g., "String", "Number")
+    """
+    # Handle URN format
+    if value_type.startswith("urn:li:dataType:"):
+        value_type = value_type.replace("urn:li:dataType:", "")
+        if value_type.startswith("datahub."):
+            value_type = value_type.replace("datahub.", "")
+    
+    # Map common value types to proper display names
+    value_type_map = {
+        "STRING": "String",
+        "NUMBER": "Number", 
+        "BOOLEAN": "Boolean",
+        "DATE": "Date",
+        "URN": "URN",
+        "RICH_TEXT": "Rich Text",
+        "BYTES": "Bytes"
+    }
+    
+    return value_type_map.get(value_type.upper(), value_type.replace("_", " ").title())
 
 
 class PropertyListView(View):
@@ -217,8 +344,8 @@ class PropertyListView(View):
                     'value_type': local_prop.value_type,
                     'cardinality': local_prop.cardinality,
                     'entity_types': local_prop.entity_types or [],
-                    'allowed_values': local_prop.allowed_values or [],
-                    'allowed_values_count': len(local_prop.allowed_values or []),
+                    'allowedValues': local_prop.allowed_values or [],
+                    'allowedValuesCount': len(local_prop.allowed_values or []),
                     'show_in_search_filters': local_prop.show_in_search_filters,
                     'show_as_asset_badge': local_prop.show_as_asset_badge,
                     'show_in_asset_summary': local_prop.show_in_asset_summary,
@@ -230,7 +357,23 @@ class PropertyListView(View):
                 if prop_urn in remote_properties_dict:
                     # SYNCED: exists in both local and remote
                     remote_prop = remote_properties_dict[prop_urn]
+                    
+                    # Override with properly parsed remote data
+                    definition = remote_prop.get('definition', {}) or {}
+                    settings = remote_prop.get('settings', {}) or {}
+                    
+                    # Process value type from remote data
+                    value_type_info = definition.get('valueType', {}) or {}
+                    processed_value_type = _process_value_type(value_type_info)
+                    
+                    # Process entity types from remote data
+                    entity_types_info = definition.get("entityTypes", []) or []
+                    processed_entity_types = _process_entity_types(entity_types_info)
+                    
+                    # Update with processed remote data
                     local_prop_data.update({
+                        'value_type': processed_value_type,
+                        'entity_types': processed_entity_types,
                         'status': 'synced',
                         'remote_data': remote_prop
                     })
@@ -254,47 +397,35 @@ class PropertyListView(View):
                     
                     # Get type info - extract from nested structure
                     value_type_info = definition.get('valueType', {}) or {}
-                    if isinstance(value_type_info, dict):
-                        # Extract from nested info structure: valueType.info.type
-                        info = value_type_info.get('info', {}) or {}
-                        value_type = info.get('type', 'STRING') if isinstance(info, dict) else str(value_type_info.get('type', 'STRING'))
-                    else:
-                        value_type = str(value_type_info)
+                    value_type = _process_value_type(value_type_info)
                     
                     cardinality = definition.get('cardinality', 'SINGLE')
                     
                     # Extract entity types
                     entity_types_info = definition.get("entityTypes", []) or []
-                    entity_types = []
-                    for et in entity_types_info:
-                        if isinstance(et, dict):
-                            # Handle nested structure: {"urn": "...", "type": "ENTITY_TYPE", "info": {"type": "DATASET"}}
-                            if "info" in et and isinstance(et["info"], dict):
-                                entity_type = et["info"].get("type")
-                            # Handle direct structure: {"type": "DATASET"}
-                            elif "type" in et:
-                                entity_type = et["type"]
-                            else:
-                                entity_type = None
-                            
-                            if entity_type:
-                                entity_types.append(entity_type)
+                    entity_types = _process_entity_types(entity_types_info)
                     
                     # Extract allowed values
                     allowed_values_info = definition.get("allowedValues", []) or []
                     allowed_values = []
                     for av in allowed_values_info:
-                        value_obj = av.get("value", {}) or {}
                         description = av.get("description", "")
-
-                        # Handle different value types
+                        
+                        # Handle both remote format {value: {stringValue: "..."}} and local format {value: "..."}
+                        value_obj = av.get("value", {})
                         value = None
-                        if "stringValue" in value_obj:
-                            value = value_obj.get("stringValue")
-                        elif "numberValue" in value_obj:
-                            value = value_obj.get("numberValue")
-                        elif "booleanValue" in value_obj:
-                            value = value_obj.get("booleanValue")
+                        
+                        if isinstance(value_obj, dict):
+                            # Remote format: {value: {stringValue: "..."}, description: "..."}
+                            if "stringValue" in value_obj:
+                                value = value_obj.get("stringValue")
+                            elif "numberValue" in value_obj:
+                                value = value_obj.get("numberValue")
+                            elif "booleanValue" in value_obj:
+                                value = value_obj.get("booleanValue")
+                        else:
+                            # Local format: {value: "...", description: "..."}
+                            value = value_obj
 
                         if value is not None:
                             allowed_values.append(
@@ -309,8 +440,8 @@ class PropertyListView(View):
                         'value_type': value_type,
                         'cardinality': cardinality,
                         'entity_types': entity_types,
-                        'allowed_values': allowed_values,
-                        'allowed_values_count': len(allowed_values),
+                        'allowedValues': allowed_values,
+                        'allowedValuesCount': len(allowed_values),
                         'show_in_search_filters': settings.get('showInSearchFilters', True),
                         'show_as_asset_badge': settings.get('showAsAssetBadge', True),
                         'show_in_asset_summary': settings.get('showInAssetSummary', True),
@@ -737,8 +868,7 @@ class PropertyDeployView(View):
                     value_type=property.value_type,
                     entity_types=property.entity_types,
                     cardinality=property.cardinality,
-                    allowed_values=property.allowed_values,
-                    immutable=property.immutable,
+                    allowedValues=property.allowed_values,
                     show_in_search=property.show_in_search_filters,
                     show_as_badge=property.show_as_asset_badge,
                     show_in_summary=property.show_in_asset_summary,
@@ -856,42 +986,35 @@ class PropertyPullView(View):
                     cardinality = definition.get("cardinality", "SINGLE")
                     immutable = definition.get("immutable", False)
 
-                    # Extract value type
+                    # Extract value type - handle nested structure
                     value_type_info = definition.get("valueType", {}) or {}
-                    value_type = value_type_info.get("type", "STRING")
+                    value_type = _process_value_type(value_type_info)
 
                     # Extract entity types
                     entity_types_info = definition.get("entityTypes", []) or []
-                    entity_types = []
-                    for et in entity_types_info:
-                        if isinstance(et, dict):
-                            # Handle nested structure: {"urn": "...", "type": "ENTITY_TYPE", "info": {"type": "DATASET"}}
-                            if "info" in et and isinstance(et["info"], dict):
-                                entity_type = et["info"].get("type")
-                            # Handle direct structure: {"type": "DATASET"}
-                            elif "type" in et:
-                                entity_type = et["type"]
-                            else:
-                                entity_type = None
-                            
-                            if entity_type:
-                                entity_types.append(entity_type)
+                    entity_types = _process_entity_types(entity_types_info)
 
                     # Extract allowed values
                     allowed_values_info = definition.get("allowedValues", []) or []
                     allowed_values = []
                     for av in allowed_values_info:
-                        value_obj = av.get("value", {}) or {}
                         description = av.get("description", "")
-
-                        # Handle different value types
+                        
+                        # Handle both remote format {value: {stringValue: "..."}} and local format {value: "..."}
+                        value_obj = av.get("value", {})
                         value = None
-                        if "stringValue" in value_obj:
-                            value = value_obj.get("stringValue")
-                        elif "numberValue" in value_obj:
-                            value = value_obj.get("numberValue")
-                        elif "booleanValue" in value_obj:
-                            value = value_obj.get("booleanValue")
+                        
+                        if isinstance(value_obj, dict):
+                            # Remote format: {value: {stringValue: "..."}, description: "..."}
+                            if "stringValue" in value_obj:
+                                value = value_obj.get("stringValue")
+                            elif "numberValue" in value_obj:
+                                value = value_obj.get("numberValue")
+                            elif "booleanValue" in value_obj:
+                                value = value_obj.get("booleanValue")
+                        else:
+                            # Local format: {value: "...", description: "..."}
+                            value = value_obj
 
                         if value is not None:
                             allowed_values.append(
@@ -1117,9 +1240,19 @@ def sync_property_to_local(request):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
-        # Fetch property from DataHub
+        # Fetch property from DataHub using list method and filter by URN
         logger.debug(f"Fetching property from DataHub: {property_urn}")
-        remote_property = client.get_structured_property(property_urn)
+        
+        # Get all remote properties and find the one with matching URN
+        remote_properties = client.list_structured_properties(count=1000)
+        remote_property = None
+        
+        if remote_properties:
+            for prop in remote_properties:
+                if prop.get("urn") == property_urn:
+                    remote_property = prop
+                    break
+        
         if not remote_property:
             return JsonResponse({"success": False, "error": "Property not found in DataHub"})
 
@@ -1157,8 +1290,7 @@ def sync_property_to_local(request):
                 qualified_name=definition.get("qualifiedName", property_name),
                 value_type=definition.get("valueType", "STRING"),
                 cardinality=definition.get("cardinality", "SINGLE"),
-                deterministic_urn=property_urn,
-                original_urn=property_urn,
+                urn=property_urn,
                 sync_status="SYNCED",
                 last_synced=timezone.now(),
                 show_in_search_filters=settings.get("showInSearchFilters", True),
@@ -1196,30 +1328,40 @@ def add_remote_property_to_pr(request):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
-        # Since we removed get_structured_property, we'll extract basic info from URN
+        # Fetch property from DataHub using list method and filter by URN
         logger.debug(f"Processing remote property URN: {property_urn}")
         
-        # Extract property name from URN as fallback
-        urn_parts = property_urn.split(':')
-        property_name = urn_parts[-1] if urn_parts else "Unknown Property"
+        # Get all remote properties and find the one with matching URN
+        remote_properties = client.list_structured_properties(count=1000)
+        remote_property = None
         
-        if not property_name:
-            return JsonResponse({"success": False, "error": "Property name not found in URN"})
+        if remote_properties:
+            for prop in remote_properties:
+                if prop.get("urn") == property_urn:
+                    remote_property = prop
+                    break
+        
+        if not remote_property:
+            return JsonResponse({"success": False, "error": "Property not found in DataHub"})
+
+        # Extract property data from remote
+        definition = remote_property.get("definition", {}) or {}
+        settings = remote_property.get("settings", {}) or {}
+        property_name = definition.get("displayName", "Unknown Property")
 
         # First, sync the property to local if it doesn't exist
         local_property = StructuredProperty.objects.filter(urn=property_urn).first()
         
         if not local_property:
-            # Create local property from URN data
+            # Create local property from remote data
             local_property = StructuredProperty.objects.create(
-                datahub_id=property_name,
-                name=settings.get("qualifiedName", ""),
-                description=settings.get("description", ""),
-                qualified_name=settings.get("qualifiedName", property_name),
-                value_type=settings.get("valueType", "STRING"),
-                cardinality=settings.get("cardinality", "SINGLE"),
-                deterministic_urn=property_urn,
-                original_urn=property_urn,
+                datahub_id=definition.get("qualifiedName", ""),
+                name=property_name,
+                description=definition.get("description", ""),
+                qualified_name=definition.get("qualifiedName", property_name),
+                value_type=definition.get("valueType", "STRING"),
+                cardinality=definition.get("cardinality", "SINGLE"),
+                urn=property_urn,
                 sync_status="SYNCED",
                 last_synced=timezone.now(),
                 show_in_search_filters=settings.get("showInSearchFilters", True),
@@ -1290,12 +1432,29 @@ def delete_remote_property(request):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
-        # Since we removed get_structured_property, extract name from URN
-        urn_parts = property_urn.split(':')
-        property_name = urn_parts[-1] if urn_parts else "Unknown Property"
+        # Get property details first to get the proper name
+        remote_properties = client.list_structured_properties(count=1000)
+        remote_property = None
+        
+        if remote_properties:
+            for prop in remote_properties:
+                if prop.get("urn") == property_urn:
+                    remote_property = prop
+                    break
+        
+        if not remote_property:
+            return JsonResponse({"success": False, "error": "Property not found in DataHub"})
+        
+        # Extract property name from remote data
+        definition = remote_property.get("definition", {}) or {}
+        property_name = definition.get("displayName", "Unknown Property")
 
-        # Delete from DataHub
-        success = client.delete_structured_property(property_urn)
+        # Delete from DataHub (this method should exist)
+        try:
+            success = client.delete_structured_property(property_urn)
+        except AttributeError:
+            # If delete method doesn't exist, return error
+            return JsonResponse({"success": False, "error": "Delete functionality not available in current DataHub client"})
         
         if success:
             return JsonResponse({
@@ -1395,12 +1554,11 @@ class PropertyAddToStagedChangesView(View):
                 description=property_obj.description,
                 value_type=property_obj.value_type,
                 cardinality=property_obj.cardinality,
-                allowed_values=property_obj.allowed_values or [],
+                allowedValues=property_obj.allowed_values or [],
                 entity_types=property_obj.entity_types or [],
                 environment=environment_name,
                 owner=owner,
-                base_dir=str(base_dir),
-                **property_data
+                base_dir=str(base_dir)
             )
             
             if not result.get("success"):
@@ -1574,28 +1732,7 @@ class PropertyAddAllToStagedChangesView(View):
             
             for prop in properties:
                 try:
-                    # Convert property to dictionary format
-                    property_data = {
-                        "id": str(prop.id),
-                        "name": prop.name,
-                        "qualified_name": prop.qualified_name,
-                        "description": prop.description,
-                        "value_type": prop.value_type,
-                        "cardinality": prop.cardinality,
-                        "entity_types": prop.entity_types or [],
-                        "allowed_values": prop.allowed_values or [],
-                        "allowed_entity_types": prop.allowed_entity_types or [],
-                        "urn": prop.urn,
-                        "show_in_search_filters": prop.show_in_search_filters,
-                        "show_as_asset_badge": prop.show_as_asset_badge,
-                        "show_in_asset_summary": prop.show_in_asset_summary,
-                        "show_in_columns_table": prop.show_in_columns_table,
-                        "is_hidden": prop.is_hidden,
-                        "immutable": prop.immutable,
-                        "sync_status": prop.sync_status,
-                    }
-                    
-                    # Add property to staged changes
+                    # Add property to staged changes - pass only supported parameters
                     result = add_structured_property_to_staged_changes(
                         property_id=str(prop.id),
                         qualified_name=prop.qualified_name,
@@ -1603,12 +1740,11 @@ class PropertyAddAllToStagedChangesView(View):
                         description=prop.description,
                         value_type=prop.value_type,
                         cardinality=prop.cardinality,
-                        allowed_values=prop.allowed_values or [],
+                        allowedValues=prop.allowed_values or [],
                         entity_types=prop.entity_types or [],
                         environment=environment,
                         owner="system",  # Default owner
-                        base_dir="metadata-manager",
-                        **property_data
+                        base_dir="metadata-manager"
                     )
                     
                     if result.get("success"):

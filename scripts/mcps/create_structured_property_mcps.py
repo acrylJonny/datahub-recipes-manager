@@ -10,6 +10,7 @@ import os
 import sys
 import time
 from typing import Dict, Optional, Any, List
+from datetime import datetime
 
 # Add parent directory to sys.path
 sys.path.append(
@@ -70,7 +71,7 @@ def create_structured_property_definition_mcp(
     display_name: Optional[str] = None,
     description: Optional[str] = None,
     cardinality: str = "SINGLE",  # "SINGLE" or "MULTIPLE"
-    allowed_values: Optional[List[Dict[str, Any]]] = None,
+    allowedValues: Optional[List[Dict[str, Any]]] = None,
     type_qualifier: Optional[Dict[str, List[str]]] = None,
     search_config: Optional[Dict[str, Any]] = None,
     show_in_search_filters: bool = False,
@@ -92,7 +93,7 @@ def create_structured_property_definition_mcp(
         display_name: Display name for the property
         description: Description of the property
         cardinality: Property cardinality ("SINGLE" or "MULTIPLE")
-        allowed_values: List of allowed values with descriptions
+        allowedValues: List of allowed values with descriptions
         type_qualifier: Type specialization for the valueType
         search_config: Search configuration for the property
         is_hidden: Whether the property should be hidden
@@ -118,9 +119,9 @@ def create_structured_property_definition_mcp(
 
     # Process allowed values
     property_allowed_values = None
-    if allowed_values:
+    if allowedValues:
         property_allowed_values = []
-        for value in allowed_values:
+        for value in allowedValues:
             property_allowed_values.append(PropertyValueClass(
                 value=value.get("value"),
                 description=value.get("description")
@@ -407,7 +408,7 @@ def create_structured_property_staged_changes(
     description: Optional[str] = None,
     value_type: str = "STRING",
     cardinality: str = "SINGLE",
-    allowed_values: Optional[List[Any]] = None,
+    allowedValues: Optional[List[Any]] = None,
     entity_types: Optional[List[str]] = None,
     owners: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
@@ -428,7 +429,7 @@ def create_structured_property_staged_changes(
         description: Property description
         value_type: Value type (STRING, NUMBER, etc.)
         cardinality: Cardinality (SINGLE, MULTIPLE)
-        allowed_values: List of allowed values
+        allowedValues: List of allowed values
         entity_types: List of entity types this property can be applied to
         owners: List of owner URNs
         tags: List of tag URNs
@@ -470,7 +471,7 @@ def create_structured_property_staged_changes(
         display_name=display_name,
         description=description,
         cardinality=cardinality,
-        allowed_values=allowed_values
+        allowedValues=allowedValues
     )
     mcps.append(definition_mcp)
     
@@ -533,4 +534,172 @@ def save_mcps_to_files(
             saved_files.append(file_path)
             logger.info(f"Saved MCP to {file_path}")
     
-    return saved_files 
+    return saved_files
+
+
+def save_structured_property_to_single_file(
+    mcps: List[Dict[str, Any]],
+    base_directory: str,
+    entity_id: str,
+    filename: str = "mcp_file"
+) -> Optional[str]:
+    """
+    Save structured property MCPs to a single consolidated file matching glossary format.
+    
+    This function creates a consolidated MCP file containing all aspects for a structured property
+    in the same format as the glossary mcp_file.json:
+    - mcps: Array of all MCP objects
+    - metadata: Information about entities and totals
+    
+    Args:
+        mcps: List of MCP dictionaries containing the aspects
+        base_directory: Base directory for saving the file
+        entity_id: Entity ID for the structured property
+        filename: Name of the output file (default: "mcp_file")
+    
+    Returns:
+        File path if successful, None if failed
+    """
+    if not mcps:
+        logger.warning("No MCPs provided to save")
+        return None
+    
+    # Create base directory
+    os.makedirs(base_directory, exist_ok=True)
+    
+    # Create file path
+    file_path = os.path.join(base_directory, f"{filename}.json")
+    
+    # Load existing MCP file or create new structure (like glossary)
+    existing_mcp_data = {"mcps": [], "metadata": {"entities": []}}
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r") as f:
+                existing_mcp_data = json.load(f)
+                # Ensure required structure exists
+                if "mcps" not in existing_mcp_data:
+                    existing_mcp_data["mcps"] = []
+                if "metadata" not in existing_mcp_data:
+                    existing_mcp_data["metadata"] = {"entities": []}
+                if "entities" not in existing_mcp_data["metadata"]:
+                    existing_mcp_data["metadata"]["entities"] = []
+            logger.info(f"Loaded existing MCP file with {len(existing_mcp_data['mcps'])} existing MCPs")
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
+            existing_mcp_data = {"mcps": [], "metadata": {"entities": []}}
+    
+    # Get the entity URN from the first MCP (if available)
+    entity_urn = None
+    property_name = f"property_{entity_id}"
+    if mcps:
+        entity_urn = mcps[0].get("entityUrn")
+        # Try to extract a more meaningful name if available
+        first_mcp_aspect = mcps[0].get("aspect", {})
+        if isinstance(first_mcp_aspect, dict):
+            property_name = first_mcp_aspect.get("name", property_name)
+    
+    # Remove any existing MCPs for this entity URN to avoid duplicates
+    if entity_urn:
+        existing_mcp_data["mcps"] = [
+            mcp for mcp in existing_mcp_data["mcps"] 
+            if mcp.get("entityUrn") != entity_urn
+        ]
+        
+        # Remove existing metadata entry for this entity
+        existing_mcp_data["metadata"]["entities"] = [
+            entity for entity in existing_mcp_data["metadata"]["entities"]
+            if entity.get("datahub_entity_urn") != entity_urn
+        ]
+    
+    # Add new MCPs
+    existing_mcp_data["mcps"].extend(mcps)
+    
+    # Add metadata entry for this entity
+    current_time = int(datetime.now().timestamp() * 1000)
+    entity_metadata = {
+        "entity_name": property_name,
+        "entity_id": entity_id,
+        "entity_type": "structuredProperty",
+        "entity_urn": f"local:structuredProperty:{entity_id}",  # Local URN
+        "datahub_entity_urn": entity_urn,  # DataHub URN
+        "environment": "dev",  # Default environment
+        "owner": "admin",
+        "updated_at": current_time,
+        "mcp_count": len(mcps)
+    }
+    existing_mcp_data["metadata"]["entities"].append(entity_metadata)
+    
+    # Update global metadata
+    existing_mcp_data["metadata"].update({
+        "total_mcps": len(existing_mcp_data["mcps"]),
+        "total_entities": len(existing_mcp_data["metadata"]["entities"]),
+        "last_updated": current_time,
+        "environment": "dev"
+    })
+    
+    try:
+        # Save the consolidated MCP file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(existing_mcp_data, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Saved consolidated structured property MCP to {file_path} with {len(mcps)} MCPs. Total MCPs in file: {len(existing_mcp_data['mcps'])}")
+        return file_path
+        
+    except Exception as e:
+        logger.error(f"Failed to save consolidated MCP to {file_path}: {e}")
+        return None
+
+
+def create_structured_property_settings_mcp(
+    property_id: str,
+    is_hidden: bool = False,
+    show_in_search_filters: bool = False,
+    show_in_asset_summary: bool = False,
+    show_as_asset_badge: bool = False,
+    show_in_columns_table: bool = False,
+    environment: Optional[str] = None,
+    mutation_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a structured property settings MCP.
+    
+    Args:
+        property_id: Property ID for URN generation
+        is_hidden: Whether the property is hidden
+        show_in_search_filters: Whether to show in search filters
+        show_in_asset_summary: Whether to show in asset summary
+        show_as_asset_badge: Whether to show as asset badge
+        show_in_columns_table: Whether to show in columns table
+        environment: Environment name
+        mutation_name: Mutation name
+    
+    Returns:
+        MCP dictionary with structured property settings
+    """
+    # Create URN for the structured property
+    property_urn = f"urn:li:structuredProperty:{property_id}"
+    
+    # Create the settings aspect
+    settings_aspect = {
+        "isHidden": is_hidden,
+        "showInSearchFilters": show_in_search_filters,
+        "showInAssetSummary": show_in_asset_summary,
+        "showAsAssetBadge": show_as_asset_badge,
+        "showInColumnsTable": show_in_columns_table,
+        "lastModified": {
+            "time": int(datetime.now().timestamp() * 1000),
+            "actor": "urn:li:corpuser:datahub"
+        }
+    }
+    
+    # Create the MCP structure
+    mcp = {
+        "entityType": "structuredProperty",
+        "entityUrn": property_urn,
+        "changeType": "UPSERT",
+        "aspectName": "structuredPropertySettings",
+        "aspect": settings_aspect
+    }
+    
+    logger.info(f"Created structured property settings MCP for {property_urn}")
+    return mcp 

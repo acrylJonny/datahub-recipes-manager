@@ -7,11 +7,15 @@ let filterData = {
 let currentFilters = new Set();
 let currentOverviewFilter = null;
 
-// Pagination settings
+// Pagination variables - enhanced to match tags page
+let currentPagination = {
+    synced: { page: 1, itemsPerPage: 25 },
+    local: { page: 1, itemsPerPage: 25 },
+    remote: { page: 1, itemsPerPage: 25 }
+};
+
+// Pagination settings (deprecated - now using currentPagination object)
 const ITEMS_PER_PAGE = 25;
-let currentSyncedPage = 1;
-let currentLocalPage = 1;
-let currentRemotePage = 1;
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -161,7 +165,7 @@ function setupImportFormHandler() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showNotification('Properties imported successfully', 'success');
+                    showNotification('success', 'Properties imported successfully');
                     
                     // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('importJsonModal'));
@@ -170,12 +174,12 @@ function setupImportFormHandler() {
                     // Refresh properties data
                     loadPropertiesData();
                 } else {
-                    showNotification(data.error || 'Failed to import properties', 'error');
+                    showNotification('error', data.error || 'Failed to import properties');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showNotification('Error importing properties', 'error');
+                showNotification('error', 'Error importing properties');
             })
             .finally(() => {
                 // Restore button state
@@ -212,7 +216,7 @@ function setupEditFormHandler() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showNotification('Property updated successfully', 'success');
+                    showNotification('success', 'Property updated successfully');
                     
                     // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('editPropertyModal'));
@@ -221,12 +225,12 @@ function setupEditFormHandler() {
                     // Refresh properties data
                     loadPropertiesData();
                 } else {
-                    showNotification(data.error || 'Failed to update property', 'error');
+                    showNotification('error', data.error || 'Failed to update property');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showNotification('Error updating property', 'error');
+                showNotification('error', 'Error updating property');
             })
             .finally(() => {
                 // Restore button state
@@ -274,6 +278,17 @@ function setupOverviewClickHandlers() {
                     tabButton.click();
                 }
             }
+        });
+    });
+    
+    // Content filters - toggle selection for filtering
+    document.querySelectorAll('.clickable-stat[data-category="content"]').forEach(stat => {
+        stat.addEventListener('click', function() {
+            this.classList.toggle('active');
+            const filter = this.getAttribute('data-filter');
+            console.log('Content filter toggled:', filter, this.classList.contains('active'));
+            
+            // Add future filtering logic here if needed
         });
     });
 }
@@ -371,12 +386,12 @@ function loadPropertiesData() {
             if (loadingIndicator) loadingIndicator.style.display = 'none';
             if (propertiesContent) propertiesContent.style.display = 'block';
         } else {
-            showNotification(data.error || 'Failed to load properties data', 'error');
+            showNotification('error', data.error || 'Failed to load properties data');
         }
     })
     .catch(error => {
         console.error('Error loading properties:', error);
-        showNotification('Failed to load properties data', 'error');
+        showNotification('error', 'Failed to load properties data');
         if (loadingIndicator) loadingIndicator.style.display = 'none';
     });
 }
@@ -397,16 +412,18 @@ function updateStatistics(statistics) {
         totalCount = propertiesData.length;
     }
     
-    // Update overview statistics
+    // Update overview statistics (both top filter bar and tab stats)
+    const totalPropertiesEl = document.getElementById('total-properties');
     const totalEl = document.getElementById('total-items');
-    const syncedEl = document.getElementById('synced-count');
-    const localEl = document.getElementById('local-only-count');
-    const remoteEl = document.getElementById('remote-only-count');
+    const syncedCountEl = document.getElementById('synced-count');
+    const localOnlyCountEl = document.getElementById('local-only-count');
+    const remoteOnlyCountEl = document.getElementById('remote-only-count');
     
+    if (totalPropertiesEl) totalPropertiesEl.textContent = totalCount;
     if (totalEl) totalEl.textContent = totalCount;
-    if (syncedEl) syncedEl.textContent = syncedCount;
-    if (localEl) localEl.textContent = localCount;
-    if (remoteEl) remoteEl.textContent = remoteCount;
+    if (syncedCountEl) syncedCountEl.textContent = syncedCount;
+    if (localOnlyCountEl) localOnlyCountEl.textContent = localCount;
+    if (remoteOnlyCountEl) remoteOnlyCountEl.textContent = remoteCount;
     
     // Update tab badges
     const syncedBadge = document.getElementById('synced-badge');
@@ -416,6 +433,37 @@ function updateStatistics(statistics) {
     if (syncedBadge) syncedBadge.textContent = syncedCount;
     if (localBadge) localBadge.textContent = localCount;
     if (remoteBadge) remoteBadge.textContent = remoteCount;
+    
+    // Update content filter statistics
+    updateContentFilterStats();
+}
+
+function updateContentFilterStats() {
+    if (!propertiesData) return;
+    
+    // Combine all property types to get full data set
+    const allProperties = [
+        ...(propertiesData.synced_items || []),
+        ...(propertiesData.local_only_items || []), 
+        ...(propertiesData.remote_only_items || [])
+    ];
+    
+    // Calculate content filter statistics
+    const hasAllowedValues = allProperties.filter(p => p.allowedValues && p.allowedValues.length > 0).length;
+    const hasEntityTypes = allProperties.filter(p => p.entity_types && p.entity_types.length > 0).length;
+    const isSearchable = allProperties.filter(p => p.show_in_search_filters === true).length;
+    const isImmutable = allProperties.filter(p => p.immutable === true).length;
+    
+    // Update elements
+    const hasAllowedValuesEl = document.getElementById('has-allowedValues-count');
+    const hasEntityTypesEl = document.getElementById('has-entityTypes-count');
+    const isSearchableEl = document.getElementById('is-searchable-count');
+    const isImmutableEl = document.getElementById('is-immutable-count');
+    
+    if (hasAllowedValuesEl) hasAllowedValuesEl.textContent = hasAllowedValues;
+    if (hasEntityTypesEl) hasEntityTypesEl.textContent = hasEntityTypes;
+    if (isSearchableEl) isSearchableEl.textContent = isSearchable;
+    if (isImmutableEl) isImmutableEl.textContent = isImmutable;
 }
 
 function updateFilterRows() {
@@ -648,7 +696,7 @@ function renderTab(tabId) {
                         <th class="sortable-header" data-sort="entity_types" width="200px">Entity Types</th>
                         <th class="sortable-header" data-sort="value_type" width="120px">Value Type</th>
                         <th class="sortable-header" data-sort="cardinality" width="100px">Cardinality</th>
-                        <th class="sortable-header" data-sort="allowed_values" width="100px">Allowed Values</th>
+                        <th class="sortable-header" data-sort="allowedValues" width="100px">Allowed Values</th>
                         <th width="150px" class="sortable-header" data-sort="urn">URN</th>
                         <th width="180px">Actions</th>
                     </tr>
@@ -697,19 +745,16 @@ function renderPropertiesTable(properties, tabType, container) {
     console.log('Properties data:', properties);
     console.log('Container:', container);
     
-    // Get current page for this tab
-    let currentPage;
-    switch (tabType) {
-        case 'synced': currentPage = currentSyncedPage; break;
-        case 'local': currentPage = currentLocalPage; break;
-        case 'remote': currentPage = currentRemotePage; break;
-    }
+    // Get current page and items per page for this tab
+    const pagination = currentPagination[tabType];
+    const currentPage = pagination.page;
+    const itemsPerPage = pagination.itemsPerPage;
     
     // Calculate pagination
     const totalItems = properties.length;
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
     const paginatedProperties = properties.slice(startIndex, endIndex);
     
     if (totalItems === 0) {
@@ -757,65 +802,118 @@ function renderPropertiesTable(properties, tabType, container) {
     
     // Setup bulk selection
     setupBulkSelectionForTab(tabType);
+    
+    // Setup pagination handlers
+    attachPaginationHandlers(container, tabType);
 }
 
 function renderPagination(currentPage, totalPages, totalItems, startItem, endItem, tabType) {
     if (totalPages <= 1) return '';
     
-    const prevDisabled = currentPage <= 1 ? 'disabled' : '';
-    const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+    const pagination = currentPagination[tabType];
     
     let paginationHTML = `
-        <div class="pagination-container mt-3">
+        <div class="pagination-container">
             <div class="pagination-info">
                 Showing ${startItem}-${endItem} of ${totalItems} properties
             </div>
-            <nav aria-label="Properties pagination">
+            <nav aria-label="Table pagination">
                 <ul class="pagination mb-0">
-                    <li class="page-item ${prevDisabled}">
-                        <a class="page-link" href="#" onclick="changePage('${tabType}', ${currentPage - 1})">
-                            <i class="fas fa-chevron-left"></i>
-                        </a>
-                    </li>
+    `;
+    
+    // Previous button
+    paginationHTML += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage - 1}" data-tab="${tabType}">Previous</a>
+        </li>
     `;
     
     // Page numbers
-    const maxVisiblePages = 5;
-    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
     
-    if (endPage - startPage < maxVisiblePages - 1) {
-        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    if (startPage > 1) {
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="1" data-tab="${tabType}">1</a></li>`;
+        if (startPage > 2) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
     }
     
     for (let i = startPage; i <= endPage; i++) {
-        const activeClass = i === currentPage ? 'active' : '';
         paginationHTML += `
-            <li class="page-item ${activeClass}">
-                <a class="page-link" href="#" onclick="changePage('${tabType}', ${i})">${i}</a>
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" data-page="${i}" data-tab="${tabType}">${i}</a>
             </li>
         `;
     }
     
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}" data-tab="${tabType}">${totalPages}</a></li>`;
+    }
+    
+    // Next button
     paginationHTML += `
-                    <li class="page-item ${nextDisabled}">
-                        <a class="page-link" href="#" onclick="changePage('${tabType}', ${currentPage + 1})">
-                            <i class="fas fa-chevron-right"></i>
-                        </a>
-                    </li>
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage + 1}" data-tab="${tabType}">Next</a>
+        </li>
+    `;
+    
+    paginationHTML += `
                 </ul>
             </nav>
+            <div class="d-flex align-items-center">
+                <label for="itemsPerPage-${tabType}" class="form-label me-2 mb-0">Items per page:</label>
+                <select class="form-select form-select-sm" id="itemsPerPage-${tabType}" style="width: auto;">
+                    <option value="10" ${pagination.itemsPerPage === 10 ? 'selected' : ''}>10</option>
+                    <option value="25" ${pagination.itemsPerPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${pagination.itemsPerPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${pagination.itemsPerPage === 100 ? 'selected' : ''}>100</option>
+                </select>
+            </div>
         </div>
     `;
     
     return paginationHTML;
 }
 
+function attachPaginationHandlers(content, tabType) {
+    // Attach pagination click handlers
+    content.querySelectorAll('.page-link[data-page]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const page = parseInt(this.dataset.page);
+            const tab = this.dataset.tab;
+            if (page && tab && currentPagination[tab]) {
+                currentPagination[tab].page = page;
+                renderTab(`${tab}-items`);
+            }
+        });
+    });
+    
+    // Attach items per page change handler
+    const itemsPerPageSelect = content.querySelector(`#itemsPerPage-${tabType}`);
+    if (itemsPerPageSelect) {
+        itemsPerPageSelect.addEventListener('change', function() {
+            currentPagination[tabType].itemsPerPage = parseInt(this.value);
+            currentPagination[tabType].page = 1; // Reset to first page
+            renderTab(`${tabType}-items`);
+        });
+    }
+}
+
 function changePage(tabType, page) {
-    switch (tabType) {
-        case 'synced': currentSyncedPage = page; break;
-        case 'local': currentLocalPage = page; break;
-        case 'remote': currentRemotePage = page; break;
+    if (currentPagination[tabType]) {
+        currentPagination[tabType].page = page;
+    } else {
+        // Fallback for old structure
+        switch (tabType) {
+            case 'synced': currentSyncedPage = page; break;
+            case 'local': currentLocalPage = page; break;
+            case 'remote': currentRemotePage = page; break;
+        }
     }
     renderTab(`${tabType}-items`);
 }
@@ -862,7 +960,7 @@ function renderPropertyRow(property, tabType) {
                 <span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>
             </td>
             <td>
-                <span class="badge bg-secondary">${property.allowed_values_count || 0}</span>
+                                    <span class="badge bg-secondary">${property.allowedValuesCount || 0}</span>
             </td>
             <td title="${escapeHtml(propertyUrn)}">
                 <code class="small">${escapeHtml(truncateUrn(propertyUrn, 30))}</code>
@@ -884,71 +982,78 @@ function getActionButtons(property, tabType) {
     
     console.log(`Getting action buttons for property: ${property.name}, id: ${propertyId}, status: ${status}`);
     
-    // View button - always available
+    // 1. View button - always available
     buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary view-property" data-property-urn="${propertyUrn || propertyId}" title="View Details">
         <i class="fas fa-eye"></i>
     </button>`);
     
-    // View in DataHub button - always available for properties with URNs
+    // 2. View in DataHub button - always available for properties with URNs
     if (propertyUrn && !propertyUrn.includes('local:')) {
         buttons.push(`<a href="#" class="btn btn-sm btn-outline-info view-in-datahub" onclick="viewInDataHub('${propertyUrn}')" title="View in DataHub" target="_blank">
             <i class="fas fa-external-link-alt"></i>
         </a>`);
     }
     
-    // Download JSON button - always available
-    buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
-        <i class="fas fa-file-download"></i>
-    </button>`);
-    
     if (tabType === 'synced') {
-        // Edit button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
+        // 3. Edit button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
             <i class="fas fa-edit"></i>
         </button>`);
-        // Add to Staged Changes button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
-            <i class="fab fa-github"></i>
+        // 4. Download JSON button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
+            <i class="fas fa-file-download"></i>
         </button>`);
-        // Sync/Resync button
+        // 5. Resync button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-info resync-property" onclick="resyncProperty('${propertyId}')" title="Resync">
             <i class="fas fa-sync-alt"></i>
         </button>`);
-        // Push to DataHub button
+        // 6. Push to DataHub button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
             <i class="fas fa-upload"></i>
         </button>`);
-        // Delete local button
+        // 7. Add to Staged Changes button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
+            <i class="fab fa-github"></i>
+        </button>`);
+        // 8. Delete local button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-local-property" onclick="deleteLocalProperty('${propertyId}')" title="Delete Local">
             <i class="fas fa-trash"></i>
         </button>`);
     } else if (tabType === 'local') {
-        // Edit button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
+        // 3. Edit button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
             <i class="fas fa-edit"></i>
         </button>`);
-        // Add to Staged Changes button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
-            <i class="fab fa-github"></i>
+        // 4. Download JSON button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
+            <i class="fas fa-file-download"></i>
         </button>`);
-        // Push to DataHub button
+        // 5. Push to DataHub button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
             <i class="fas fa-upload"></i>
         </button>`);
-        // Delete button
+        // 6. Add to Staged Changes button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
+            <i class="fab fa-github"></i>
+        </button>`);
+        // 7. Delete button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-local-property" onclick="deleteLocalProperty('${propertyId}')" title="Delete">
             <i class="fas fa-trash"></i>
         </button>`);
     } else if (tabType === 'remote') {
-        // Sync to Local button
+        // 3. Download JSON button
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
+            <i class="fas fa-file-download"></i>
+        </button>`);
+        // 4. Sync to Local button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary sync-property-to-local" onclick="syncPropertyToLocal(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Sync to Local">
             <i class="fas fa-download"></i>
         </button>`);
-        // Add to Staged Changes button
+        // 5. Add to Staged Changes button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
             <i class="fab fa-github"></i>
         </button>`);
-        // Delete remote button
+        // 6. Delete remote button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-remote-property" onclick="deleteRemoteProperty('${propertyUrn}')" title="Delete Remote">
             <i class="fas fa-trash"></i>
         </button>`);
@@ -995,7 +1100,7 @@ function setupBulkSelectionForTab(tabType) {
 function addPropertyToStagedChanges(property) {
     const propertyId = getDatabaseId(property);
     if (!propertyId) {
-        showNotification('Cannot add property to staged changes: No database ID found', 'error');
+        showNotification('error', 'Cannot add property to staged changes: No database ID found');
         return;
     }
     
@@ -1026,7 +1131,7 @@ function addPropertyToStagedChanges(property) {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            showNotification(data.message || 'Property added to staged changes successfully', 'success');
+            showNotification('success', data.message || 'Property added to staged changes successfully');
             // Refresh the data
             if (typeof loadPropertiesData === 'function') {
                 loadPropertiesData();
@@ -1037,7 +1142,7 @@ function addPropertyToStagedChanges(property) {
     })
     .catch(error => {
         console.error('Error adding property to staged changes:', error);
-        showNotification(`Error: ${error.message}`, 'error');
+        showNotification('error', `Error: ${error.message}`);
     })
     .finally(() => {
         if (button) {
@@ -1085,7 +1190,7 @@ function viewInDataHub(propertyUrn) {
     // Get DataHub URL from the page data
     const datahubUrl = window.propertiesData?.datahub_url;
     if (!datahubUrl) {
-        showNotification('DataHub URL not available', 'error');
+        showNotification('error', 'DataHub URL not available');
         return;
     }
     
@@ -1112,7 +1217,7 @@ function downloadPropertyJson(propertyId) {
     link.click();
     document.body.removeChild(link);
     
-    showNotification('Property JSON download started', 'success');
+    showNotification('success', 'Property JSON download started');
 }
 
 // Global sorting state for properties
@@ -1186,7 +1291,7 @@ function getSortValueFromRow(row, column) {
             return cells[4]?.textContent?.trim().toLowerCase() || '';
         case 'entity_types':
             return cells[5]?.textContent?.trim().toLowerCase() || '';
-        case 'allowed_values':
+                    case 'allowedValues':
             return cells[6]?.textContent?.trim().toLowerCase() || '';
         default:
             return '';
@@ -1215,7 +1320,7 @@ function viewProperty(propertyUrn) {
     property = allProperties.find(p => p.urn === propertyUrn || p.id === propertyUrn);
     
     if (!property) {
-        showNotification('Property not found', 'error');
+        showNotification('error', 'Property not found');
         return;
     }
     
@@ -1258,7 +1363,7 @@ function editProperty(propertyUrn) {
     property = allProperties.find(p => p.urn === propertyUrn || p.id === propertyUrn);
     
     if (!property) {
-        showNotification('Property not found', 'error');
+        showNotification('error', 'Property not found');
         return;
     }
     
@@ -1351,16 +1456,16 @@ function addPropertyToPR(propertyId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Optionally reload the data to reflect any status changes
             loadPropertiesData();
         } else {
-            showNotification(data.error || 'Failed to add property to PR', 'error');
+            showNotification('error', data.error || 'Failed to add property to PR');
         }
     })
     .catch(error => {
         console.error('Error adding property to PR:', error);
-        showNotification('Failed to add property to PR', 'error');
+        showNotification('error', 'Failed to add property to PR');
     })
     .finally(() => {
         if (button) {
@@ -1384,14 +1489,14 @@ function addRemotePropertyToPR(propertyUrn) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error adding property to PR:', error);
-        showNotification('Failed to add property to PR', 'error');
+        showNotification('error', 'Failed to add property to PR');
     });
 }
 
@@ -1414,16 +1519,16 @@ function resyncProperty(propertyId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
             loadPropertiesData();
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error resyncing property:', error);
-        showNotification('Failed to resync property', 'error');
+        showNotification('error', 'Failed to resync property');
     })
     .finally(() => {
         if (button) {
@@ -1453,16 +1558,16 @@ function pushPropertyToDataHub(propertyId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
             loadPropertiesData();
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error pushing property to DataHub:', error);
-        showNotification('Failed to push property to DataHub', 'error');
+        showNotification('error', 'Failed to push property to DataHub');
     })
     .finally(() => {
         if (button) {
@@ -1496,16 +1601,16 @@ function deleteLocalProperty(propertyId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message || 'Property deleted successfully', 'success');
+            showNotification('success', data.message || 'Property deleted successfully');
             // Reload data to refresh the view
             loadPropertiesData();
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error deleting property:', error);
-        showNotification('Failed to delete property', 'error');
+        showNotification('error', 'Failed to delete property');
     })
     .finally(() => {
         if (button) {
@@ -1527,7 +1632,7 @@ function syncPropertyToLocal(property) {
     
     if (!urnToSync) {
         console.error('No URN found for property:', property);
-        showNotification('Error: No URN found for property', 'error');
+        showNotification('error', 'Error: No URN found for property');
         return;
     }
     
@@ -1549,16 +1654,16 @@ function syncPropertyToLocal(property) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
             loadPropertiesData();
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error syncing property:', error);
-        showNotification('Failed to sync property to local', 'error');
+        showNotification('error', 'Failed to sync property to local');
     })
     .finally(() => {
         if (button) {
@@ -1593,16 +1698,16 @@ function deleteRemoteProperty(propertyUrn) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
             loadPropertiesData();
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error deleting remote property:', error);
-        showNotification('Failed to delete remote property', 'error');
+        showNotification('error', 'Failed to delete remote property');
     })
     .finally(() => {
         if (button) {
@@ -1616,24 +1721,66 @@ function getCSRFToken() {
     return document.querySelector('[name=csrfmiddlewaretoken]').value;
 }
 
-function showNotification(message, type = 'info') {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show notification`;
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+function showNotification(type, message) {
+    // Check if we have notifications container
+    let container = document.getElementById('notifications-container');
+    
+    // Create it if it doesn't exist
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notifications-container';
+        container.className = 'position-fixed bottom-0 end-0 p-3';
+        container.style.zIndex = '1050';
+        document.body.appendChild(container);
+    }
+    
+    // Create unique ID
+    const id = 'toast-' + Date.now();
+    
+    // Create toast HTML
+    let bgClass, icon, title;
+    
+    if (type === 'success') {
+        bgClass = 'bg-success';
+        icon = 'fa-check-circle';
+        title = 'Success';
+    } else if (type === 'info') {
+        bgClass = 'bg-info';
+        icon = 'fa-info-circle';
+        title = 'Info';
+    } else {
+        bgClass = 'bg-danger';
+        icon = 'fa-exclamation-circle';
+        title = 'Error';
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${bgClass} text-white`;
+    toast.id = id;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.innerHTML = `
+        <div class="toast-header ${bgClass} text-white">
+            <i class="fas ${icon} me-2"></i>
+            <strong class="me-auto">${title}</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">${message}</div>
     `;
     
-    // Add to page
-    document.body.appendChild(notification);
+    container.appendChild(toast);
     
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.remove();
-        }
-    }, 5000);
+    // Initialize and show the toast
+    const toastInstance = new bootstrap.Toast(toast, {
+        delay: 5000
+    });
+    toastInstance.show();
+    
+    // Remove toast from DOM after it's hidden
+    toast.addEventListener('hidden.bs.toast', function () {
+        toast.remove();
+    });
 }
 
 function escapeHtml(text) {
@@ -1669,10 +1816,33 @@ function renderEntityTypes(entityTypes, valueType) {
     if (validTypes.length === 0) {
         return '<span class="text-muted">-</span>';
     }
-    
+
     return validTypes.map(type => {
-        // Convert to title case and replace underscores with spaces
-        const displayType = type.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        // Parse URN format: urn:li:entityType:datahub.dataset -> Dataset
+        let displayType = type;
+        
+        if (type.startsWith('urn:li:entityType:')) {
+            // Extract the entity type from URN
+            const entityType = type.replace('urn:li:entityType:', '');
+            
+            // Handle datahub.* format
+            if (entityType.startsWith('datahub.')) {
+                displayType = entityType.replace('datahub.', '');
+            } else {
+                displayType = entityType;
+            }
+            
+            // Convert to proper case
+            displayType = displayType.toLowerCase()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+        } else {
+            // For non-URN formats, just clean up the display
+            displayType = type.toLowerCase()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+        }
+        
         return `<span class="badge bg-light text-dark entity-type-badge">${escapeHtml(displayType)}</span>`;
     }).join('');
 }
@@ -1743,25 +1913,152 @@ function bulkSyncToLocal(tabType) {
 
 function bulkDeleteLocalProperties(tabType) {
     const checkedBoxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
-    if (checkedBoxes.length === 0) return;
+    if (checkedBoxes.length === 0) {
+        showNotification('error', 'Please select properties to delete.');
+        return;
+    }
     
     if (confirm(`Are you sure you want to delete ${checkedBoxes.length} local properties? This action cannot be undone.`)) {
-        checkedBoxes.forEach(checkbox => {
+        console.log(`Bulk delete ${checkedBoxes.length} local properties for ${tabType}`);
+        
+        // Show loading indicator
+        showNotification('success', `Starting deletion of ${checkedBoxes.length} local properties...`);
+        
+        // Process each property sequentially
+        let successCount = 0;
+        let errorCount = 0;
+        let processedCount = 0;
+        
+        // Create a function to process properties one by one
+        function processNextProperty(index) {
+            if (index >= checkedBoxes.length) {
+                // All properties processed
+                showNotification('success', `Completed: ${successCount} properties deleted, ${errorCount} failed.`);
+                if (successCount > 0) {
+                    // Refresh the data if any properties were successfully deleted
+                    loadPropertiesData();
+                }
+                return;
+            }
+            
+            const checkbox = checkedBoxes[index];
             const propertyId = checkbox.value;
-            deleteLocalProperty(propertyId);
-        });
+            
+            // Make the API call to delete this property
+            fetch(`/metadata/properties/${propertyId}/delete/`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                }
+                processedCount++;
+                
+                // Update progress
+                if (processedCount % 5 === 0 || processedCount === checkedBoxes.length) {
+                    showNotification('success', `Progress: ${processedCount}/${checkedBoxes.length} properties processed`);
+                }
+                
+                // Process the next property
+                processNextProperty(index + 1);
+            })
+            .catch(error => {
+                console.error(`Error deleting property ${propertyId}:`, error);
+                errorCount++;
+                processedCount++;
+                
+                // Process the next property despite the error
+                processNextProperty(index + 1);
+            });
+        }
+        
+        // Start processing properties
+        processNextProperty(0);
     }
 }
 
 function bulkDeleteRemoteProperties(tabType) {
     const checkedBoxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
-    if (checkedBoxes.length === 0) return;
+    if (checkedBoxes.length === 0) {
+        showNotification('error', 'Please select properties to delete.');
+        return;
+    }
     
     if (confirm(`Are you sure you want to delete ${checkedBoxes.length} remote properties? This action cannot be undone.`)) {
-        checkedBoxes.forEach(checkbox => {
+        console.log(`Bulk delete ${checkedBoxes.length} remote properties for ${tabType}`);
+        
+        // Show loading indicator
+        showNotification('success', `Starting deletion of ${checkedBoxes.length} remote properties...`);
+        
+        // Process each property sequentially
+        let successCount = 0;
+        let errorCount = 0;
+        let processedCount = 0;
+        
+        // Create a function to process properties one by one
+        function processNextProperty(index) {
+            if (index >= checkedBoxes.length) {
+                // All properties processed
+                showNotification('success', `Completed: ${successCount} properties deleted, ${errorCount} failed.`);
+                if (successCount > 0) {
+                    // Refresh the data if any properties were successfully deleted
+                    loadPropertiesData();
+                }
+                return;
+            }
+            
+            const checkbox = checkedBoxes[index];
             const propertyUrn = checkbox.value;
-            deleteRemoteProperty(propertyUrn);
-        });
+            
+            // Make the API call to delete this remote property
+            fetch('/metadata/properties/delete_remote/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({
+                    property_urn: propertyUrn
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                }
+                processedCount++;
+                
+                // Update progress
+                if (processedCount % 5 === 0 || processedCount === checkedBoxes.length) {
+                    showNotification('success', `Progress: ${processedCount}/${checkedBoxes.length} properties processed`);
+                }
+                
+                // Process the next property
+                processNextProperty(index + 1);
+            })
+            .catch(error => {
+                console.error(`Error deleting remote property ${propertyUrn}:`, error);
+                errorCount++;
+                processedCount++;
+                
+                // Process the next property despite the error
+                processNextProperty(index + 1);
+            });
+        }
+        
+        // Start processing properties
+        processNextProperty(0);
     }
 }
 
@@ -1789,7 +2086,7 @@ function resyncAll() {
         return;
     }
     
-    showNotification('Starting resync of all properties...', 'info');
+    showNotification('info', 'Starting resync of all properties...');
     
     fetch('/metadata/properties/resync_all/', {
         method: 'POST',
@@ -1802,15 +2099,15 @@ function resyncAll() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(`Successfully resynced ${data.count || 0} properties`, 'success');
+            showNotification('success', `Successfully resynced ${data.count || 0} properties`);
             loadPropertiesData();
         } else {
-            showNotification(data.error || 'Failed to resync properties', 'error');
+            showNotification('error', data.error || 'Failed to resync properties');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        showNotification('Error resyncing properties', 'error');
+        showNotification('error', 'Error resyncing properties');
     });
 }
 
@@ -1818,39 +2115,55 @@ function resyncAll() {
  * Export all properties to JSON
  */
 function exportAll() {
-    showNotification('Preparing export...', 'info');
+    showNotification('info', 'Preparing export...');
     
-    fetch('/metadata/properties/export_all/', {
-        method: 'GET',
-        headers: {
-            'X-CSRFToken': getCSRFToken(),
-            'X-Requested-With': 'XMLHttpRequest',
+    // Collect all properties from all tabs
+    const allProperties = [
+        ...(propertiesData.synced_items || []),
+        ...(propertiesData.local_only_items || []),
+        ...(propertiesData.remote_only_items || [])
+    ];
+    
+    if (allProperties.length === 0) {
+        showNotification('warning', 'No properties to export');
+        return;
+    }
+    
+    // Create a JSON object with all properties
+    const exportData = {
+        properties: allProperties,
+        metadata: {
+            exported_at: new Date().toISOString(),
+            total_count: allProperties.length,
+            synced_count: propertiesData.synced_items?.length || 0,
+            local_only_count: propertiesData.local_only_items?.length || 0,
+            remote_only_count: propertiesData.remote_only_items?.length || 0,
+            source: window.location.origin,
+            export_type: 'all_properties'
         }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Export failed');
-        }
-        return response.blob();
-    })
-    .then(blob => {
-        // Create download link
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = `properties_export_${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        showNotification('Export completed successfully', 'success');
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showNotification('Error exporting properties', 'error');
-    });
+    };
+    
+    // Convert to pretty JSON
+    const jsonData = JSON.stringify(exportData, null, 2);
+    
+    // Create a blob and initiate download
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `properties-export-all-${allProperties.length}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+    
+    showNotification('success', `${allProperties.length} properties exported successfully`);
 }
 
 /**
@@ -1865,7 +2178,7 @@ function addAllToStagedChanges() {
     const currentEnvironment = window.currentEnvironment || { name: 'dev' };
     const mutationName = window.mutationName || null;
     
-    showNotification('Starting to add all properties to staged changes...', 'success');
+    showNotification('info', 'Starting to add all properties to staged changes...');
     
     fetch('/metadata/properties/add_all_to_staged_changes/', {
         method: 'POST',
@@ -1883,17 +2196,17 @@ function addAllToStagedChanges() {
     .then(data => {
         console.log('Add all to staged changes response:', data);
         if (data.success) {
-            showNotification(data.message || `Successfully added ${data.success_count || 0} properties to staged changes`, 'success');
+            showNotification('success', data.message || `Successfully added ${data.success_count || 0} properties to staged changes`);
             if (data.success_count > 0) {
                 loadPropertiesData();
             }
         } else {
-            showNotification(data.error || 'Failed to add properties to staged changes', 'error');
+            showNotification('error', data.error || 'Failed to add properties to staged changes');
         }
     })
     .catch(error => {
         console.error('Error adding all properties to staged changes:', error);
-        showNotification(`Error adding properties to staged changes: ${error.message}`, 'error');
+        showNotification('error', `Error adding properties to staged changes: ${error.message}`);
     });
 }
 
@@ -1912,7 +2225,7 @@ function bulkDownloadJson(tabType) {
     const selectedProperties = getSelectedProperties(tabType);
     
     if (selectedProperties.length === 0) {
-        showNotification('Please select properties to download', 'warning');
+        showNotification('warning', 'Please select properties to download');
         return;
     }
     
@@ -1931,7 +2244,7 @@ function bulkDownloadJson(tabType) {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
     
-    showNotification(`Downloaded ${selectedProperties.length} properties`, 'success');
+    showNotification('success', `Downloaded ${selectedProperties.length} properties`);
 }
 
 /**

@@ -110,7 +110,7 @@ def main():
                 description=property_data.get("description"),
                 value_type=property_data.get("value_type", "STRING"),
                 cardinality=property_data.get("cardinality", "SINGLE"),
-                allowed_values=property_data.get("allowed_values"),
+                allowedValues=property_data.get("allowedValues"),
                 entity_types=property_data.get("entity_types"),
                 owners=property_data.get("owners"),
                 tags=property_data.get("tags"),

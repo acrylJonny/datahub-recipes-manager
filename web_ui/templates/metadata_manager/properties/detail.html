@@ -132,7 +132,7 @@
                                     </div>
                                 </div>
                                 
-                                {% if property.allowed_values %}
+                                {% if property.allowedValues %}
                                 <div class="mb-3">
                                     <label class="form-label fw-bold">Allowed Values</label>
                                     <div class="table-responsive">
@@ -144,7 +144,7 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {% for value_item in property.allowed_values %}
+                                                {% for value_item in property.allowedValues %}
                                                 <tr>
                                                     <td><code>{{ value_item.value }}</code></td>
                                                     <td>{{ value_item.description|default:"" }}</td>

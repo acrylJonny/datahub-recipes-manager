@@ -46,7 +46,7 @@ def add_structured_property_to_staged_changes(
     description: Optional[str] = None,
     value_type: str = "STRING",
     cardinality: str = "SINGLE",
-    allowed_values: Optional[List[Any]] = None,
+    allowedValues: Optional[List[Any]] = None,
     entity_types: Optional[List[str]] = None,
     owners: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
@@ -70,7 +70,7 @@ def add_structured_property_to_staged_changes(
         description: Property description
         value_type: Value type (STRING, NUMBER, etc.)
         cardinality: Cardinality (SINGLE, MULTIPLE)
-        allowed_values: List of allowed values
+        allowedValues: List of allowed values
         entity_types: List of entity types this property can be applied to
         owners: List of owner URNs
         tags: List of tag URNs
@@ -101,7 +101,7 @@ def add_structured_property_to_staged_changes(
             description=description,
             value_type=value_type,
             cardinality=cardinality,
-            allowed_values=allowed_values,
+            allowed_values=allowedValues,
             entity_types=entity_types,
             owners=owners,
             tags=tags,
@@ -122,8 +122,9 @@ def add_structured_property_to_staged_changes(
                 "files_saved": []
             }
         
-        # Save MCPs to files
-        saved_files = save_mcps_to_files(
+        # Save MCPs to single file
+        from scripts.mcps.create_structured_property_mcps import save_structured_property_to_single_file
+        saved_file = save_structured_property_to_single_file(
             mcps=mcps,
             base_directory=base_dir,
             entity_id=property_id
@@ -135,8 +136,8 @@ def add_structured_property_to_staged_changes(
             "property_id": property_id,
             "property_urn": property_urn,
             "mcps_created": len(mcps),
-            "files_saved": saved_files,
-            "aspects_included": [mcp.aspectName for mcp in mcps]
+            "files_saved": [saved_file] if saved_file else [],
+            "aspects_included": [mcp.get("aspectName", "unknown") for mcp in mcps]
         }
         
     except Exception as e:
@@ -186,7 +187,7 @@ def add_structured_property_to_staged_changes_legacy(
     cardinality = property_data.get("cardinality", "SINGLE")
     
     # Extract other properties from property_data
-    allowed_values = property_data.get("allowed_values", [])
+    allowedValues = property_data.get("allowedValues", [])
     entity_types = property_data.get("entity_types", [])
     owners = property_data.get("owners", [])
     tags = property_data.get("tags", [])
@@ -202,7 +203,7 @@ def add_structured_property_to_staged_changes_legacy(
         description=description,
         value_type=value_type,
         cardinality=cardinality,
-        allowed_values=allowed_values,
+        allowedValues=allowedValues,
         entity_types=entity_types,
         owners=owners,
         tags=tags,

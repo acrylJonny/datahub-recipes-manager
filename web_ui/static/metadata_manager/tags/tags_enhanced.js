@@ -947,6 +947,16 @@ function getActionButtons(tag, tabType) {
         `;
     }
     
+    // 2c. Push to DataHub - For synced tags that are modified or local tags
+    if ((tabType === 'synced' && tagData.sync_status === 'MODIFIED') || tabType === 'local') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success push-to-datahub" 
+                    title="Push to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
+    }
+    
     // 3. Sync to Local - Only for remote/synced tags
     if (tabType === 'remote' || (tabType === 'synced' && tagData.is_remote)) {
         actionButtons += `
@@ -2886,6 +2896,12 @@ function setupActionButtonListeners() {
             // Resync Tag button clicked
             console.log('Resync Tag clicked for tag:', tagData);
             resyncTag(tagData);
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (clickedElement.classList.contains('push-to-datahub') || clickedElement.closest('.push-to-datahub')) {
+            // Push to DataHub button clicked
+            console.log('Push to DataHub clicked for tag:', tagData);
+            syncTagToDataHub(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('delete-remote-tag') || clickedElement.closest('.delete-remote-tag')) {

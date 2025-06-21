@@ -125,7 +125,7 @@ def add_data_contract_to_staged_changes(
             "entity_urn": entity_urn,
             "mcps_created": len(mcps),
             "files_saved": saved_files,
-            "aspects_included": [mcp.aspectName for mcp in mcps]
+            "aspects_included": [mcp.aspectName if hasattr(mcp, 'aspectName') else mcp.get("aspectName", "unknown") for mcp in mcps]
         }
         
     except Exception as e:
