@@ -440,6 +440,22 @@ urlpatterns = [
         views_domains.add_domain_to_staged_changes,
         name="domain_add_to_staged_changes",
     ),
+    path(
+        "domains/remote/stage_changes/",
+        views_domains.DomainRemoteAddToStagedChangesView.as_view(),
+        name="domain_remote_add_to_staged_changes",
+    ),
+    # Bulk domain operations
+    path(
+        "domains/bulk/sync-to-local/",
+        views_domains.bulk_sync_domains_to_local,
+        name="domain_bulk_sync_to_local",
+    ),
+    path(
+        "domains/bulk/add-to-staged-changes/",
+        views_domains.bulk_add_domains_to_staged_changes,
+        name="domain_bulk_add_to_staged_changes",
+    ),
     # Data Contracts
     path(
         "data-contracts/",

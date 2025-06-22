@@ -32,52 +32,150 @@ class DataHubMetadataClient:
         self.server_url = server_url
         self.token = token
 
-    def list_domains(self) -> List[Dict[str, Any]]:
+    def list_domains(self, query="*", start=0, count=100) -> List[Dict[str, Any]]:
         """
         List all domains in DataHub
+
+        Args:
+            query: Search query (default "*" for all)
+            start: Starting index (default 0)
+            count: Number of results to return (default 100)
 
         Returns:
             List of domain objects
         """
         query = """
-        query listDomains($input: ListDomainsInput!) {
-          listDomains(input: $input) {
+        query getDomains($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
             start
             count
             total
-            domains {
-              urn
-              id
-              type
-              properties {
-                name
-                description
-                __typename
-              }
-              parentDomains {
-                domains {
+            searchResults {
+              entity {
+                ... on Domain {
                   urn
-                  type
+                  id
                   properties {
                     name
                     description
-                    __typename
                   }
-                  __typename
+                  parentDomains {
+                    domains {
+                      urn
+                    }
+                  }
+                  ownership {
+                    owners {
+                      owner {
+                        ... on CorpUser {
+                          urn
+                          username
+                          properties {
+                            displayName
+                            fullName
+                          }
+                        }
+                        ... on CorpGroup {
+                          urn
+                          name
+                          properties {
+                            displayName
+                          }
+                        }
+                      }
+                      ownershipType {
+                        urn
+                        info {
+                          name
+                          description
+                        }
+                      }
+                      source {
+                        type
+                        url
+                      }
+                    }
+                    lastModified {
+                      time
+                      actor
+                    }
+                  }
+                  institutionalMemory {
+                    elements {
+                      url
+                      label
+                      actor {
+                        ... on CorpUser {
+                          urn
+                          username
+                          properties {
+                            displayName
+                            fullName
+                          }
+                        }
+                        ... on CorpGroup {
+                          urn
+                          name
+                          properties {
+                            displayName
+                          }
+                        }
+                      }
+                      created {
+                        time
+                        actor
+                      }
+                      updated {
+                        time
+                        actor
+                      }
+                      settings {
+                        showInAssetPreview
+                      }
+                    }
+                  }
+                  displayProperties {
+                    colorHex
+                    icon {
+                      iconLibrary
+                      name
+                      style
+                    }
+                  }
+                  entities(input: {start: 0, count: 1, query: "*"}) {
+                    total
+                  }
+                  structuredProperties {
+                    properties {
+                      structuredProperty {
+                        urn
+                      }
+                      values {
+                        ... on StringValue {
+                          stringValue
+                        }
+                        ... on NumberValue {
+                          numberValue
+                        }
+                      }
+                      valueEntities {
+                        urn
+                      }
+                    }
+                  }
                 }
-                __typename
               }
-              __typename
             }
-            __typename
           }
         }
         """
 
         variables = {
             "input": {
-                "start": 0,
-                "count": 1000,  # Reasonable limit
+                "types": ["DOMAIN"],
+                "query": query,
+                "start": start,
+                "count": count
             }
         }
 
@@ -94,9 +192,16 @@ class DataHubMetadataClient:
                     logger.error(f"GraphQL errors: {', '.join(error_messages)}")
                 return []
 
-            domains_data = (
-                result.get("data", {}).get("listDomains", {}).get("domains", [])
+            domains_data = []
+            search_results = (
+                result.get("data", {}).get("searchAcrossEntities", {}).get("searchResults", [])
             )
+            
+            # Extract domains from search results
+            for search_result in search_results:
+                entity = search_result.get("entity")
+                if entity:
+                    domains_data.append(entity)
 
             return domains_data
         except Exception as e:

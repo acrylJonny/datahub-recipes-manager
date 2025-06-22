@@ -795,6 +795,62 @@ class DataProduct(BaseMetadataModel):
     def can_deploy(self):
         """Check if this data product can be deployed to DataHub"""
         return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+    
+    @classmethod
+    def create_from_datahub(cls, product_data, connection=None):
+        """Create or update a data product from DataHub data"""
+        from django.utils import timezone
+        from utils.urn_utils import get_full_urn_from_name
+        
+        # Extract basic properties
+        properties = product_data.get('properties', {}) or {}
+        name = properties.get('name', 'Unnamed Data Product')
+        description = properties.get('description') or None
+        external_url = properties.get('externalUrl') or None
+        
+        # Extract URN
+        urn = product_data.get('urn')
+        if not urn:
+            # Generate deterministic URN if not provided
+            urn = get_full_urn_from_name("dataProduct", name)
+        
+        # Extract domain information
+        domain_urn = None
+        domain_data = product_data.get('domain', {}) or {}
+        if domain_data and domain_data.get('domain'):
+            domain_urn = domain_data['domain'].get('urn')
+        
+        # Extract entity URNs
+        entity_urns = []
+        entities_data = product_data.get('entities', {}) or {}
+        # This would need to be populated from a separate API call in practice
+        
+        # Extract ownership data
+        ownership_data = product_data.get('ownership')
+        
+        # Create or update the data product
+        data_product, created = cls.objects.update_or_create(
+            urn=urn,
+            defaults={
+                "name": name,
+                "description": description,
+                "external_url": external_url,
+                "domain_urn": domain_urn,
+                "entity_urns": entity_urns,
+                "properties_data": properties,
+                "ownership_data": ownership_data,
+                "entities_data": product_data.get('entities'),
+                "tags_data": product_data.get('tags'),
+                "glossary_terms_data": product_data.get('glossaryTerms'),
+                "structured_properties_data": product_data.get('structuredProperties'),
+                "institutional_memory_data": product_data.get('institutionalMemory'),
+                "connection": connection,
+                "sync_status": "SYNCED",
+                "last_synced": timezone.now(),
+            }
+        )
+        
+        return data_product
 
     @property 
     def display_domain(self):

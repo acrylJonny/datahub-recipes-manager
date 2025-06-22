@@ -816,66 +816,111 @@ def sync_data_product_to_local(request, data_product_id=None):
             # would require a separate API call to get the data product's assets
             pass
         
-        # Generate deterministic URN for local storage
-        deterministic_urn = get_full_urn_from_name("dataProduct", name)
-        
-        # Check if data product already exists locally
-        existing_product = DataProduct.objects.filter(
-            models.Q(urn=deterministic_urn) | 
-            models.Q(urn=product_urn)
-        ).first()
-        
-        if existing_product:
-            # Update existing product
-            existing_product.name = name
-            existing_product.description = description
-            existing_product.external_url = external_url
-            existing_product.domain_urn = domain_urn
-            existing_product.entity_urns = entity_urns
-            existing_product.sync_status = "SYNCED"
-            existing_product.last_synced = timezone.now()
+        # Use the new create_from_datahub method for consistent data handling
+        try:
+            # Get current connection context
+            current_connection = getattr(request, 'connection', None)
             
-            # Store comprehensive data
-            existing_product.properties_data = properties
-            ownership_data = product_data.get('ownership')
-            existing_product.ownership_data = ownership_data
-            existing_product.entities_data = product_data.get('entities')
-            existing_product.tags_data = product_data.get('tags')
-            existing_product.glossary_terms_data = product_data.get('glossaryTerms')
-            existing_product.structured_properties_data = product_data.get('structuredProperties')
-            existing_product.institutional_memory_data = product_data.get('institutionalMemory')
+            # Create or update using the model's create_from_datahub method
+            created_product = DataProduct.create_from_datahub(product_data, connection=current_connection)
             
-            existing_product.save()
+            logger.info(f"Successfully synced data product: {created_product.name} (ID: {created_product.id})")
+            message = f"Data product '{created_product.name}' synced to local storage successfully"
             
-            logger.info(f"Updated existing data product: {name} (ID: {existing_product.id})")
-            message = f"Data product '{name}' updated in local storage"
-            created_product = existing_product
+        except Exception as create_error:
+            logger.error(f"Error using create_from_datahub: {str(create_error)}")
+            # Fallback to original logic if the new method fails
             
-        else:
-            # Create new local data product
-            new_product = DataProduct.objects.create(
-                name=name,
-                description=description,
-                urn=deterministic_urn,
-                external_url=external_url,
-                domain_urn=domain_urn,
-                entity_urns=entity_urns,
-                sync_status="SYNCED",
-                last_synced=timezone.now(),
+            # Extract relevant information with defensive programming
+            properties = product_data.get('properties', {})
+            if properties is None:
+                logger.warning(f"No properties section in product data: {product_data}")
+                properties = {}
+            
+            name = properties.get('name', 'Unnamed Data Product') if properties else 'Unnamed Data Product'
+            description = properties.get('description') if properties else None
+            # Ensure description is None if empty string to avoid constraint issues
+            if description == '':
+                description = None
+            external_url = properties.get('externalUrl') if properties else None
+            # Ensure external_url is None if empty string
+            if external_url == '':
+                external_url = None
+            
+            # Extract domain information
+            domain_urn = None
+            domain_data = product_data.get('domain', {})
+            if domain_data and domain_data.get('domain'):
+                domain_urn = domain_data['domain'].get('urn')
+            
+            # Extract entity URNs (this might need to be fetched separately in a real implementation)
+            entity_urns = []
+            entities_data = product_data.get('entities', {})
+            if entities_data and entities_data.get('total', 0) > 0:
+                # For now, we'll use an empty list since getting the actual entity URNs
+                # would require a separate API call to get the data product's assets
+                pass
+            
+            # Generate deterministic URN for local storage
+            deterministic_urn = get_full_urn_from_name("dataProduct", name)
+            
+            # Check if data product already exists locally
+            existing_product = DataProduct.objects.filter(
+                models.Q(urn=deterministic_urn) | 
+                models.Q(urn=product_urn)
+            ).first()
+            
+            if existing_product:
+                # Update existing product
+                existing_product.name = name
+                existing_product.description = description
+                existing_product.external_url = external_url
+                existing_product.domain_urn = domain_urn
+                existing_product.entity_urns = entity_urns
+                existing_product.sync_status = "SYNCED"
+                existing_product.last_synced = timezone.now()
                 
                 # Store comprehensive data
-                properties_data=properties,
-                ownership_data=product_data.get('ownership'),
-                entities_data=product_data.get('entities'),
-                tags_data=product_data.get('tags'),
-                glossary_terms_data=product_data.get('glossaryTerms'),
-                structured_properties_data=product_data.get('structuredProperties'),
-                institutional_memory_data=product_data.get('institutionalMemory'),
-            )
-            
-            logger.info(f"Created new data product: {name} (ID: {new_product.id})")
-            message = f"Data product '{name}' synced to local storage successfully"
-            created_product = new_product
+                existing_product.properties_data = properties
+                ownership_data = product_data.get('ownership')
+                existing_product.ownership_data = ownership_data
+                existing_product.entities_data = product_data.get('entities')
+                existing_product.tags_data = product_data.get('tags')
+                existing_product.glossary_terms_data = product_data.get('glossaryTerms')
+                existing_product.structured_properties_data = product_data.get('structuredProperties')
+                existing_product.institutional_memory_data = product_data.get('institutionalMemory')
+                
+                existing_product.save()
+                
+                logger.info(f"Updated existing data product: {name} (ID: {existing_product.id})")
+                message = f"Data product '{name}' updated in local storage"
+                created_product = existing_product
+                
+            else:
+                # Create new local data product
+                new_product = DataProduct.objects.create(
+                    name=name,
+                    description=description,
+                    urn=deterministic_urn,
+                    external_url=external_url,
+                    domain_urn=domain_urn,
+                    entity_urns=entity_urns,
+                    sync_status="SYNCED",
+                    last_synced=timezone.now(),
+                    
+                    # Store comprehensive data
+                    properties_data=properties,
+                    ownership_data=product_data.get('ownership'),
+                    entities_data=product_data.get('entities'),
+                    tags_data=product_data.get('tags'),
+                    glossary_terms_data=product_data.get('glossaryTerms'),
+                    structured_properties_data=product_data.get('structuredProperties'),
+                    institutional_memory_data=product_data.get('institutionalMemory'),
+                )
+                
+                logger.info(f"Created new data product: {name} (ID: {new_product.id})")
+                message = f"Data product '{name}' synced to local storage successfully"
+                created_product = new_product
         
         return JsonResponse({
             "success": True,

@@ -9,9 +9,9 @@ let currentOverviewFilter = null;
 
 // Pagination variables - enhanced to match tags page
 let currentPagination = {
-    synced: { page: 1, itemsPerPage: 25 },
-    local: { page: 1, itemsPerPage: 25 },
-    remote: { page: 1, itemsPerPage: 25 }
+    synced: { page: 1, itemsPerPage: 5 },
+    local: { page: 1, itemsPerPage: 5 },
+    remote: { page: 1, itemsPerPage: 5 }
 };
 
 // Pagination settings (deprecated - now using currentPagination object)
@@ -697,7 +697,7 @@ function renderTab(tabId) {
                         <th class="sortable-header" data-sort="value_type" width="120px">Value Type</th>
                         <th class="sortable-header" data-sort="cardinality" width="100px">Cardinality</th>
                         <th class="sortable-header" data-sort="allowedValues" width="100px">Allowed Values</th>
-                        <th width="150px" class="sortable-header" data-sort="urn">URN</th>
+                        <th width="150px">URN</th>
                         <th width="180px">Actions</th>
                     </tr>
                 </thead>
@@ -708,7 +708,7 @@ function renderTab(tabId) {
         console.log(`No items to render for ${tabType}`);
         html += `
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">
+                        <td colspan="9" class="text-center py-4 text-muted">
                             <i class="fas fa-inbox fa-2x mb-2"></i><br>
                             No ${tabType} properties found
                         </td>
@@ -1283,15 +1283,15 @@ function getSortValueFromRow(row, column) {
     switch(column) {
         case 'name':
             return cells[1]?.textContent?.trim().toLowerCase() || ''; // Skip checkbox column
-        case 'urn':
+        case 'description':
             return cells[2]?.textContent?.trim().toLowerCase() || '';
-        case 'value_type':
-            return cells[3]?.textContent?.trim().toLowerCase() || '';
-        case 'cardinality':
-            return cells[4]?.textContent?.trim().toLowerCase() || '';
         case 'entity_types':
+            return cells[3]?.textContent?.trim().toLowerCase() || '';
+        case 'value_type':
+            return cells[4]?.textContent?.trim().toLowerCase() || '';
+        case 'cardinality':
             return cells[5]?.textContent?.trim().toLowerCase() || '';
-                    case 'allowedValues':
+        case 'allowedValues':
             return cells[6]?.textContent?.trim().toLowerCase() || '';
         default:
             return '';

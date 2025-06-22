@@ -370,10 +370,39 @@ class PropertyListView(View):
                     entity_types_info = definition.get("entityTypes", []) or []
                     processed_entity_types = _process_entity_types(entity_types_info)
                     
+                    # Process allowed values from remote data
+                    allowed_values_info = definition.get("allowedValues", []) or []
+                    allowed_values = []
+                    for av in allowed_values_info:
+                        description = av.get("description", "")
+                        
+                        # Handle both remote format {value: {stringValue: "..."}} and local format {value: "..."}
+                        value_obj = av.get("value", {})
+                        value = None
+                        
+                        if isinstance(value_obj, dict):
+                            # Remote format: {value: {stringValue: "..."}, description: "..."}
+                            if "stringValue" in value_obj:
+                                value = value_obj.get("stringValue")
+                            elif "numberValue" in value_obj:
+                                value = value_obj.get("numberValue")
+                            elif "booleanValue" in value_obj:
+                                value = value_obj.get("booleanValue")
+                        else:
+                            # Local format: {value: "...", description: "..."}
+                            value = value_obj
+
+                        if value is not None:
+                            allowed_values.append(
+                                {"value": value, "description": description}
+                            )
+                    
                     # Update with processed remote data
                     local_prop_data.update({
                         'value_type': processed_value_type,
                         'entity_types': processed_entity_types,
+                        'allowedValues': allowed_values,
+                        'allowedValuesCount': len(allowed_values),
                         'status': 'synced',
                         'remote_data': remote_prop
                     })

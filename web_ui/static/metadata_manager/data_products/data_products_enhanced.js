@@ -1,8 +1,8 @@
 // Global variables
 let productsData = {
-    synced_products: [],
-    local_only_products: [],
-    remote_only_products: [],
+    synced_items: [],
+    local_only_items: [],
+    remote_only_items: [],
     datahub_url: ''
 };
 let currentSearch = {
@@ -112,8 +112,9 @@ const DataUtils = {
 };
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Only initialize if the legacy variables don't exist
-    if (typeof window.productsData === 'undefined') {
+    // Only initialize if the legacy system is not already loaded
+    if (typeof window.legacyCurrentTab === 'undefined') {
+        console.log('Initializing enhanced data products system');
         loadProductsData();
         setupFilterListeners();
         setupSearchHandlers();
@@ -140,6 +141,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
         });
+    } else {
+        console.log('Legacy data products system detected, skipping enhanced initialization');
     }
 });
 
@@ -280,9 +283,9 @@ function updateTabBadges() {
     const localBadge = document.getElementById('local-badge');
     const remoteBadge = document.getElementById('remote-badge');
     
-    if (syncedBadge) syncedBadge.textContent = filterProducts(productsData.synced_products || []).length;
-    if (localBadge) localBadge.textContent = filterProducts(productsData.local_only_products || []).length;
-    if (remoteBadge) remoteBadge.textContent = filterProducts(productsData.remote_only_products || []).length;
+    if (syncedBadge) syncedBadge.textContent = filterProducts(productsData.synced_items || []).length;
+    if (localBadge) localBadge.textContent = filterProducts(productsData.local_only_items || []).length;
+    if (remoteBadge) remoteBadge.textContent = filterProducts(productsData.remote_only_items || []).length;
 }
 
 function renderTabContent(tabType) {
@@ -329,9 +332,9 @@ function renderTabContent(tabType) {
 
 function getItemsForTab(tabType) {
     switch (tabType) {
-        case 'synced': return productsData.synced_products || [];
-        case 'local': return productsData.local_only_products || [];
-        case 'remote': return productsData.remote_only_products || [];
+        case 'synced': return productsData.synced_items || [];
+        case 'local': return productsData.local_only_items || [];
+        case 'remote': return productsData.remote_only_items || [];
         default: return [];
     }
 }
@@ -667,8 +670,9 @@ function toggleSelectAll(tabType, checkbox) {
 
 function loadProductsData() {
     // Check if legacy system is loaded first
-    if (typeof window.loadProductsData === 'function' && window.loadProductsData !== loadProductsData) {
-        return window.loadProductsData();
+    if (typeof window.legacyCurrentTab !== 'undefined') {
+        console.log('Legacy system detected, deferring to legacy loadProductsData');
+        return;
     }
     
     const loadingIndicator = document.getElementById('loading-indicator');
@@ -879,7 +883,7 @@ function bulkSyncToDataHub(tabType) {
     showSuccess(`Bulk syncing ${selectedProducts.length} product(s) to DataHub`);
 }
 
-function bulkSyncToLocal(tabType) {
+async function bulkSyncToLocal(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
         showError('No products selected');
@@ -890,8 +894,51 @@ function bulkSyncToLocal(tabType) {
         return;
     }
     
-    console.log('Bulk syncing to local:', selectedProducts);
-    showSuccess(`Bulk syncing ${selectedProducts.length} product(s) to local`);
+    showSuccess(`Starting sync of ${selectedProducts.length} product(s) to local...`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Process products sequentially to avoid overwhelming the server
+    for (const product of selectedProducts) {
+        try {
+            await syncSingleProductToLocal(product.urn);
+            successCount++;
+        } catch (error) {
+            console.error(`Error syncing product ${product.name}:`, error);
+            errorCount++;
+        }
+    }
+    
+    // Reload data once at the end
+    await loadProductsData();
+    
+    if (errorCount === 0) {
+        showSuccess(`Successfully synced ${successCount} product(s) to local`);
+    } else {
+        showError(`Completed: ${successCount} synced successfully, ${errorCount} failed`);
+    }
+}
+
+async function syncSingleProductToLocal(productUrn) {
+    const response = await fetch('/metadata/data-products/sync-to-local/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({
+            'product_urn': productUrn
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+        throw new Error(data.error || 'Unknown error');
+    }
+    
+    return data;
 }
 
 function bulkDownloadJson(tabType) {
@@ -959,17 +1006,34 @@ function bulkDeleteRemote(tabType) {
 }
 
 function getSelectedProducts(tabType) {
-    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
+    const checkboxes = document.querySelectorAll(`input[data-tab="${tabType}"].product-checkbox:checked`);
     const products = [];
     
     checkboxes.forEach(checkbox => {
         const row = checkbox.closest('tr');
-        if (row && row.dataset.item) {
-            try {
-                const product = JSON.parse(row.dataset.item);
-                products.push(product);
-            } catch (error) {
-                console.error('Error parsing product data:', error);
+        if (row) {
+            const productId = row.dataset.productId;
+            const productUrn = row.dataset.productUrn;
+            const storeKey = productId || productUrn;
+            
+            // Try to find the product data in the global data store
+            let productData = null;
+            if (window.productDataStore && window.productDataStore[tabType]) {
+                productData = window.productDataStore[tabType].get(storeKey);
+            }
+            
+            if (productData) {
+                products.push(productData);
+            } else {
+                // Fallback: create minimal product object from row data
+                const nameCell = row.querySelector('td:nth-child(2)');
+                const name = nameCell ? nameCell.textContent.trim() : 'Unknown';
+                
+                products.push({
+                    id: productId,
+                    urn: productUrn,
+                    name: name
+                });
             }
         }
     });
@@ -983,9 +1047,28 @@ function syncProductToDataHub(productId, button) {
     showSuccess('Product synced to DataHub');
 }
 
-function syncProductToLocal(productUrn, button) {
-    console.log('Syncing product to local:', productUrn);
-    showSuccess('Product synced to local');
+async function syncProductToLocal(productUrn, button) {
+    if (!confirm('Are you sure you want to sync this data product to local storage?')) {
+        return;
+    }
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    try {
+        await syncSingleProductToLocal(productUrn);
+        showSuccess('Data product synced to local successfully!');
+        
+        // Reload data to refresh the UI
+        await loadProductsData();
+    } catch (error) {
+        console.error('Error syncing product to local:', error);
+        showError('Failed to sync data product to local: ' + error.message);
+    } finally {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    }
 }
 
 function resyncProduct(productId, productUrn, button) {

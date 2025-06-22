@@ -3934,6 +3934,561 @@ class DataHubRestClient:
             self.logger.error(f"Error removing tag owner: {str(e)}")
             return False
 
+    def update_domain_description(self, domain_urn: str, description: str) -> bool:
+        """
+        Update the description of a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            description (str): New description
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Updating description for domain {domain_urn}")
+
+        mutation = """
+        mutation updateDescription($input: DescriptionUpdateInput!) {
+          updateDescription(input: $input)
+        }
+        """
+
+        variables = {"input": {"resourceUrn": domain_urn, "description": description}}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "updateDescription" in result["data"]:
+                success = result["data"]["updateDescription"]
+                if success:
+                    self.logger.info(
+                        f"Successfully updated description for domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when updating domain description: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating domain description: {str(e)}")
+            return False
+
+    def update_domain_display_properties(self, domain_urn: str, color_hex: str = None, icon: Dict[str, str] = None) -> bool:
+        """
+        Update the display properties of a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            color_hex (str): Hex color code (e.g., "#914b4b")
+            icon (dict): Icon configuration with name, style, iconLibrary
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Updating display properties for domain {domain_urn}")
+
+        mutation = """
+        mutation updateDisplayProperties($urn: String!, $input: DisplayPropertiesUpdateInput!) {
+          updateDisplayProperties(urn: $urn, input: $input)
+        }
+        """
+
+        input_data = {}
+        if color_hex:
+            input_data["colorHex"] = color_hex
+        if icon:
+            input_data["icon"] = icon
+
+        variables = {"urn": domain_urn, "input": input_data}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "updateDisplayProperties" in result["data"]:
+                success = result["data"]["updateDisplayProperties"]
+                if success:
+                    self.logger.info(
+                        f"Successfully updated display properties for domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when updating domain display properties: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating domain display properties: {str(e)}")
+            return False
+
+    def update_domain_structured_properties(self, domain_urn: str, structured_properties: List[Dict[str, Any]]) -> bool:
+        """
+        Update structured properties of a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            structured_properties (list): List of structured property updates
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Updating structured properties for domain {domain_urn}")
+
+        mutation = """
+        mutation upsertStructuredProperties($input: UpsertStructuredPropertiesInput!) {
+          upsertStructuredProperties(input: $input) {
+            properties {
+              ...structuredPropertiesFields
+              __typename
+            }
+            __typename
+          }
+        }
+
+        fragment structuredPropertiesFields on StructuredPropertiesEntry {
+          structuredProperty {
+            ...structuredPropertyFields
+            __typename
+          }
+          values {
+            ... on StringValue {
+              stringValue
+              __typename
+            }
+            ... on NumberValue {
+              numberValue
+              __typename
+            }
+            __typename
+          }
+          valueEntities {
+            urn
+            type
+            ...entityDisplayNameFields
+            __typename
+          }
+          associatedUrn
+          __typename
+        }
+
+        fragment structuredPropertyFields on StructuredPropertyEntity {
+          urn
+          type
+          exists
+          definition {
+            displayName
+            qualifiedName
+            description
+            cardinality
+            immutable
+            valueType {
+              urn
+              type
+              info {
+                type
+                displayName
+                __typename
+              }
+              __typename
+            }
+            entityTypes {
+              urn
+              type
+              info {
+                type
+                __typename
+              }
+              __typename
+            }
+            cardinality
+            filterStatus
+            typeQualifier {
+              allowedTypes {
+                urn
+                type
+                info {
+                  type
+                  displayName
+                  __typename
+                }
+                __typename
+              }
+              __typename
+            }
+            allowedValues {
+              value {
+                ... on StringValue {
+                  stringValue
+                  __typename
+                }
+                ... on NumberValue {
+                  numberValue
+                  __typename
+                }
+                __typename
+              }
+              description
+              __typename
+            }
+            created {
+              time
+              actor {
+                urn
+                editableProperties {
+                  displayName
+                  pictureLink
+                  __typename
+                }
+                ...entityDisplayNameFields
+                __typename
+              }
+              __typename
+            }
+            lastModified {
+              time
+              actor {
+                urn
+                editableProperties {
+                  displayName
+                  pictureLink
+                  __typename
+                }
+                ...entityDisplayNameFields
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+          settings {
+            isHidden
+            showInSearchFilters
+            showAsAssetBadge
+            showInAssetSummary
+            showInColumnsTable
+            __typename
+          }
+          __typename
+        }
+
+        fragment entityDisplayNameFields on Entity {
+          urn
+          type
+          ... on Dataset {
+            name
+            properties {
+              name
+              qualifiedName
+              __typename
+            }
+            __typename
+          }
+          ... on CorpUser {
+            username
+            editableProperties {
+              displayName
+              email
+              __typename
+            }
+            properties {
+              displayName
+              title
+              firstName
+              lastName
+              fullName
+              email
+              __typename
+            }
+            info {
+              active
+              displayName
+              title
+              firstName
+              lastName
+              fullName
+              email
+              __typename
+            }
+            __typename
+          }
+          ... on CorpGroup {
+            name
+            info {
+              displayName
+              __typename
+            }
+            __typename
+          }
+          ... on Dashboard {
+            dashboardId
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on Chart {
+            chartId
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on DataFlow {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on DataJob {
+            jobId
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on GlossaryTerm {
+            name
+            hierarchicalName
+            properties {
+              name
+              __typename
+            }
+            parentNodes {
+              nodes {
+                urn
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+          ... on GlossaryNode {
+            properties {
+              name
+              description
+              __typename
+            }
+            __typename
+          }
+          ... on Domain {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on Container {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on MLFeatureTable {
+            name
+            __typename
+          }
+          ... on MLFeature {
+            name
+            __typename
+          }
+          ... on MLPrimaryKey {
+            name
+            __typename
+          }
+          ... on MLModel {
+            name
+            __typename
+          }
+          ... on MLModelGroup {
+            name
+            __typename
+          }
+          ... on Tag {
+            name
+            properties {
+              name
+              colorHex
+              __typename
+            }
+            __typename
+          }
+          ... on DataPlatform {
+            ...nonConflictingPlatformFields
+            __typename
+          }
+          ... on DataProduct {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on Application {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on DataPlatformInstance {
+            instanceId
+            __typename
+          }
+          ... on StructuredPropertyEntity {
+            definition {
+              displayName
+              qualifiedName
+              __typename
+            }
+            __typename
+          }
+          ... on SchemaFieldEntity {
+            fieldPath
+            __typename
+          }
+          ... on OwnershipTypeEntity {
+            info {
+              name
+              __typename
+            }
+            __typename
+          }
+          __typename
+        }
+
+        fragment nonConflictingPlatformFields on DataPlatform {
+          urn
+          type
+          name
+          properties {
+            displayName
+            datasetNameDelimiter
+            logoUrl
+            __typename
+          }
+          displayName
+          info {
+            type
+            displayName
+            datasetNameDelimiter
+            logoUrl
+            __typename
+          }
+          __typename
+        }
+        """
+
+        variables = {
+            "input": {
+                "assetUrn": domain_urn,
+                "structuredPropertyInputParams": structured_properties,
+            }
+        }
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "upsertStructuredProperties" in result["data"]:
+                success = result["data"]["upsertStructuredProperties"]
+                if success:
+                    self.logger.info(
+                        f"Successfully updated structured properties for domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when updating domain structured properties: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating domain structured properties: {str(e)}")
+            return False
+
+    def add_domain_owner(
+        self,
+        domain_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
+        """
+        Add an owner to a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            owner_urn (str): Owner URN (urn:li:corpuser:username or urn:li:corpGroup:groupname)
+            ownership_type (str): Ownership type URN
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Adding owner {owner_urn} to domain {domain_urn}")
+
+        # Determine the owner entity type
+        owner_entity_type = "CORP_USER" if "corpuser:" in owner_urn else "CORP_GROUP"
+
+        mutation = """
+        mutation batchAddOwners($input: BatchAddOwnersInput!) {
+          batchAddOwners(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "owners": [
+                    {
+                        "ownerUrn": owner_urn,
+                        "ownerEntityType": owner_entity_type,
+                        "ownershipTypeUrn": ownership_type,
+                    }
+                ],
+                "resources": [{"resourceUrn": domain_urn}],
+            }
+        }
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "batchAddOwners" in result["data"]:
+                success = result["data"]["batchAddOwners"]
+                if success:
+                    self.logger.info(
+                        f"Successfully added owner {owner_urn} to domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when adding domain owner: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error adding domain owner: {str(e)}")
+            return False
+
     def delete_tag(self, tag_urn: str) -> bool:
         """
         Delete a tag from DataHub.
@@ -6286,43 +6841,21 @@ class DataHubRestClient:
                       }
                     }
                   }
-                  relationships(input: { types: ["ParentOf", "Contains"], direction: OUTGOING, start: 0, count: 100 }) {
-                    start
-                    count
-                    total
-                    relationships {
-                      type
-                      direction
-                      entity {
+                  structuredProperties {
+                    properties {
+                      structuredProperty {
                         urn
-                        type
                       }
-                      created {
-                        time
-                        actor
-                      }
-                    }
-                  }
-                  parentRelationships: relationships(input: { types: ["ParentOf", "Contains"], direction: INCOMING, start: 0, count: 10 }) {
-                    start
-                    count
-                    total
-                    relationships {
-                      type
-                      direction
-                      entity {
-                        urn
-                        type
-                        ... on Domain {
-                          urn
-                          properties {
-                            name
-                          }
+                      values {
+                        ... on StringValue {
+                          stringValue
+                        }
+                        ... on NumberValue {
+                          numberValue
                         }
                       }
-                      created {
-                        time
-                        actor
+                      valueEntities {
+                        urn
                       }
                     }
                   }
@@ -6376,18 +6909,6 @@ class DataHubRestClient:
                             if domains_list and len(domains_list) > 0:
                                 parent_urn = domains_list[0].get("urn")
                         
-                        # If not found, try incoming relationships (parentRelationships)
-                        if not parent_urn:
-                            parent_relationships = entity.get("parentRelationships", {})
-                            if parent_relationships and parent_relationships.get("relationships"):
-                                relationships_list = parent_relationships["relationships"]
-                                for rel in relationships_list:
-                                    if rel and rel.get("type") in ["ParentOf", "Contains"] and rel.get("entity"):
-                                        parent_entity = rel["entity"]
-                                        if parent_entity.get("type") == "DOMAIN":
-                                            parent_urn = parent_entity.get("urn")
-                                            break
-                        
                         # Extract entities count from GraphQL response
                         entities_info = entity.get("entities", {})
                         entities_count = entities_info.get("total", 0) if entities_info else 0
@@ -6400,12 +6921,12 @@ class DataHubRestClient:
                             "properties": properties,
                             "parentDomain": parent_urn,  # For backward compatibility
                             "parentDomains": entity.get("parentDomains"),
-                            "parentRelationships": entity.get("parentRelationships"),  # Add parent relationships
                             "ownership": entity.get("ownership"),
-                            "relationships": entity.get("relationships"),
                             "institutionalMemory": entity.get("institutionalMemory"),
                             "displayProperties": entity.get("displayProperties"),
+                            "entities": entity.get("entities"),  # Include full entities data for processing
                             "entities_count": entities_count,  # Add entities count from GraphQL
+                            "structuredProperties": entity.get("structuredProperties"),  # Add structured properties
                         }
                         
                         domains.append(domain)
@@ -6521,45 +7042,26 @@ class DataHubRestClient:
                 }
               }
             }
-            relationships(input: { types: ["ParentOf", "Contains"], direction: OUTGOING, start: 0, count: 100 }) {
-              start
-              count
-              total
-              relationships {
-                type
-                direction
-                entity {
+            structuredProperties {
+              properties {
+                structuredProperty {
                   urn
-                  type
                 }
-                created {
-                  time
-                  actor
+                values {
+                  ... on StringValue {
+                    stringValue
+                  }
+                  ... on NumberValue {
+                    numberValue
+                  }
+                }
+                valueEntities {
+                  urn
                 }
               }
             }
-            parentRelationships: relationships(input: { types: ["ParentOf", "Contains"], direction: INCOMING, start: 0, count: 10 }) {
-              start
-              count
+            entities(input: { start: 0, count: 1, query: "*" }) {
               total
-              relationships {
-                type
-                direction
-                entity {
-                  urn
-                  type
-                  ... on Domain {
-                    urn
-                    properties {
-                      name
-                    }
-                  }
-                }
-                created {
-                  time
-                  actor
-                }
-              }
             }
             displayProperties {
               colorHex
@@ -6568,9 +7070,6 @@ class DataHubRestClient:
                 name
                 style
               }
-            }
-            entities(input: { start: 0, count: 1, query: "*" }) {
-              total
             }
           }
         }
@@ -6598,18 +7097,6 @@ class DataHubRestClient:
                     if domains_list and len(domains_list) > 0:
                         parent_urn = domains_list[0].get("urn")
                 
-                # If not found, try incoming relationships (parentRelationships)
-                if not parent_urn:
-                    parent_relationships = domain_data.get("parentRelationships", {})
-                    if parent_relationships and parent_relationships.get("relationships"):
-                        relationships_list = parent_relationships["relationships"]
-                        for rel in relationships_list:
-                            if rel and rel.get("type") in ["ParentOf", "Contains"] and rel.get("entity"):
-                                parent_entity = rel["entity"]
-                                if parent_entity.get("type") == "DOMAIN":
-                                    parent_urn = parent_entity.get("urn")
-                                    break
-                
                 # Extract entities count from GraphQL response
                 entities_info = domain_data.get("entities", {})
                 entities_count = entities_info.get("total", 0) if entities_info else 0
@@ -6622,12 +7109,12 @@ class DataHubRestClient:
                     "properties": properties,
                     "parentDomain": parent_urn,  # For backward compatibility
                     "parentDomains": domain_data.get("parentDomains"),
-                    "parentRelationships": domain_data.get("parentRelationships"),  # Add parent relationships
                     "ownership": domain_data.get("ownership"),
-                    "relationships": domain_data.get("relationships"),
                     "institutionalMemory": domain_data.get("institutionalMemory"),
                     "displayProperties": domain_data.get("displayProperties"),
+                    "entities": domain_data.get("entities"),  # Include full entities data for processing
                     "entities_count": entities_count,  # Add entities count from GraphQL
+                    "structuredProperties": domain_data.get("structuredProperties"),  # Add structured properties
                 }
                 
                 return domain
@@ -8899,11 +9386,6 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
                   }
                   domain {
                     domain {
-                      urn
-                    }
-                  }
-                  application {
-                    application {
                       urn
                     }
                   }

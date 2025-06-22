@@ -292,13 +292,13 @@ function renderTab(tabId) {
     
     switch (tabType) {
         case 'synced':
-            products = productsData.synced_products || [];
+            products = productsData.synced_items || [];
             break;
         case 'local':
-            products = productsData.local_products || [];
+            products = productsData.local_only_items || [];
             break;
         case 'remote':
-            products = productsData.remote_products || [];
+            products = productsData.remote_only_items || [];
             break;
     }
     

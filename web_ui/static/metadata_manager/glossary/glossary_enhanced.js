@@ -4168,14 +4168,21 @@ function showNotification(type, message) {
     }, 5000);
 }
 
-// Checkbox and bulk action handlers
+// Checkbox and bulk action handlers with hierarchical selection
 function attachCheckboxHandlers(content, tabType) {
     // Attach individual checkbox handlers
     content.querySelectorAll('.item-checkbox').forEach(checkbox => {
         checkbox.addEventListener('change', function() {
-            // If checking a checkbox, also check all parent checkboxes
             if (this.checked) {
+                // When checking a checkbox, select all its descendants
+                selectAllDescendants(this, content);
+                // Also select all parent checkboxes (so parents are selected when any child is selected)
                 selectParentCheckboxes(this, content);
+            } else {
+                // When unchecking a checkbox, unselect all its descendants
+                unselectAllDescendants(this, content);
+                // Also check if any parent should be unselected (if no siblings are selected)
+                updateParentCheckboxStates(this, content);
             }
             updateBulkActionsVisibility(tabType);
         });
@@ -4192,6 +4199,56 @@ function attachCheckboxHandlers(content, tabType) {
             updateBulkActionsVisibility(tabType);
         });
     }
+}
+
+/**
+ * Recursively select all descendants when a checkbox is selected
+ * @param {HTMLElement} checkbox - The checkbox that was selected
+ * @param {HTMLElement} content - The content container
+ */
+function selectAllDescendants(checkbox, content) {
+    const row = checkbox.closest('tr');
+    if (!row) return;
+    
+    // Get the current item's URN/ID
+    const itemUrn = row.dataset.nodeUrn || row.dataset.termUrn;
+    if (!itemUrn) return;
+    
+    // Find all direct children (items that have this item as their parent)
+    const childRows = content.querySelectorAll(`[data-parent-node="${itemUrn}"]`);
+    childRows.forEach(childRow => {
+        const childCheckbox = childRow.querySelector('.item-checkbox');
+        if (childCheckbox && !childCheckbox.checked) {
+            childCheckbox.checked = true;
+            // Recursively select all descendants of this child
+            selectAllDescendants(childCheckbox, content);
+        }
+    });
+}
+
+/**
+ * Recursively unselect all descendants when a checkbox is unselected
+ * @param {HTMLElement} checkbox - The checkbox that was unselected
+ * @param {HTMLElement} content - The content container
+ */
+function unselectAllDescendants(checkbox, content) {
+    const row = checkbox.closest('tr');
+    if (!row) return;
+    
+    // Get the current item's URN/ID
+    const itemUrn = row.dataset.nodeUrn || row.dataset.termUrn;
+    if (!itemUrn) return;
+    
+    // Find all direct children (items that have this item as their parent)
+    const childRows = content.querySelectorAll(`[data-parent-node="${itemUrn}"]`);
+    childRows.forEach(childRow => {
+        const childCheckbox = childRow.querySelector('.item-checkbox');
+        if (childCheckbox && childCheckbox.checked) {
+            childCheckbox.checked = false;
+            // Recursively unselect all descendants of this child
+            unselectAllDescendants(childCheckbox, content);
+        }
+    });
 }
 
 /**
@@ -4220,6 +4277,42 @@ function selectParentCheckboxes(checkbox, content) {
         parentCheckbox.checked = true;
         // Recursively check the parent's parents
         selectParentCheckboxes(parentCheckbox, content);
+    }
+}
+
+/**
+ * Update parent checkbox states based on children selection
+ * @param {HTMLElement} checkbox - The checkbox that was unselected
+ * @param {HTMLElement} content - The content container
+ */
+function updateParentCheckboxStates(checkbox, content) {
+    const row = checkbox.closest('tr');
+    if (!row) return;
+    
+    // Get the parent node URN/ID from data attributes
+    const parentNodeUrn = row.dataset.parentNode;
+    if (!parentNodeUrn) return; // This is a root item
+    
+    // Find the parent row
+    const parentRow = content.querySelector(`[data-node-urn="${parentNodeUrn}"]`);
+    if (!parentRow) return; // Parent not found in current view
+    
+    // Get the parent's checkbox
+    const parentCheckbox = parentRow.querySelector('.item-checkbox');
+    if (!parentCheckbox) return;
+    
+    // Check if any siblings are still selected
+    const siblingRows = content.querySelectorAll(`[data-parent-node="${parentNodeUrn}"]`);
+    const hasSelectedSiblings = Array.from(siblingRows).some(siblingRow => {
+        const siblingCheckbox = siblingRow.querySelector('.item-checkbox');
+        return siblingCheckbox && siblingCheckbox.checked;
+    });
+    
+    // If no siblings are selected, unselect the parent
+    if (!hasSelectedSiblings && parentCheckbox.checked) {
+        parentCheckbox.checked = false;
+        // Recursively update parent's parents
+        updateParentCheckboxStates(parentCheckbox, content);
     }
 }
 

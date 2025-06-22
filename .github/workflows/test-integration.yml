@@ -2,12 +2,12 @@ name: Test DataHub Integration
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
     paths:
       - 'utils/**/*.py'
       - 'scripts/**/*.py'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
     paths:
       - 'utils/**/*.py'
       - 'scripts/**/*.py'

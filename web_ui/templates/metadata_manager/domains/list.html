@@ -6,6 +6,8 @@
 
 {% block extra_css %}
 <link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<!-- Select2 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
     .description-cell {
         max-width: 300px;
@@ -359,6 +361,40 @@
         flex: 0 0 20%;
         max-width: 20%;
     }
+    
+    /* Sortable table headers - matching tags page */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
 </style>
 {% endblock %}
 
@@ -382,9 +418,27 @@
                     <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createDomainModal">
                         <i class="fas fa-plus me-1"></i> Create Domain
                     </a>
-                    <a href="{% url 'metadata_manager:domain_import_export' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-file-export me-1"></i> Import/Export
-                    </a>
+                    <!-- Global Actions Dropdown -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sync-alt me-1"></i> Bulk Actions
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAll()">
+                                <i class="fas fa-sync-alt me-2"></i> Resync All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAll()">
+                                <i class="fas fa-file-export me-2"></i> Export All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllToStagedChanges()">
+                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportModal()">
+                                <i class="fas fa-file-import me-2"></i> Import from JSON
+                            </a></li>
+                        </ul>
+                    </div>
                     <button type="button" class="btn btn-outline-info" id="refreshDomains">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
@@ -429,19 +483,19 @@
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Overview</strong>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center" data-filter="total" data-category="overview">
                                         <div class="h5 mb-0" id="total-items">0</div>
                                         <div class="text-muted">Total</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
                                         <div class="h5 mb-0" id="synced-count">0</div>
                                         <div class="text-muted">Synced</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
                                         <div class="h5 mb-0" id="local-only-count">0</div>
                                         <div class="text-muted">Local Only</div>
@@ -460,16 +514,22 @@
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Filters</strong>
                                 </div>
-                                <div class="col-md-5">
+                                <div class="col-md-3 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="owned" data-category="content">
-                                        <div class="h6 mb-0" id="owned-domains">0</div>
-                                        <div class="text-muted">With Owners</div>
+                                        <div class="h6 mb-0" id="domains-with-owners">0</div>
+                                        <div class="text-muted small">With Owners</div>
                                     </div>
                                 </div>
-                                <div class="col-md-5">
+                                <div class="col-md-3 border-end">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-structured-properties" data-category="content">
+                                        <div class="h6 mb-0" id="domains-with-structured-properties">0</div>
+                                        <div class="text-muted small">With Structured Properties</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="with-entities" data-category="content">
                                         <div class="h6 mb-0" id="domains-with-entities">0</div>
-                                        <div class="text-muted">With Entities</div>
+                                        <div class="text-muted small">With Entities</div>
                                     </div>
                                 </div>
                             </div>
@@ -540,11 +600,14 @@
                                         <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushDomains('synced')">
                                             <i class="fas fa-upload me-1"></i> Bulk Push
                                         </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                            <i class="fas fa-trash me-1"></i> Delete Local
                                         </button>
                                     </div>
                                 </div>
@@ -588,13 +651,16 @@
                                     </div>
                                     <div class="btn-group" role="group" aria-label="Bulk actions">
                                         <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushDomains('local')">
-                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                            <i class="fas fa-upload me-1"></i> Bulk Sync to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete
+                                            <i class="fas fa-trash me-1"></i> Delete Local
                                         </button>
                                     </div>
                                 </div>
@@ -640,11 +706,11 @@
                                         <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
                                             <i class="fas fa-download me-1"></i> Bulk Sync to Local
                                         </button>
-                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
-                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemote('remote')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete Remote
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                     </div>
                                 </div>
@@ -663,27 +729,89 @@
 
 <!-- Create Domain Modal -->
 <div class="modal fade" id="createDomainModal" tabindex="-1" aria-labelledby="createDomainModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="createDomainModalLabel">Create New Domain</h5>
+                <h5 class="modal-title" id="createDomainModalLabel">
+                    <i class="fas fa-plus me-2"></i>Create New Domain
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="createDomainForm" method="post">
                 <div class="modal-body">
                     {% csrf_token %}
-                    <div class="mb-3">
-                        <label for="domainName" class="form-label">Name</label>
-                        <input type="text" class="form-control" id="domainName" name="name" required>
+                    
+                    <!-- Basic Information -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="domainName" class="form-label">Domain Name *</label>
+                            <input type="text" class="form-control" id="domainName" name="name" required>
+                            <div class="form-text">Domain name should be unique and descriptive</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="domainParent" class="form-label">Parent Domain</label>
+                            <select class="form-control" id="domainParent" name="parent_domain">
+                                <option value="">No parent (root domain)</option>
+                                <!-- Will be populated dynamically -->
+                            </select>
+                            <div class="form-text">Select a parent domain to create hierarchy</div>
+                        </div>
                     </div>
-                    <div class="mb-3">
+                    
+                    <div class="mb-4">
                         <label for="domainDescription" class="form-label">Description</label>
-                        <textarea class="form-control" id="domainDescription" name="description" rows="3"></textarea>
+                        <textarea class="form-control" id="domainDescription" name="description" rows="3" 
+                                  placeholder="Describe the purpose and scope of this domain..."></textarea>
+                    </div>
+                    
+                    <!-- Appearance -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-primary"><i class="fas fa-palette me-2"></i>Appearance</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="domainIcon" class="form-label">Icon</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i id="domainIconPreview" class="fas fa-folder"></i></span>
+                                <input type="text" class="form-control" id="domainIcon" name="icon_name" 
+                                       placeholder="folder" value="folder">
+                            </div>
+                            <small class="form-text text-muted">FontAwesome icon name (without 'fa-' prefix)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="domainColor" class="form-label">Color</label>
+                            <div class="input-group">
+                                <input type="color" class="form-control form-control-color" id="domainColor" 
+                                       name="color_hex" value="#6c757d">
+                                <input type="text" class="form-control" id="domainColorText" 
+                                       placeholder="#6c757d" pattern="^#[0-9A-Fa-f]{6}$">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Ownership -->
+                    <div class="mb-3" id="ownership-section">
+                        <label class="form-label fw-bold" id="ownership-label" style="display: none;">Ownership</label>
+                        <div id="ownership-sections-container" style="display: none;">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Owner
+                        </button>
+                        <div class="form-text mt-2" id="ownership-help-text" style="display: none;">
+                            <i class="fas fa-info-circle me-1"></i>
+                            You can add multiple ownership sections with different ownership types
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Domain</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Create Domain
+                    </button>
                 </div>
             </form>
         </div>
@@ -808,6 +936,22 @@
                     </div>
                 </div>
                 
+                <!-- Structured Properties -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-cogs me-2"></i>Structured Properties</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-domain-structured-properties">
+                                    <!-- Structured properties will be displayed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Raw JSON Data -->
                 <div class="row mt-3">
                     <div class="col-12">
@@ -891,12 +1035,18 @@
                     </div>
                     
                     <!-- Ownership -->
-                    <div class="mb-4">
-                        <h6 class="text-primary"><i class="fas fa-users me-2"></i>Ownership</h6>
-                        <label for="editDomainOwners" class="form-label">Domain Owners</label>
-                        <textarea class="form-control" id="editDomainOwners" name="owners" rows="2" 
-                                  placeholder="Enter email addresses separated by commas (e.g., user1@company.com, user2@company.com)"></textarea>
-                        <small class="form-text text-muted">Comma-separated list of email addresses</small>
+                    <div class="mb-3" id="edit-ownership-section">
+                        <label class="form-label fw-bold" id="edit-ownership-label" style="display: none;">Ownership</label>
+                        <div id="edit-ownership-sections-container" style="display: none;">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-edit-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Owner
+                        </button>
+                        <div class="form-text mt-2" id="edit-ownership-help-text" style="display: none;">
+                            <i class="fas fa-info-circle me-1"></i>
+                            You can add multiple ownership sections with different ownership types
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -936,6 +1086,193 @@
 
 <!-- Include the domains JavaScript -->
 {% load static %}
+
+<!-- Ownership Common JavaScript -->
+<script src="{% static 'js/ownership_common.js' %}"></script>
+
 <script src="{% static 'metadata_manager/domains/domains_enhanced.js' %}?v=1750432435"></script>
 
+<!-- Domain Modal Functionality -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize ownership interface for create modal
+    initializeCreateDomainModal();
+    
+    // Initialize ownership interface for edit modal
+    initializeEditDomainModal();
+    
+    // Setup appearance handlers
+    setupAppearanceHandlers();
+});
+
+function initializeCreateDomainModal() {
+    const modal = document.getElementById('createDomainModal');
+    const addButton = document.getElementById('add-ownership-section');
+    
+    if (modal && addButton) {
+        // Load users and groups when modal is shown
+        modal.addEventListener('show.bs.modal', async function() {
+            console.log('Create domain modal opening, loading users and groups...');
+            await loadUsersAndGroups();
+            
+            // Populate parent domain dropdown
+            populateParentDomainDropdown('domainParent');
+            
+            // Setup ownership interface
+            setupOwnershipInterface('ownership-sections-container', 'add-ownership-section', 'ownership-label', 'ownership-help-text');
+        });
+        
+        // Reset modal when hidden
+        modal.addEventListener('hidden.bs.modal', function() {
+            resetCreateDomainModal();
+        });
+    }
+}
+
+function initializeEditDomainModal() {
+    const modal = document.getElementById('editDomainModal');
+    
+    if (modal) {
+        // Load users and groups when modal is shown
+        modal.addEventListener('show.bs.modal', async function() {
+            console.log('Edit domain modal opening, loading users and groups...');
+            await loadUsersAndGroups();
+            
+            // Setup ownership interface
+            setupOwnershipInterface('edit-ownership-sections-container', 'add-edit-ownership-section', 'edit-ownership-label', 'edit-ownership-help-text');
+        });
+    }
+}
+
+function populateParentDomainDropdown(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) {
+        console.warn('Parent dropdown not found:', selectId);
+        return;
+    }
+    
+    // Clear existing options except the first one
+    while (select.children.length > 1) {
+        select.removeChild(select.lastChild);
+    }
+    
+    // Get domains from the current data (use global domainsData, not window.domainsData)
+    if (typeof domainsData !== 'undefined' && domainsData) {
+        const allDomains = [
+            ...(domainsData.synced_items || []),
+            ...(domainsData.local_only_items || [])
+        ];
+        
+        console.log(`Found ${allDomains.length} domains for parent dropdown`);
+        
+        allDomains.forEach(item => {
+            const domain = item.combined || item;
+            if (domain.name && domain.urn) {
+                const option = document.createElement('option');
+                option.value = domain.urn;
+                option.textContent = domain.name;
+                select.appendChild(option);
+            }
+        });
+        
+        console.log(`Populated create parent dropdown with ${select.options.length} options`);
+    } else {
+        console.warn('domainsData not available for parent dropdown');
+    }
+}
+
+function setupAppearanceHandlers() {
+    // Icon preview handler for create modal
+    const iconInput = document.getElementById('domainIcon');
+    const iconPreview = document.getElementById('domainIconPreview');
+    
+    if (iconInput && iconPreview) {
+        iconInput.addEventListener('input', function() {
+            const iconName = this.value.trim() || 'folder';
+            iconPreview.className = `fas fa-${iconName}`;
+        });
+    }
+    
+    // Color sync handler for create modal
+    const colorInput = document.getElementById('domainColor');
+    const colorText = document.getElementById('domainColorText');
+    
+    if (colorInput && colorText) {
+        colorInput.addEventListener('input', function() {
+            colorText.value = this.value;
+        });
+        
+        colorText.addEventListener('input', function() {
+            if (/^#[0-9A-Fa-f]{6}$/.test(this.value)) {
+                colorInput.value = this.value;
+            }
+        });
+    }
+    
+    // Same handlers for edit modal
+    const editIconInput = document.getElementById('editDomainIcon');
+    const editIconPreview = document.getElementById('editDomainIconPreview');
+    
+    if (editIconInput && editIconPreview) {
+        editIconInput.addEventListener('input', function() {
+            const iconName = this.value.trim() || 'folder';
+            editIconPreview.className = `fas fa-${iconName}`;
+        });
+    }
+    
+    const editColorInput = document.getElementById('editDomainColor');
+    const editColorText = document.getElementById('editDomainColorText');
+    
+    if (editColorInput && editColorText) {
+        editColorInput.addEventListener('input', function() {
+            editColorText.value = this.value;
+        });
+        
+        editColorText.addEventListener('input', function() {
+            if (/^#[0-9A-Fa-f]{6}$/.test(this.value)) {
+                editColorInput.value = this.value;
+            }
+        });
+    }
+}
+
+function resetCreateDomainModal() {
+    // Reset form
+    const form = document.getElementById('createDomainForm');
+    if (form) {
+        form.reset();
+    }
+    
+    // Reset icon preview
+    const iconPreview = document.getElementById('domainIconPreview');
+    if (iconPreview) {
+        iconPreview.className = 'fas fa-folder';
+    }
+    
+    // Reset color
+    const colorInput = document.getElementById('domainColor');
+    const colorText = document.getElementById('domainColorText');
+    if (colorInput) colorInput.value = '#6c757d';
+    if (colorText) colorText.value = '#6c757d';
+    
+    // Clear ownership sections
+    const container = document.getElementById('ownership-sections-container');
+    if (container) {
+        container.innerHTML = '';
+        hideOwnershipSectionIfEmpty('ownership-sections-container', 'ownership-label', 'ownership-help-text');
+    }
+}
+
+// Make functions globally available for onclick handlers
+window.OwnershipManager = window.OwnershipManager || {};
+</script>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- jQuery (required for Select2) -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- Select2 JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 {% endblock %} 

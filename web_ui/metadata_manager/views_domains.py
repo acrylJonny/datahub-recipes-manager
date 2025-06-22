@@ -3,6 +3,7 @@ from django.views import View
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
 import json
@@ -92,6 +93,9 @@ class DomainListView(View):
         try:
             name = request.POST.get("name")
             description = request.POST.get("description", "")
+            parent_domain_urn = request.POST.get("parent_domain", "")
+            icon_name = request.POST.get("icon_name", "folder")
+            color_hex = request.POST.get("color_hex", "#6c757d")
             
             if not name:
                 messages.error(request, "Domain name is required")
@@ -105,12 +109,40 @@ class DomainListView(View):
                 messages.error(request, f"Domain with name '{name}' already exists")
                 return redirect("metadata_manager:domain_list")
             
+            # Get current connection from request session
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Process ownership data
+            ownership_data = None
+            owners = request.POST.getlist("owners")
+            ownership_types = request.POST.getlist("ownership_types")
+            
+            if owners and ownership_types and len(owners) == len(ownership_types):
+                owners_list = []
+                for owner_urn, ownership_type_urn in zip(owners, ownership_types):
+                    if owner_urn and ownership_type_urn:  # Only add non-empty values
+                        owners_list.append({
+                            "owner_urn": owner_urn,
+                            "ownership_type_urn": ownership_type_urn
+                        })
+                
+                if owners_list:
+                    ownership_data = {"owners": owners_list}
+            
             # Create the domain
-            Domain.objects.create(
+            domain = Domain.objects.create(
                 name=name,
                 description=description,
                 urn=urn,
                 sync_status="LOCAL_ONLY",
+                parent_domain_urn=parent_domain_urn if parent_domain_urn else None,
+                icon_name=icon_name,
+                icon_style="solid",  # Default style
+                icon_library="font-awesome",  # Default library
+                color_hex=color_hex,
+                connection=current_connection,
+                ownership_data=ownership_data,
             )
             
             messages.success(request, f"Domain '{name}' created successfully")
@@ -221,14 +253,40 @@ class DomainDetailView(View):
             
             name = request.POST.get("name")
             description = request.POST.get("description", "")
+            parent_domain_urn = request.POST.get("parent_domain", "")
+            icon_name = request.POST.get("icon_name", "folder")
+            color_hex = request.POST.get("color_hex", "#6c757d")
             
             if not name:
                 messages.error(request, "Domain name is required")
                 return redirect("metadata_manager:domain_detail", domain_id=domain_id)
             
+            # Process ownership data
+            ownership_data = None
+            owners = request.POST.getlist("owners")
+            ownership_types = request.POST.getlist("ownership_types")
+            
+            if owners and ownership_types and len(owners) == len(ownership_types):
+                owners_list = []
+                for owner_urn, ownership_type_urn in zip(owners, ownership_types):
+                    if owner_urn and ownership_type_urn:  # Only add non-empty values
+                        owners_list.append({
+                            "owner_urn": owner_urn,
+                            "ownership_type_urn": ownership_type_urn
+                        })
+                
+                if owners_list:
+                    ownership_data = {"owners": owners_list}
+            
             # Update the domain
             domain.name = name
             domain.description = description
+            domain.parent_domain_urn = parent_domain_urn if parent_domain_urn else None
+            domain.icon_name = icon_name
+            domain.icon_style = "solid"  # Default style
+            domain.icon_library = "font-awesome"  # Default library
+            domain.color_hex = color_hex
+            domain.ownership_data = ownership_data
             
             # If the domain was previously synced, mark it as modified
             if domain.sync_status in ["SYNCED", "REMOTE_ONLY"]:
@@ -963,14 +1021,6 @@ def get_remote_domains_data(request):
                                         parent_urn = parent_entity.get("urn")
                                         break
                     
-                    # Debug logging for troubleshooting
-                    if not parent_urn:
-                        logger.debug(f"No parent URN found for domain {domain_urn}")
-                        logger.debug(f"parentDomain: {domain.get('parentDomain')}")
-                        logger.debug(f"parentDomains: {domain.get('parentDomains')}")
-                        logger.debug(f"parentRelationships: {domain.get('parentRelationships')}")
-                    else:
-                        logger.debug(f"Found parent URN {parent_urn} for domain {domain_urn}")
                     
                     enhanced_domain = {
                         "urn": domain_urn,
@@ -988,10 +1038,6 @@ def get_remote_domains_data(request):
                         "ownership": domain.get("ownership"),
     
                         "owner_names": [],
-                        
-                        # Extract relationships data
-                        "relationships": domain.get("relationships"),
-                        "relationships_count": 0,
                         
                         # Store raw data
                         "raw_data": domain
@@ -1026,13 +1072,23 @@ def get_remote_domains_data(request):
                         enhanced_domain["owners_count"] = 0
                         enhanced_domain["owner_names"] = []
                     
-                    # Process relationships information
-                    if enhanced_domain["relationships"] and enhanced_domain["relationships"].get("relationships"):
-                        relationships_list = enhanced_domain["relationships"]["relationships"] or []
-                        enhanced_domain["relationships_count"] = len(relationships_list)
+                    # Domains don't have relationships like tags do
                     
-                    # Get entities count from cached GraphQL response
-                    enhanced_domain["entities_count"] = domain.get("entities_count", 0)
+                    # Get entities count from GraphQL response
+                    entities_data = domain.get("entities")
+                    if entities_data and isinstance(entities_data, dict):
+                        enhanced_domain["entities_count"] = entities_data.get("total", 0)
+                    else:
+                        # Fallback to direct entities_count field if available
+                        enhanced_domain["entities_count"] = domain.get("entities_count", 0)
+                    
+                    # Process structured properties
+                    structured_props = domain.get("structuredProperties", {})
+                    structured_properties_list = []
+                    if structured_props and structured_props.get("properties"):
+                        structured_properties_list = structured_props["properties"]
+                    enhanced_domain["structured_properties"] = structured_properties_list
+                    enhanced_domain["structured_properties_count"] = len(structured_properties_list)
                     
                     # Extract display properties
                     display_props = domain.get("displayProperties") or {}
@@ -1052,11 +1108,31 @@ def get_remote_domains_data(request):
 
             # Extract domain URNs that exist locally
             local_domain_urns = set(local_domains.values_list("urn", flat=True))
+            
+            # Track which remote domains have been matched to avoid duplicates
+            matched_remote_urns = set()
 
             # Process local domains
             for domain in local_domains:
                 domain_urn = str(domain.urn)
+                
+                # Try to find remote match - first by URN, then by datahub_id, then by name
+                remote_match = None
+                
+                # First try direct URN match (for local-only domains)
                 remote_match = enhanced_remote_domains.get(domain_urn)
+                
+                # If no direct URN match, try matching by datahub_id (for synced domains)
+                if not remote_match and hasattr(domain, 'datahub_id') and domain.datahub_id:
+                    datahub_urn = f"urn:li:domain:{domain.datahub_id}"
+                    remote_match = enhanced_remote_domains.get(datahub_urn)
+                
+                # If still no match, try matching by name (fallback)
+                if not remote_match and domain.name:
+                    for remote_urn, remote_data in enhanced_remote_domains.items():
+                        if remote_data.get("name") == domain.name:
+                            remote_match = remote_data
+                            break
 
                 # Create enhanced local domain data
                 local_domain_data = {
@@ -1072,15 +1148,17 @@ def get_remote_domains_data(request):
                     "parent_urn": domain.parent_domain_urn,
                     "parentDomain": domain.parent_domain_urn,
                     
-                    # Add stored ownership and relationship data from local database
+                    # Add stored ownership data from local database
                     "ownership": None,
                     "owners_count": 0,
                     "owner_names": [],
                     
-                    # Add stored relationships data from local database
-                    "relationships": None,
-                    "relationships_count": domain.relationships_count,
+                    # Add stored entities count from local database
                     "entities_count": domain.entities_count,
+                    
+                    # Add structured properties (local domains don't have these typically)
+                    "structured_properties": [],
+                    "structured_properties_count": 0,
                     
                     # Add display properties from local database
                     "color_hex": domain.color_hex,
@@ -1091,6 +1169,9 @@ def get_remote_domains_data(request):
                     # Add local metadata
                     "created_at": domain.created_at.isoformat() if domain.created_at else None,
                     "updated_at": domain.updated_at.isoformat() if domain.updated_at else None,
+                    
+                    # Add raw data from local database if available
+                    "raw_data": domain.raw_data if hasattr(domain, 'raw_data') and domain.raw_data else {},
                 }
 
                 # Extract owner names and count from local ownership_data if available
@@ -1112,25 +1193,37 @@ def get_remote_domains_data(request):
                     local_domain_data["ownership"] = domain.ownership_data
 
                 if remote_match:
-                    # Check if domain needs status update
-                    local_description = domain.description or ""
-                    remote_description = remote_match.get("description", "")
-
-                    # Update sync status based on comparison
-                    if local_description != remote_description:
-                        if domain.sync_status != "MODIFIED":
-                            domain.sync_status = "MODIFIED"
-                            domain.save(update_fields=["sync_status"])
-                            logger.debug(f"Updated domain {domain.name} status to MODIFIED")
-                        local_domain_data["sync_status"] = "MODIFIED"
-                        local_domain_data["sync_status_display"] = "Modified"
-                    else:
-                        if domain.sync_status != "SYNCED":
-                            domain.sync_status = "SYNCED"
-                            domain.save(update_fields=["sync_status"])
-                            logger.debug(f"Updated domain {domain.name} status to SYNCED")
+                    # Track this remote domain as matched to avoid showing it in remote-only
+                    matched_remote_urns.add(remote_match.get("urn"))
+                    
+                    # Check if domain was recently synced (within last 30 seconds)
+                    recently_synced = False
+                    if hasattr(domain, 'last_synced') and domain.last_synced:
+                        time_since_sync = timezone.now() - domain.last_synced
+                        recently_synced = time_since_sync.total_seconds() < 30
+                    
+                    # If recently synced, preserve the SYNCED status
+                    if recently_synced and domain.sync_status == "SYNCED":
                         local_domain_data["sync_status"] = "SYNCED"
                         local_domain_data["sync_status_display"] = "Synced"
+                    else:
+                        # Check if domain needs status update based on content comparison
+                        local_description = domain.description or ""
+                        remote_description = remote_match.get("description", "")
+
+                        # Update sync status based on comparison
+                        if local_description != remote_description:
+                            if domain.sync_status != "MODIFIED":
+                                domain.sync_status = "MODIFIED"
+                                domain.save(update_fields=["sync_status"])
+                            local_domain_data["sync_status"] = "MODIFIED"
+                            local_domain_data["sync_status_display"] = "Modified"
+                        else:
+                            if domain.sync_status != "SYNCED":
+                                domain.sync_status = "SYNCED"
+                                domain.save(update_fields=["sync_status"])
+                            local_domain_data["sync_status"] = "SYNCED"
+                            local_domain_data["sync_status_display"] = "Synced"
 
                     # Create combined data for synced items
                     combined_data = local_domain_data.copy()
@@ -1139,9 +1232,10 @@ def get_remote_domains_data(request):
                         "ownership": remote_match.get("ownership"),
                         "owners_count": remote_match.get("owners_count", 0),
                         "owner_names": remote_match.get("owner_names", []),
-                        "relationships": remote_match.get("relationships"),
-                        "relationships_count": remote_match.get("relationships_count", 0),
                         "entities_count": remote_match.get("entities_count", 0),
+                        # Add structured properties from remote
+                        "structured_properties": remote_match.get("structured_properties", []),
+                        "structured_properties_count": remote_match.get("structured_properties_count", 0),
                         # Add parent domain information from remote
                         "parent_urn": remote_match.get("parent_urn"),
                         "parentDomain": remote_match.get("parentDomain"),
@@ -1150,6 +1244,8 @@ def get_remote_domains_data(request):
                         "icon_name": remote_match.get("icon_name"),
                         "icon_style": remote_match.get("icon_style"),
                         "icon_library": remote_match.get("icon_library"),
+                        # Add raw data from remote
+                        "raw_data": remote_match.get("raw_data", {}),
                     })
 
                     synced_items.append({
@@ -1162,17 +1258,16 @@ def get_remote_domains_data(request):
                     if domain.sync_status != "LOCAL_ONLY":
                         domain.sync_status = "LOCAL_ONLY"
                         domain.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated domain {domain.name} status to LOCAL_ONLY")
                     local_domain_data["sync_status"] = "LOCAL_ONLY"
                     local_domain_data["sync_status_display"] = "Local Only"
 
                     local_only_items.append(local_domain_data)
 
-            # Find domains that exist remotely but not locally
+            # Find domains that exist remotely but not locally (and weren't matched to any local domain)
             remote_only_items = [
                 enhanced_remote_domains[urn] 
                 for urn in enhanced_remote_domains.keys() 
-                if urn not in local_domain_urns
+                if urn not in local_domain_urns and urn not in matched_remote_urns
             ]
 
             # Calculate statistics
@@ -1180,17 +1275,17 @@ def get_remote_domains_data(request):
             synced_count = len(synced_items)
             owned_items = sum(1 for item in synced_items + local_only_items + remote_only_items 
                             if (item.get("combined", item) if "combined" in item else item).get("owner_names", []))
-            items_with_relationships = sum(1 for item in synced_items + local_only_items + remote_only_items 
-                                         if (item.get("combined", item) if "combined" in item else item).get("relationships_count", 0) > 0)
             items_with_entities = sum(1 for item in synced_items + local_only_items + remote_only_items 
                                     if (item.get("combined", item) if "combined" in item else item).get("entities_count", 0) > 0)
+            items_with_structured_properties = sum(1 for item in synced_items + local_only_items + remote_only_items 
+                                                 if (item.get("combined", item) if "combined" in item else item).get("structured_properties_count", 0) > 0)
 
             statistics = {
                 "total_items": total_items,
                 "synced_count": synced_count,
                 "owned_items": owned_items,
-                "items_with_relationships": items_with_relationships,
                 "items_with_entities": items_with_entities,
+                "items_with_structured_properties": items_with_structured_properties,
             }
 
             logger.debug(
@@ -1260,19 +1355,51 @@ def sync_domain_to_local(request, domain_id=None):
         if not domain_name:
             return JsonResponse({"success": False, "error": "Domain name not found in DataHub"})
 
+        # Extract datahub_id from URN (e.g., "5c5f8f55-b2af-46e5-b08e-c9ccfa99434b" from "urn:li:domain:5c5f8f55-b2af-46e5-b08e-c9ccfa99434b")
+        datahub_id = original_urn.split(":")[-1] if original_urn else None
+        
+        # Get current connection from request session
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+
         # Generate deterministic URN for local storage
         from utils.urn_utils import get_full_urn_from_name
         deterministic_urn = get_full_urn_from_name("domain", domain_name)
 
-        # Create or update local domain
+        # Prepare ownership data
+        ownership_data = None
+        ownership = remote_domain.get("ownership", {})
+        if ownership and ownership.get("owners"):
+            # Convert DataHub ownership format to our format
+            owners_list = []
+            for owner_info in ownership["owners"]:
+                owner = owner_info.get("owner", {})
+                ownership_type = owner_info.get("ownershipType", {})
+                
+                owner_urn = owner.get("urn", "")
+                ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner")
+                
+                if owner_urn:
+                    owners_list.append({
+                        "owner_urn": owner_urn,
+                        "ownership_type_urn": ownership_type_urn
+                    })
+            
+            if owners_list:
+                ownership_data = {"owners": owners_list}
+
+        # Create or update local domain with SYNCED status
         domain, created = Domain.objects.update_or_create(
             urn=deterministic_urn,
             defaults={
                 "name": domain_name,
                 "description": domain_description,
-                "sync_status": "SYNCED",
+                "sync_status": "SYNCED",  # Set to SYNCED when syncing from DataHub
                 "last_synced": timezone.now(),
                 "raw_data": remote_domain,
+                "datahub_id": datahub_id,
+                "connection": current_connection,
+                "ownership_data": ownership_data,
             },
         )
 
@@ -1290,14 +1417,6 @@ def sync_domain_to_local(request, domain_id=None):
                 domain.icon_name = icon.get("name")
                 domain.icon_style = icon.get("style", "solid")
                 domain.icon_library = icon.get("iconLibrary", "font-awesome")
-
-        # Store ownership count (removed - no owners_count field in Domain model)
-        ownership = remote_domain.get("ownership", {})
-
-        # Store relationships count
-        relationships = remote_domain.get("relationships", {})
-        if relationships and relationships.get("relationships"):
-            domain.relationships_count = len(relationships["relationships"])
 
         # Store entities count from remote domain data if available
         entities_info = remote_domain.get("entities", {})
@@ -1333,8 +1452,13 @@ def resync_domain(request, domain_id):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
-        # Use the domain URN
-        domain_urn = domain.urn
+        # Use the original DataHub URN for synced domains, or the deterministic URN for local domains
+        if hasattr(domain, 'datahub_id') and domain.datahub_id:
+            # For synced domains, reconstruct the original DataHub URN
+            domain_urn = f"urn:li:domain:{domain.datahub_id}"
+        else:
+            # For local-only domains, use the deterministic URN
+            domain_urn = domain.urn
         
         # Fetch domain from DataHub
         logger.debug(f"Fetching domain from DataHub: {domain_urn}")
@@ -1347,12 +1471,45 @@ def resync_domain(request, domain_id):
         domain_name = properties.get("name", "")
         domain_description = properties.get("description", "")
 
+        # Extract datahub_id from URN if not already set
+        if not domain.datahub_id and domain_urn:
+            domain.datahub_id = domain_urn.split(":")[-1]
+        
+        # Get current connection from request session
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        if current_connection:
+            domain.connection = current_connection
+
+        # Prepare ownership data
+        ownership_data = None
+        ownership = remote_domain.get("ownership", {})
+        if ownership and ownership.get("owners"):
+            # Convert DataHub ownership format to our format
+            owners_list = []
+            for owner_info in ownership["owners"]:
+                owner = owner_info.get("owner", {})
+                ownership_type = owner_info.get("ownershipType", {})
+                
+                owner_urn = owner.get("urn", "")
+                ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner")
+                
+                if owner_urn:
+                    owners_list.append({
+                        "owner_urn": owner_urn,
+                        "ownership_type_urn": ownership_type_urn
+                    })
+            
+            if owners_list:
+                ownership_data = {"owners": owners_list}
+
         # Update domain with latest data from DataHub
         domain.name = domain_name or domain.name
         domain.description = domain_description
         domain.sync_status = "SYNCED"
         domain.last_synced = timezone.now()
         domain.raw_data = remote_domain
+        domain.ownership_data = ownership_data
 
         # Update additional properties
         parent_domain = remote_domain.get("parentDomain")
@@ -1368,14 +1525,6 @@ def resync_domain(request, domain_id):
                 domain.icon_name = icon.get("name")
                 domain.icon_style = icon.get("style", "solid")
                 domain.icon_library = icon.get("iconLibrary", "font-awesome")
-
-        # Update ownership count (removed - no owners_count field in Domain model)
-        ownership = remote_domain.get("ownership", {})
-
-        # Update relationships count
-        relationships = remote_domain.get("relationships", {})
-        if relationships and relationships.get("relationships"):
-            domain.relationships_count = len(relationships["relationships"])
 
         # Update entities count from remote domain data if available
         entities_info = remote_domain.get("entities", {})
@@ -1409,33 +1558,79 @@ def push_domain_to_datahub(request, domain_id):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
-        # Create domain in DataHub
-        domain_data = domain.to_dict()
+        # Use the original DataHub URN for pushing if domain has datahub_id, otherwise use deterministic URN
+        if hasattr(domain, 'datahub_id') and domain.datahub_id:
+            # For synced domains, use the original DataHub URN
+            target_urn = f"urn:li:domain:{domain.datahub_id}"
+        else:
+            # For local-only domains, use the deterministic URN
+            target_urn = domain.urn
         
         try:
-            logger.debug(f"Pushing domain to DataHub: {domain.name}")
-            result = client.create_domain(
-                domain_name=domain.name,
-                domain_data=domain_data,
-                domain_urn=domain.urn,
-            )
+            logger.debug(f"Pushing domain to DataHub: {domain.name} with URN: {target_urn}")
             
-            if result.get("success"):
+            # Track what needs to be updated
+            updates_needed = []
+            update_success = True
+            
+            # Update description if it exists
+            if domain.description:
+                if client.update_domain_description(target_urn, domain.description):
+                    updates_needed.append("description")
+                else:
+                    update_success = False
+                    logger.error(f"Failed to update description for domain {domain.name}")
+            
+            # Update display properties if they exist
+            if domain.color_hex or domain.icon_name:
+                color_hex = domain.color_hex if domain.color_hex else None
+                icon_data = None
+                
+                if domain.icon_name:
+                    icon_data = {"name": domain.icon_name}
+                    if domain.icon_style:
+                        icon_data["style"] = domain.icon_style
+                    if domain.icon_library:
+                        icon_data["iconLibrary"] = domain.icon_library
+                
+                if client.update_domain_display_properties(target_urn, color_hex=color_hex, icon=icon_data):
+                    updates_needed.append("display properties")
+                else:
+                    update_success = False
+                    logger.error(f"Failed to update display properties for domain {domain.name}")
+            
+            # Update ownership if it exists
+            if hasattr(domain, 'ownership_data') and domain.ownership_data and domain.ownership_data.get('owners'):
+                for owner_info in domain.ownership_data['owners']:
+                    owner_urn = owner_info.get('owner_urn')
+                    ownership_type_urn = owner_info.get('ownership_type_urn', 'urn:li:ownershipType:__system__business_owner')
+                    
+                    if owner_urn:
+                        if client.add_domain_owner(target_urn, owner_urn, ownership_type_urn):
+                            if "ownership" not in updates_needed:
+                                updates_needed.append("ownership")
+                        else:
+                            update_success = False
+                            logger.error(f"Failed to add owner {owner_urn} to domain {domain.name}")
+            
+            if update_success:
                 # Update domain status
                 domain.sync_status = "SYNCED"
                 domain.last_synced = timezone.now()
-                domain.save(update_fields=["sync_status", "last_synced"])
+                # Store the DataHub ID if this was a local-only domain
+                if not hasattr(domain, 'datahub_id') or not domain.datahub_id:
+                    domain.datahub_id = target_urn.split(":")[-1]
+                domain.save(update_fields=["sync_status", "last_synced", "datahub_id"])
                 
-                logger.info(f"Successfully pushed domain '{domain.name}' to DataHub")
+                updates_msg = f" (updated: {', '.join(updates_needed)})" if updates_needed else ""
+                logger.info(f"Successfully pushed domain '{domain.name}' to DataHub{updates_msg}")
                 
                 return JsonResponse({
                     "success": True,
-                    "message": f"Domain '{domain.name}' pushed to DataHub successfully",
+                    "message": f"Domain '{domain.name}' pushed to DataHub successfully{updates_msg}",
                 })
             else:
-                error_msg = result.get("message", "Unknown error")
-                logger.error(f"Failed to push domain to DataHub: {error_msg}")
-                return JsonResponse({"success": False, "error": error_msg})
+                return JsonResponse({"success": False, "error": "Some domain updates failed"})
                 
         except Exception as e:
             logger.error(f"Error pushing domain to DataHub: {str(e)}")
@@ -1597,6 +1792,301 @@ def add_remote_domain_to_pr(request):
         )
 
 
+@require_POST
+def bulk_sync_domains_to_local(request):
+    """AJAX endpoint to bulk sync multiple domains from DataHub to local storage"""
+    try:
+        data = json.loads(request.body)
+        domain_urns = data.get('domain_urns', [])
+        
+        if not domain_urns:
+            return JsonResponse({
+                'success': False,
+                'error': 'No domain URNs provided'
+            }, status=400)
+        
+        # Get DataHub client
+        connected, client = test_datahub_connection(request)
+        if not connected or not client:
+            return JsonResponse({
+                'success': False,
+                'error': 'Unable to connect to DataHub'
+            }, status=500)
+        
+        # Get current connection from request session
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        
+        success_count = 0
+        error_count = 0
+        errors = []
+        
+        for domain_urn in domain_urns:
+            try:
+                # Fetch domain from DataHub
+                remote_domain = client.get_domain(domain_urn)
+                if not remote_domain:
+                    error_count += 1
+                    errors.append(f"Domain {domain_urn}: Not found in DataHub")
+                    continue
+                
+                # Extract domain properties
+                properties = remote_domain.get("properties", {})
+                domain_name = properties.get("name", "")
+                domain_description = properties.get("description", "")
+                
+                if not domain_name:
+                    error_count += 1
+                    errors.append(f"Domain {domain_urn}: Name not found in DataHub")
+                    continue
+                
+                # Extract datahub_id from URN
+                datahub_id = domain_urn.split(":")[-1] if domain_urn else None
+                
+                # Generate deterministic URN for local storage
+                from utils.urn_utils import get_full_urn_from_name
+                deterministic_urn = get_full_urn_from_name("domain", domain_name)
+                
+                # Prepare ownership data
+                ownership_data = None
+                ownership = remote_domain.get("ownership", {})
+                if ownership and ownership.get("owners"):
+                    # Convert DataHub ownership format to our format
+                    owners_list = []
+                    for owner_info in ownership["owners"]:
+                        owner = owner_info.get("owner", {})
+                        ownership_type = owner_info.get("ownershipType", {})
+                        
+                        owner_urn = owner.get("urn", "")
+                        ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner")
+                        
+                        if owner_urn:
+                            owners_list.append({
+                                "owner_urn": owner_urn,
+                                "ownership_type_urn": ownership_type_urn
+                            })
+                    
+                    if owners_list:
+                        ownership_data = {"owners": owners_list}
+                
+                # Create or update local domain
+                domain, created = Domain.objects.update_or_create(
+                    urn=deterministic_urn,
+                    defaults={
+                        "name": domain_name,
+                        "description": domain_description,
+                        "sync_status": "SYNCED",
+                        "last_synced": timezone.now(),
+                        "raw_data": remote_domain,
+                        "datahub_id": datahub_id,
+                        "connection": current_connection,
+                        "ownership_data": ownership_data,
+                    },
+                )
+                
+                # Extract and store additional domain properties
+                parent_domain = remote_domain.get("parentDomain")
+                if parent_domain:
+                    domain.parent_domain_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+                
+                # Store display properties if available
+                display_props = remote_domain.get("displayProperties", {})
+                if display_props:
+                    domain.color_hex = display_props.get("colorHex")
+                    icon = display_props.get("icon", {})
+                    if icon:
+                        domain.icon_name = icon.get("name")
+                        domain.icon_style = icon.get("style", "solid")
+                        domain.icon_library = icon.get("iconLibrary", "font-awesome")
+                
+                # Store entities count from remote domain data if available
+                entities_info = remote_domain.get("entities", {})
+                domain.entities_count = entities_info.get("total", 0) if entities_info else 0
+                
+                domain.save()
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                errors.append(f"Domain {domain_urn}: {str(e)}")
+                logger.error(f"Error syncing domain {domain_urn}: {str(e)}")
+        
+        message = f"Bulk sync completed: {success_count} successful, {error_count} failed"
+        if errors:
+            message += f". Errors: {'; '.join(errors[:5])}"  # Show first 5 errors
+            if len(errors) > 5:
+                message += f" and {len(errors) - 5} more..."
+        
+        return JsonResponse({
+            'success': True,
+            'message': message,
+            'success_count': success_count,
+            'error_count': error_count,
+            'errors': errors
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in bulk sync: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@require_POST
+def bulk_add_domains_to_staged_changes(request):
+    """API view for adding all domains to staged changes"""
+    try:
+        data = json.loads(request.body)
+        environment = data.get('environment', 'dev')
+        mutation_name = data.get('mutation_name')
+        domain_ids = data.get('domain_ids', [])
+        
+        # Get current connection to filter domains by connection
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        
+        # Get domains relevant to current connection
+        if domain_ids:
+            # Specific domains requested
+            all_domains = Domain.objects.filter(id__in=domain_ids)
+        else:
+            # All domains for current connection
+            all_domains = Domain.objects.all()
+        
+        domains = []
+        for domain in all_domains:
+            if domain.connection is None:
+                # True local-only domains (no connection)
+                domains.append(domain)
+            elif current_connection and domain.connection == current_connection:
+                # Domains synced to current connection
+                domains.append(domain)
+            elif current_connection is None and domain.connection is None:
+                # Backward compatibility: if no current connection, show unconnected domains
+                domains.append(domain)
+            # Domains with different connections are excluded from this connection's view
+        
+        if not domains:
+            return JsonResponse({
+                'success': False,
+                'error': 'No domains found to add to staged changes for current connection'
+            }, status=400)
+        
+        # Import the domain actions module
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        from scripts.mcps.domain_actions import add_domain_to_staged_changes
+        
+        success_count = 0
+        error_count = 0
+        files_created_count = 0
+        files_skipped_count = 0
+        errors = []
+        all_created_files = []
+        
+        for domain in domains:
+            try:
+                # Extract domain ID from URN or use database ID
+                domain_id = domain.datahub_id or domain.urn.split(":")[-1] if domain.urn else str(domain.id)
+                
+                # Prepare ownership data
+                owners = []
+                if domain.ownership_data and isinstance(domain.ownership_data, dict):
+                    ownership_list = domain.ownership_data.get("owners", [])
+                    for owner_info in ownership_list:
+                        owner_urn = owner_info.get("owner_urn")
+                        if owner_urn:
+                            owners.append(owner_urn)
+                
+                # Prepare display properties
+                display_properties = {}
+                if domain.color_hex:
+                    display_properties["colorHex"] = domain.color_hex
+                if domain.icon_name:
+                    display_properties["icon"] = {
+                        "name": domain.icon_name,
+                        "style": domain.icon_style or "solid",
+                        "iconLibrary": domain.icon_library or "font-awesome"
+                    }
+                
+                # Prepare structured properties from raw_data if available
+                structured_properties = []
+                if domain.raw_data and isinstance(domain.raw_data, dict):
+                    structured_props = domain.raw_data.get("structuredProperties", {})
+                    if structured_props and structured_props.get("properties"):
+                        for prop in structured_props["properties"]:
+                            prop_urn = prop.get("structuredProperty", {}).get("urn")
+                            values = prop.get("values", [])
+                            if prop_urn and values:
+                                structured_properties.append({
+                                    "propertyUrn": prop_urn,
+                                    "values": values
+                                })
+                
+                # Add domain to staged changes with comprehensive aspects
+                result = add_domain_to_staged_changes(
+                    domain_id=domain_id,
+                    name=domain.name,
+                    description=domain.description,
+                    owners=owners if owners else None,
+                    tags=None,  # TODO: Extract tags if stored
+                    terms=None,  # TODO: Extract glossary terms if stored
+                    links=None,  # TODO: Extract institutional memory if stored
+                    custom_properties=None,  # Domains typically don't have custom properties
+                    structured_properties=structured_properties if structured_properties else None,
+                    forms=None,  # TODO: Extract forms if stored
+                    test_results=None,  # TODO: Extract test results if stored
+                    display_properties=display_properties if display_properties else None,
+                    parent_domain=domain.parent_domain_urn,
+                    include_all_aspects=True,
+                    environment=environment,
+                    owner="system",  # Default owner
+                    base_dir="metadata"
+                )
+                
+                if result.get("success"):
+                    success_count += 1
+                    files_created = result.get("files_saved", [])
+                    files_created_count += len(files_created)
+                    all_created_files.extend(files_created)
+                else:
+                    error_count += 1
+                    errors.append(f"Domain {domain.name}: {result.get('message', 'Unknown error')}")
+                
+            except Exception as e:
+                error_count += 1
+                errors.append(f"Domain {domain.name}: {str(e)}")
+                logger.error(f"Error adding domain {domain.name} to staged changes: {str(e)}")
+        
+        # Calculate total files that could have been created
+        total_possible_files = success_count * 1  # Assuming 1 file per domain
+        files_skipped_count = total_possible_files - files_created_count
+        
+        message = f"Add to staged changes completed: {success_count} domains processed, {files_created_count} files created, {files_skipped_count} files skipped (unchanged), {error_count} failed"
+        if errors:
+            message += f". Errors: {'; '.join(errors[:5])}"  # Show first 5 errors
+            if len(errors) > 5:
+                message += f" and {len(errors) - 5} more..."
+        
+        return JsonResponse({
+            'success': True,
+            'message': message,
+            'success_count': success_count,
+            'error_count': error_count,
+            'files_created_count': files_created_count,
+            'files_skipped_count': files_skipped_count,
+            'errors': errors,
+            'files_created': all_created_files
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding domains to staged changes: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
 @method_decorator(require_POST)
 def add_domain_to_staged_changes(request, domain_id):
     """Add a domain to staged changes by creating comprehensive MCP files"""
@@ -1611,8 +2101,8 @@ def add_domain_to_staged_changes(request, domain_id):
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         )
         
-        # Import the function
-        from scripts.mcps.domain_actions import add_domain_to_staged_changes_legacy as add_domain_mcps
+        # Import the comprehensive function
+        from scripts.mcps.domain_actions import add_domain_to_staged_changes
         
         # Get the domain from database
         try:
@@ -1623,34 +2113,92 @@ def add_domain_to_staged_changes(request, domain_id):
                 "error": f"Domain with id {domain_id} not found"
             }, status=404)
         
-        # Prepare domain data
-        domain_data = {
-            "id": str(domain.id),
-            "name": domain.name,
-            "description": domain.description,
-            "urn": domain.urn,
-            "custom_properties": getattr(domain, 'custom_properties', {}),
-            "parent_urn": domain.parent_domain.urn if hasattr(domain, 'parent_domain') and domain.parent_domain else None,
-        }
+        # Extract domain ID for MCP creation
+        domain_mcp_id = domain.datahub_id or domain.urn.split(":")[-1] if domain.urn else str(domain.id)
         
-        # Add optional aspects if they exist
-        if hasattr(domain, 'tags') and domain.tags:
-            domain_data["tags"] = [tag.name for tag in domain.tags.all()]
+        # Parse request body for environment and mutation settings
+        request_data = {}
+        if request.body:
+            try:
+                request_data = json.loads(request.body)
+            except json.JSONDecodeError:
+                pass
         
-        # Create staged changes
-        result = add_domain_mcps(
-            domain_data=domain_data,
-            environment="dev",
+        environment = request_data.get('environment', 'dev')
+        mutation_name = request_data.get('mutation_name')
+        
+        # Prepare ownership data
+        owners = []
+        if domain.ownership_data and isinstance(domain.ownership_data, dict):
+            ownership_list = domain.ownership_data.get("owners", [])
+            for owner_info in ownership_list:
+                owner_urn = owner_info.get("owner_urn")
+                if owner_urn:
+                    owners.append(owner_urn)
+        
+        # Prepare display properties
+        display_properties = {}
+        if domain.color_hex:
+            display_properties["colorHex"] = domain.color_hex
+        if domain.icon_name:
+            display_properties["icon"] = {
+                "name": domain.icon_name,
+                "style": domain.icon_style or "solid",
+                "iconLibrary": domain.icon_library or "font-awesome"
+            }
+        
+        # Prepare structured properties from raw_data if available
+        structured_properties = []
+        if domain.raw_data and isinstance(domain.raw_data, dict):
+            structured_props = domain.raw_data.get("structuredProperties", {})
+            if structured_props and structured_props.get("properties"):
+                for prop in structured_props["properties"]:
+                    prop_urn = prop.get("structuredProperty", {}).get("urn")
+                    values = prop.get("values", [])
+                    if prop_urn and values:
+                        structured_properties.append({
+                            "propertyUrn": prop_urn,
+                            "values": values
+                        })
+        
+        # Prepare institutional memory links
+        links = []
+        # TODO: Extract from raw_data if institutional memory is stored there
+        
+        # Create comprehensive staged changes with all aspects
+        result = add_domain_to_staged_changes(
+            domain_id=domain_mcp_id,
+            name=domain.name,
+            description=domain.description,
+            owners=owners if owners else None,
+            tags=None,  # TODO: Extract tags if stored
+            terms=None,  # TODO: Extract glossary terms if stored
+            links=links if links else None,
+            custom_properties=None,  # Domains typically don't have custom properties
+            structured_properties=structured_properties if structured_properties else None,
+            forms=None,  # TODO: Extract forms if stored
+            test_results=None,  # TODO: Extract test results if stored
+            display_properties=display_properties if display_properties else None,
+            parent_domain=domain.parent_domain_urn,
+            include_all_aspects=True,
+            environment=environment,
             owner=request.user.username if request.user.is_authenticated else "admin",
             base_dir="metadata-manager"
         )
         
-        return JsonResponse({
-            "success": True,
-            "message": f"Domain '{domain.name}' added to staged changes",
-            "files_created": len(result),
-            "file_paths": result
-        })
+        if result.get("success"):
+            files_created = result.get("files_saved", [])
+            return JsonResponse({
+                "success": True,
+                "message": f"Domain '{domain.name}' added to staged changes",
+                "files_created": files_created,
+                "aspects_included": result.get("aspects_included", [])
+            })
+        else:
+            return JsonResponse({
+                "success": False,
+                "error": result.get("message", "Failed to create staged changes")
+            })
         
     except Exception as e:
         import traceback
@@ -1661,3 +2209,142 @@ def add_domain_to_staged_changes(request, domain_id):
             "success": False,
             "error": f"An error occurred: {str(e)}"
         })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DomainRemoteAddToStagedChangesView(View):
+    """API endpoint to add a remote domain to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.domain_actions import add_domain_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get the domain data from the request
+            domain_data = data.get('domain_data')
+            if not domain_data:
+                return JsonResponse({
+                    "success": False,
+                    "error": "No domain_data provided"
+                }, status=400)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # For remote domains, we need to ensure we have an ID for MCP creation
+            # If the remote domain doesn't have an ID, we'll generate one from the URN or name
+            domain_id = domain_data.get('id')
+            if not domain_id:
+                if domain_data.get('urn'):
+                    # Extract ID from URN
+                    urn_parts = domain_data['urn'].split(':')
+                    if len(urn_parts) >= 3:
+                        domain_id = urn_parts[-1]
+                    else:
+                        domain_id = domain_data['urn']
+                elif domain_data.get('name'):
+                    # Use name as ID
+                    domain_id = domain_data['name'].replace(' ', '_').lower()
+                else:
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Remote domain must have either URN or name for ID generation"
+                    }, status=400)
+            
+            # Prepare ownership data
+            owners = []
+            if domain_data.get('ownership_data') and isinstance(domain_data['ownership_data'], dict):
+                ownership_list = domain_data['ownership_data'].get("owners", [])
+                for owner_info in ownership_list:
+                    owner_urn = owner_info.get("owner_urn")
+                    if owner_urn:
+                        owners.append(owner_urn)
+            
+            # Prepare display properties
+            display_properties = {}
+            if domain_data.get('color_hex'):
+                display_properties["colorHex"] = domain_data['color_hex']
+            if domain_data.get('icon_name'):
+                display_properties["icon"] = {
+                    "name": domain_data['icon_name'],
+                    "style": domain_data.get('icon_style', 'solid'),
+                    "iconLibrary": domain_data.get('icon_library', 'font-awesome')
+                }
+            
+            # Prepare structured properties from raw_data if available
+            structured_properties = []
+            raw_data = domain_data.get('raw_data')
+            if raw_data and isinstance(raw_data, dict):
+                structured_props = raw_data.get("structuredProperties", {})
+                if structured_props and structured_props.get("properties"):
+                    for prop in structured_props["properties"]:
+                        prop_urn = prop.get("structuredProperty", {}).get("urn")
+                        values = prop.get("values", [])
+                        if prop_urn and values:
+                            structured_properties.append({
+                                "propertyUrn": prop_urn,
+                                "values": values
+                            })
+            
+            # Add remote domain to staged changes using the comprehensive function
+            result = add_domain_to_staged_changes(
+                domain_id=domain_id,
+                name=domain_data.get('name', 'Unknown'),
+                description=domain_data.get('description', ''),
+                owners=owners if owners else None,
+                tags=None,  # TODO: Extract tags if stored
+                terms=None,  # TODO: Extract glossary terms if stored
+                links=None,  # TODO: Extract institutional memory if stored
+                custom_properties=None,  # Domains typically don't have custom properties
+                structured_properties=structured_properties if structured_properties else None,
+                forms=None,  # TODO: Extract forms if stored
+                test_results=None,  # TODO: Extract test results if stored
+                display_properties=display_properties if display_properties else None,
+                parent_domain=domain_data.get('parent_domain_urn'),
+                include_all_aspects=True,
+                environment=environment_name,
+                owner=owner,
+                base_dir="metadata-manager",
+                mutation_name=mutation_name
+            )
+            
+            # Provide feedback about files created
+            if result.get("success"):
+                files_created = result.get("files_saved", [])
+                files_created_count = len(files_created)
+                
+                message = f"Remote domain added to staged changes: {files_created_count} file created"
+                
+                # Return success response
+                return JsonResponse({
+                    "status": "success",
+                    "message": message,
+                    "files_created": files_created,
+                    "files_created_count": files_created_count,
+                    "aspects_included": result.get("aspects_included", [])
+                })
+            else:
+                return JsonResponse({
+                    "status": "error",
+                    "error": result.get("message", "Failed to create staged changes")
+                }, status=500)
+                
+        except Exception as e:
+            logger.error(f"Error adding remote domain to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)

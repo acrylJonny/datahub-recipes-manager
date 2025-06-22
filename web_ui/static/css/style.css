@@ -167,4 +167,93 @@ pre.json-content {
         flex-direction: column;
         gap: 0.5rem;
     }
-} 
+}
+
+/* Domain Hierarchy Styles */
+.hierarchy-container {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.tree-connector {
+    width: 20px;
+    height: 20px;
+    border-left: 2px solid #dee2e6;
+    border-bottom: 2px solid #dee2e6;
+    margin-right: 0.25rem;
+}
+
+.tree-connector.last-child {
+    border-left: 2px solid #dee2e6;
+    border-bottom: 2px solid #dee2e6;
+    border-bottom-left-radius: 4px;
+}
+
+.expand-button-container {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.expand-button {
+    background: none;
+    border: none;
+    padding: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background-color 0.2s;
+}
+
+.expand-button:hover {
+    background-color: rgba(0, 114, 177, 0.1);
+}
+
+.expand-icon {
+    font-size: 0.75rem;
+    color: var(--datahub-secondary);
+}
+
+.domain-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.item-name {
+    font-weight: 500;
+    margin-left: 0.5rem;
+}
+
+/* Hierarchy level indentation */
+tr[data-level="1"] .hierarchy-container {
+    margin-left: 20px;
+}
+
+tr[data-level="2"] .hierarchy-container {
+    margin-left: 40px;
+}
+
+tr[data-level="3"] .hierarchy-container {
+    margin-left: 60px;
+}
+
+tr[data-level="4"] .hierarchy-container {
+    margin-left: 80px;
+}
+
+tr[data-level="5"] .hierarchy-container {
+    margin-left: 100px;
+}
