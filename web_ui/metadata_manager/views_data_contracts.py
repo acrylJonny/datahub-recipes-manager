@@ -50,15 +50,50 @@ class DataContractListView(View):
 
 
 def get_remote_data_contracts_data(request):
-    """AJAX endpoint to get remote data contracts data"""
+    """AJAX endpoint to get both local and remote data contracts data"""
     try:
-        logger.info("Loading remote data contracts data via AJAX")
+        logger.info("Loading data contracts data via AJAX")
 
         # Get DataHub connection using connection system
         from utils.datahub_utils import test_datahub_connection
+        from web_ui.views import get_current_connection
         connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "No active DataHub connection configured"})
+
+        # Get current connection for local data
+        connection = get_current_connection(request)
+
+        # Load local data contracts
+        from .models import DataContract
+        local_contracts = list(DataContract.objects.filter(connection=connection))
+        
+        # Prepare local data
+        local_only_items = []
+        synced_items = []
+        
+        for contract in local_contracts:
+            contract_dict = {
+                'id': str(contract.id),
+                'urn': contract.urn,
+                'name': contract.name,
+                'description': contract.description,
+                'entity_urn': contract.entity_urn,
+                'state': contract.state,
+                'result_type': contract.result_type,
+                'sync_status': contract.sync_status,
+                'sync_status_display': contract.get_sync_status_display(),
+                'last_synced': contract.last_synced.isoformat() if contract.last_synced else None,
+                'properties': contract.properties_data,
+                'status': contract.status_data,
+                'result': contract.result_data,
+                'structuredProperties': contract.structured_properties_data,
+            }
+            
+            if contract.sync_status == 'LOCAL_ONLY':
+                local_only_items.append(contract_dict)
+            elif contract.sync_status in ['SYNCED', 'MODIFIED']:
+                synced_items.append(contract_dict)
 
         # Fetch remote data contracts
         remote_data_contracts = []
@@ -84,15 +119,24 @@ def get_remote_data_contracts_data(request):
                 remote_data_contracts_data = result["data"].get("searchResults", [])
                 logger.debug(f"Fetched {len(remote_data_contracts_data)} remote data contracts")
 
-                # Process the data contracts
+                # Process the data contracts and check if they exist locally
+                local_urns = {contract.urn for contract in local_contracts if contract.urn}
+                
                 for contract_result in remote_data_contracts_data:
                     if contract_result and isinstance(contract_result, dict):
                         contract_data = contract_result.get("entity", {})
                         if contract_data:
-                            # Add sync status information
-                            contract_data['sync_status'] = 'REMOTE_ONLY'
-                            contract_data['sync_status_display'] = 'Remote Only'
-                            remote_data_contracts.append(contract_data)
+                            contract_urn = contract_data.get('urn')
+                            
+                            # Check if this contract is already synced locally
+                            if contract_urn in local_urns:
+                                # Skip remote-only list if already synced
+                                continue
+                            else:
+                                # Add sync status information for remote-only items
+                                contract_data['sync_status'] = 'REMOTE_ONLY'
+                                contract_data['sync_status_display'] = 'Remote Only'
+                                remote_data_contracts.append(contract_data)
 
             else:
                 error_msg = "Unknown error"
@@ -104,22 +148,23 @@ def get_remote_data_contracts_data(request):
 
             # Calculate statistics
             try:
+                all_contracts = synced_items + local_only_items + remote_data_contracts
                 statistics = {
-                    'total_items': len(remote_data_contracts),
-                    'synced_count': 0,  # No synced items for now
-                    'local_only_count': 0,  # No local items for now
+                    'total_items': len(all_contracts),
+                    'synced_count': len(synced_items),
+                    'local_only_count': len(local_only_items),
                     'remote_only_count': len(remote_data_contracts),
-                    'owned_items': sum(1 for contract in remote_data_contracts if contract and contract.get('ownership', {}) and contract.get('ownership', {}).get('owners')),
-                    'items_with_relationships': sum(1 for contract in remote_data_contracts if contract and has_contract_relationships(contract)),
-                    'items_with_custom_properties': sum(1 for contract in remote_data_contracts if contract and contract.get('customProperties')),
-                    'items_with_structured_properties': sum(1 for contract in remote_data_contracts if contract and contract.get('structuredProperties', {}) and contract.get('structuredProperties', {}).get('properties'))
+                    'owned_items': sum(1 for contract in all_contracts if contract and contract.get('ownership', {}) and contract.get('ownership', {}).get('owners')),
+                    'items_with_relationships': sum(1 for contract in all_contracts if contract and has_contract_relationships(contract)),
+                    'items_with_custom_properties': sum(1 for contract in all_contracts if contract and contract.get('customProperties')),
+                    'items_with_structured_properties': sum(1 for contract in all_contracts if contract and contract.get('structuredProperties', {}) and contract.get('structuredProperties', {}).get('properties'))
                 }
             except Exception as stats_error:
                 logger.warning(f"Error calculating statistics: {stats_error}")
                 statistics = {
-                    'total_items': len(remote_data_contracts),
-                    'synced_count': 0,
-                    'local_only_count': 0,
+                    'total_items': len(synced_items) + len(local_only_items) + len(remote_data_contracts),
+                    'synced_count': len(synced_items),
+                    'local_only_count': len(local_only_items),
                     'remote_only_count': len(remote_data_contracts),
                     'owned_items': 0,
                     'items_with_relationships': 0,
@@ -132,8 +177,8 @@ def get_remote_data_contracts_data(request):
                     "success": True,
                     "data": {
                         "remote_data_contracts": remote_data_contracts,
-                        "synced_items": [],  # Empty for now
-                        "local_only_items": [],  # Empty for now
+                        "synced_items": synced_items,
+                        "local_only_items": local_only_items,
                         "remote_only_items": remote_data_contracts,
                         "datahub_url": datahub_url,
                         "datahub_token": datahub_token,
@@ -237,6 +282,171 @@ def get_data_contracts(request):
         return JsonResponse({
             "success": False,
             "error": str(e)
+        }, status=500)
+
+
+@method_decorator(require_POST)
+def sync_data_contract_to_local(request):
+    """Sync a data contract from DataHub to local database"""
+    try:
+        import json
+        from .models import DataContract
+        from utils.datahub_utils import test_datahub_connection
+        from web_ui.views import get_current_connection
+        
+        # Get the data contract URN from the request
+        data = json.loads(request.body)
+        contract_urn = data.get("urn")
+        if not contract_urn:
+            return JsonResponse({
+                "success": False,
+                "error": "Data contract URN is required"
+            }, status=400)
+        
+        # Get DataHub connection
+        connected, client = test_datahub_connection(request)
+        if not connected or not client:
+            return JsonResponse({
+                "success": False,
+                "error": "No active DataHub connection configured"
+            }, status=400)
+        
+        # Get current connection for database storage
+        connection = get_current_connection(request)
+        
+        # Fetch the data contract from DataHub
+        try:
+            # Get data contracts using the existing method
+            result = client.get_data_contracts(start=0, count=1000, query="*")
+            if not result.get("success", False):
+                return JsonResponse({
+                    "success": False,
+                    "error": "Failed to fetch data contracts from DataHub"
+                }, status=500)
+            
+            # Find the specific contract
+            contract_data = None
+            for contract_result in result["data"].get("searchResults", []):
+                if contract_result and contract_result.get("entity", {}).get("urn") == contract_urn:
+                    contract_data = contract_result.get("entity", {})
+                    break
+            
+            if not contract_data:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Data contract with URN {contract_urn} not found"
+                }, status=404)
+                
+        except Exception as e:
+            return JsonResponse({
+                "success": False,
+                "error": f"Error fetching data contract: {str(e)}"
+            }, status=500)
+        
+        # Create or update the data contract in local database
+        try:
+            contract = DataContract.create_from_datahub(contract_data, connection=connection)
+            
+            return JsonResponse({
+                "success": True,
+                "message": f"Data contract '{contract.name}' synced to local database",
+                "contract_id": str(contract.id),
+                "contract_name": contract.name
+            })
+            
+        except Exception as e:
+            logger.error(f"Error creating/updating data contract in database: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"Error saving to database: {str(e)}"
+            }, status=500)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            "success": False,
+            "error": "Invalid JSON data"
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error syncing data contract to local: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": f"An error occurred: {str(e)}"
+        }, status=500)
+
+
+@method_decorator(require_POST)
+def resync_data_contract(request, contract_id):
+    """Resync a data contract from DataHub"""
+    try:
+        from .models import DataContract
+        from utils.datahub_utils import test_datahub_connection
+        
+        # Get the contract
+        try:
+            contract = DataContract.objects.get(id=contract_id)
+        except DataContract.DoesNotExist:
+            return JsonResponse({
+                "success": False,
+                "error": "Data contract not found"
+            }, status=404)
+        
+        # Get DataHub connection
+        connected, client = test_datahub_connection(request)
+        if not connected or not client:
+            return JsonResponse({
+                "success": False,
+                "error": "No active DataHub connection configured"
+            }, status=400)
+        
+        # Fetch fresh data from DataHub
+        try:
+            if not contract.urn:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Contract has no URN and cannot be resynced"
+                }, status=400)
+            
+            # Get data contracts using the existing method
+            result = client.get_data_contracts(start=0, count=1000, query="*")
+            if not result.get("success", False):
+                return JsonResponse({
+                    "success": False,
+                    "error": "Failed to fetch data contracts from DataHub"
+                }, status=500)
+            
+            # Find the specific contract
+            contract_data = None
+            for contract_result in result["data"].get("searchResults", []):
+                if contract_result and contract_result.get("entity", {}).get("urn") == contract.urn:
+                    contract_data = contract_result.get("entity", {})
+                    break
+            
+            if not contract_data:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Contract '{contract.name}' not found in DataHub"
+                }, status=404)
+            
+            # Update the contract with fresh data
+            updated_contract = DataContract.create_from_datahub(contract_data, connection=contract.connection)
+            
+            return JsonResponse({
+                "success": True,
+                "message": f"Contract '{updated_contract.name}' resynced successfully from DataHub"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error resyncing contract {contract.name}: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"Error resyncing contract from DataHub: {str(e)}"
+            }, status=500)
+        
+    except Exception as e:
+        logger.error(f"Error in resync data contract: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": f"An error occurred: {str(e)}"
         }, status=500)
 
 

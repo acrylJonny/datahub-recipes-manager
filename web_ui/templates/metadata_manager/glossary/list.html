@@ -842,6 +842,29 @@
                     <a href="#" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createTermModal">
                         <i class="fas fa-tag me-1"></i> Create Term
                     </a>
+                    
+                    <!-- Global Actions Dropdown -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sync-alt me-1"></i> Bulk Actions
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAll()">
+                                <i class="fas fa-sync-alt me-2"></i> Resync All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAll()">
+                                <i class="fas fa-file-export me-2"></i> Export All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllToStagedChanges()">
+                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportModal()">
+                                <i class="fas fa-file-import me-2"></i> Import from JSON
+                            </a></li>
+                        </ul>
+                    </div>
+                    
                     <div class="btn-group" role="group">
                         <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fas fa-file-csv me-1"></i> CSV

@@ -3715,6 +3715,22 @@ class DataHubRestClient:
                 error_messages = [
                     e.get("message", "") for e in result.get("errors", [])
                 ]
+                
+                # Check if the error is that the tag already exists
+                if any("This Tag already exists!" in msg for msg in error_messages):
+                    self.logger.info(f"Tag with ID {tag_id} already exists, attempting to retrieve existing tag")
+                    
+                    # Construct the expected URN and try to get the existing tag
+                    expected_urn = f"urn:li:tag:{tag_id}"
+                    existing_tag = self.get_tag(expected_urn)
+                    
+                    if existing_tag and existing_tag.get("urn"):
+                        self.logger.info(f"Successfully found existing tag: {existing_tag['urn']}")
+                        # Update the description if it's different
+                        if description and existing_tag.get("description") != description:
+                            self.update_tag_description(existing_tag["urn"], description)
+                        return existing_tag["urn"]
+                
                 self.logger.error(
                     f"GraphQL errors when creating tag: {', '.join(error_messages)}"
                 )
@@ -3723,6 +3739,23 @@ class DataHubRestClient:
         except Exception as e:
             self.logger.error(f"Error creating tag: {str(e)}")
             return None
+
+    def create_or_update_tag(
+        self, tag_id: str, name: str, description: str = ""
+    ) -> Optional[str]:
+        """
+        Create a new tag or return existing tag if it already exists.
+        This is a convenience method that wraps create_tag with better error handling.
+
+        Args:
+            tag_id (str): Tag ID
+            name (str): Tag name
+            description (str): Tag description
+
+        Returns:
+            str: URN of the created or existing tag, or None if unsuccessful
+        """
+        return self.create_tag(tag_id, name, description)
 
     def set_tag_color(self, tag_urn: str, color_hex: str) -> bool:
         """
@@ -9545,6 +9578,136 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
             return result[0]
         
         return None
+
+    def get_data_contracts(self, query="*", start=0, count=100) -> Dict[str, Any]:
+        """
+        Get data contracts from DataHub with comprehensive information.
+
+        Args:
+            query (str): Search query to filter data contracts (default: "*")
+            start (int): Starting offset for pagination
+            count (int): Maximum number of data contracts to return
+
+        Returns:
+            Dictionary with success status and data contracts information
+        """
+        self.logger.info(
+            f"Getting data contracts with query: {query}, start: {start}, count: {count}"
+        )
+
+        # GraphQL query for data contracts with comprehensive information
+        graphql_query = """
+        query GetDataContracts($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+                ... on DataContract {
+                  properties {
+                    entityUrn
+                    freshness {
+                      assertion {
+                        urn
+                        info {
+                          description
+                        }
+                      }
+                    }
+                    schema {
+                      assertion {
+                        urn
+                        info {
+                          description
+                        }
+                      }
+                    }
+                    dataQuality {
+                      assertion {
+                        urn
+                        info {
+                          description
+                        }
+                      }
+                    }
+                  }
+                  status {
+                    state
+                  }
+                  structuredProperties {
+                    properties {
+                      structuredProperty {
+                        urn
+                      }
+                      values {
+                        ... on StringValue {
+                          stringValue
+                        }
+                        ... on NumberValue {
+                          numberValue
+                        }
+                      }
+                      valueEntities {
+                        urn
+                      }
+                    }
+                  }
+                  result(refresh: false) {
+                    type
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+
+        variables = {
+            "input": {
+                "types": ["DATA_CONTRACT"],
+                "query": query,
+                "start": start,
+                "count": count,
+                "filters": [],
+            }
+        }
+
+        try:
+            result = self.execute_graphql(graphql_query, variables)
+
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_data = result["data"]["searchAcrossEntities"]
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "start": search_data.get("start", start),
+                        "count": search_data.get("count", 0),
+                        "total": search_data.get("total", 0),
+                        "searchResults": search_data.get("searchResults", [])
+                    }
+                }
+
+            else:
+                error_msg = "No data returned from DataHub"
+                if result and "errors" in result:
+                    errors = self._get_graphql_errors(result)
+                    error_msg = f"GraphQL errors: {', '.join(errors)}"
+                
+                self.logger.error(f"Error in get_data_contracts: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error getting data contracts: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     def import_glossary_node(self, node_data: Dict[str, Any]) -> Optional[str]:
         """

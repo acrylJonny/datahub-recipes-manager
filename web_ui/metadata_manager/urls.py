@@ -209,6 +209,11 @@ urlpatterns = [
         name="tag_sync_to_datahub_api"
     ),
     path(
+        "api/tags/<str:tag_id>/push_to_datahub/",
+        views_tags.TagPushToDataHubView.as_view(),
+        name="tag_push_to_datahub_api"
+    ),
+    path(
         "api/tags/<str:tag_id>/resync/",
         views_tags.TagResyncView.as_view(),
         name="tag_resync_api"
@@ -466,6 +471,16 @@ urlpatterns = [
         "data-contracts/data/",
         views_data_contracts.get_remote_data_contracts_data,
         name="get_remote_data_contracts_data",
+    ),
+    path(
+        "data-contracts/sync-to-local/",
+        views_data_contracts.sync_data_contract_to_local,
+        name="sync_data_contract_to_local",
+    ),
+    path(
+        "data-contracts/<uuid:contract_id>/resync/",
+        views_data_contracts.resync_data_contract,
+        name="resync_data_contract",
     ),
     path(
         "data-contracts/stage_changes/",

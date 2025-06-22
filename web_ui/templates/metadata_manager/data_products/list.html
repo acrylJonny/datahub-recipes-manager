@@ -287,7 +287,7 @@
         color: #495057;
     }
     
-    .bulk-actions {
+    .bulk-actions-bar .bulk-actions {
         display: flex;
         gap: 0.5rem;
     }
@@ -2146,7 +2146,25 @@ function showError(message) {
         ${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+    
+    // Find a safe place to insert the alert
+    const container = document.querySelector('.container-fluid');
+    const row = container ? container.querySelector('.row') : null;
+    
+    if (container && row && container.contains(row)) {
+        container.insertBefore(alert, row);
+    } else {
+        // Fallback: append to body or a safe container
+        const safeContainer = document.querySelector('main') || document.body;
+        safeContainer.insertBefore(alert, safeContainer.firstChild);
+    }
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
 }
 
 function showSuccess(message) {
@@ -2156,7 +2174,25 @@ function showSuccess(message) {
         ${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+    
+    // Find a safe place to insert the alert
+    const container = document.querySelector('.container-fluid');
+    const row = container ? container.querySelector('.row') : null;
+    
+    if (container && row && container.contains(row)) {
+        container.insertBefore(alert, row);
+    } else {
+        // Fallback: append to body or a safe container
+        const safeContainer = document.querySelector('main') || document.body;
+        safeContainer.insertBefore(alert, safeContainer.firstChild);
+    }
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
 }
 
 function initializeFilterHandlers() {
@@ -3211,17 +3247,17 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showSuccess('Data product created successfully!');
+                    showDataProductNotification('success', 'Data product created successfully!');
                     bootstrap.Modal.getInstance(document.getElementById('createDataProductModal')).hide();
                     loadProductsData();
                     createForm.reset();
                 } else {
-                    showError('Failed to create data product: ' + (data.error || 'Unknown error'));
+                    showDataProductNotification('error', 'Failed to create data product: ' + (data.error || 'Unknown error'));
                 }
             })
             .catch(error => {
                 console.error('Error creating data product:', error);
-                showError('Error creating data product');
+                showDataProductNotification('error', 'Error creating data product');
             });
         });
     }
@@ -3245,16 +3281,16 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showSuccess('Data product updated successfully!');
+                    showDataProductNotification('success', 'Data product updated successfully!');
                     bootstrap.Modal.getInstance(document.getElementById('editDataProductModal')).hide();
                     loadProductsData();
                 } else {
-                    showError('Failed to update data product: ' + (data.error || 'Unknown error'));
+                    showDataProductNotification('error', 'Failed to update data product: ' + (data.error || 'Unknown error'));
                 }
             })
             .catch(error => {
                 console.error('Error updating data product:', error);
-                showError('Error updating data product');
+                showDataProductNotification('error', 'Error updating data product');
             });
         });
     }
@@ -3270,6 +3306,15 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load users and groups for ownership sections
     loadUsersAndGroups();
+    
+    // Ensure domains are populated when modals are shown
+    document.getElementById('createDataProductModal')?.addEventListener('shown.bs.modal', function() {
+        populateDomainDropdowns();
+    });
+    
+    document.getElementById('editDataProductModal')?.addEventListener('shown.bs.modal', function() {
+        populateDomainDropdowns();
+    });
 });
 
 // Ownership section functions (similar to tags page)
@@ -3282,29 +3327,30 @@ function addOwnershipSectionToModal(containerId) {
     
     const sectionId = `ownership-section-${Date.now()}`;
     const sectionHTML = `
-        <div class="ownership-section mb-3" id="${sectionId}">
-            <div class="border rounded p-3">
-                <div class="row">
-                    <div class="col-md-6">
-                        <label class="form-label">Ownership Type</label>
-                        <select class="form-select ownership-type-select" name="ownership_types[]" required>
-                            <option value="">Select ownership type</option>
-                            <!-- Options will be populated by JavaScript -->
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Owners</label>
-                        <select class="form-select owners-select" name="owners[]" multiple required>
-                            <!-- Options will be populated by JavaScript -->
-                        </select>
-                    </div>
+        <div class="card mb-3" id="${sectionId}">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="fas fa-crown me-2 text-primary"></i>
+                    Ownership Section
+                </h6>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeOwnershipSection('${sectionId}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Owners <span class="text-danger">*</span></label>
+                    <select class="form-select owners-select" name="owners[]" multiple required>
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                    <div class="form-text">Search and select multiple owners</div>
                 </div>
-                <div class="row mt-2">
-                    <div class="col-12">
-                        <button type="button" class="btn btn-sm btn-outline-danger remove-ownership-section" onclick="removeOwnershipSection('${sectionId}')">
-                            <i class="fas fa-trash me-1"></i> Remove Section
-                        </button>
-                    </div>
+                <div class="mb-3">
+                    <label class="form-label">Ownership Type <span class="text-danger">*</span></label>
+                    <select class="form-select ownership-type-select" name="ownership_types[]" required>
+                        <option value="">Select ownership type...</option>
+                    </select>
+                    <div class="form-text">Select the ownership type for these owners</div>
                 </div>
             </div>
         </div>
@@ -3327,12 +3373,14 @@ function addOwnershipSectionToModal(containerId) {
                     // Populate owners
                     populateOwnersSelect(ownersSelect);
                     
-                    // Initialize Select2
+                    // Initialize Select2 for the owners dropdown
                     if (typeof $ !== 'undefined' && $.fn.select2) {
                         $(ownersSelect).select2({
-                            placeholder: 'Select owners...',
+                            theme: 'bootstrap-5',
+                            width: '100%',
+                            placeholder: 'Search and select owners...',
                             allowClear: true,
-                            width: '100%'
+                            dropdownParent: $(newSection)
                         });
                         console.log('Select2 initialized successfully for owners select');
                     } else {
@@ -3441,7 +3489,6 @@ function populateOwnersSelect(select) {
                     if (domain.urn) {
                         const name = domain.properties?.name || domain.name || '';
                         domainsCache.set(domain.urn, name);
-                        console.log('Added domain to cache:', domain.urn, '->', name);
                     }
                 });
                 
@@ -3453,6 +3500,9 @@ function populateOwnersSelect(select) {
                     const firstFew = Array.from(domainsCache.entries()).slice(0, 3);
                     console.log('Sample domains:', firstFew);
                 }
+                
+                // Populate domain dropdowns after loading
+                populateDomainDropdowns();
             }
         } catch (error) {
             console.error('Error loading domains for lookup:', error);
@@ -3463,6 +3513,94 @@ function populateOwnersSelect(select) {
     function getDomainName(domainUrn) {
         if (!domainUrn) return '';
         return domainsCache.get(domainUrn) || '';
+    }
+    
+    // Populate domain dropdowns with loaded data
+    function populateDomainDropdowns() {
+        const domainSelects = [
+            document.getElementById('product-domain'),
+            document.getElementById('edit-product-domain')
+        ];
+        
+        domainSelects.forEach(select => {
+            if (!select) return;
+            
+            // Clear existing options except the first one
+            select.innerHTML = '<option value="">Select a domain (optional)</option>';
+            
+            // Add domains from cache
+            domainsCache.forEach((name, urn) => {
+                const option = document.createElement('option');
+                option.value = urn;
+                option.textContent = name || urn;
+                select.appendChild(option);
+            });
+        });
+        
+        console.log('Domain dropdowns populated with', domainsCache.size, 'domains');
+    }
+    
+    // Notification system (matching tags page)
+    function showDataProductNotification(type, message) {
+        // Check if we have notifications container
+        let container = document.getElementById('notifications-container');
+        
+        // Create it if it doesn't exist
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notifications-container';
+            container.className = 'position-fixed bottom-0 end-0 p-3';
+            container.style.zIndex = '1050';
+            document.body.appendChild(container);
+        }
+        
+        // Create unique ID
+        const id = 'toast-' + Date.now();
+        
+        // Create toast HTML
+        let bgClass, icon, title;
+        
+        if (type === 'success') {
+            bgClass = 'bg-success';
+            icon = 'fa-check-circle';
+            title = 'Success';
+        } else if (type === 'info') {
+            bgClass = 'bg-info';
+            icon = 'fa-info-circle';
+            title = 'Info';
+        } else {
+            bgClass = 'bg-danger';
+            icon = 'fa-exclamation-circle';
+            title = 'Error';
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${bgClass} text-white`;
+        toast.id = id;
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+        toast.setAttribute('aria-atomic', 'true');
+        toast.innerHTML = `
+            <div class="toast-header ${bgClass} text-white">
+                <i class="fas ${icon} me-2"></i>
+                <strong class="me-auto">${title}</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">${message}</div>
+        `;
+        
+        container.appendChild(toast);
+        
+        // Initialize and show the toast
+        const toastInstance = new bootstrap.Toast(toast, {
+            delay: 5000
+        });
+        toastInstance.show();
+        
+        // Remove toast from DOM after it's hidden
+        toast.addEventListener('hidden.bs.toast', function () {
+            toast.remove();
+        });
     }
 
     // Load glossary terms data for name lookups
@@ -3537,24 +3675,24 @@ async function loadUsersAndGroups() {
 // Global bulk action functions - matching tags page style
 function resyncAllProducts() {
     if (confirm('Are you sure you want to resync all data products? This may take some time.')) {
-        showSuccess('Resync all initiated - this functionality will be implemented soon');
+        showDataProductNotification('success', 'Resync all initiated - this functionality will be implemented soon');
     }
 }
 
 function exportAllProducts() {
-    showSuccess('Export all initiated - downloading data products...');
+    showDataProductNotification('success', 'Export all initiated - downloading data products...');
     // TODO: Implement actual export functionality
 }
 
 function addAllProductsToStagedChanges() {
     if (confirm('Are you sure you want to add all data products to staged changes?')) {
-        showSuccess('All data products added to staged changes');
+        showDataProductNotification('success', 'All data products added to staged changes');
     }
 }
 
 function showImportProductsModal() {
     // TODO: Show import modal similar to tags page
-    showSuccess('Import modal functionality will be implemented soon');
+    showDataProductNotification('info', 'Import modal functionality will be implemented soon');
 }
 </script>
 
@@ -3602,7 +3740,7 @@ function showImportProductsModal() {
                             <!-- Ownership sections will be added here -->
                         </div>
                         <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-ownership-section">
-                            <i class="fas fa-plus me-1"></i> Add Owner
+                            <i class="fas fa-plus me-1"></i> Add Ownership Section
                         </button>
                         <div class="form-text mt-2">
                             <i class="fas fa-info-circle me-1"></i>
@@ -3664,7 +3802,7 @@ function showImportProductsModal() {
                             <!-- Ownership sections will be added here -->
                         </div>
                         <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="edit-add-ownership-section">
-                            <i class="fas fa-plus me-1"></i> Add Owner
+                            <i class="fas fa-plus me-1"></i> Add Ownership Section
                         </button>
                         <div class="form-text mt-2">
                             <i class="fas fa-info-circle me-1"></i>

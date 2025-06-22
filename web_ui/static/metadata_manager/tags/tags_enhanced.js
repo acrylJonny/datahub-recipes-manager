@@ -947,8 +947,8 @@ function getActionButtons(tag, tabType) {
         `;
     }
     
-    // 2c. Push to DataHub - For synced tags that are modified or local tags
-    if ((tabType === 'synced' && tagData.sync_status === 'MODIFIED') || tabType === 'local') {
+    // 2c. Push to DataHub - Only for synced tags that are modified
+    if (tabType === 'synced' && tagData.sync_status === 'MODIFIED') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-success push-to-datahub" 
                     title="Push to DataHub">
@@ -2901,7 +2901,7 @@ function setupActionButtonListeners() {
         } else if (clickedElement.classList.contains('push-to-datahub') || clickedElement.closest('.push-to-datahub')) {
             // Push to DataHub button clicked
             console.log('Push to DataHub clicked for tag:', tagData);
-            syncTagToDataHub(tagData);
+            pushTagToDataHub(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('delete-remote-tag') || clickedElement.closest('.delete-remote-tag')) {
@@ -2996,6 +2996,63 @@ function syncTagToDataHub(tag) {
     .catch(error => {
         console.error('Error syncing tag to DataHub:', error);
         showNotification('error', `Error syncing tag: ${error.message}`);
+    });
+}
+
+/**
+ * Push tag changes to DataHub (for modified synced tags)
+ * @param {Object} tag - The tag object
+ */
+function pushTagToDataHub(tag) {
+    console.log('pushTagToDataHub called with:', tag);
+    
+    // Get tag data
+    const tagData = tag.combined || tag;
+    const tagId = getDatabaseId(tagData);
+    
+    if (!tagId) {
+        console.error('Cannot push tag without a database ID:', tagData);
+        showNotification('error', 'Error pushing tag: Missing tag database ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('success', `Pushing tag "${tagData.name}" changes to DataHub...`);
+    
+    // Make the API call to push this tag to DataHub
+    fetch(`/metadata/api/tags/${tagId}/push_to_datahub/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Push to DataHub response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Add a small delay before refreshing to ensure backend processing is complete
+            setTimeout(() => {
+                // Refresh the data to show updated sync status
+                if (typeof loadTagsData === 'function') {
+                    loadTagsData();
+                } else {
+                    window.location.reload();
+                }
+            }, 1000); // 1 second delay
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error pushing tag to DataHub:', error);
+        showNotification('error', `Error pushing tag: ${error.message}`);
     });
 }
 

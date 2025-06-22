@@ -2154,7 +2154,7 @@ class TagSyncToDataHubView(View):
                 }, status=400)
 
             # Create or update the tag in DataHub
-            result = client.create_tag(
+            result = client.create_or_update_tag(
                 tag_id=tag_id_portion, 
                 name=tag.name, 
                 description=tag.description
@@ -2163,7 +2163,7 @@ class TagSyncToDataHubView(View):
             if not result:
                 return JsonResponse({
                     "success": False,
-                    "error": "Failed to create tag in DataHub"
+                    "error": f"Failed to create or update tag '{tag.name}' in DataHub. Check DataHub logs for more details."
                 }, status=500)
 
             # Set color if specified and not empty
@@ -2250,6 +2250,134 @@ class TagSyncToDataHubView(View):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class TagPushToDataHubView(View):
+    """View to push modified synced tags to DataHub (update existing tags)"""
+
+    def post(self, request, tag_id):
+        """Push a modified synced tag to DataHub"""
+        try:
+            # Find the tag by ID using flexible search
+            tag = find_tag_by_flexible_id(tag_id)
+            if not tag:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Tag with ID {tag_id} not found"
+                }, status=404)
+
+            # Ensure this is a synced tag that can be pushed
+            if tag.sync_status not in ['MODIFIED', 'SYNCED']:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Cannot push tag with status '{tag.sync_status}'. Only MODIFIED or SYNCED tags can be pushed."
+                }, status=400)
+
+            # Get DataHub client
+            client = get_datahub_client_from_request(request)
+            if not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Test connection
+            if not client.test_connection():
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # For pushing, we should use the existing URN to update the tag
+            if not tag.original_urn:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Cannot push tag without original URN. This tag may not be properly synced."
+                }, status=400)
+
+            # Update the tag description if it's different
+            if tag.description:
+                success = client.update_tag_description(tag.original_urn, tag.description)
+                if not success:
+                    return JsonResponse({
+                        "success": False,
+                        "error": f"Failed to update tag description in DataHub"
+                    }, status=500)
+
+            # Set color if specified and not empty
+            if tag.color and tag.color.strip() and tag.color != "#0d6efd":
+                try:
+                    client.set_tag_color(tag.original_urn, tag.color)
+                except Exception as e:
+                    logger.warning(f"Failed to set tag color: {str(e)}")
+
+            # Handle ownership - ensure only intended owners are set
+            intended_owners = []
+            if tag.ownership_data and isinstance(tag.ownership_data, dict):
+                owners = tag.ownership_data.get("owners", [])
+                for owner in owners:
+                    try:
+                        # Handle the standardized UI format
+                        owner_urn = owner.get("owner_urn") or owner.get("owner")
+                        ownership_type = owner.get("ownership_type_urn") or owner.get("type", "urn:li:ownershipType:__system__technical_owner")
+                        
+                        if owner_urn:
+                            client.add_tag_owner(tag.original_urn, owner_urn, ownership_type)
+                            intended_owners.append((owner_urn, ownership_type))
+                    except Exception as e:
+                        logger.warning(f"Failed to add owner {owner_urn}: {str(e)}")
+
+            # Remove the sync user from ownership if they're not in the intended owners list
+            try:
+                current_user = client.get_current_user()
+                
+                if current_user and current_user.get("urn"):
+                    sync_user_urn = current_user["urn"]
+                    
+                    # Check if sync user is in intended owners
+                    sync_user_in_intended = any(owner_urn == sync_user_urn for owner_urn, _ in intended_owners)
+                    
+                    if not sync_user_in_intended:
+                        logger.debug(f"Removing sync user {sync_user_urn} from tag '{tag.name}' ownership")
+                        # Remove sync user with common ownership types
+                        common_ownership_types = [
+                            "urn:li:ownershipType:__system__technical_owner",
+                            "urn:li:ownershipType:__system__business_owner",
+                            "urn:li:ownershipType:__system__data_steward"
+                        ]
+                        
+                        for ownership_type in common_ownership_types:
+                            try:
+                                client.remove_tag_owner(tag.original_urn, sync_user_urn, ownership_type)
+                                logger.debug(f"Removed sync user {sync_user_urn} with ownership type {ownership_type}")
+                            except Exception as e:
+                                # It's normal for this to fail if the user doesn't have this ownership type
+                                logger.debug(f"Could not remove sync user with ownership type {ownership_type}: {str(e)}")
+                    else:
+                        logger.debug(f"Sync user {sync_user_urn} is in intended owners list, keeping them")
+                else:
+                    logger.debug(f"Could not get current user information from DataHub for ownership cleanup")
+            except Exception as e:
+                logger.warning(f"Failed to handle sync user ownership cleanup: {str(e)}")
+
+            # Update tag sync status
+            tag.sync_status = "SYNCED"
+            tag.last_synced = timezone.now()
+            tag.save()
+
+            return JsonResponse({
+                "success": True,
+                "message": f"Tag '{tag.name}' successfully pushed to DataHub",
+                "tag_urn": tag.original_urn
+            })
+
+        except Exception as e:
+            logger.error(f"Error pushing tag to DataHub: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": str(e)
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class TagBulkSyncToDataHubView(View):
     """View to bulk sync multiple local tags to DataHub"""
 
@@ -2300,14 +2428,14 @@ class TagBulkSyncToDataHubView(View):
                         continue
 
                     # Create or update the tag in DataHub
-                    result = client.create_tag(
+                    result = client.create_or_update_tag(
                         tag_id=tag_id_portion, 
                         name=tag.name, 
                         description=tag.description
                     )
 
                     if not result:
-                        errors.append(f"Failed to create tag '{tag.name}' in DataHub")
+                        errors.append(f"Failed to create or update tag '{tag.name}' in DataHub")
                         error_count += 1
                         continue
 

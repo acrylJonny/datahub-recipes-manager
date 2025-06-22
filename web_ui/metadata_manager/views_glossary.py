@@ -2341,8 +2341,12 @@ def glossary_csv_upload(request):
             csv_reader = csv.DictReader(io.StringIO(file_content))
             
             # Validate required columns
-            required_columns = ['name', 'type', 'description']
-            optional_columns = ['parent', 'owner_email', 'owner_group', 'relationships', 'custom_properties']
+            required_columns = ['name']  # Only name is mandatory
+            expected_columns = [
+                'name', 'type', 'description', 'parent_name', 'owner_emails', 
+                'owner_groups', 'owner_types', 'hasA_relationships', 'isA_relationships', 
+                'custom_properties', 'domain_name'
+            ]
             
             if not all(col in csv_reader.fieldnames for col in required_columns):
                 missing_cols = [col for col in required_columns if col not in csv_reader.fieldnames]
@@ -2357,59 +2361,125 @@ def glossary_csv_upload(request):
             updated_count = 0
             skipped_count = 0
             errors = []
+            warnings = []
+            
+            # Load lookup data for validation
+            users_cache = {}
+            groups_cache = {}
+            domains_cache = {}
+            ownership_types_cache = {}
+            glossary_nodes_cache = {}
+            
+            # Build caches for lookups
+            try:
+                # Cache glossary nodes by name for parent lookups
+                for node in GlossaryNode.objects.all():
+                    if node.name:
+                        glossary_nodes_cache[node.name.lower()] = node
+                        
+                # For now, we'll skip user/group/domain lookups since those models don't exist
+                # The URN creation will still work, just without validation
+                        
+            except Exception as e:
+                logger.warning(f"Error building lookup caches: {e}")
             
             for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 because row 1 is headers
                 try:
                     # Validate required fields
                     name = row.get('name', '').strip()
-                    item_type = row.get('type', '').strip().lower()
-                    description = row.get('description', '').strip()
                     
                     if not name:
                         errors.append(f"Row {row_num}: Name is required")
                         skipped_count += 1
                         continue
                     
+                    # Get type, default to 'term' if not specified
+                    item_type = row.get('type', 'term').strip().lower()
                     if item_type not in ['term', 'node']:
-                        errors.append(f"Row {row_num}: Type must be 'term' or 'node', got '{item_type}'")
-                        skipped_count += 1
-                        continue
+                        item_type = 'term'  # Default to term
                     
-                    # Parse optional fields
-                    parent = row.get('parent', '').strip()
-                    owner_email = row.get('owner_email', '').strip()
-                    owner_group = row.get('owner_group', '').strip()
+                    # Get other fields
+                    description = row.get('description', '').strip()
+                    parent_name = row.get('parent_name', '').strip()
+                    domain_name = row.get('domain_name', '').strip()
                     
-                    # Parse JSON fields
-                    relationships = []
+                    # Process ownership data
+                    owner_emails = [email.strip() for email in row.get('owner_emails', '').split(',') if email.strip()]
+                    owner_groups = [group.strip() for group in row.get('owner_groups', '').split(',') if group.strip()]
+                    owner_types = [ot.strip() for ot in row.get('owner_types', '').split(',') if ot.strip()]
+                    
+                    # Process relationships
+                    hasA_relationships = [rel.strip() for rel in row.get('hasA_relationships', '').split(',') if rel.strip()]
+                    isA_relationships = [rel.strip() for rel in row.get('isA_relationships', '').split(',') if rel.strip()]
+                    
+                    # Parse custom properties
                     custom_properties = {}
-                    
-                    try:
-                        if row.get('relationships'):
-                            relationships = json.loads(row['relationships'])
-                    except json.JSONDecodeError:
-                        errors.append(f"Row {row_num}: Invalid JSON in relationships field")
-                    
                     try:
                         if row.get('custom_properties'):
                             custom_properties = json.loads(row['custom_properties'])
                     except json.JSONDecodeError:
                         errors.append(f"Row {row_num}: Invalid JSON in custom_properties field")
                     
+                    # Process ownership data with lookups
+                    processed_ownership = []
+                    max_owners = max(len(owner_emails), len(owner_groups), len(owner_types)) if any([owner_emails, owner_groups, owner_types]) else 0
+                    
+                    for i in range(max_owners):
+                        owner_urn = None
+                        ownership_type_urn = 'urn:li:ownershipType:__system__technical_owner'  # Default
+                        
+                        # Process owner email
+                        if i < len(owner_emails):
+                            email = owner_emails[i]
+                            if email.startswith('urn:li:corpuser:'):
+                                owner_urn = email  # Already a URN
+                            else:
+                                # Create URN from email
+                                owner_urn = f'urn:li:corpuser:{email}'
+                        
+                        # Process owner group
+                        elif i < len(owner_groups):
+                            group = owner_groups[i]
+                            if group.startswith('urn:li:corpgroup:'):
+                                owner_urn = group  # Already a URN
+                            else:
+                                owner_urn = f'urn:li:corpgroup:{group}'
+                        
+                        # Process ownership type
+                        if i < len(owner_types):
+                            ot = owner_types[i]
+                            if ot.startswith('urn:li:ownershipType:'):
+                                ownership_type_urn = ot  # Already a URN
+                            else:
+                                # Use default fallback for unknown types
+                                ownership_type_urn = 'urn:li:ownershipType:__system__technical_owner'
+                        
+                        if owner_urn:
+                            processed_ownership.append({
+                                'owner_urn': owner_urn,
+                                'ownership_type_urn': ownership_type_urn
+                            })
+                    
+                    # Process domain
+                    domain_urn = None
+                    if domain_name:
+                        if domain_name.startswith('urn:li:domain:'):
+                            domain_urn = domain_name  # Already a URN
+                        else:
+                            # Create URN from domain name (no validation for now)
+                            domain_urn = f'urn:li:domain:{domain_name}'
+                    
+                    # Process parent lookup
+                    parent_node = None
+                    if parent_name:
+                        parent_node_obj = glossary_nodes_cache.get(parent_name.lower())
+                        if parent_node_obj:
+                            parent_node = parent_node_obj
+                        # If parent not found, we'll still create the item but without parent
+                    
                     if not dry_run:
                         # Create or update the item
                         if item_type == 'node':
-                            # Handle glossary node
-                            parent_node = None
-                            if parent:
-                                # Try to find parent by name or URN
-                                try:
-                                    parent_node = GlossaryNode.objects.filter(
-                                        models.Q(name=parent) | models.Q(urn=parent)
-                                    ).first()
-                                except:
-                                    pass
-                            
                             # Check if node already exists
                             existing_node = GlossaryNode.objects.filter(name=name).first()
                             
@@ -2418,6 +2488,10 @@ def glossary_csv_upload(request):
                                     existing_node.description = description
                                     existing_node.parent = parent_node
                                     existing_node.save()
+                                    
+                                    # TODO: Handle ownership, relationships, custom properties, domain
+                                    # This would require additional model fields and processing
+                                    
                                     updated_count += 1
                                 else:
                                     skipped_count += 1
@@ -2430,20 +2504,13 @@ def glossary_csv_upload(request):
                                     parent=parent_node,
                                     sync_status='LOCAL_ONLY'
                                 )
+                                
+                                # TODO: Handle ownership, relationships, custom properties, domain
+                                # This would require additional model fields and processing
+                                
                                 created_count += 1
                         
                         else:  # item_type == 'term'
-                            # Handle glossary term
-                            parent_node = None
-                            if parent:
-                                # Try to find parent by name or URN
-                                try:
-                                    parent_node = GlossaryNode.objects.filter(
-                                        models.Q(name=parent) | models.Q(urn=parent)
-                                    ).first()
-                                except:
-                                    pass
-                            
                             # Check if term already exists
                             existing_term = GlossaryTerm.objects.filter(name=name).first()
                             
@@ -2452,6 +2519,10 @@ def glossary_csv_upload(request):
                                     existing_term.description = description
                                     existing_term.parent_node = parent_node
                                     existing_term.save()
+                                    
+                                    # TODO: Handle ownership, relationships, custom properties, domain
+                                    # This would require additional model fields and processing
+                                    
                                     updated_count += 1
                                 else:
                                     skipped_count += 1
@@ -2464,6 +2535,10 @@ def glossary_csv_upload(request):
                                     parent_node=parent_node,
                                     sync_status='LOCAL_ONLY'
                                 )
+                                
+                                # TODO: Handle ownership, relationships, custom properties, domain
+                                # This would require additional model fields and processing
+                                
                                 created_count += 1
                     
                     processed_count += 1
@@ -2478,11 +2553,14 @@ def glossary_csv_upload(request):
                 "created_count": created_count,
                 "updated_count": updated_count,
                 "skipped_count": skipped_count,
-                "errors": errors[:50]  # Limit errors to prevent huge responses
+                "errors": errors[:50],  # Limit errors to prevent huge responses
+                "warnings": warnings[:50]  # Limit warnings to prevent huge responses
             }
             
             if len(errors) > 50:
                 response_data["errors"].append(f"... and {len(errors) - 50} more errors")
+            if len(warnings) > 50:
+                response_data["warnings"].append(f"... and {len(warnings) - 50} more warnings")
             
             return JsonResponse({
                 "success": True,

@@ -139,6 +139,154 @@
         font-size: 0.9rem;
         color: #6c757d;
     }
+
+    /* Bulk actions styling - same as tags */
+    .bulk-actions {
+        display: none;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 0.75rem 1rem;
+        margin: 0;
+    }
+
+    .bulk-actions.show {
+        display: block;
+    }
+
+    .bulk-actions-bar .bulk-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    /* Pagination styles matching tags */
+    .pagination .page-link {
+        color: #007bff;
+        background-color: #fff;
+        border: 1px solid #dee2e6;
+        padding: 0.375rem 0.75rem;
+        margin-left: -1px;
+        line-height: 1.25;
+        text-decoration: none;
+        transition: all 0.15s ease-in-out;
+    }
+
+    .pagination .page-link:hover {
+        z-index: 2;
+        color: #0056b3;
+        text-decoration: none;
+        background-color: #e9ecef;
+        border-color: #dee2e6;
+    }
+
+    .pagination .page-item.active .page-link {
+        z-index: 3;
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white !important;
+    }
+
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        pointer-events: none;
+        cursor: auto;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+
+    /* Text truncation for table cells */
+    .table td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Sorting icons */
+    .sort-icon {
+        color: #6c757d;
+        font-size: 0.75rem;
+        transition: color 0.15s ease;
+    }
+
+    .sortable-header:hover .sort-icon {
+        color: #007bff;
+    }
+
+    .sortable-header.sorted .sort-icon {
+        color: #007bff;
+    }
+
+    /* Row striping and hover effects */
+    .table-success-subtle {
+        background-color: rgba(25, 135, 84, 0.075);
+    }
+
+    .table-warning-subtle {
+        background-color: rgba(255, 193, 7, 0.075);
+    }
+
+    .table-info-subtle {
+        background-color: rgba(13, 202, 240, 0.075);
+    }
+
+    .table tbody tr:hover {
+        background-color: rgba(0, 123, 255, 0.1) !important;
+    }
+
+    /* Checkbox styling */
+    .form-check-input:checked {
+        background-color: #007bff;
+        border-color: #007bff;
+    }
+
+    /* Badge styling improvements */
+    .badge {
+        font-weight: 500;
+        letter-spacing: 0.025em;
+    }
+
+    /* Action buttons styling */
+    .btn-group .btn {
+        border-radius: 0.25rem;
+        margin-right: 0.125rem;
+    }
+
+    .btn-group .btn:last-child {
+        margin-right: 0;
+    }
+
+    /* Make sure dropdown menus appear above other content */
+    .dropdown-menu {
+        z-index: 1050;
+    }
+
+    /* Specific truncation for name column content */
+    .table td:nth-child(2) .d-flex {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    .table td:nth-child(2) strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    /* URN column truncation */
+    .table td:nth-child(6) code {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+
+    /* Ensure action buttons don't wrap */
+    .table td:last-child .btn-group {
+        white-space: nowrap;
+    }
 </style>
 {% endblock %}
 
@@ -159,10 +307,29 @@
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>DataHub Data Contracts</h1>
                 <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-primary" title="Create Data Contract">
-                        <i class="fas fa-plus me-1"></i> Create Data Contract
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" id="refreshContracts">
+                    <!-- Global Actions Dropdown -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sync-alt me-1"></i> Bulk Actions
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAll()">
+                                <i class="fas fa-sync-alt me-2"></i> Resync All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAll()">
+                                <i class="fas fa-file-export me-2"></i> Export All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllToStagedChanges()">
+                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportModal()">
+                                <i class="fas fa-file-import me-2"></i> Import from JSON
+                            </a></li>
+                        </ul>
+                    </div>
+
+                    <button type="button" class="btn btn-outline-info" id="refreshContracts">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
                 </div>
@@ -198,41 +365,39 @@
             <!-- Contracts content -->
             <div id="contracts-content" style="display: none;">
                 <!-- Statistics and Filters -->
-                <div class="card mb-4">
-                    <div class="card-body p-0">
-                        <div class="container-fluid">
-                            <!-- Row 1: Overview Statistics -->
+                <div class="mb-3">
+                    <div class="card">
+                        <div class="card-body p-0">
+                            <!-- Row 1: Overview -->
                             <div class="row g-0 filter-row">
-                                <div class="col-3 d-flex align-items-center justify-content-center bg-light border-end">
+                                <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Overview</strong>
                                 </div>
-                                <div class="col-3 border-end">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center" data-filter="total" data-category="overview">
                                         <div class="h5 mb-0" id="total-items">0</div>
                                         <div class="text-muted">Total</div>
                                     </div>
                                 </div>
-                                <div class="col-2 border-end">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
                                         <div class="h5 mb-0" id="synced-count">0</div>
                                         <div class="text-muted">Synced</div>
                                     </div>
                                 </div>
-                                <div class="col-2 border-end">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
                                         <div class="h5 mb-0" id="local-only-count">0</div>
                                         <div class="text-muted">Local Only</div>
                                     </div>
                                 </div>
-                                <div class="col-2">
+                                <div class="col-md-2-5">
                                     <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
                                         <div class="h5 mb-0" id="remote-only-count">0</div>
                                         <div class="text-muted">Remote Only</div>
                                     </div>
                                 </div>
                             </div>
-                            
-
                         </div>
                     </div>
                 </div>
@@ -276,6 +441,30 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> contract(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncContracts('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -295,6 +484,30 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> contract(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkSyncToDataHub('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Sync to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -314,6 +527,27 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> contract(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
                             </div>

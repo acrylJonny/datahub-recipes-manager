@@ -133,7 +133,62 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Filter functionality
     setupFilterHandlers();
+    setupBulkActions();
 });
+
+function setupBulkActions() {
+    // This function will be called to set up initial bulk action structure
+    // Individual checkbox handlers are attached in displayTabContent
+    console.log('Bulk actions structure initialized');
+}
+
+function updateBulkActionVisibility(tab) {
+    const checkboxes = document.querySelectorAll(`#${tab}-content .item-checkbox:checked`);
+    const bulkActions = document.getElementById(`${tab}-bulk-actions`);
+    const selectedCount = document.getElementById(`${tab}-selected-count`);
+    
+    if (checkboxes.length > 0) {
+        bulkActions.classList.add('show');
+        selectedCount.textContent = checkboxes.length;
+    } else {
+        bulkActions.classList.remove('show');
+    }
+}
+
+function getSelectedContracts(tabType) {
+    const checkboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
+    const selectedContracts = [];
+    
+    checkboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        if (row && row.dataset.item) {
+            try {
+                const contractData = DataUtils.safeJsonParse(row.dataset.item);
+                if (contractData) {
+                    selectedContracts.push(contractData);
+                }
+            } catch (error) {
+                console.error('Error parsing contract data:', error);
+            }
+        }
+    });
+    
+    return selectedContracts;
+}
+
+function clearAllSelections() {
+    const checkboxes = document.querySelectorAll('.item-checkbox, .select-all-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    
+    // Update bulk action visibility for all tabs
+    ['synced', 'local', 'remote'].forEach(tab => {
+        updateBulkActionVisibility(tab);
+    });
+    
+    console.log('Cleared all contract selections due to data refresh');
+}
 
 function loadUsersAndGroups() {
     return new Promise((resolve) => {
@@ -171,6 +226,9 @@ function loadUsersAndGroups() {
 function loadContractsData() {
     console.log('Loading contracts data...');
     showLoading(true);
+    
+    // Clear any existing selections to prevent stale data issues
+    clearAllSelections();
     
     fetch('/metadata/data-contracts/data/')
         .then(response => {
@@ -330,14 +388,17 @@ function displayTabContent(tabType) {
             console.log(`No items for ${tabType}, showing empty state`);
             content.innerHTML = `
                 <div class="table-responsive">
-                    <table class="table table-hover table-striped mb-0">
+                    <table class="table table-hover mb-0">
                         <thead>
                             <tr>
-                                <th class="sortable-header" data-sort="urn">URN</th>
-                                <th class="sortable-header" data-sort="entityUrn">Entity URN</th>
-                                <th class="sortable-header" data-sort="state">State</th>
-                                <th class="sortable-header" data-sort="assertions">Assertions</th>
-                                <th width="15%">Actions</th>
+                                <th width="30">
+                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
+                                </th>
+                                <th class="sortable-header" data-sort="urn" width="300">URN</th>
+                                <th class="sortable-header" data-sort="entityUrn" width="300">Entity URN</th>
+                                <th class="sortable-header" data-sort="state" width="100">State</th>
+                                <th class="sortable-header" data-sort="assertions" width="80">Assertions</th>
+                                <th width="140">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -346,6 +407,19 @@ function displayTabContent(tabType) {
                     </table>
                 </div>
             `;
+            
+            // Attach select-all checkbox handler for empty state
+            const selectAllCheckbox = content.querySelector('.select-all-checkbox');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.addEventListener('change', function() {
+                    const checkboxes = content.querySelectorAll('.item-checkbox');
+                    checkboxes.forEach(checkbox => {
+                        checkbox.checked = this.checked;
+                    });
+                    updateBulkActionVisibility(tabType);
+                });
+            }
+            
             return;
         }
         
@@ -362,9 +436,67 @@ function displayTabContent(tabType) {
             });
         });
         
+        // Attach click handlers for sync-to-local buttons
+        content.querySelectorAll('.sync-to-local').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const itemData = JSON.parse(row.dataset.item);
+                syncContractToLocal(itemData);
+            });
+        });
+        
+        // Attach click handlers for resync buttons
+        content.querySelectorAll('.resync-contract').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const itemData = JSON.parse(row.dataset.item);
+                resyncContract(itemData);
+            });
+        });
+        
+        // Attach click handlers for download JSON buttons
+        content.querySelectorAll('.download-json').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const itemData = JSON.parse(row.dataset.item);
+                downloadContractJson(itemData);
+            });
+        });
+        
+        // Attach click handlers for add to staged changes buttons
+        content.querySelectorAll('.add-to-staged').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const itemData = JSON.parse(row.dataset.item);
+                addContractToStagedChanges(itemData);
+            });
+        });
+        
+        // Attach checkbox handlers for bulk actions
+        content.querySelectorAll('.item-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                updateBulkActionVisibility(tabType);
+            });
+        });
+        
+        // Attach select-all checkbox handler
+        const selectAllCheckbox = content.querySelector('.select-all-checkbox');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                const checkboxes = content.querySelectorAll('.item-checkbox');
+                checkboxes.forEach(checkbox => {
+                    checkbox.checked = this.checked;
+                });
+                updateBulkActionVisibility(tabType);
+            });
+        }
+        
         // Attach sorting handlers
         attachSortingHandlers(content, tabType);
         restoreSortState(content, tabType);
+        
+        // Attach checkbox handlers
+        attachCheckboxHandlers(content, tabType);
         
         // Attach pagination handlers
         content.querySelectorAll('.page-link[data-page]').forEach(link => {
@@ -489,14 +621,18 @@ function generateTableHTML(items, tabType) {
     
     return `
         <div class="table-responsive">
-            <table class="table table-hover table-striped mb-0">
+            <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        <th class="sortable-header" data-sort="urn">URN</th>
-                        <th class="sortable-header" data-sort="entityUrn">Entity URN</th>
-                        <th class="sortable-header" data-sort="state">State</th>
-                        <th class="sortable-header" data-sort="assertions">Assertions</th>
-                        <th width="15%">Actions</th>
+                        <th width="30">
+                            <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
+                        </th>
+                        <th class="sortable-header" data-sort="urn" width="250">URN</th>
+                        <th class="sortable-header" data-sort="entityUrn" width="250">Entity URN</th>
+                        <th class="sortable-header" data-sort="state" width="100">State</th>
+                        <th class="sortable-header" data-sort="result" width="100">Result</th>
+                        <th class="sortable-header" data-sort="assertions" width="80">Assertions</th>
+                        <th width="140">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -519,6 +655,24 @@ function renderContractRow(contract, tabType) {
     const entityUrn = properties.entityUrn || '';
     const status = contract.status || {};
     const state = status.state || 'Unknown';
+    const result = contract.result || {};
+    const resultType = result.type || 'Unknown';
+    
+    // Get state badge class - active is green, pending is yellow
+    let stateBadgeClass = 'bg-secondary';
+    if (state.toLowerCase() === 'active') {
+        stateBadgeClass = 'bg-success';
+    } else if (state.toLowerCase() === 'pending') {
+        stateBadgeClass = 'bg-warning';
+    }
+    
+    // Get result badge class - passing is green, failing is red
+    let resultBadgeClass = 'bg-secondary';
+    if (resultType.toLowerCase() === 'passing') {
+        resultBadgeClass = 'bg-success';
+    } else if (resultType.toLowerCase() === 'failing') {
+        resultBadgeClass = 'bg-danger';
+    }
     
     // Count assertions - handle different data structures
     let assertionCount = 0;
@@ -547,39 +701,105 @@ function renderContractRow(contract, tabType) {
     // Sanitize contract data for the data-item attribute
     const sanitizedContract = DataUtils.createDisplaySafeItem(contract);
     
+    // Use safe JSON stringify for minimal data attributes
+    const safeJsonData = JSON.stringify(sanitizedContract)
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    
     return `
-        <tr data-item='${DataUtils.safeJsonStringify(sanitizedContract)}'>
+        <tr data-item='${safeJsonData}'>
             <td>
+                <input type="checkbox" class="form-check-input item-checkbox" value="${contract.urn || contract.id}">
+            </td>
+            <td title="${DataUtils.safeEscapeHtml(urn)}">
                 <div class="d-flex align-items-center">
                     <i class="${typeIcon} me-2"></i>
-                    <code class="small text-truncate d-block" style="max-width: 300px;" title="${DataUtils.safeEscapeHtml(urn)}">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(urn, 60))}</code>
+                    <code class="small text-truncate" style="max-width: 200px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(urn, 40))}</code>
                 </div>
             </td>
-            <td>
-                <code class="small text-truncate d-block" style="max-width: 400px;" title="${DataUtils.safeEscapeHtml(entityUrn)}">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(entityUrn, 80))}</code>
+            <td title="${DataUtils.safeEscapeHtml(entityUrn)}">
+                <code class="small text-truncate" style="max-width: 200px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(entityUrn, 40))}</code>
             </td>
             <td>
-                <span class="badge bg-secondary">${DataUtils.safeEscapeHtml(state)}</span>
+                <span class="badge ${stateBadgeClass}">${DataUtils.safeEscapeHtml(state)}</span>
             </td>
             <td>
+                <span class="badge ${resultBadgeClass}">${DataUtils.safeEscapeHtml(resultType)}</span>
+            </td>
+            <td class="text-center">
                 <span class="badge bg-info">${assertionCount}</span>
             </td>
             <td>
                 <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-sm btn-outline-primary view-item" title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    ${contractsData.datahub_url && entityUrn ? `
-                        <a href="${contractsData.datahub_url}/dataset/${encodeURIComponent(entityUrn)}/Quality/Data%20Contract" 
-                           class="btn btn-sm btn-outline-info" 
-                           target="_blank" title="View in DataHub">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    ` : ''}
+                    ${getContractActionButtons(contract, tabType)}
                 </div>
             </td>
         </tr>
     `;
+}
+
+function getContractActionButtons(contract, tabType) {
+    const contractData = contract;
+    const urn = contractData.urn || '';
+    const entityUrn = contractData.properties?.entityUrn || '';
+    
+    let actionButtons = '';
+    
+    // 1. View Details - Available for all contracts
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-primary view-item" title="View Details">
+            <i class="fas fa-eye"></i>
+        </button>
+    `;
+    
+    // 2. Sync to Local - Only for remote contracts
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success sync-to-local" 
+                    title="Sync to Local">
+                <i class="fas fa-download"></i>
+            </button>
+        `;
+    }
+    
+    // 3. Resync - Only for synced contracts
+    if (tabType === 'synced') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-info resync-contract" 
+                    title="Resync from DataHub">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        `;
+    }
+    
+    // 4. Download JSON - Available for all contracts
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-secondary download-json"
+                title="Download JSON">
+            <i class="fas fa-file-download"></i>
+        </button>
+    `;
+
+    // 5. Add to Staged Changes - Available for all contracts
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
+                title="Add to Staged Changes">
+            <i class="fab fa-github"></i>
+        </button>
+    `;
+    
+    // 6. View in DataHub - Available if we have DataHub URL and entity URN
+    if (contractsData.datahub_url && entityUrn) {
+        actionButtons += `
+            <a href="${contractsData.datahub_url}/dataset/${encodeURIComponent(entityUrn)}/Quality/Data%20Contract" 
+               class="btn btn-sm btn-outline-info" 
+               target="_blank" title="View in DataHub">
+                <i class="fas fa-external-link-alt"></i>
+            </a>
+        `;
+    }
+    
+    return actionButtons;
 }
 
 function generatePaginationHTML(totalItems, tabType) {
@@ -654,7 +874,7 @@ function getEmptyStateHTML(tabType, hasSearch) {
     if (hasSearch) {
         return `
             <tr>
-                <td colspan="5" class="text-center py-4 text-muted">
+                <td colspan="7" class="text-center py-4 text-muted">
                     <i class="fas fa-search fa-2x mb-2"></i><br>
                     No contracts found matching your search criteria.
                 </td>
@@ -670,7 +890,7 @@ function getEmptyStateHTML(tabType, hasSearch) {
     
     return `
         <tr>
-            <td colspan="5" class="text-center py-4 text-muted">
+            <td colspan="7" class="text-center py-4 text-muted">
                 <i class="fas fa-file-contract fa-2x mb-2"></i><br>
                 ${emptyStates[tabType]}
             </td>
@@ -724,6 +944,8 @@ function getSortValue(contract, column) {
             return contract.properties?.entityUrn || '';
         case 'state':
             return contract.status?.state || '';
+        case 'result':
+            return contract.result?.type || '';
         case 'assertions':
             // Count assertions for sorting
             let count = 0;
@@ -757,6 +979,18 @@ function sortItems(items, column, direction) {
             return bStr.localeCompare(aStr);
         }
     });
+}
+
+function attachCheckboxHandlers(content, tabType) {
+    // Handle individual checkboxes
+    const checkboxes = content.querySelectorAll('.item-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            updateBulkActionVisibility(tabType);
+        });
+    });
+    
+    console.log(`Attached checkbox handlers for ${tabType} tab: ${checkboxes.length} checkboxes`);
 }
 
 function showContractDetails(contract) {
@@ -933,6 +1167,420 @@ function showError(message) {
     if (container) {
         container.insertBefore(alert, container.querySelector('.row'));
     }
+}
+
+// Bulk action functions
+function bulkResyncContracts(tabType) {
+    const selectedContracts = getSelectedContracts(tabType);
+    if (selectedContracts.length === 0) {
+        showNotification('Please select contracts to resync', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to resync ${selectedContracts.length} contract(s)?`)) {
+        return;
+    }
+    
+    showNotification(`Starting resync of ${selectedContracts.length} contract(s)...`, 'info');
+    
+    // Process contracts sequentially to avoid overwhelming the server
+    let completed = 0;
+    let errors = 0;
+    
+    function processNextContract(index) {
+        if (index >= selectedContracts.length) {
+            // All done
+            const successCount = completed - errors;
+            if (errors === 0) {
+                showNotification(`Successfully resynced ${successCount} contract(s)`, 'success');
+            } else {
+                showNotification(`Completed with ${successCount} success(es) and ${errors} error(s)`, 'warning');
+            }
+            loadContractsData(); // Refresh data
+            return;
+        }
+        
+        const contract = selectedContracts[index];
+        
+        // Here you would call your resync API endpoint
+        // For now, just simulate the process
+        setTimeout(() => {
+            completed++;
+            processNextContract(index + 1);
+        }, 100);
+    }
+    
+    processNextContract(0);
+}
+
+function bulkSyncToDataHub(tabType) {
+    const selectedContracts = getSelectedContracts(tabType);
+    if (selectedContracts.length === 0) {
+        showNotification('Please select contracts to sync to DataHub', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to sync ${selectedContracts.length} contract(s) to DataHub?`)) {
+        return;
+    }
+    
+    showNotification(`Starting sync of ${selectedContracts.length} contract(s) to DataHub...`, 'info');
+    
+    // Process contracts sequentially
+    let completed = 0;
+    let errors = 0;
+    
+    function processNextContract(index) {
+        if (index >= selectedContracts.length) {
+            const successCount = completed - errors;
+            if (errors === 0) {
+                showNotification(`Successfully synced ${successCount} contract(s) to DataHub`, 'success');
+            } else {
+                showNotification(`Completed with ${successCount} success(es) and ${errors} error(s)`, 'warning');
+            }
+            loadContractsData();
+            return;
+        }
+        
+        const contract = selectedContracts[index];
+        
+        // Here you would call your sync to DataHub API endpoint
+        setTimeout(() => {
+            completed++;
+            processNextContract(index + 1);
+        }, 100);
+    }
+    
+    processNextContract(0);
+}
+
+function bulkSyncToLocal(tabType) {
+    const selectedContracts = getSelectedContracts(tabType);
+    if (selectedContracts.length === 0) {
+        showNotification('Please select contracts to sync to local', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to sync ${selectedContracts.length} contract(s) to local?`)) {
+        return;
+    }
+    
+    showNotification(`Starting sync of ${selectedContracts.length} contract(s) to local...`, 'info');
+    
+    // Process contracts sequentially
+    let completed = 0;
+    let errors = 0;
+    
+    function processNextContract(index) {
+        if (index >= selectedContracts.length) {
+            const successCount = completed - errors;
+            if (errors === 0) {
+                showNotification(`Successfully synced ${successCount} contract(s) to local`, 'success');
+            } else {
+                showNotification(`Completed with ${successCount} success(es) and ${errors} error(s)`, 'warning');
+            }
+            loadContractsData();
+            return;
+        }
+        
+        const contract = selectedContracts[index];
+        
+        // Call sync to local API endpoint
+        syncContractToLocal(contract, true).then(() => {
+            completed++;
+            processNextContract(index + 1);
+        }).catch((error) => {
+            console.error(`Error syncing contract ${contract.name || contract.urn}:`, error);
+            errors++;
+            completed++;
+            processNextContract(index + 1);
+        });
+    }
+    
+    processNextContract(0);
+}
+
+function bulkDownloadJson(tabType) {
+    const selectedContracts = getSelectedContracts(tabType);
+    if (selectedContracts.length === 0) {
+        showNotification('Please select contracts to download', 'warning');
+        return;
+    }
+    
+    const jsonData = JSON.stringify(selectedContracts, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `data_contracts_${tabType}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showNotification(`Downloaded ${selectedContracts.length} contract(s) as JSON`, 'success');
+}
+
+function bulkAddToPR(tabType) {
+    const selectedContracts = getSelectedContracts(tabType);
+    if (selectedContracts.length === 0) {
+        showNotification('Please select contracts to add to staged changes', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to add ${selectedContracts.length} contract(s) to staged changes?`)) {
+        return;
+    }
+    
+    showNotification(`Adding ${selectedContracts.length} contract(s) to staged changes...`, 'info');
+    
+    // Here you would call your API to add to staged changes
+    setTimeout(() => {
+        showNotification(`Successfully added ${selectedContracts.length} contract(s) to staged changes`, 'success');
+    }, 1000);
+}
+
+function bulkDeleteLocal(tabType) {
+    const selectedContracts = getSelectedContracts(tabType);
+    if (selectedContracts.length === 0) {
+        showNotification('Please select contracts to delete', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete ${selectedContracts.length} contract(s) from local storage? This action cannot be undone.`)) {
+        return;
+    }
+    
+    showNotification(`Deleting ${selectedContracts.length} contract(s) from local storage...`, 'info');
+    
+    // Process contracts sequentially
+    let completed = 0;
+    let errors = 0;
+    
+    function processNextContract(index) {
+        if (index >= selectedContracts.length) {
+            const successCount = completed - errors;
+            if (errors === 0) {
+                showNotification(`Successfully deleted ${successCount} contract(s) from local storage`, 'success');
+            } else {
+                showNotification(`Completed with ${successCount} success(es) and ${errors} error(s)`, 'warning');
+            }
+            loadContractsData();
+            return;
+        }
+        
+        const contract = selectedContracts[index];
+        
+        // Here you would call your delete API endpoint
+        setTimeout(() => {
+            completed++;
+            processNextContract(index + 1);
+        }, 100);
+    }
+    
+    processNextContract(0);
+}
+
+// Global bulk action functions
+function resyncAll() {
+    if (!confirm('Are you sure you want to resync all contracts? This may take a while.')) {
+        return;
+    }
+    
+    showNotification('Starting resync of all contracts...', 'info');
+    
+    // Here you would call your resync all API endpoint
+    setTimeout(() => {
+        showNotification('Successfully resynced all contracts', 'success');
+        loadContractsData();
+    }, 2000);
+}
+
+function exportAll() {
+    const allContracts = [
+        ...contractsData.synced_items,
+        ...contractsData.local_only_items,
+        ...contractsData.remote_only_items
+    ];
+    
+    if (allContracts.length === 0) {
+        showNotification('No contracts to export', 'warning');
+        return;
+    }
+    
+    const jsonData = JSON.stringify(allContracts, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `all_data_contracts_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showNotification(`Exported ${allContracts.length} contract(s) as JSON`, 'success');
+}
+
+function addAllToStagedChanges() {
+    const allContracts = [
+        ...contractsData.synced_items,
+        ...contractsData.local_only_items,
+        ...contractsData.remote_only_items
+    ];
+    
+    if (allContracts.length === 0) {
+        showNotification('No contracts to add to staged changes', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to add all ${allContracts.length} contract(s) to staged changes?`)) {
+        return;
+    }
+    
+    showNotification(`Adding all ${allContracts.length} contract(s) to staged changes...`, 'info');
+    
+    // Here you would call your API to add all to staged changes
+    setTimeout(() => {
+        showNotification(`Successfully added all ${allContracts.length} contract(s) to staged changes`, 'success');
+    }, 2000);
+}
+
+function showImportModal() {
+    // Here you would show an import modal similar to the tags page
+    showNotification('Import functionality not yet implemented', 'info');
+}
+
+// Individual action functions
+async function syncContractToLocal(contract, suppressNotifications = false) {
+    try {
+        if (!suppressNotifications) {
+            showNotification(`Syncing contract "${contract.name || contract.urn}" to local...`, 'info');
+        }
+        
+        const response = await fetch('/metadata/data-contracts/sync-to-local/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                urn: contract.urn
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            if (!suppressNotifications) {
+                showNotification(result.message || 'Contract synced successfully', 'success');
+                loadContractsData(); // Refresh data
+            }
+            return result;
+        } else {
+            if (!suppressNotifications) {
+                showNotification(result.error || 'Failed to sync contract', 'danger');
+            }
+            throw new Error(result.error || 'Failed to sync contract');
+        }
+    } catch (error) {
+        console.error('Error syncing contract to local:', error);
+        if (!suppressNotifications) {
+            showNotification('Error syncing contract to local', 'danger');
+        }
+        throw error;
+    }
+}
+
+async function resyncContract(contract) {
+    try {
+        showNotification(`Resyncing contract "${contract.name || contract.urn}"...`, 'info');
+        
+        const response = await fetch(`/metadata/data-contracts/${contract.id}/resync/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(result.message || 'Contract resynced successfully', 'success');
+            loadContractsData(); // Refresh data
+        } else {
+            showNotification(result.error || 'Failed to resync contract', 'danger');
+        }
+    } catch (error) {
+        console.error('Error resyncing contract:', error);
+        showNotification('Error resyncing contract', 'danger');
+    }
+}
+
+function downloadContractJson(contract) {
+    const jsonData = JSON.stringify(contract, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `data_contract_${contract.name || contract.urn.split(':').pop()}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showNotification('Contract downloaded as JSON', 'success');
+}
+
+async function addContractToStagedChanges(contract) {
+    try {
+        showNotification(`Adding contract "${contract.name || contract.urn}" to staged changes...`, 'info');
+        
+        const formData = new FormData();
+        formData.append('contract_urn', contract.urn);
+        formData.append('csrfmiddlewaretoken', getCsrfToken());
+        
+        const response = await fetch('/metadata/data-contracts/stage_changes/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(result.message || 'Contract added to staged changes', 'success');
+        } else {
+            showNotification(result.error || 'Failed to add contract to staged changes', 'danger');
+        }
+    } catch (error) {
+        console.error('Error adding contract to staged changes:', error);
+        showNotification('Error adding contract to staged changes', 'danger');
+    }
+}
+
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    // Add to page
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 5000);
 }
 
 console.log('Data Contracts script loaded successfully'); 

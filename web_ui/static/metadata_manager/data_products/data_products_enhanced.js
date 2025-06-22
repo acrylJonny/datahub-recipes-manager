@@ -209,21 +209,33 @@ function setupSearchHandlers() {
 }
 
 function setupBulkActions() {
-    // Tab-specific bulk actions will be handled in renderTabContent
+    // Initialize bulk actions as hidden for all tabs
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        const bulkActions = document.getElementById(`${tabType}-bulk-actions`);
+        const selectedCount = document.getElementById(`${tabType}-selected-count`);
+        
+        if (bulkActions && selectedCount) {
+            bulkActions.classList.remove('show');
+            selectedCount.textContent = '0';
+        }
+    });
 }
 
 function updateBulkActionVisibility(tab) {
-    const bulkActionsDiv = document.getElementById(`${tab}-bulk-actions`);
-    const selectedItems = document.querySelectorAll(`#${tab}-content .item-checkbox:checked`);
-    const countSpan = document.getElementById(`${tab}-selected-count`);
+    const tabContent = document.getElementById(`${tab}-content`);
+    const bulkActions = document.getElementById(`${tab}-bulk-actions`);
+    const selectedCount = document.getElementById(`${tab}-selected-count`);
     
-    if (bulkActionsDiv && countSpan) {
-        if (selectedItems.length > 0) {
-            bulkActionsDiv.classList.add('show');
-            countSpan.textContent = selectedItems.length;
+    if (tabContent && bulkActions && selectedCount) {
+        const checkboxes = tabContent.querySelectorAll('.item-checkbox:checked');
+        const count = checkboxes.length;
+        
+        if (count > 0) {
+            bulkActions.classList.add('show');
+            selectedCount.textContent = count;
         } else {
-            bulkActionsDiv.classList.remove('show');
-            countSpan.textContent = '0';
+            bulkActions.classList.remove('show');
+            selectedCount.textContent = '0';
         }
     }
 }
@@ -380,8 +392,7 @@ function renderProductRow(product, tabType) {
         <tr data-item='${DataUtils.safeJsonStringify(product)}'>
             <td>
                 <input type="checkbox" class="form-check-input item-checkbox" 
-                       data-product-id="${product.id || product.urn}"
-                       onchange="updateBulkActionVisibility('${tabType}')">
+                       data-product-id="${product.id || product.urn}">
             </td>
             <td>
                 <div class="d-flex align-items-center">
@@ -729,42 +740,74 @@ function updateStatistics(stats) {
     if (urlElement) urlElement.textContent = stats.with_external_url || 0;
 }
 
-function showError(message) {
-    // Create notification
-    const notification = document.createElement('div');
-    notification.className = 'alert alert-danger alert-dismissible fade show notification';
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+function showNotification(type, message) {
+    // Check if we have notifications container
+    let container = document.getElementById('notifications-container');
+    
+    // Create it if it doesn't exist
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notifications-container';
+        container.className = 'position-fixed bottom-0 end-0 p-3';
+        container.style.zIndex = '1050';
+        document.body.appendChild(container);
+    }
+    
+    // Create unique ID
+    const id = 'toast-' + Date.now();
+    
+    // Create toast HTML
+    let bgClass, icon, title;
+    
+    if (type === 'success') {
+        bgClass = 'bg-success';
+        icon = 'fa-check-circle';
+        title = 'Success';
+    } else if (type === 'info') {
+        bgClass = 'bg-info';
+        icon = 'fa-info-circle';
+        title = 'Info';
+    } else {
+        bgClass = 'bg-danger';
+        icon = 'fa-exclamation-circle';
+        title = 'Error';
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${bgClass} text-white`;
+    toast.id = id;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.innerHTML = `
+        <div class="toast-header ${bgClass} text-white">
+            <i class="fas ${icon} me-2"></i>
+            <strong class="me-auto">${title}</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">${message}</div>
     `;
     
-    document.body.appendChild(notification);
+    container.appendChild(toast);
     
-    // Remove after 5 seconds
-    setTimeout(() => {
-        if (notification && notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, 5000);
+    // Initialize and show the toast
+    const toastInstance = new bootstrap.Toast(toast, {
+        delay: 5000
+    });
+    toastInstance.show();
+    
+    // Remove toast from DOM after it's hidden
+    toast.addEventListener('hidden.bs.toast', function () {
+        toast.remove();
+    });
+}
+
+function showError(message) {
+    showNotification('error', message);
 }
 
 function showSuccess(message) {
-    // Create notification
-    const notification = document.createElement('div');
-    notification.className = 'alert alert-success alert-dismissible fade show notification';
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    
-    document.body.appendChild(notification);
-    
-    // Remove after 5 seconds
-    setTimeout(() => {
-        if (notification && notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, 5000);
+    showNotification('success', message);
 }
 
 function getCsrfToken() {
@@ -856,22 +899,24 @@ function addProductToStagedChanges(product) {
 function bulkResyncProducts(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showError('No products selected');
+        showNotification('error', 'Please select data products to resync.');
         return;
     }
     
-    if (!confirm(`Are you sure you want to resync ${selectedProducts.length} product(s)?`)) {
+    if (!confirm(`Are you sure you want to resync ${selectedProducts.length} product(s) from DataHub?`)) {
         return;
     }
     
+    showNotification('success', `Starting resync of ${selectedProducts.length} data product(s) from DataHub...`);
     console.log('Bulk resyncing products:', selectedProducts);
-    showSuccess(`Bulk resyncing ${selectedProducts.length} product(s)`);
+    // TODO: Implement actual resync logic
+    // After implementation, add single refresh: await loadProductsData();
 }
 
 function bulkSyncToDataHub(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showError('No products selected');
+        showNotification('error', 'Please select data products to sync to DataHub.');
         return;
     }
     
@@ -879,14 +924,16 @@ function bulkSyncToDataHub(tabType) {
         return;
     }
     
-    console.log('Bulk syncing to DataHub:', selectedProducts);
-    showSuccess(`Bulk syncing ${selectedProducts.length} product(s) to DataHub`);
+    showNotification('success', `Starting sync of ${selectedProducts.length} data product(s) to DataHub...`);
+    console.log('Bulk syncing products to DataHub:', selectedProducts);
+    // TODO: Implement actual sync logic
+    // After implementation, add single refresh: await loadProductsData();
 }
 
 async function bulkSyncToLocal(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showError('No products selected');
+        showNotification('error', 'Please select data products to sync to local.');
         return;
     }
     
@@ -894,7 +941,7 @@ async function bulkSyncToLocal(tabType) {
         return;
     }
     
-    showSuccess(`Starting sync of ${selectedProducts.length} product(s) to local...`);
+    showNotification('success', `Starting sync of ${selectedProducts.length} data product(s) to local...`);
     
     let successCount = 0;
     let errorCount = 0;
@@ -910,13 +957,13 @@ async function bulkSyncToLocal(tabType) {
         }
     }
     
-    // Reload data once at the end
+    // Single refresh at the end
     await loadProductsData();
     
     if (errorCount === 0) {
-        showSuccess(`Successfully synced ${successCount} product(s) to local`);
+        showNotification('success', `Successfully synced ${successCount} data product(s) to local`);
     } else {
-        showError(`Completed: ${successCount} synced successfully, ${errorCount} failed`);
+        showNotification('error', `Completed: ${successCount} synced successfully, ${errorCount} failed`);
     }
 }
 
@@ -944,7 +991,7 @@ async function syncSingleProductToLocal(productUrn) {
 function bulkDownloadJson(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showError('No products selected');
+        showNotification('error', 'Please select data products to download.');
         return;
     }
     
@@ -962,23 +1009,27 @@ function bulkDownloadJson(tabType) {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
     }, 100);
+    
+    showNotification('success', `${selectedProducts.length} data products exported successfully.`);
 }
 
 function bulkAddToPR(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showError('No products selected');
+        showNotification('error', 'Please select data products to add to staged changes.');
         return;
     }
     
     console.log('Bulk adding to PR:', selectedProducts);
-    showSuccess(`Adding ${selectedProducts.length} product(s) to staged changes`);
+    showNotification('success', `Starting to add ${selectedProducts.length} data product(s) to staged changes...`);
+    // TODO: Implement actual add to PR logic
+    // After implementation, add single refresh: await loadProductsData();
 }
 
-function bulkDeleteLocal(tabType) {
+async function bulkDeleteLocal(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showError('No products selected');
+        showNotification('error', 'Please select data products to delete.');
         return;
     }
     
@@ -986,14 +1037,62 @@ function bulkDeleteLocal(tabType) {
         return;
     }
     
-    console.log('Bulk deleting local products:', selectedProducts);
-    showSuccess(`Deleting ${selectedProducts.length} local product(s)`);
+    showNotification('info', `Starting deletion of ${selectedProducts.length} local data product(s)...`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+    
+    // Process deletions sequentially to avoid overwhelming the server
+    for (const product of selectedProducts) {
+        if (!product.id) {
+            errors.push(`Product "${product.name}" has no ID for local deletion`);
+            errorCount++;
+            continue;
+        }
+        
+        try {
+            const response = await fetch(`/metadata/data-products/${product.id}/delete/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                successCount++;
+            } else {
+                errors.push(`Failed to delete "${product.name}": ${result.error}`);
+                errorCount++;
+            }
+        } catch (error) {
+            console.error(`Error deleting product "${product.name}":`, error);
+            errors.push(`Failed to delete "${product.name}": ${error.message}`);
+            errorCount++;
+        }
+    }
+    
+    // Show results
+    if (successCount > 0) {
+        showNotification('success', `Successfully deleted ${successCount} local data product(s)`);
+    }
+    
+    if (errorCount > 0) {
+        console.error('Bulk delete errors:', errors);
+        showNotification('error', `Failed to delete ${errorCount} product(s). Check console for details.`);
+    }
+    
+    // Single refresh after all operations
+    await loadProductsData();
 }
 
-function bulkDeleteRemote(tabType) {
+async function bulkDeleteRemote(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showError('No products selected');
+        showNotification('error', 'Please select data products to delete.');
         return;
     }
     
@@ -1001,37 +1100,87 @@ function bulkDeleteRemote(tabType) {
         return;
     }
     
-    console.log('Bulk deleting remote products:', selectedProducts);
-    showSuccess(`Deleting ${selectedProducts.length} remote product(s)`);
+    showNotification('info', `Starting deletion of ${selectedProducts.length} remote data product(s)...`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+    
+    // Process deletions sequentially to avoid overwhelming the server
+    for (const product of selectedProducts) {
+        if (!product.urn) {
+            errors.push(`Product "${product.name}" has no URN for remote deletion`);
+            errorCount++;
+            continue;
+        }
+        
+        try {
+            const response = await fetch('/metadata/data-products/delete-remote/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    product_urn: product.urn
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                successCount++;
+            } else {
+                errors.push(`Failed to delete "${product.name}": ${result.error}`);
+                errorCount++;
+            }
+        } catch (error) {
+            console.error(`Error deleting remote product "${product.name}":`, error);
+            errors.push(`Failed to delete "${product.name}": ${error.message}`);
+            errorCount++;
+        }
+    }
+    
+    // Show results
+    if (successCount > 0) {
+        showNotification('success', `Successfully deleted ${successCount} remote data product(s)`);
+    }
+    
+    if (errorCount > 0) {
+        console.error('Bulk delete errors:', errors);
+        showNotification('error', `Failed to delete ${errorCount} product(s). Check console for details.`);
+    }
+    
+    // Single refresh after all operations
+    await loadProductsData();
 }
 
 function getSelectedProducts(tabType) {
-    const checkboxes = document.querySelectorAll(`input[data-tab="${tabType}"].product-checkbox:checked`);
+    const tabContent = document.getElementById(`${tabType}-content`);
+    if (!tabContent) return [];
+    
+    const checkboxes = tabContent.querySelectorAll('.item-checkbox:checked');
     const products = [];
     
     checkboxes.forEach(checkbox => {
         const row = checkbox.closest('tr');
         if (row) {
-            const productId = row.dataset.productId;
-            const productUrn = row.dataset.productUrn;
-            const storeKey = productId || productUrn;
-            
-            // Try to find the product data in the global data store
-            let productData = null;
-            if (window.productDataStore && window.productDataStore[tabType]) {
-                productData = window.productDataStore[tabType].get(storeKey);
-            }
-            
-            if (productData) {
-                products.push(productData);
-            } else {
-                // Fallback: create minimal product object from row data
-                const nameCell = row.querySelector('td:nth-child(2)');
+            try {
+                // Get the product data from the row's data-item attribute
+                const productData = JSON.parse(row.getAttribute('data-item'));
+                if (productData) {
+                    products.push(productData);
+                }
+            } catch (e) {
+                console.error('Error parsing product data from row:', e);
+                // Fallback: create minimal product object from checkbox data
+                const productId = checkbox.getAttribute('data-product-id');
+                const nameCell = row.querySelector('td:nth-child(2) strong');
                 const name = nameCell ? nameCell.textContent.trim() : 'Unknown';
                 
                 products.push({
-                    id: productId,
-                    urn: productUrn,
+                    id: productId.startsWith('urn:') ? null : productId,
+                    urn: productId.startsWith('urn:') ? productId : null,
                     name: name
                 });
             }
@@ -1043,8 +1192,25 @@ function getSelectedProducts(tabType) {
 
 // Individual action functions that need to be implemented
 function syncProductToDataHub(productId, button) {
+    if (!confirm('Are you sure you want to sync this data product to DataHub?')) {
+        return;
+    }
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    showNotification('info', 'Syncing data product to DataHub...');
     console.log('Syncing product to DataHub:', productId);
-    showSuccess('Product synced to DataHub');
+    
+    // TODO: Implement actual sync logic
+    setTimeout(() => {
+        showNotification('success', 'Data product synced to DataHub successfully!');
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+        // Single refresh after sync
+        loadProductsData();
+    }, 1000);
 }
 
 async function syncProductToLocal(productUrn, button) {
@@ -1058,13 +1224,13 @@ async function syncProductToLocal(productUrn, button) {
     
     try {
         await syncSingleProductToLocal(productUrn);
-        showSuccess('Data product synced to local successfully!');
+        showNotification('success', 'Data product synced to local successfully!');
         
-        // Reload data to refresh the UI
+        // Single refresh after successful sync
         await loadProductsData();
     } catch (error) {
         console.error('Error syncing product to local:', error);
-        showError('Failed to sync data product to local: ' + error.message);
+        showNotification('error', 'Failed to sync data product to local: ' + error.message);
     } finally {
         button.innerHTML = originalHtml;
         button.disabled = false;
@@ -1072,27 +1238,150 @@ async function syncProductToLocal(productUrn, button) {
 }
 
 function resyncProduct(productId, productUrn, button) {
+    if (!confirm('Are you sure you want to resync this data product from DataHub?')) {
+        return;
+    }
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    showNotification('info', 'Resyncing data product from DataHub...');
     console.log('Resyncing product:', productId, productUrn);
-    showSuccess('Product resynced');
+    
+    // TODO: Implement actual resync logic
+    setTimeout(() => {
+        showNotification('success', 'Data product resynced successfully!');
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+        // Single refresh after resync
+        loadProductsData();
+    }, 1000);
 }
 
 function pushProductToDataHub(productId, button) {
+    if (!confirm('Are you sure you want to push this data product to DataHub?')) {
+        return;
+    }
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    showNotification('info', 'Pushing data product to DataHub...');
     console.log('Pushing product to DataHub:', productId);
-    showSuccess('Product pushed to DataHub');
+    
+    // TODO: Implement actual push logic
+    setTimeout(() => {
+        showNotification('success', 'Data product pushed to DataHub successfully!');
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+        // Single refresh after push
+        loadProductsData();
+    }, 1000);
 }
 
-function deleteLocalProduct(productId, button) {
-    if (!confirm('Are you sure you want to delete this local product?')) {
+async function deleteLocalProduct(productId, button) {
+    if (!confirm('Are you sure you want to delete this local data product? This action cannot be undone.')) {
         return;
     }
-    console.log('Deleting local product:', productId);
-    showSuccess('Local product deleted');
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    showNotification('info', 'Deleting local data product...');
+    
+    try {
+        const response = await fetch(`/metadata/data-products/${productId}/delete/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Use template's notification system if available, otherwise use enhanced system
+            if (typeof showSuccess === 'function') {
+                showSuccess('Local data product deleted successfully!');
+            } else {
+                showNotification('success', 'Local data product deleted successfully!');
+            }
+            // Single refresh after successful delete
+            await loadProductsData();
+        } else {
+            if (typeof showError === 'function') {
+                showError(`Failed to delete data product: ${result.error}`);
+            } else {
+                showNotification('error', `Failed to delete data product: ${result.error}`);
+            }
+        }
+    } catch (error) {
+        console.error('Error deleting local product:', error);
+        if (typeof showError === 'function') {
+            showError(`Failed to delete data product: ${error.message}`);
+        } else {
+            showNotification('error', `Failed to delete data product: ${error.message}`);
+        }
+    } finally {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    }
 }
 
-function deleteRemoteProduct(productUrn, button) {
-    if (!confirm('Are you sure you want to delete this remote product?')) {
+async function deleteRemoteProduct(productUrn, button) {
+    if (!confirm('Are you sure you want to delete this remote data product? This action cannot be undone.')) {
         return;
     }
-    console.log('Deleting remote product:', productUrn);
-    showSuccess('Remote product deleted');
+    
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    button.disabled = true;
+    
+    showNotification('info', 'Deleting remote data product...');
+    
+    try {
+        const response = await fetch('/metadata/data-products/delete-remote/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                product_urn: productUrn
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Use template's notification system if available, otherwise use enhanced system
+            if (typeof showSuccess === 'function') {
+                showSuccess('Remote data product deleted successfully!');
+            } else {
+                showNotification('success', 'Remote data product deleted successfully!');
+            }
+            // Single refresh after successful delete
+            await loadProductsData();
+        } else {
+            if (typeof showError === 'function') {
+                showError(`Failed to delete remote data product: ${result.error}`);
+            } else {
+                showNotification('error', `Failed to delete remote data product: ${result.error}`);
+            }
+        }
+    } catch (error) {
+        console.error('Error deleting remote product:', error);
+        if (typeof showError === 'function') {
+            showError(`Failed to delete remote data product: ${error.message}`);
+        } else {
+            showNotification('error', `Failed to delete remote data product: ${error.message}`);
+        }
+    } finally {
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    }
 } 

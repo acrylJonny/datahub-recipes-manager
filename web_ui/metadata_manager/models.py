@@ -1066,6 +1066,147 @@ class SearchResultCache(models.Model):
         return query.delete()[0]
 
 
+class DataContract(BaseMetadataModel):
+    """Represents a DataHub data contract"""
+
+    # Entity that this contract is attached to
+    entity_urn = models.CharField(max_length=500, blank=True, null=True)
+    
+    # Contract state
+    state = models.CharField(max_length=50, default="ACTIVE", help_text="Contract state (ACTIVE, PENDING, etc.)")
+    
+    # Contract result
+    result_type = models.CharField(max_length=50, blank=True, null=True, help_text="Result type (PASSING, FAILING, etc.)")
+    
+    # Platform information
+    platform_name = models.CharField(max_length=100, blank=True, null=True)
+    
+    # External URL for contract
+    external_url = models.URLField(blank=True, null=True)
+    
+    # Status information
+    removed = models.BooleanField(default=False)
+    
+    # Store comprehensive contract data structure from DataHub
+    properties_data = models.JSONField(blank=True, null=True, help_text="Complete properties structure from DataHub")
+    
+    # Store status data
+    status_data = models.JSONField(blank=True, null=True, help_text="Contract status information")
+    
+    # Store structured properties data
+    structured_properties_data = models.JSONField(blank=True, null=True)
+    
+    # Store result data
+    result_data = models.JSONField(blank=True, null=True, help_text="Contract result information")
+
+    class Meta:
+        verbose_name = "Data Contract"
+        verbose_name_plural = "Data Contracts"
+        ordering = ["name"]
+
+    def to_dict(self):
+        """Convert data contract to dictionary for export/syncing purposes"""
+        data = {
+            "name": self.name,
+            "description": self.description,
+            "urn": self.urn,
+            "entity_urn": self.entity_urn,
+            "state": self.state,
+            "result_type": self.result_type,
+        }
+        
+        # Add properties data if available
+        if self.properties_data:
+            data["properties_data"] = self.properties_data
+            
+        # Add status data if available
+        if self.status_data:
+            data["status_data"] = self.status_data
+            
+        # Add result data if available
+        if self.result_data:
+            data["result_data"] = self.result_data
+            
+        return data
+
+    @property
+    def can_deploy(self):
+        """Check if this contract can be deployed to DataHub"""
+        return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @classmethod
+    def create_from_datahub(cls, contract_data, connection=None):
+        """Create or update a data contract from DataHub data"""
+        from django.utils import timezone
+        
+        # Extract basic properties
+        urn = contract_data.get("urn", "")
+        if not urn:
+            raise ValueError("Contract URN is required")
+        
+        # Extract entity URN from properties
+        entity_urn = ""
+        if contract_data.get("properties") and contract_data["properties"].get("entityUrn"):
+            entity_urn = contract_data["properties"]["entityUrn"]
+        
+        # Extract name from URN if not provided
+        name = contract_data.get("name") or urn.split(":")[-1] if urn else "Unknown Contract"
+        
+        # Extract state and result
+        state = "ACTIVE"
+        result_type = None
+        
+        if contract_data.get("status") and contract_data["status"].get("state"):
+            state = contract_data["status"]["state"]
+            
+        if contract_data.get("result") and contract_data["result"].get("type"):
+            result_type = contract_data["result"]["type"]
+        
+        # Try to find existing contract
+        try:
+            contract = cls.objects.get(urn=urn, connection=connection)
+            # Update existing
+            contract.name = name
+            contract.entity_urn = entity_urn
+            contract.state = state
+            contract.result_type = result_type
+            contract.properties_data = contract_data.get("properties")
+            contract.status_data = contract_data.get("status")
+            contract.result_data = contract_data.get("result")
+            contract.structured_properties_data = contract_data.get("structuredProperties")
+            contract.sync_status = "SYNCED"
+            contract.last_synced = timezone.now()
+            contract.save()
+        except cls.DoesNotExist:
+            # Create new
+            contract = cls.objects.create(
+                name=name,
+                urn=urn,
+                entity_urn=entity_urn,
+                state=state,
+                result_type=result_type,
+                properties_data=contract_data.get("properties"),
+                status_data=contract_data.get("status"),
+                result_data=contract_data.get("result"),
+                structured_properties_data=contract_data.get("structuredProperties"),
+                connection=connection,
+                sync_status="SYNCED",
+                last_synced=timezone.now()
+            )
+        
+        return contract
+
+    @property 
+    def display_entity(self):
+        """Get a display-friendly entity name"""
+        if self.entity_urn:
+            # Try to extract a readable name from the URN
+            parts = self.entity_urn.split(":")
+            if len(parts) >= 3:
+                return parts[-1]  # Last part is usually the name
+        return self.entity_urn or "Unknown Entity"
+
+
 class SearchProgress(models.Model):
     """Track search progress for real-time updates"""
     session_key = models.CharField(max_length=40, db_index=True)

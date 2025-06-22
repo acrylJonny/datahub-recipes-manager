@@ -766,18 +766,14 @@ def sync_data_product_to_local(request, data_product_id=None):
         logger.info(f"Calling client.list_data_products with query: {product_urn}")
         result = client.list_data_products(query=product_urn, start=0, count=1)
         
-        logger.info(f"list_data_products returned: {type(result)} - {result}")
         
         if result is None:
-            logger.error("list_data_products returned None")
             return JsonResponse({"success": False, "error": "No response from DataHub API"})
         
         if not isinstance(result, list):
-            logger.error(f"list_data_products returned unexpected type: {type(result)}")
             return JsonResponse({"success": False, "error": f"Invalid response type from DataHub: {type(result)}"})
         
         if not result:
-            logger.error("list_data_products returned empty list")
             return JsonResponse({"success": False, "error": "Data product not found in DataHub"})
         
         # Get the first (and should be only) result
@@ -819,7 +815,8 @@ def sync_data_product_to_local(request, data_product_id=None):
         # Use the new create_from_datahub method for consistent data handling
         try:
             # Get current connection context
-            current_connection = getattr(request, 'connection', None)
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
             
             # Create or update using the model's create_from_datahub method
             created_product = DataProduct.create_from_datahub(product_data, connection=current_connection)
@@ -880,6 +877,10 @@ def sync_data_product_to_local(request, data_product_id=None):
                 existing_product.sync_status = "SYNCED"
                 existing_product.last_synced = timezone.now()
                 
+                # Set connection context
+                if current_connection:
+                    existing_product.connection = current_connection
+                
                 # Store comprehensive data
                 existing_product.properties_data = properties
                 ownership_data = product_data.get('ownership')
@@ -907,6 +908,7 @@ def sync_data_product_to_local(request, data_product_id=None):
                     entity_urns=entity_urns,
                     sync_status="SYNCED",
                     last_synced=timezone.now(),
+                    connection=current_connection,  # Set connection context
                     
                     # Store comprehensive data
                     properties_data=properties,
@@ -1052,6 +1054,10 @@ def resync_data_product(request, data_product_id):
         if domain_data and domain_data.get('domain'):
             updated_domain_urn = domain_data['domain'].get('urn')
         
+        # Get current connection context
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        
         # Update local data product with latest remote data
         data_product.name = updated_name
         data_product.description = updated_description
@@ -1059,6 +1065,10 @@ def resync_data_product(request, data_product_id):
         data_product.domain_urn = updated_domain_urn
         data_product.sync_status = "SYNCED"
         data_product.last_synced = timezone.now()
+        
+        # Set connection context
+        if current_connection:
+            data_product.connection = current_connection
         
         # Update comprehensive data storage
         data_product.properties_data = properties
@@ -1383,6 +1393,10 @@ def create_local_data_product_comprehensive(request):
         # Generate deterministic URN for local storage
         deterministic_urn = get_full_urn_from_name("dataProduct", name)
         
+        # Get current connection context
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        
         # Check if data product already exists
         if DataProduct.objects.filter(urn=deterministic_urn).exists():
             return JsonResponse({
@@ -1399,7 +1413,8 @@ def create_local_data_product_comprehensive(request):
             domain_urn=domain_urn if domain_urn else None,
             entity_urns=entity_urns,
             entities_count=len(entity_urns),
-            sync_status="LOCAL_ONLY"  # Mark as local-only
+            sync_status="LOCAL_ONLY",  # Mark as local-only
+            connection=current_connection  # Set connection context
         )
         
         logger.info(f"Successfully created local data product: {data_product.name} with URN: {data_product.urn}")

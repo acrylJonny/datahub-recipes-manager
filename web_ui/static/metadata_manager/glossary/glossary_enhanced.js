@@ -1933,33 +1933,43 @@ function downloadCSV() {
 }
 
 function downloadCSVTemplate() {
-    // Create a template CSV with example data
+    // Create a template CSV with example data using new format
     const templateData = [
         {
             name: 'Customer',
-            type: 'term',
+            entity_type: 'glossaryTerm',
             description: 'A person or organization that purchases goods or services',
-            parent: 'Business Entities',
-            owner_email: 'data-owner@company.com',
-            owner_group: '',
-            relationships: JSON.stringify([
-                { type: 'isA', entity: 'Person' },
-                { type: 'hasA', entity: 'Account' }
-            ]),
-            custom_properties: JSON.stringify({
-                'data_classification': 'PII',
-                'retention_period': '7 years'
-            })
+            parent_node_name: 'Business Entities',
+            ownership: [
+                {
+                    owner: { urn: 'urn:li:corpuser:data-owner@company.com', displayName: 'data-owner@company.com' },
+                    type: 'urn:li:ownershipType:__system__technical_owner'
+                }
+            ],
+            relationships: [
+                { type: 'isA', entity: { name: 'Person' } },
+                { type: 'hasA', entity: { name: 'Account' } }
+            ],
+            custom_properties: [
+                { key: 'data_classification', value: 'PII' },
+                { key: 'retention_period', value: '7 years' }
+            ],
+            domain: { name: 'Customer Data' }
         },
         {
             name: 'Business Entities',
-            type: 'node',
+            entity_type: 'glossaryNode',
             description: 'Top-level category for business-related terms',
-            parent: '',
-            owner_email: '',
-            owner_group: 'Data Governance Team',
-            relationships: '[]',
-            custom_properties: '{}'
+            parent_node_name: '',
+            ownership: [
+                {
+                    owner: { urn: 'urn:li:corpgroup:data-governance-team', displayName: 'Data Governance Team' },
+                    type: 'urn:li:ownershipType:__system__data_steward'
+                }
+            ],
+            relationships: [],
+            custom_properties: [],
+            domain: { name: 'Governance' }
         }
     ];
     
@@ -1982,14 +1992,17 @@ function convertToCSV(items) {
         'name',
         'type',
         'description',
-        'parent',
-        'owner_email',
-        'owner_group',
-        'relationships',
-        'custom_properties'
+        'parent_name',
+        'owner_emails',
+        'owner_groups',
+        'owner_types',
+        'hasA_relationships',
+        'isA_relationships',
+        'custom_properties',
+        'domain_name'
     ];
     
-    const csvRows = [headers.join(',')];
+    const csvRows = ['"' + headers.join('","') + '"'];
     
     items.forEach(item => {
         // Determine type
@@ -1998,61 +2011,94 @@ function convertToCSV(items) {
             type = 'node';
         }
         
-        // Get parent information
-        let parent = '';
-        if (item.parent_node_urn || item.parent_urn) {
-            parent = item.parent_node_urn || item.parent_urn;
-        } else if (item.parentNodes?.nodes?.[0]?.urn) {
-            parent = item.parentNodes.nodes[0].urn;
+        // Get parent information by name
+        let parentName = '';
+        if (item.parent_node_name) {
+            parentName = item.parent_node_name;
+        } else if (item.parentNodes?.nodes?.[0]?.name) {
+            parentName = item.parentNodes.nodes[0].name;
+        } else if (item.parent_name) {
+            parentName = item.parent_name;
         }
         
-        // Get owner information
-        let ownerEmail = '';
-        let ownerGroup = '';
+        // Get owner information with emails and groups separated
+        let ownerEmails = [];
+        let ownerGroups = [];
+        let ownerTypes = [];
+        
         if (item.ownership && item.ownership.length > 0) {
-            const owners = item.ownership;
-            const userOwner = owners.find(o => o.urn?.includes('corpuser') || o.owner?.urn?.includes('corpuser'));
-            const groupOwner = owners.find(o => o.urn?.includes('corpgroup') || o.owner?.urn?.includes('corpgroup'));
-            
-            if (userOwner) {
-                ownerEmail = userOwner.displayName || userOwner.name || userOwner.urn || '';
-            }
-            if (groupOwner) {
-                ownerGroup = groupOwner.displayName || groupOwner.name || groupOwner.urn || '';
-            }
-        }
-        
-        // Get relationships
-        let relationships = '[]';
-        if (item.relationships && item.relationships.length > 0) {
-            relationships = JSON.stringify(item.relationships.map(rel => ({
-                type: rel.type,
-                entity: rel.entity?.name || rel.entity?.urn || 'Unknown'
-            })));
-        }
-        
-        // Get custom properties
-        let customProperties = '{}';
-        if (item.custom_properties && item.custom_properties.length > 0) {
-            const props = {};
-            item.custom_properties.forEach(prop => {
-                props[prop.key] = prop.value;
+            item.ownership.forEach(owner => {
+                const ownerData = owner.owner || owner;
+                const ownerUrn = ownerData.urn || owner.urn;
+                const ownerType = owner.type || owner.ownershipType || 'urn:li:ownershipType:__system__technical_owner';
+                
+                if (ownerUrn?.includes('corpuser')) {
+                    // Extract email from URN or use display name
+                    let email = '';
+                    if (ownerUrn.includes('@')) {
+                        // Extract email from URN like urn:li:corpuser:purnima.garg@apptware.com
+                        email = ownerUrn.split(':').pop();
+                    } else {
+                        // Use display name if available
+                        email = ownerData.displayName || ownerData.name || ownerUrn;
+                    }
+                    ownerEmails.push(email);
+                    ownerTypes.push(ownerType);
+                } else if (ownerUrn?.includes('corpgroup')) {
+                    // Get group name
+                    const groupName = ownerData.displayName || ownerData.name || ownerUrn.split(':').pop();
+                    ownerGroups.push(groupName);
+                    ownerTypes.push(ownerType);
+                }
             });
-            customProperties = JSON.stringify(props);
+        }
+        
+        // Get relationships separated by type
+        let hasARelationships = [];
+        let isARelationships = [];
+        
+        if (item.relationships && item.relationships.length > 0) {
+            item.relationships.forEach(rel => {
+                const entityName = rel.entity?.name || rel.entity?.displayName || rel.name || 'Unknown';
+                if (rel.type === 'hasA') {
+                    hasARelationships.push(entityName);
+                } else if (rel.type === 'isA') {
+                    isARelationships.push(entityName);
+                }
+            });
+        }
+        
+        // Get custom properties (keep same as they are now)
+        let customProperties = {};
+        if (item.custom_properties && item.custom_properties.length > 0) {
+            item.custom_properties.forEach(prop => {
+                customProperties[prop.key] = prop.value;
+            });
+        }
+        
+        // Get domain name
+        let domainName = '';
+        if (item.domain?.name) {
+            domainName = item.domain.name;
+        } else if (item.domain_name) {
+            domainName = item.domain_name;
         }
         
         const row = [
             escapeCSVField(item.name || ''),
             escapeCSVField(type),
             escapeCSVField(item.description || ''),
-            escapeCSVField(parent),
-            escapeCSVField(ownerEmail),
-            escapeCSVField(ownerGroup),
-            escapeCSVField(relationships),
-            escapeCSVField(customProperties)
+            escapeCSVField(parentName),
+            escapeCSVField(ownerEmails.join(', ')),
+            escapeCSVField(ownerGroups.join(', ')),
+            escapeCSVField(ownerTypes.join(', ')),
+            escapeCSVField(hasARelationships.join(', ')),
+            escapeCSVField(isARelationships.join(', ')),
+            escapeCSVField(JSON.stringify(customProperties)),
+            escapeCSVField(domainName)
         ];
         
-        csvRows.push(row.join(','));
+        csvRows.push('"' + row.join('","') + '"');
     });
     
     return csvRows.join('\n');
@@ -4677,4 +4723,60 @@ function getDeletionOrder(items) {
     
     console.log('Deletion order:', order.map(item => `${item.name} (${item.type})`));
     return order;
+}
+
+// Global bulk action functions for the dropdown
+function resyncAll() {
+    const allItems = getAllSelectedItems();
+    if (allItems.length === 0) {
+        showNotification('warning', 'No items selected for resync');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to resync all ${allItems.length} selected items?`)) {
+        return;
+    }
+    
+    bulkResyncItems('global');
+}
+
+function exportAll() {
+    const allItems = getAllSelectedItems();
+    if (allItems.length === 0) {
+        // If no items selected, export all data
+        const allData = [
+            ...(glossaryData.synced_items || []).map(item => item.combined || item),
+            ...(glossaryData.local_only_items || []),
+            ...(glossaryData.remote_only_items || [])
+        ];
+        
+        if (allData.length === 0) {
+            showNotification('warning', 'No glossary data to export');
+            return;
+        }
+        
+        bulkDownloadJson('all');
+        return;
+    }
+    
+    bulkDownloadJson('global');
+}
+
+function addAllToStagedChanges() {
+    const allItems = getAllSelectedItems();
+    if (allItems.length === 0) {
+        showNotification('warning', 'No items selected for adding to staged changes');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to add all ${allItems.length} selected items to staged changes?`)) {
+        return;
+    }
+    
+    bulkAddToPR('global');
+}
+
+function showImportModal() {
+    // Show the CSV upload modal for now - can be enhanced later for JSON import
+    showUploadCSVModal();
 }
