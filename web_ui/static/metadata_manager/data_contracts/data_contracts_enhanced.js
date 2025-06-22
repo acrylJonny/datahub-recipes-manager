@@ -394,10 +394,14 @@ function displayTabContent(tabType) {
                                 <th width="30">
                                     <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                                 </th>
-                                <th class="sortable-header" data-sort="urn" width="300">URN</th>
-                                <th class="sortable-header" data-sort="entityUrn" width="300">Entity URN</th>
-                                <th class="sortable-header" data-sort="state" width="100">State</th>
-                                <th class="sortable-header" data-sort="assertions" width="80">Assertions</th>
+                                <th class="sortable-header" data-sort="urn" width="180">URN</th>
+                                <th class="sortable-header" data-sort="entityUrn" width="180">Entity URN</th>
+                                <th class="sortable-header" data-sort="dataset_name" width="150">Dataset Name</th>
+                                <th class="sortable-header" data-sort="dataset_browse_path" width="180">Browse Path</th>
+                                <th class="sortable-header" data-sort="dataset_platform" width="100">Platform</th>
+                                <th class="sortable-header" data-sort="dataset_platform_instance" width="120">Platform Instance</th>
+                                <th class="sortable-header" data-sort="state" width="80">State</th>
+                                <th class="sortable-header" data-sort="assertions" width="60">Assertions</th>
                                 <th width="140">Actions</th>
                             </tr>
                         </thead>
@@ -627,11 +631,14 @@ function generateTableHTML(items, tabType) {
                         <th width="30">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th class="sortable-header" data-sort="urn" width="250">URN</th>
-                        <th class="sortable-header" data-sort="entityUrn" width="250">Entity URN</th>
-                        <th class="sortable-header" data-sort="state" width="100">State</th>
-                        <th class="sortable-header" data-sort="result" width="100">Result</th>
-                        <th class="sortable-header" data-sort="assertions" width="80">Assertions</th>
+                        <th class="sortable-header" data-sort="urn" width="180">URN</th>
+                        <th class="sortable-header" data-sort="entityUrn" width="180">Entity URN</th>
+                        <th class="sortable-header" data-sort="dataset_name" width="150">Dataset</th>
+                        <th class="sortable-header" data-sort="dataset_platform" width="100">Platform</th>
+                        <th class="sortable-header" data-sort="dataset_browse_path" width="200">Browse Path</th>
+                        <th class="sortable-header" data-sort="state" width="80">State</th>
+                        <th class="sortable-header" data-sort="result" width="80">Result</th>
+                        <th class="sortable-header" data-sort="assertions" width="60">Assertions</th>
                         <th width="140">Actions</th>
                     </tr>
                 </thead>
@@ -657,6 +664,41 @@ function renderContractRow(contract, tabType) {
     const state = status.state || 'Unknown';
     const result = contract.result || {};
     const resultType = result.type || 'Unknown';
+    
+    // Extract dataset information from dataset_info if available
+    let datasetName = 'Unknown';
+    let datasetBrowsePath = 'N/A';
+    let datasetPlatform = 'Unknown';
+    let datasetPlatformInstance = '';
+    
+    // Look for dataset info first from enhanced data
+    if (contract.dataset_info) {
+        // Get dataset name from dataset_info.properties.name
+        if (contract.dataset_info.properties && contract.dataset_info.properties.name) {
+            datasetName = contract.dataset_info.properties.name;
+        }
+        datasetBrowsePath = contract.dataset_info.computed_browse_path || 'N/A';
+        if (contract.dataset_info.platform && contract.dataset_info.platform.name) {
+            datasetPlatform = contract.dataset_info.platform.name;
+        }
+        if (contract.dataset_info.dataPlatformInstance && contract.dataset_info.dataPlatformInstance.properties && contract.dataset_info.dataPlatformInstance.properties.name) {
+            datasetPlatformInstance = contract.dataset_info.dataPlatformInstance.properties.name;
+        }
+    }
+    
+    // Fallback to stored values if no dataset_info
+    if (datasetName === 'Unknown' && contract.dataset_name) {
+        datasetName = contract.dataset_name;
+    }
+    if (datasetBrowsePath === 'N/A' && contract.dataset_browse_path) {
+        datasetBrowsePath = contract.dataset_browse_path;
+    }
+    if (datasetPlatform === 'Unknown' && contract.dataset_platform) {
+        datasetPlatform = contract.dataset_platform;
+    }
+    if (!datasetPlatformInstance && contract.dataset_platform_instance) {
+        datasetPlatformInstance = contract.dataset_platform_instance;
+    }
     
     // Get state badge class - active is green, pending is yellow
     let stateBadgeClass = 'bg-secondary';
@@ -714,17 +756,26 @@ function renderContractRow(contract, tabType) {
             <td title="${DataUtils.safeEscapeHtml(urn)}">
                 <div class="d-flex align-items-center">
                     <i class="${typeIcon} me-2"></i>
-                    <code class="small text-truncate" style="max-width: 200px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(urn, 40))}</code>
+                    <code class="small text-truncate" style="max-width: 150px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(urn, 30))}</code>
                 </div>
             </td>
             <td title="${DataUtils.safeEscapeHtml(entityUrn)}">
-                <code class="small text-truncate" style="max-width: 200px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(entityUrn, 40))}</code>
+                <code class="small text-truncate" style="max-width: 150px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(entityUrn, 30))}</code>
+            </td>
+            <td title="${DataUtils.safeEscapeHtml(datasetName)}">
+                <span class="fw-medium text-truncate d-inline-block" style="max-width: 130px;">${datasetName === 'Unknown' ? '<span class="text-muted">Unknown</span>' : DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(datasetName, 20))}</span>
+            </td>
+            <td title="${DataUtils.safeEscapeHtml(datasetBrowsePath)}">
+                <span class="text-truncate d-inline-block" style="max-width: 150px;">${datasetBrowsePath === 'N/A' ? '<span class="text-muted">N/A</span>' : '<code class="small">' + DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(datasetBrowsePath, 25)) + '</code>'}</span>
+            </td>
+            <td title="${DataUtils.safeEscapeHtml(datasetPlatform)}">
+                <span class="badge bg-secondary">${DataUtils.safeEscapeHtml(datasetPlatform)}</span>
+            </td>
+            <td title="${DataUtils.safeEscapeHtml(datasetPlatformInstance)}">
+                ${datasetPlatformInstance ? '<span class="badge bg-light text-dark">' + DataUtils.safeEscapeHtml(datasetPlatformInstance) + '</span>' : '<span class="text-muted">-</span>'}
             </td>
             <td>
                 <span class="badge ${stateBadgeClass}">${DataUtils.safeEscapeHtml(state)}</span>
-            </td>
-            <td>
-                <span class="badge ${resultBadgeClass}">${DataUtils.safeEscapeHtml(resultType)}</span>
             </td>
             <td class="text-center">
                 <span class="badge bg-info">${assertionCount}</span>
@@ -874,7 +925,7 @@ function getEmptyStateHTML(tabType, hasSearch) {
     if (hasSearch) {
         return `
             <tr>
-                <td colspan="7" class="text-center py-4 text-muted">
+                <td colspan="10" class="text-center py-4 text-muted">
                     <i class="fas fa-search fa-2x mb-2"></i><br>
                     No contracts found matching your search criteria.
                 </td>
@@ -890,7 +941,7 @@ function getEmptyStateHTML(tabType, hasSearch) {
     
     return `
         <tr>
-            <td colspan="7" class="text-center py-4 text-muted">
+            <td colspan="10" class="text-center py-4 text-muted">
                 <i class="fas fa-file-contract fa-2x mb-2"></i><br>
                 ${emptyStates[tabType]}
             </td>
@@ -942,6 +993,26 @@ function getSortValue(contract, column) {
             return contract.urn || '';
         case 'entityUrn':
             return contract.properties?.entityUrn || '';
+        case 'dataset_name':
+            if (contract.dataset_info && contract.dataset_info.properties && contract.dataset_info.properties.name) {
+                return contract.dataset_info.properties.name;
+            }
+            return contract.dataset_name || '';
+        case 'dataset_browse_path':
+            if (contract.dataset_info && contract.dataset_info.computed_browse_path) {
+                return contract.dataset_info.computed_browse_path;
+            }
+            return contract.dataset_browse_path || '';
+        case 'dataset_platform':
+            if (contract.dataset_info && contract.dataset_info.platform && contract.dataset_info.platform.name) {
+                return contract.dataset_info.platform.name;
+            }
+            return contract.dataset_platform || '';
+        case 'dataset_platform_instance':
+            if (contract.dataset_info && contract.dataset_info.dataPlatformInstance && contract.dataset_info.dataPlatformInstance.properties && contract.dataset_info.dataPlatformInstance.properties.name) {
+                return contract.dataset_info.dataPlatformInstance.properties.name;
+            }
+            return contract.dataset_platform_instance || '';
         case 'state':
             return contract.status?.state || '';
         case 'result':

@@ -9579,9 +9579,211 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
         
         return None
 
+    def get_datasets_by_urns(self, entity_urns: List[str]) -> Dict[str, Any]:
+        """
+        Get dataset information for a list of entity URNs.
+        
+        Args:
+            entity_urns (List[str]): List of entity URNs to fetch dataset information for
+            
+        Returns:
+            Dictionary with success status and dataset information
+        """
+        if not entity_urns:
+            return {"success": True, "data": {"searchResults": []}}
+        
+        self.logger.info(f"Getting dataset information for {len(entity_urns)} entity URNs: {entity_urns}")
+        
+        # GraphQL query for dataset information
+        graphql_query = """
+        query GetDatasets($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+                ... on Dataset {
+                  properties {
+                    name
+                  }
+                  browsePaths {
+                    path
+                  }
+                  browsePathV2 {
+                    path {
+                      entity {
+                        ... on Container {
+                          properties {
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                  platform {
+                    name
+                  }
+                  dataPlatformInstance {
+                    properties {
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        
+        variables = {
+            "input": {
+                "types": ["DATASET"],
+                "query": "*",
+                "start": 0,
+                "count": 100,
+                "orFilters": [
+                    {
+                        "and": [
+                            {
+                                "field": "urn",
+                                "condition": "IN",
+                                "values": entity_urns
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        
+        try:
+            self.logger.debug(f"Executing dataset query with variables: {variables}")
+            result = self.execute_graphql(graphql_query, variables)
+            
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_data = result["data"]["searchAcrossEntities"]
+                
+                # Process the results to build browse paths
+                processed_results = []
+                for search_result in search_data.get("searchResults", []):
+                    entity = search_result.get("entity", {})
+                    if entity:
+                        self.logger.debug(f"Processing dataset entity: {entity.get('urn', 'Unknown URN')}")
+                        # Build browse path from browsePathV2, fallback to browsePaths
+                        browse_path = self._build_browse_path(entity)
+                        entity["computed_browse_path"] = browse_path
+                        self.logger.debug(f"Computed browse path: {browse_path}")
+                        processed_results.append(search_result)
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "start": search_data.get("start", 0),
+                        "count": search_data.get("count", 0),
+                        "total": search_data.get("total", 0),
+                        "searchResults": processed_results
+                    }
+                }
+            else:
+                error_msg = "No data returned from DataHub"
+                if result and "errors" in result:
+                    errors = self._get_graphql_errors(result)
+                    error_msg = f"GraphQL errors: {', '.join(errors)}"
+                
+                self.logger.error(f"Error in get_datasets_by_urns: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error getting datasets by URNs: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def _build_browse_path(self, entity: Dict[str, Any]) -> str:
+        """
+        Build a browse path from entity data, preferring browsePathV2 over browsePaths.
+        
+        Args:
+            entity: Entity data containing browsePath information
+            
+        Returns:
+            String representation of the browse path
+        """
+        browse_path_parts = []
+        
+        try:
+            # Try browsePathV2 first (preferred)
+            browse_path_v2 = entity.get("browsePathV2", {})
+            if browse_path_v2 and browse_path_v2.get("path"):
+                path_entities = browse_path_v2.get("path", [])
+                for path_entity in path_entities:
+                    # Check if path_entity and its entity are not None
+                    if path_entity and path_entity.get("entity") is not None:
+                        entity_data = path_entity.get("entity", {})
+                        if entity_data and entity_data.get("properties", {}).get("name"):
+                            browse_path_parts.append(entity_data["properties"]["name"])
+            
+            # Fallback to browsePaths if browsePathV2 is empty or has no valid entities
+            if not browse_path_parts:
+                browse_paths = entity.get("browsePaths", [])
+                if browse_paths and isinstance(browse_paths, list):
+                    first_browse_path = browse_paths[0]
+                    
+                                         # browsePaths is a list of objects with 'path' property
+                    if isinstance(first_browse_path, dict) and "path" in first_browse_path:
+                        path_value = first_browse_path.get("path")
+                        
+                        # Case 1: path is a list of strings (like ['prod', 'hive'])
+                        if isinstance(path_value, list):
+                            # Remove first and last values from the list
+                            if len(path_value) > 2:
+                                middle_parts = path_value[1:-1]  # Remove first and last
+                                browse_path_parts.extend([str(part) for part in middle_parts if part])
+                            # If list has 2 or fewer elements, removing first and last leaves empty
+                        
+                        # Case 2: path is a single string (like "/prod/hive")
+                        elif isinstance(path_value, str) and path_value:
+                            path_parts = [part for part in path_value.strip("/").split("/") if part]
+                            # Remove first and last values from the split parts
+                            if len(path_parts) > 2:
+                                middle_parts = path_parts[1:-1]  # Remove first and last
+                                browse_path_parts.extend(middle_parts)
+                    
+                                         # browsePaths is a list of strings directly
+                    elif isinstance(first_browse_path, str):
+                        path_parts = [part for part in first_browse_path.strip("/").split("/") if part]
+                        # Remove first and last values from the split parts
+                        if len(path_parts) > 2:
+                            middle_parts = path_parts[1:-1]  # Remove first and last
+                            browse_path_parts.extend(middle_parts)
+                    
+                    else:
+                        self.logger.debug(f"Unexpected browsePaths structure: {browse_paths}")
+            
+            # Add the entity name at the end if available
+            properties = entity.get("properties")
+            if properties and properties.get("name"):
+                browse_path_parts.append(properties.get("name"))
+            
+            # Join with '/' to create the final browse path
+            return "/".join(browse_path_parts) if browse_path_parts else ""
+            
+        except Exception as e:
+            self.logger.error(f"Error building browse path for entity: {e}")
+            self.logger.debug(f"Entity data: {entity}")
+            # Fallback to just the entity name if available
+            properties = entity.get("properties", {})
+            entity_name = properties.get("name", "")
+            return entity_name
+
     def get_data_contracts(self, query="*", start=0, count=100) -> Dict[str, Any]:
         """
-        Get data contracts from DataHub with comprehensive information.
+        Get data contracts from DataHub with comprehensive information including related dataset details.
 
         Args:
             query (str): Search query to filter data contracts (default: "*")
@@ -9680,13 +9882,62 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
             if result and "data" in result and "searchAcrossEntities" in result["data"]:
                 search_data = result["data"]["searchAcrossEntities"]
                 
+                # Extract entity URNs from data contracts
+                entity_urns = []
+                search_results = search_data.get("searchResults", [])
+                
+                for contract_result in search_results:
+                    entity = contract_result.get("entity", {})
+                    if entity:
+                        properties = entity.get("properties", {})
+                        entity_urn = properties.get("entityUrn")
+                        if entity_urn:
+                            entity_urns.append(entity_urn)
+                            self.logger.debug(f"Found entity URN for dataset lookup: {entity_urn}")
+                
+                self.logger.info(f"Extracted {len(entity_urns)} entity URNs from {len(search_results)} data contracts")
+                
+                # Get dataset information for the entity URNs
+                dataset_info = {}
+                if entity_urns:
+                    self.logger.info(f"Fetching dataset information for {len(entity_urns)} entities: {entity_urns}")
+                    dataset_result = self.get_datasets_by_urns(entity_urns)
+                    
+                    if dataset_result.get("success") and dataset_result.get("data"):
+                        dataset_search_results = dataset_result["data"].get("searchResults", [])
+                        self.logger.info(f"Dataset query returned {len(dataset_search_results)} results")
+                        
+                        # Create a mapping of URN to dataset info
+                        for dataset_result_item in dataset_search_results:
+                            dataset_entity = dataset_result_item.get("entity", {})
+                            if dataset_entity and dataset_entity.get("urn"):
+                                dataset_urn = dataset_entity["urn"]
+                                dataset_info[dataset_urn] = dataset_entity
+                                self.logger.debug(f"Mapped dataset URN {dataset_urn} to dataset info")
+                    else:
+                        self.logger.warning(f"Dataset query failed or returned no data: {dataset_result}")
+                
+                # Enhance contract data with dataset information
+                enhanced_results = []
+                for contract_result in search_results:
+                    entity = contract_result.get("entity", {})
+                    if entity:
+                        properties = entity.get("properties", {})
+                        entity_urn = properties.get("entityUrn")
+                        
+                        # Add dataset information if available
+                        if entity_urn and entity_urn in dataset_info:
+                            entity["dataset_info"] = dataset_info[entity_urn]
+                        
+                        enhanced_results.append(contract_result)
+                
                 return {
                     "success": True,
                     "data": {
                         "start": search_data.get("start", start),
                         "count": search_data.get("count", 0),
                         "total": search_data.get("total", 0),
-                        "searchResults": search_data.get("searchResults", [])
+                        "searchResults": enhanced_results
                     }
                 }
 

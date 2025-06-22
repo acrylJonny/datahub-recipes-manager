@@ -81,6 +81,10 @@ def get_remote_data_contracts_data(request):
                 'entity_urn': contract.entity_urn,
                 'state': contract.state,
                 'result_type': contract.result_type,
+                'dataset_name': contract.dataset_name,
+                'dataset_platform': contract.dataset_platform,
+                'dataset_platform_instance': contract.dataset_platform_instance,
+                'dataset_browse_path': contract.dataset_browse_path,
                 'sync_status': contract.sync_status,
                 'sync_status_display': contract.get_sync_status_display(),
                 'last_synced': contract.last_synced.isoformat() if contract.last_synced else None,
@@ -88,6 +92,7 @@ def get_remote_data_contracts_data(request):
                 'status': contract.status_data,
                 'result': contract.result_data,
                 'structuredProperties': contract.structured_properties_data,
+                'dataset_info': contract.dataset_info_data,
             }
             
             if contract.sync_status == 'LOCAL_ONLY':

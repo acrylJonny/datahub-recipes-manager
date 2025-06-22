@@ -1087,6 +1087,12 @@ class DataContract(BaseMetadataModel):
     # Status information
     removed = models.BooleanField(default=False)
     
+    # Dataset information fields
+    dataset_name = models.CharField(max_length=500, blank=True, null=True, help_text="Name of the dataset this contract is for")
+    dataset_platform = models.CharField(max_length=100, blank=True, null=True, help_text="Platform of the dataset")
+    dataset_platform_instance = models.CharField(max_length=100, blank=True, null=True, help_text="Platform instance of the dataset")
+    dataset_browse_path = models.CharField(max_length=1000, blank=True, null=True, help_text="Computed browse path for the dataset")
+    
     # Store comprehensive contract data structure from DataHub
     properties_data = models.JSONField(blank=True, null=True, help_text="Complete properties structure from DataHub")
     
@@ -1098,6 +1104,9 @@ class DataContract(BaseMetadataModel):
     
     # Store result data
     result_data = models.JSONField(blank=True, null=True, help_text="Contract result information")
+    
+    # Store complete dataset information
+    dataset_info_data = models.JSONField(blank=True, null=True, help_text="Complete dataset information from DataHub")
 
     class Meta:
         verbose_name = "Data Contract"
@@ -1113,6 +1122,10 @@ class DataContract(BaseMetadataModel):
             "entity_urn": self.entity_urn,
             "state": self.state,
             "result_type": self.result_type,
+            "dataset_name": self.dataset_name,
+            "dataset_platform": self.dataset_platform,
+            "dataset_platform_instance": self.dataset_platform_instance,
+            "dataset_browse_path": self.dataset_browse_path,
         }
         
         # Add properties data if available
@@ -1126,6 +1139,10 @@ class DataContract(BaseMetadataModel):
         # Add result data if available
         if self.result_data:
             data["result_data"] = self.result_data
+            
+        # Add dataset info if available
+        if self.dataset_info_data:
+            data["dataset_info"] = self.dataset_info_data
             
         return data
 
@@ -1162,6 +1179,34 @@ class DataContract(BaseMetadataModel):
         if contract_data.get("result") and contract_data["result"].get("type"):
             result_type = contract_data["result"]["type"]
         
+        # Extract dataset information if available
+        dataset_name = None
+        dataset_platform = None
+        dataset_platform_instance = None
+        dataset_browse_path = None
+        dataset_info_data = None
+        
+        if contract_data.get("dataset_info"):
+            dataset_info = contract_data["dataset_info"]
+            dataset_info_data = dataset_info  # Store complete dataset info
+            
+            # Extract dataset properties
+            properties = dataset_info.get("properties", {})
+            dataset_name = properties.get("name")
+            
+            # Extract platform information
+            platform = dataset_info.get("platform", {})
+            if platform:
+                dataset_platform = platform.get("name")
+            
+            # Extract platform instance
+            platform_instance = dataset_info.get("dataPlatformInstance", {})
+            if platform_instance and platform_instance.get("properties"):
+                dataset_platform_instance = platform_instance["properties"].get("name")
+            
+            # Get computed browse path
+            dataset_browse_path = dataset_info.get("computed_browse_path")
+        
         # Try to find existing contract
         try:
             contract = cls.objects.get(urn=urn, connection=connection)
@@ -1170,10 +1215,15 @@ class DataContract(BaseMetadataModel):
             contract.entity_urn = entity_urn
             contract.state = state
             contract.result_type = result_type
+            contract.dataset_name = dataset_name
+            contract.dataset_platform = dataset_platform
+            contract.dataset_platform_instance = dataset_platform_instance
+            contract.dataset_browse_path = dataset_browse_path
             contract.properties_data = contract_data.get("properties")
             contract.status_data = contract_data.get("status")
             contract.result_data = contract_data.get("result")
             contract.structured_properties_data = contract_data.get("structuredProperties")
+            contract.dataset_info_data = dataset_info_data
             contract.sync_status = "SYNCED"
             contract.last_synced = timezone.now()
             contract.save()
@@ -1185,10 +1235,15 @@ class DataContract(BaseMetadataModel):
                 entity_urn=entity_urn,
                 state=state,
                 result_type=result_type,
+                dataset_name=dataset_name,
+                dataset_platform=dataset_platform,
+                dataset_platform_instance=dataset_platform_instance,
+                dataset_browse_path=dataset_browse_path,
                 properties_data=contract_data.get("properties"),
                 status_data=contract_data.get("status"),
                 result_data=contract_data.get("result"),
                 structured_properties_data=contract_data.get("structuredProperties"),
+                dataset_info_data=dataset_info_data,
                 connection=connection,
                 sync_status="SYNCED",
                 last_synced=timezone.now()
