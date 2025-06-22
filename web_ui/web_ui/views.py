@@ -182,34 +182,13 @@ def dashboard_data(request):
                 'name': env.name,
                 'description': env.description or '',
                 'is_default': env.is_default,
-                'connected': False,
                 'recipes_count': 0,
                 'policies_count': 0
             }
             
-            # Test connection using the default DataHub connection
-            # Note: Environment objects don't have datahub_url/datahub_token fields.
-            # Using the default connection for now.
-            try:
-                from web_ui.models import Connection
-                default_connection = Connection.get_default()
-                if default_connection and default_connection.datahub_url and default_connection.datahub_token:
-                    from utils.datahub_utils import DataHubClient
-                    env_client = DataHubClient(
-                        server=default_connection.datahub_url,
-                        token=default_connection.datahub_token
-                    )
-                    env_data['connected'] = env_client.test_connection()
-                    
-                    if env_data['connected']:
-                        # Get environment-specific counts if possible
-                        try:
-                            env_recipes = env_client.list_ingestion_sources()
-                            env_data['recipes_count'] = len(env_recipes) if env_recipes else 0
-                        except:
-                            pass
-            except Exception as e:
-                logger.debug(f"Error testing connection for environment {env.name}: {str(e)}")
+            # Note: Environments are logical groupings, not DataHub connections
+            # They don't have their own connection status - that's handled by the Connection model
+            # We'll just show the environment info without connection testing
             
             environments_data.append(env_data)
     except Exception as e:
@@ -313,7 +292,6 @@ def dashboard_data(request):
     system_health = {
         'datahub_connection': connected,
         'environments_configured': len(environments_data),
-        'environments_connected': sum(1 for env in environments_data if env.get('connected', False)),
         'git_integration': git_status.get('enabled', False),
         'metadata_sync_pending': (
             metadata_stats.get('domains_local', 0) + 

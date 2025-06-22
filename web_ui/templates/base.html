@@ -238,10 +238,14 @@
                         </div>
                         
                         <span class="navbar-text me-3">
-                            {% if request.session.datahub_connected %}
+                            {% if current_connection and current_connection.connection_status == 'connected' %}
                                 <span class="badge bg-success d-inline-flex align-items-center"><i class="fas fa-check-circle me-1"></i> Connected</span>
+                            {% elif current_connection and current_connection.connection_status == 'failed' %}
+                                <span class="badge bg-danger d-inline-flex align-items-center"><i class="fas fa-exclamation-circle me-1"></i> Connection Failed</span>
+                            {% elif current_connection %}
+                                <span class="badge bg-warning d-inline-flex align-items-center"><i class="fas fa-question-circle me-1"></i> Connection Unknown</span>
                             {% else %}
-                                <span class="badge bg-danger d-inline-flex align-items-center"><i class="fas fa-exclamation-circle me-1"></i> Not Connected</span>
+                                <span class="badge bg-secondary d-inline-flex align-items-center"><i class="fas fa-exclamation-circle me-1"></i> No Connection</span>
                             {% endif %}
                         </span>
                         {% if default_environment %}

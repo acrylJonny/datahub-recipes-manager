@@ -630,21 +630,16 @@ document.addEventListener('DOMContentLoaded', function() {
         // Environments health
         const envHealth = document.getElementById('environments-health');
         const envHealthText = document.getElementById('environments-health-text');
-        const envConnected = health.environments_connected || 0;
         const envTotal = health.environments_configured || 0;
         
         if (envTotal === 0) {
             envHealth.className = 'health-indicator warning';
             envHealth.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
             envHealthText.textContent = 'No environments configured';
-        } else if (envConnected === envTotal) {
+        } else {
             envHealth.className = 'health-indicator healthy';
             envHealth.innerHTML = '<i class="fas fa-check-circle"></i>';
-            envHealthText.textContent = `All ${envTotal} connected`;
-        } else {
-            envHealth.className = 'health-indicator warning';
-            envHealth.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
-            envHealthText.textContent = `${envConnected}/${envTotal} connected`;
+            envHealthText.textContent = `${envTotal} environment${envTotal !== 1 ? 's' : ''} configured`;
         }
         
         // Git health
@@ -709,8 +704,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         let html = '<div class="list-group list-group-flush">';
         environments.forEach(env => {
-            const statusClass = env.connected ? 'success' : 'secondary';
-            const statusText = env.connected ? 'Connected' : 'Disconnected';
             const defaultBadge = env.is_default ? '<span class="badge bg-primary env-status-badge ms-1">Default</span>' : '';
             
             html += `
@@ -722,8 +715,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${env.git_branch ? `<small class="text-muted">Branch: <span class="git-branch">${env.git_branch}</span></small>` : ''}
                         </div>
                         <div class="text-end">
-                            <span class="badge bg-${statusClass} env-status-badge">${statusText}</span>
-                            ${env.recipes_count > 0 ? `<div class="small text-muted mt-1">${env.recipes_count} recipes</div>` : ''}
+                            ${env.recipes_count > 0 ? `<div class="small text-muted">${env.recipes_count} recipes</div>` : ''}
                         </div>
                     </div>
                 </div>
