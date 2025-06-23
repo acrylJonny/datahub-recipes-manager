@@ -6,12 +6,24 @@ let filterData = {
 };
 let currentFilters = new Set();
 let currentOverviewFilter = null;
+let currentSearch = {
+    synced: '',
+    local: '',
+    remote: ''
+};
 
 // Pagination variables - enhanced to match tags page
 let currentPagination = {
-    synced: { page: 1, itemsPerPage: 5 },
-    local: { page: 1, itemsPerPage: 5 },
-    remote: { page: 1, itemsPerPage: 5 }
+    synced: { page: 1, itemsPerPage: 25 },
+    local: { page: 1, itemsPerPage: 25 },
+    remote: { page: 1, itemsPerPage: 25 }
+};
+
+// Sorting variables
+let currentSort = {
+    column: null,
+    direction: 'asc',
+    tabType: null
 };
 
 // Pagination settings (deprecated - now using currentPagination object)
@@ -19,8 +31,21 @@ const ITEMS_PER_PAGE = 25;
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
+    // Initial load
+    loadPropertiesData(true); // Skip sync validation on initial load
+
+    // Setup tab switching
+    setupTabSwitchHandlers();
+    
+    // Setup other event listeners
     setupEventListeners();
-    loadPropertiesData();
+    setupSearchListeners();
+    setupFilterListeners();
+    setupBulkActions();
+    setupImportFormHandler();
+    setupEditFormHandler();
+    setupOverviewClickHandlers();
+    
 });
 
 function setupEventListeners() {
@@ -28,7 +53,7 @@ function setupEventListeners() {
     const refreshBtn = document.getElementById('refreshProperties');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function() {
-            loadPropertiesData();
+            loadPropertiesData(); // Don't skip sync validation on manual refresh
         });
     }
 
@@ -61,6 +86,7 @@ function setupSearchListeners() {
         
         if (searchInput) {
             searchInput.addEventListener('input', function() {
+                currentSearch[tabType] = this.value.toLowerCase();
                 filterAndRenderProperties(tabType);
             });
         }
@@ -68,6 +94,7 @@ function setupSearchListeners() {
         if (clearButton) {
             clearButton.addEventListener('click', function() {
                 searchInput.value = '';
+                currentSearch[tabType] = '';
                 filterAndRenderProperties(tabType);
             });
         }
@@ -172,7 +199,7 @@ function setupImportFormHandler() {
                     modal.hide();
                     
                     // Refresh properties data
-                    loadPropertiesData();
+                    loadPropertiesData(true); // Skip sync validation to prevent mass status updates
                 } else {
                     showNotification('error', data.error || 'Failed to import properties');
                 }
@@ -223,7 +250,7 @@ function setupEditFormHandler() {
                     modal.hide();
                     
                     // Refresh properties data
-                    loadPropertiesData();
+                    loadPropertiesData(true); // Skip sync validation to prevent mass status updates
                 } else {
                     showNotification('error', data.error || 'Failed to update property');
                 }
@@ -339,7 +366,7 @@ function updateOverviewActiveState(tabType) {
     }
 }
 
-function loadPropertiesData() {
+function loadPropertiesData(skipSyncValidation = false) {
     // Show loading indicator
     const loadingIndicator = document.getElementById('loading-indicator');
     const propertiesContent = document.getElementById('properties-content');
@@ -347,7 +374,13 @@ function loadPropertiesData() {
     if (loadingIndicator) loadingIndicator.style.display = 'block';
     if (propertiesContent) propertiesContent.style.display = 'none';
     
-    fetch('/metadata/properties/data/', {
+    // Build URL with optional skip_sync_validation parameter
+    let url = '/metadata/properties/data/';
+    if (skipSyncValidation) {
+        url += '?skip_sync_validation=true';
+    }
+    
+    fetch(url, {
         method: 'GET',
         headers: {
             'X-Requested-With': 'XMLHttpRequest',
@@ -626,13 +659,27 @@ function refreshCurrentTab() {
     }
 }
 
+function filterAndRenderProperties(tabType) {
+    // Update current search term
+    const searchInput = document.getElementById(`${tabType}-search`);
+    if (searchInput) {
+        currentSearch[tabType] = searchInput.value.toLowerCase();
+    }
+    
+    // Re-render the tab with current filters and search
+    displayTabContent(tabType);
+}
+
 function renderTab(tabId) {
     const tabType = tabId.replace('-items', '');
+    displayTabContent(tabType);
+}
+
+function displayTabContent(tabType) {
     const contentElement = document.getElementById(`${tabType}-content`);
-    const searchInput = document.getElementById(`${tabType}-search`);
-    const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+    const searchTerm = currentSearch[tabType] || '';
     
-    console.log(`=== Rendering tab: ${tabId} (type: ${tabType}) ===`);
+    console.log(`=== Rendering tab: ${tabType} ===`);
     
     if (!contentElement) {
         console.error(`Content element not found for ${tabType}-content`);
@@ -662,20 +709,14 @@ function renderTab(tabId) {
     }
     
     console.log(`Tab ${tabType} should show ${items.length} items`);
-    console.log(`PropertiesData structure:`, {
-        synced: propertiesData.synced_items?.length || 0,
-        local: propertiesData.local_only_items?.length || 0,
-        remote: propertiesData.remote_only_items?.length || 0
-    });
-    
-    console.log(`Raw items for ${tabType}:`, items.length, items);
     
     // Apply search
     if (searchTerm) {
         items = items.filter(property => 
             (property.name || '').toLowerCase().includes(searchTerm) ||
             (property.description || '').toLowerCase().includes(searchTerm) ||
-            (property.qualified_name || '').toLowerCase().includes(searchTerm)
+            (property.qualified_name || '').toLowerCase().includes(searchTerm) ||
+            (property.urn || '').toLowerCase().includes(searchTerm)
         );
         console.log(`After search filter: ${items.length} items`);
     }
@@ -684,58 +725,212 @@ function renderTab(tabId) {
     items = applyFilters(items);
     console.log(`After applying filters: ${items.length} items`);
     
-    // Render table directly like domains does
-    let html = `
+    // Apply sorting if active for this tab
+    if (currentSort.column && currentSort.tabType === tabType) {
+        items = sortItems(items, currentSort.column, currentSort.direction);
+    }
+    
+    // Generate table HTML with pagination
+    const tableHTML = generateTableHTML(items, tabType);
+    
+    // Update content
+    contentElement.innerHTML = tableHTML;
+    
+    // Setup event handlers
+    setupBulkSelectionForTab(tabType);
+    attachSortingHandlers(contentElement, tabType);
+    restoreSortState(contentElement, tabType);
+    attachPaginationHandlers(contentElement, tabType);
+    attachViewButtonHandlers(contentElement);
+    
+    console.log(`Tab ${tabType} rendered successfully with ${items.length} items`);
+}
+
+function generateTableHTML(items, tabType) {
+    const pagination = currentPagination[tabType];
+    const startIndex = (pagination.page - 1) * pagination.itemsPerPage;
+    const endIndex = startIndex + pagination.itemsPerPage;
+    const paginatedItems = items.slice(startIndex, endIndex);
+    
+    // Determine if we should show the sync status column
+    const showSyncStatus = tabType === 'synced';
+    
+    // Adjust column widths based on table type
+    const nameWidth = showSyncStatus ? '140' : '180';
+    const descriptionWidth = showSyncStatus ? '200' : '250';
+    const urnWidth = showSyncStatus ? '120' : '150';
+    const actionsWidth = showSyncStatus ? '150' : '180';
+    
+    return `
         <div class="table-responsive">
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        <th width="40px"><input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}"></th>
-                        <th class="sortable-header" data-sort="name" width="180px">Name</th>
-                        <th width="250px">Description</th>
-                        <th class="sortable-header" data-sort="entity_types" width="200px">Entity Types</th>
-                        <th class="sortable-header" data-sort="value_type" width="120px">Value Type</th>
-                        <th class="sortable-header" data-sort="cardinality" width="100px">Cardinality</th>
-                        <th class="sortable-header" data-sort="allowedValues" width="100px">Allowed Values</th>
-                        <th width="150px">URN</th>
-                        <th width="180px">Actions</th>
+                        <th width="40">
+                            <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
+                        </th>
+                        <th class="sortable-header" data-sort="name" width="${nameWidth}">Name</th>
+                        <th width="${descriptionWidth}">Description</th>
+                        <th class="sortable-header" data-sort="entity_types" width="200">Entity Types</th>
+                        <th class="sortable-header" data-sort="value_type" width="120">Value Type</th>
+                        <th class="sortable-header" data-sort="cardinality" width="100">Cardinality</th>
+                        <th class="sortable-header" data-sort="allowedValues" width="100">Allowed Values</th>
+                        <th width="${urnWidth}">URN</th>
+                        ${showSyncStatus ? '<th class="sortable-header" data-sort="sync_status" width="100">Sync Status</th>' : ''}
+                        <th width="${actionsWidth}">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-    `;
-    
-    if (items.length === 0) {
-        console.log(`No items to render for ${tabType}`);
-        html += `
-                    <tr>
-                        <td colspan="9" class="text-center py-4 text-muted">
-                            <i class="fas fa-inbox fa-2x mb-2"></i><br>
-                            No ${tabType} properties found
-                        </td>
-                    </tr>
-        `;
-    } else {
-        console.log(`Rendering ${items.length} rows for ${tabType}`);
-        items.forEach((property, index) => {
-            console.log(`Rendering property ${index}:`, property.name);
-            html += renderPropertyRow(property, tabType);
-        });
-    }
-    
-    html += `
+                    ${paginatedItems.length === 0 ? getEmptyStateHTML(tabType, currentSearch[tabType]) : 
+                      paginatedItems.map(item => renderPropertyRow(item, tabType)).join('')}
                 </tbody>
             </table>
         </div>
+        ${items.length > pagination.itemsPerPage ? generatePaginationHTML(items.length, tabType) : ''}
+    `;
+}
+
+function getEmptyStateHTML(tabType, hasSearch) {
+    const colSpan = tabType === 'synced' ? '10' : '9';
+    return `
+        <tr>
+            <td colspan="${colSpan}" class="text-center py-4 text-muted">
+                <i class="fas fa-inbox fa-2x mb-2"></i><br>
+                ${hasSearch ? `No ${tabType} properties found matching your search` : `No ${tabType} properties found`}
+            </td>
+        </tr>
+    `;
+}
+
+function generatePaginationHTML(totalItems, tabType) {
+    const pagination = currentPagination[tabType];
+    const totalPages = Math.ceil(totalItems / pagination.itemsPerPage);
+    const currentPage = pagination.page;
+    
+    if (totalPages <= 1) return '';
+    
+    const startItem = (currentPage - 1) * pagination.itemsPerPage + 1;
+    const endItem = Math.min(currentPage * pagination.itemsPerPage, totalItems);
+    
+    let paginationHTML = `
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Showing ${startItem}-${endItem} of ${totalItems} properties
+            </div>
+            <nav aria-label="Table pagination">
+                <ul class="pagination mb-0">
     `;
     
-    console.log(`Setting innerHTML for ${tabType}-content`);
-    contentElement.innerHTML = html;
-    console.log(`Tab ${tabType} rendered successfully with HTML length:`, html.length);
+    // Previous button
+    paginationHTML += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage - 1}" data-tab="${tabType}">Previous</a>
+        </li>
+    `;
     
-    // Setup bulk selection and sorting after rendering
-    setupBulkSelectionForTab(tabType);
-    attachSortingHandlers(contentElement, tabType);
-    attachViewButtonHandlers(contentElement);
+    // Page numbers
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="1" data-tab="${tabType}">1</a></li>`;
+        if (startPage > 2) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        paginationHTML += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" data-page="${i}" data-tab="${tabType}">${i}</a>
+            </li>
+        `;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}" data-tab="${tabType}">${totalPages}</a></li>`;
+    }
+    
+    // Next button
+    paginationHTML += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage + 1}" data-tab="${tabType}">Next</a>
+        </li>
+    `;
+    
+    paginationHTML += `
+                </ul>
+            </nav>
+            <div class="d-flex align-items-center">
+                <label for="itemsPerPage-${tabType}" class="form-label me-2 mb-0">Items per page:</label>
+                <select class="form-select form-select-sm" id="itemsPerPage-${tabType}" style="width: auto;">
+                    <option value="10" ${pagination.itemsPerPage === 10 ? 'selected' : ''}>10</option>
+                    <option value="25" ${pagination.itemsPerPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${pagination.itemsPerPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${pagination.itemsPerPage === 100 ? 'selected' : ''}>100</option>
+                </select>
+            </div>
+        </div>
+    `;
+    
+    return paginationHTML;
+}
+
+function sortItems(items, column, direction) {
+    return items.sort((a, b) => {
+        const aVal = getSortValue(a, column);
+        const bVal = getSortValue(b, column);
+        
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return direction === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        
+        if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+function getSortValue(property, column) {
+    switch(column) {
+        case 'name':
+            return (property.name || '').toLowerCase();
+        case 'entity_types':
+            return (property.entity_types || []).join(',').toLowerCase();
+        case 'value_type':
+            return (property.value_type || '').toLowerCase();
+        case 'cardinality':
+            return (property.cardinality || '').toLowerCase();
+        case 'allowedValues':
+            return (property.allowed_values || []).length;
+        case 'sync_status':
+            const syncStatus = property.sync_status || 'UNKNOWN';
+            const statusOrder = {
+                'SYNCED': 1,
+                'MODIFIED': 2,
+                'LOCAL_ONLY': 3,
+                'REMOTE_ONLY': 4,
+                'UNKNOWN': 5
+            };
+            return statusOrder[syncStatus] || 5;
+        default:
+            return '';
+    }
+}
+
+function restoreSortState(content, tabType) {
+    if (currentSort.column && currentSort.tabType === tabType) {
+        const tableHeaders = content.querySelectorAll('.sortable-header');
+        tableHeaders.forEach(h => {
+            h.classList.remove('sort-asc', 'sort-desc');
+            if (h.dataset.sort === currentSort.column) {
+                h.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        });
+    }
 }
 
 // Tab content is rendered by renderAllTabs(), no need for individual loading
@@ -769,6 +964,15 @@ function renderPropertiesTable(properties, tabType, container) {
         return;
     }
     
+    // Determine if we should show the sync status column (only for synced tab)
+    const showSyncStatus = tabType === 'synced';
+    
+    // Adjust column widths based on whether sync status is shown
+    const nameWidth = showSyncStatus ? '140' : '180';
+    const descriptionWidth = showSyncStatus ? '200' : '250';
+    const urnWidth = showSyncStatus ? '120' : '150';
+    const actionsWidth = showSyncStatus ? '150' : '180';
+    
     console.log('Generating table HTML...');
     const tableHtml = `
         <div class="table-responsive">
@@ -778,14 +982,15 @@ function renderPropertiesTable(properties, tabType, container) {
                         <th width="40px">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th width="180px">Name</th>
-                        <th width="250px">Description</th>
+                        <th width="${nameWidth}px">Name</th>
+                        <th width="${descriptionWidth}px">Description</th>
                         <th width="200px">Entity Types</th>
                         <th width="120px">Value Type</th>
                         <th width="100px">Cardinality</th>
                         <th width="100px">Allowed Values</th>
-                        <th width="150px">URN</th>
-                        <th width="180px">Actions</th>
+                        <th width="${urnWidth}px">URN</th>
+                        ${showSyncStatus ? '<th class="sortable-header" data-sort="sync_status" width="100px">Sync Status</th>' : ''}
+                        <th width="${actionsWidth}px">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -805,6 +1010,9 @@ function renderPropertiesTable(properties, tabType, container) {
     
     // Setup pagination handlers
     attachPaginationHandlers(container, tabType);
+    
+    // Setup sorting handlers
+    attachSortingHandlers(container, tabType);
 }
 
 function renderPagination(currentPage, totalPages, totalItems, startItem, endItem, tabType) {
@@ -888,7 +1096,7 @@ function attachPaginationHandlers(content, tabType) {
             const tab = this.dataset.tab;
             if (page && tab && currentPagination[tab]) {
                 currentPagination[tab].page = page;
-                renderTab(`${tab}-items`);
+                displayTabContent(tab);
             }
         });
     });
@@ -899,7 +1107,7 @@ function attachPaginationHandlers(content, tabType) {
         itemsPerPageSelect.addEventListener('change', function() {
             currentPagination[tabType].itemsPerPage = parseInt(this.value);
             currentPagination[tabType].page = 1; // Reset to first page
-            renderTab(`${tabType}-items`);
+            displayTabContent(tabType);
         });
     }
 }
@@ -924,7 +1132,9 @@ function renderPropertyRow(property, tabType) {
     console.log('Entity types:', property.entity_types);
     console.log('Value type:', property.value_type);
     
-    const actionButtons = getActionButtons(property, tabType);
+    // Get property data
+    const propertyData = property.combined || property;
+    const customActionButtons = getActionButtons(property, tabType);
     
     // Handle missing name gracefully
     const propertyName = property.name || property.qualified_name || 'Unnamed Property';
@@ -935,10 +1145,19 @@ function renderPropertyRow(property, tabType) {
     // Escape the property data for the data attribute
     const propertyDataAttr = JSON.stringify(property).replace(/"/g, '&quot;');
     
+    // Get the proper database ID for this property
+    const databaseId = getDatabaseId(propertyData);
+    
+    // Get sync status information (for synced tab)
+    const showSyncStatus = tabType === 'synced';
+    const syncStatus = propertyData.sync_status || 'UNKNOWN';
+    const syncStatusClass = getStatusBadgeClass(syncStatus);
+    const syncStatusText = syncStatus.replace('_', ' ');
+    
     return `
         <tr>
             <td>
-                <input type="checkbox" class="form-check-input item-checkbox" value="${property.id || property.urn}" data-property="${propertyDataAttr}">
+                <input type="checkbox" class="form-check-input item-checkbox" value="${databaseId || property.urn}" data-property="${propertyDataAttr}">
             </td>
             <td>
                 <strong>${escapeHtml(propertyName)}</strong>
@@ -954,20 +1173,40 @@ function renderPropertyRow(property, tabType) {
                 </div>
             </td>
             <td>
-                <span class="badge bg-info">${escapeHtml((property.value_type || 'STRING').toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</span>
+                <span class="badge bg-info">${escapeHtml(getValueTypeDisplayName(property.value_type))}</span>
             </td>
             <td>
                 <span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>
             </td>
             <td>
-                                    <span class="badge bg-secondary">${property.allowedValuesCount || 0}</span>
+                <span class="badge bg-secondary">${property.allowedValuesCount || 0}</span>
             </td>
             <td title="${escapeHtml(propertyUrn)}">
                 <code class="small">${escapeHtml(truncateUrn(propertyUrn, 30))}</code>
             </td>
+            ${showSyncStatus ? `
             <td>
-                <div class="btn-group" role="group">
-                    ${actionButtons}
+                <span class="badge ${syncStatusClass}">${syncStatusText}</span>
+            </td>
+            ` : ''}
+            <td>
+                <div class="btn-group action-buttons" role="group">
+                    <!-- View entity button -->
+                    <button type="button" class="btn btn-sm btn-outline-primary view-property" 
+                            data-property-urn="${propertyUrn || databaseId}" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    
+                    <!-- View in DataHub button if property exists in DataHub for current connection -->
+                    ${shouldShowDataHubViewButton(propertyData, tabType) ? `
+                        <button type="button" class="btn btn-sm btn-outline-info view-in-datahub" 
+                                onclick="viewInDataHub('${propertyUrn}')" title="View in DataHub">
+                            <i class="fas fa-external-link-alt"></i>
+                        </button>
+                    ` : ''}
+                    
+                    <!-- Custom action buttons -->
+                    ${customActionButtons}
                 </div>
             </td>
         </tr>
@@ -975,97 +1214,136 @@ function renderPropertyRow(property, tabType) {
 }
 
 function getActionButtons(property, tabType) {
-    const buttons = [];
-    const propertyId = property.id;
-    const propertyUrn = property.urn;
-    const status = property.status;
+    // Get property data
+    const propertyData = property.combined || property;
+    const urn = propertyData.urn || '';
     
     // Get connection context information
-    const connectionContext = property.connection_context || 'none'; // "current", "different", "none"
-    const hasRemoteMatch = property.has_remote_match || false;
+    const connectionContext = propertyData.connection_context || 'none'; // "current", "different", "none"
+    const hasRemoteMatch = propertyData.has_remote_match || false;
     
-    console.log(`Getting action buttons for property: ${property.name}, id: ${propertyId}, status: ${status}, connection: ${connectionContext}, hasRemote: ${hasRemoteMatch}`);
+    // Get the proper database ID for this property
+    const databaseId = getDatabaseId(propertyData);
     
-    // 1. View button - always available
-    buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary view-property" data-property-urn="${propertyUrn || propertyId}" title="View Details">
-        <i class="fas fa-eye"></i>
-    </button>`);
+    let actionButtons = '';
     
-    // 2. View in DataHub button - always available for properties with URNs
-    if (propertyUrn && !propertyUrn.includes('local:')) {
-        buttons.push(`<a href="#" class="btn btn-sm btn-outline-info view-in-datahub" onclick="viewInDataHub('${propertyUrn}')" title="View in DataHub" target="_blank">
-            <i class="fas fa-external-link-alt"></i>
-        </a>`);
+    // 1. Edit Property - For local and synced properties
+    if (tabType === 'local' || tabType === 'synced') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-warning edit-property" 
+                    onclick="editProperty('${urn || databaseId}')" title="Edit Property">
+                <i class="fas fa-edit"></i>
+            </button>
+        `;
+    }
+
+    // 2. Sync to DataHub - For properties in local tab
+    // Show for ALL properties in local tab regardless of their connection or sync status
+    if (tabType === 'local') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success push-property" 
+                    onclick="pushPropertyToDataHub('${databaseId}')" title="Push to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
     }
     
-    if (tabType === 'synced') {
-        // 3. Edit button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
-            <i class="fas fa-edit"></i>
-        </button>`);
-        // 4. Download JSON button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
-            <i class="fas fa-file-download"></i>
-        </button>`);
-        // 5. Resync button - Only for properties that belong to current connection and have remote match
-        if (connectionContext === 'current' && hasRemoteMatch) {
-            buttons.push(`<button type="button" class="btn btn-sm btn-outline-info resync-property" onclick="resyncProperty('${propertyId}')" title="Resync">
+    // 2b. Resync - Only for synced properties (properties that belong to current connection and have remote match)
+    if (tabType === 'synced' && connectionContext === 'current' && hasRemoteMatch) {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-info resync-property" 
+                    onclick="resyncProperty('${databaseId}')" title="Resync from DataHub">
                 <i class="fas fa-sync-alt"></i>
-            </button>`);
-        }
-        // 6. Push to DataHub button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
-            <i class="fas fa-upload"></i>
-        </button>`);
-        // 7. Add to Staged Changes button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
-            <i class="fab fa-github"></i>
-        </button>`);
-        // 8. Delete local button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-local-property" onclick="deleteLocalProperty('${propertyId}')" title="Delete Local">
-            <i class="fas fa-trash"></i>
-        </button>`);
-    } else if (tabType === 'local') {
-        // 3. Edit button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
-            <i class="fas fa-edit"></i>
-        </button>`);
-        // 4. Download JSON button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
-            <i class="fas fa-file-download"></i>
-        </button>`);
-        // 5. Push to DataHub button - Show for ALL properties in local tab regardless of their connection or sync status
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
-            <i class="fas fa-upload"></i>
-        </button>`);
-        // 6. Add to Staged Changes button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
-            <i class="fab fa-github"></i>
-        </button>`);
-        // 7. Delete button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-local-property" onclick="deleteLocalProperty('${propertyId}')" title="Delete">
-            <i class="fas fa-trash"></i>
-        </button>`);
-    } else if (tabType === 'remote') {
-        // 3. Download JSON button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
-            <i class="fas fa-file-download"></i>
-        </button>`);
-        // 4. Sync to Local button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary sync-property-to-local" onclick="syncPropertyToLocal(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Sync to Local">
-            <i class="fas fa-download"></i>
-        </button>`);
-        // 5. Add to Staged Changes button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged" onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
-            <i class="fab fa-github"></i>
-        </button>`);
-        // 6. Delete remote button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-remote-property" onclick="deleteRemoteProperty('${propertyUrn}')" title="Delete Remote">
-            <i class="fas fa-trash"></i>
-        </button>`);
+            </button>
+        `;
     }
     
-    return buttons.join(' ');
+    // 2c. Push to DataHub - Only for synced properties that are modified
+    if (tabType === 'synced' && connectionContext === 'current' && propertyData.sync_status === 'MODIFIED') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success push-property" 
+                    onclick="pushPropertyToDataHub('${databaseId}')" title="Push to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
+    }
+    
+    // 3. Sync to Local - Only for remote-only properties
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-primary sync-property-to-local" 
+                    onclick="syncPropertyToLocal(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Sync to Local">
+                <i class="fas fa-download"></i>
+            </button>
+        `;
+    }
+    
+    // 4. Download JSON - Available for all properties
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-secondary download-json"
+                onclick="downloadPropertyJson('${databaseId}')" title="Download JSON">
+            <i class="fas fa-file-download"></i>
+        </button>
+    `;
+
+    // 5. Add to Staged Changes - Available for all properties
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
+                onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
+            <i class="fab fa-github"></i>
+        </button>
+    `;
+
+    // 6. Delete Local Property - Only for synced and local properties
+    if (tabType === 'synced' || tabType === 'local') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-danger delete-local-property" 
+                    onclick="deleteLocalProperty('${databaseId}')" title="Delete Local Property">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    }
+    
+    // 7. Delete Remote Property - Only for remote-only properties
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-danger delete-remote-property" 
+                    onclick="deleteRemoteProperty('${urn}')" title="Delete from DataHub">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    }
+    
+    return actionButtons;
+}
+
+function shouldShowDataHubViewButton(propertyData, tabType) {
+    const urn = propertyData.urn || '';
+    const connectionContext = propertyData.connection_context || 'none';
+    const hasRemoteMatch = propertyData.has_remote_match || false;
+    
+    // Don't show for local URNs or empty URNs
+    if (!urn || urn.includes('local:')) {
+        return false;
+    }
+    
+    // Show for remote-only properties (they definitely exist in DataHub)
+    if (tabType === 'remote') {
+        return true;
+    }
+    
+    // For synced tab: show only if property belongs to current connection AND has remote match
+    if (tabType === 'synced') {
+        return connectionContext === 'current' && hasRemoteMatch;
+    }
+    
+    // For local tab: don't show View in DataHub button
+    // These properties either don't exist in DataHub or belong to different connections
+    if (tabType === 'local') {
+        return false;
+    }
+    
+    return false;
 }
 
 /**
@@ -1104,7 +1382,37 @@ function setupBulkSelectionForTab(tabType) {
  * @param {Object} property - The property object
  */
 function addPropertyToStagedChanges(property) {
-    const propertyId = getDatabaseId(property);
+    const propertyData = property.combined || property;
+    const propertyId = getDatabaseId(propertyData);
+    
+    // Handle remote-only properties: first sync to local, then add to staged changes
+    if (!propertyId && propertyData.urn) {
+        showNotification('info', 'Syncing remote property to local first, then adding to staged changes...');
+        
+        // First sync the property to local
+        syncPropertyToLocal(property, function(syncedProperty) {
+            // After successful sync, add the synced property to staged changes
+            if (syncedProperty && syncedProperty.id) {
+                addPropertyToStagedChangesInternal(syncedProperty);
+            } else {
+                showNotification('error', 'Failed to sync property to local');
+            }
+        });
+        return;
+    }
+    
+    if (!propertyId) {
+        showNotification('error', 'Cannot add property to staged changes: No database ID found');
+        return;
+    }
+    
+    // For local properties, add directly to staged changes
+    addPropertyToStagedChangesInternal(propertyData);
+}
+
+function addPropertyToStagedChangesInternal(propertyData) {
+    const propertyId = getDatabaseId(propertyData);
+    
     if (!propertyId) {
         showNotification('error', 'Cannot add property to staged changes: No database ID found');
         return;
@@ -1115,7 +1423,7 @@ function addPropertyToStagedChanges(property) {
     const mutationName = window.mutationName || null;
     
     // Find the button to show loading state
-    const button = document.querySelector(`[data-property-id="${propertyId}"].add-to-staged-changes`);
+    const button = event?.target || document.querySelector(`[onclick*="addPropertyToStagedChanges"]`);
     if (button) {
         button.disabled = true;
         button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -1134,13 +1442,18 @@ function addPropertyToStagedChanges(property) {
             mutation_name: mutationName
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.status === 'success') {
             showNotification('success', data.message || 'Property added to staged changes successfully');
             // Refresh the data
             if (typeof loadPropertiesData === 'function') {
-                loadPropertiesData();
+                loadPropertiesData(true); // Skip sync validation to prevent mass status updates
             }
         } else {
             throw new Error(data.error || 'Failed to add property to staged changes');
@@ -1148,7 +1461,7 @@ function addPropertyToStagedChanges(property) {
     })
     .catch(error => {
         console.error('Error adding property to staged changes:', error);
-        showNotification('error', `Error: ${error.message}`);
+        showNotification('error', `Error adding property to staged changes: ${error.message}`);
     })
     .finally(() => {
         if (button) {
@@ -1173,6 +1486,11 @@ function getDatabaseId(propertyData) {
     // For local-only properties, use the id directly
     if (propertyData.id) {
         return propertyData.id;
+    }
+    
+    // Check for database_id field (explicitly added by backend)
+    if (propertyData.database_id) {
+        return propertyData.database_id;
     }
     
     // For remote-only properties, try to extract from URN
@@ -1226,10 +1544,7 @@ function downloadPropertyJson(propertyId) {
     showNotification('success', 'Property JSON download started');
 }
 
-// Global sorting state for properties
-let currentSort = { column: null, direction: null, tabType: null };
-
-// Attach sorting handlers to table headers - matching assertions implementation
+// Attach sorting handlers to table headers - matching tags implementation
 function attachSortingHandlers(content, tabType) {
     const sortableHeaders = content.querySelectorAll('.sortable-header');
     
@@ -1246,15 +1561,8 @@ function attachSortingHandlers(content, tabType) {
                 currentSort.tabType = tabType;
             }
             
-            // Update header classes in this table only
-            const tableHeaders = content.querySelectorAll('.sortable-header');
-            tableHeaders.forEach(h => {
-                h.classList.remove('sort-asc', 'sort-desc');
-            });
-            this.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
-            
-            // Sort the current table
-            sortCurrentTable(content, tabType);
+            // Re-render the table with sorting
+            displayTabContent(tabType);
         });
     });
 }
@@ -1286,6 +1594,9 @@ function sortCurrentTable(content, tabType) {
 function getSortValueFromRow(row, column) {
     const cells = row.querySelectorAll('td');
     
+    // Check if this is a synced table (has sync status column)
+    const hasSyncStatus = cells.length > 9; // More than 9 columns means sync status is present
+    
     switch(column) {
         case 'name':
             return cells[1]?.textContent?.trim().toLowerCase() || ''; // Skip checkbox column
@@ -1299,6 +1610,9 @@ function getSortValueFromRow(row, column) {
             return cells[5]?.textContent?.trim().toLowerCase() || '';
         case 'allowedValues':
             return cells[6]?.textContent?.trim().toLowerCase() || '';
+        case 'sync_status':
+            // Sync status column is at index 8 (after URN)
+            return hasSyncStatus ? (cells[8]?.textContent?.trim().toLowerCase() || '') : '';
         default:
             return '';
     }
@@ -1346,7 +1660,7 @@ function showPropertyDetails(property) {
         ? property.entity_types.map(type => `<span class="badge bg-light text-dark me-1">${escapeHtml(type)}</span>`).join('')
         : '<span class="text-muted">None specified</span>';
     
-    document.getElementById('modal-property-value-type').innerHTML = `<span class="badge bg-info">${escapeHtml(property.value_type || 'STRING')}</span>`;
+    document.getElementById('modal-property-value-type').innerHTML = `<span class="badge bg-info">${escapeHtml(getValueTypeDisplayName(property.value_type))}</span>`;
     document.getElementById('modal-property-cardinality').innerHTML = `<span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>`;
     
     // Raw JSON data
@@ -1464,7 +1778,7 @@ function addPropertyToPR(propertyId) {
         if (data.success) {
             showNotification('success', data.message);
             // Optionally reload the data to reflect any status changes
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
             showNotification('error', data.error || 'Failed to add property to PR');
         }
@@ -1527,7 +1841,7 @@ function resyncProperty(propertyId) {
         if (data.success) {
             showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
             showNotification('error', data.error);
         }
@@ -1566,7 +1880,7 @@ function pushPropertyToDataHub(propertyId) {
         if (data.success) {
             showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
             showNotification('error', data.error);
         }
@@ -1609,7 +1923,7 @@ function deleteLocalProperty(propertyId) {
         if (data.success) {
             showNotification('success', data.message || 'Property deleted successfully');
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
             showNotification('error', data.error);
         }
@@ -1626,7 +1940,7 @@ function deleteLocalProperty(propertyId) {
     });
 }
 
-function syncPropertyToLocal(property) {
+function syncPropertyToLocal(property, callback = null) {
     // Handle both property object and URN string for backward compatibility
     const propertyUrn = typeof property === 'string' ? property : property.urn;
     const propertyData = typeof property === 'object' ? property : null;
@@ -1639,6 +1953,7 @@ function syncPropertyToLocal(property) {
     if (!urnToSync) {
         console.error('No URN found for property:', property);
         showNotification('error', 'Error: No URN found for property');
+        if (callback) callback(null);
         return;
     }
     
@@ -1662,14 +1977,33 @@ function syncPropertyToLocal(property) {
         if (data.success) {
             showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+            
+            // If callback provided, call it with the synced property data
+            if (callback && data.property) {
+                callback(data.property);
+            } else if (callback) {
+                // If no property data returned, try to find it in the updated data
+                // This is a fallback - ideally the backend should return the synced property
+                setTimeout(() => {
+                    // Try to find the synced property by URN
+                    const allProperties = [
+                        ...(window.propertiesData?.synced_items || []),
+                        ...(window.propertiesData?.local_only_items || [])
+                    ];
+                    const syncedProperty = allProperties.find(p => p.urn === urnToSync);
+                    callback(syncedProperty);
+                }, 1000);
+            }
         } else {
             showNotification('error', data.error);
+            if (callback) callback(null);
         }
     })
     .catch(error => {
         console.error('Error syncing property:', error);
         showNotification('error', 'Failed to sync property to local');
+        if (callback) callback(null);
     })
     .finally(() => {
         if (button) {
@@ -1706,7 +2040,7 @@ function deleteRemoteProperty(propertyUrn) {
         if (data.success) {
             showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
             showNotification('error', data.error);
         }
@@ -1898,10 +2232,78 @@ function bulkPushProperties(tabType) {
     if (checkedBoxes.length === 0) return;
     
     if (confirm(`Are you sure you want to push ${checkedBoxes.length} properties to DataHub?`)) {
-        checkedBoxes.forEach(checkbox => {
+        // Disable all checkboxes and show progress
+        const allCheckboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox`);
+        allCheckboxes.forEach(cb => cb.disabled = true);
+        
+        // Show initial progress notification
+        showNotification('info', `Starting bulk push of ${checkedBoxes.length} properties...`);
+        
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+        
+        // Process properties sequentially
+        async function processNext(index) {
+            if (index >= checkedBoxes.length) {
+                // All done - show final result
+                allCheckboxes.forEach(cb => cb.disabled = false);
+                
+                if (errorCount === 0) {
+                    showNotification('success', `Successfully pushed ${successCount} properties to DataHub`);
+                } else if (successCount === 0) {
+                    showNotification('error', `Failed to push all ${errorCount} properties. First few errors: ${errors.slice(0, 2).join('; ')}`);
+                } else {
+                    showNotification('info', `Bulk push completed: ${successCount} successful, ${errorCount} failed. First few errors: ${errors.slice(0, 2).join('; ')}`);
+                }
+                
+                // Reload data to refresh the view
+                loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+                return;
+            }
+            
+            const checkbox = checkedBoxes[index];
             const propertyId = checkbox.value;
-            pushPropertyToDataHub(propertyId);
-        });
+            
+            // Show progress for every 5th property or the last one
+            if (index % 5 === 0 || index === checkedBoxes.length - 1) {
+                showNotification('info', `Pushing property ${index + 1} of ${checkedBoxes.length}...`);
+            }
+            
+            try {
+                const response = await fetch(`/metadata/properties/${propertyId}/deploy/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': getCSRFToken(),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    successCount++;
+                    console.log(`Successfully pushed property ${propertyId}`);
+                } else {
+                    errorCount++;
+                    const errorMsg = data.error || 'Unknown error';
+                    errors.push(`Property ${propertyId}: ${errorMsg}`);
+                    console.error(`Failed to push property ${propertyId}:`, errorMsg);
+                }
+            } catch (error) {
+                errorCount++;
+                const errorMsg = error.message || 'Network error';
+                errors.push(`Property ${propertyId}: ${errorMsg}`);
+                console.error(`Error pushing property ${propertyId}:`, error);
+            }
+            
+            // Wait a bit before processing next property to avoid overwhelming the server
+            setTimeout(() => processNext(index + 1), 500);
+        }
+        
+        // Start processing
+        processNext(0);
     }
 }
 
@@ -2016,7 +2418,7 @@ function bulkDeleteRemoteProperties(tabType) {
                 showNotification('success', `Completed: ${successCount} properties deleted, ${errorCount} failed.`);
                 if (successCount > 0) {
                     // Refresh the data if any properties were successfully deleted
-                    loadPropertiesData();
+                    loadPropertiesData(true); // Skip sync validation to prevent mass status updates
                 }
                 return;
             }
@@ -2073,10 +2475,47 @@ function bulkAddToPR(tabType) {
     if (checkedBoxes.length === 0) return;
     
     if (confirm(`Are you sure you want to add ${checkedBoxes.length} properties to staged changes?`)) {
-        checkedBoxes.forEach(checkbox => {
-            const propertyData = JSON.parse(checkbox.getAttribute('data-property') || '{}');
-            addPropertyToStagedChanges(propertyData);
+        const properties = Array.from(checkedBoxes).map(checkbox => 
+            JSON.parse(checkbox.getAttribute('data-property') || '{}')
+        );
+        
+        // Separate remote-only properties from local properties
+        const localProperties = properties.filter(prop => getDatabaseId(prop.combined || prop));
+        const remoteProperties = properties.filter(prop => !getDatabaseId(prop.combined || prop) && (prop.urn || (prop.combined && prop.combined.urn)));
+        
+        let processedCount = 0;
+        const totalCount = properties.length;
+        
+        // Function to update progress
+        const updateProgress = () => {
+            processedCount++;
+            if (processedCount === totalCount) {
+                showNotification('success', `Successfully processed ${totalCount} properties for staged changes`);
+                loadPropertiesData(true); // Refresh data
+            }
+        };
+        
+        // Process local properties directly
+        localProperties.forEach(property => {
+            addPropertyToStagedChangesInternal(property.combined || property);
+            updateProgress();
         });
+        
+        // Process remote properties: sync first, then add to staged changes
+        if (remoteProperties.length > 0) {
+            showNotification('info', `Processing ${remoteProperties.length} remote properties - syncing to local first...`);
+            
+            let syncedCount = 0;
+            remoteProperties.forEach(property => {
+                syncPropertyToLocal(property, (syncedProperty) => {
+                    if (syncedProperty && syncedProperty.id) {
+                        addPropertyToStagedChangesInternal(syncedProperty);
+                        syncedCount++;
+                    }
+                    updateProgress();
+                });
+            });
+        }
     }
 }
 
@@ -2106,7 +2545,7 @@ function resyncAll() {
     .then(data => {
         if (data.success) {
             showNotification('success', `Successfully resynced ${data.count || 0} properties`);
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
             showNotification('error', data.error || 'Failed to resync properties');
         }
@@ -2204,7 +2643,7 @@ function addAllToStagedChanges() {
         if (data.success) {
             showNotification('success', data.message || `Successfully added ${data.success_count || 0} properties to staged changes`);
             if (data.success_count > 0) {
-                loadPropertiesData();
+                loadPropertiesData(true); // Skip sync validation to prevent mass status updates
             }
         } else {
             showNotification('error', data.error || 'Failed to add properties to staged changes');
@@ -2316,4 +2755,42 @@ function updateFilterDisplay() {
             stat.classList.remove('active');
         }
     });
+}
+
+function getValueTypeDisplayName(valueType) {
+    if (valueType && typeof valueType === 'object') {
+        if (valueType.info && valueType.info.displayName) {
+            return valueType.info.displayName;
+        }
+        if (valueType.displayName) {
+            return valueType.displayName;
+        }
+        if (valueType.type) {
+            return valueType.type.charAt(0).toUpperCase() + valueType.type.slice(1).toLowerCase();
+        }
+        if (valueType.urn) {
+            // Try to extract from URN
+            const match = valueType.urn.match(/datahub\\.(\\w+)/);
+            if (match) return match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+        }
+    }
+    if (typeof valueType === 'string') {
+        return valueType.charAt(0).toUpperCase() + valueType.slice(1).toLowerCase();
+    }
+    return 'String';
+}
+
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'SYNCED':
+            return 'bg-success';
+        case 'MODIFIED':
+            return 'bg-warning';
+        case 'LOCAL_ONLY':
+            return 'bg-secondary';
+        case 'REMOTE_ONLY':
+            return 'bg-info';
+        default:
+            return 'bg-secondary';
+    }
 }

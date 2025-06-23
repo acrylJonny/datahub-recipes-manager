@@ -5958,9 +5958,12 @@ class DataHubRestClient:
                 entity = item.get("entity", {})
                 urn = entity.get("urn")
                 
-                if urn and "urn:li:structuredProperty:" in urn:
-                    # Extract the ID from the URN by removing the prefix
-                    property_id = urn.replace("urn:li:structuredProperty:", "")
+                if urn and ("urn:li:structuredProperty:" in urn or "urn:li:structuredproperty:" in urn):
+                    # Extract the ID from the URN by removing the prefix (handle both formats)
+                    if "urn:li:structuredProperty:" in urn:
+                        property_id = urn.replace("urn:li:structuredProperty:", "")
+                    else:
+                        property_id = urn.replace("urn:li:structuredproperty:", "")
                     
                     structured_properties.append({
                         "urn": urn,

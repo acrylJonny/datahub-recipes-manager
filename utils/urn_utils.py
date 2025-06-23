@@ -45,6 +45,7 @@ def generate_deterministic_urn(
         "domain": "domain",
         "assertion": "assertion",
         "dataproduct": "dataProduct",
+        "structuredproperty": "structuredProperty",
     }
 
     urn_type = type_map.get(entity_type, entity_type)

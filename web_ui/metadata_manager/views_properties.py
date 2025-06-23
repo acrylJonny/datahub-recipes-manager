@@ -36,16 +36,17 @@ logger = logging.getLogger(__name__)
 def _process_entity_types(entity_types_info):
     """
     Process entity types from remote structured property data.
-    Extracts clean display names from nested structures.
+    Extracts normalized type strings (e.g., 'dataset', 'container').
     
     Args:
         entity_types_info: List of entity type objects from DataHub API
         
     Returns:
-        List of clean entity type names (e.g., "Dataset", "Dashboard")
+        List of normalized entity type strings (e.g., 'dataset', 'container')
     """
     entity_types = []
     for et in entity_types_info:
+        entity_type = None
         if isinstance(et, dict):
             # Handle nested structure: {"urn": "...", "type": "ENTITY_TYPE", "info": {"type": "DATASET"}}
             if "info" in et and isinstance(et["info"], dict):
@@ -53,18 +54,15 @@ def _process_entity_types(entity_types_info):
             # Handle direct structure: {"type": "DATASET"}
             elif "type" in et:
                 entity_type = et["type"]
-            else:
-                entity_type = None
-            
-            if entity_type:
-                # Convert to display-friendly format
-                display_type = _format_entity_type_for_display(entity_type)
-                entity_types.append(display_type)
         elif isinstance(et, str):
-            # Handle direct string entity types
-            display_type = _format_entity_type_for_display(et)
-            entity_types.append(display_type)
-    
+            entity_type = et
+        if entity_type:
+            # Normalize: strip URN prefix, lowercase, remove 'datahub.'
+            if entity_type.startswith("urn:li:entityType:"):
+                entity_type = entity_type.replace("urn:li:entityType:", "")
+                if entity_type.startswith("datahub."):
+                    entity_type = entity_type.replace("datahub.", "")
+            entity_types.append(entity_type.lower())
     return entity_types
 
 
@@ -401,15 +399,25 @@ class PropertyListView(View):
                 
                 # Determine categorization based on connection and remote match
                 # With single-row-per-datahub_id logic:
-                # - Synced: Property belongs to current connection AND exists remotely
-                # - Local-only: Property belongs to different connection OR no connection OR no remote match
-                if local_prop.connection == current_connection and remote_match:
-                    # Property exists remotely AND is synced to current connection - categorize as synced
+                # - Synced: Property belongs to current connection AND (exists remotely OR was recently synced)
+                # - Local-only: Property belongs to different connection OR no connection OR (no remote match AND not recently synced)
+                
+                # Check if property was recently synced (within last 30 seconds)
+                from django.utils import timezone
+                from datetime import timedelta
+                
+                recently_synced = (
+                    local_prop.last_synced and 
+                    local_prop.last_synced > timezone.now() - timedelta(seconds=30)
+                )
+                
+                if local_prop.connection == current_connection and (remote_match or recently_synced):
+                    # Property exists remotely OR was recently synced to current connection - categorize as synced
                     
                     # Enhanced sync status validation - check if property needs status update
-                    # Skip validation if requested (e.g., after single property edits)
-                    skip_sync_validation = request.GET.get("skip_sync_validation", "false").lower() == "true"
-                    if not skip_sync_validation:
+                    # Skip validation if requested (e.g., after single property edits) or if recently synced
+                    skip_sync_validation = request.GET.get("skip_sync_validation", "false").lower() == "true" or recently_synced
+                    if not skip_sync_validation and remote_match:
                         needs_status_update = False
                         status_change_reason = []
                         
@@ -438,19 +446,9 @@ class PropertyListView(View):
                             needs_status_update = True
                             status_change_reason.append("name")
                         
-                        # Only update sync status if the property belongs to the current connection
-                        # AND hasn't been recently synced to avoid overriding fresh syncs
-                        from django.utils import timezone
-                        from datetime import timedelta
-                        
-                        recently_synced = (
-                            local_prop.last_synced and 
-                            local_prop.last_synced > timezone.now() - timedelta(seconds=30)
-                        )
-                        
                         # CRITICAL: Only update sync status for properties that belong to current connection
                         # Properties from other connections should not have their sync_status modified
-                        if local_prop.connection == current_connection and not recently_synced:
+                        if local_prop.connection == current_connection:
                             if needs_status_update:
                                 # Property has been modified in DataHub or locally
                                 if local_prop.sync_status != "MODIFIED":
@@ -464,57 +462,62 @@ class PropertyListView(View):
                                     local_prop.save(update_fields=["sync_status"])
                                     logger.debug(f"Updated property {local_prop.name} status to SYNCED")
                     
-                    # Process remote data for synced properties
-                    definition = remote_match.get('definition', {}) or {}
-                    settings = remote_match.get('settings', {}) or {}
-                    
-                    # Process value type from remote data
-                    value_type_info = definition.get('valueType', {}) or {}
-                    processed_value_type = _process_value_type(value_type_info)
-                    
-                    # Process entity types from remote data
-                    entity_types_info = definition.get("entityTypes", []) or []
-                    processed_entity_types = _process_entity_types(entity_types_info)
-                    
-                    # Process allowed values from remote data
-                    allowed_values_info = definition.get("allowedValues", []) or []
-                    allowed_values = []
-                    for av in allowed_values_info:
-                        description = av.get("description", "")
+                    # Process remote data for synced properties (if available)
+                    if remote_match:
+                        definition = remote_match.get('definition', {}) or {}
+                        settings = remote_match.get('settings', {}) or {}
                         
-                        # Handle both remote format {value: {stringValue: "..."}} and local format {value: "..."}
-                        value_obj = av.get("value", {})
-                        value = None
+                        # Process value type from remote data
+                        value_type_info = definition.get('valueType', {}) or {}
+                        processed_value_type = _process_value_type(value_type_info)
                         
-                        if isinstance(value_obj, dict):
-                            # Remote format: {value: {stringValue: "..."}, description: "..."}
-                            if "stringValue" in value_obj:
-                                value = value_obj.get("stringValue")
-                            elif "numberValue" in value_obj:
-                                value = value_obj.get("numberValue")
-                            elif "booleanValue" in value_obj:
-                                value = value_obj.get("booleanValue")
-                        else:
-                            # Local format: {value: "...", description: "..."}
-                            value = value_obj
+                        # Process entity types from remote data
+                        entity_types_info = definition.get("entityTypes", []) or []
+                        processed_entity_types = _process_entity_types(entity_types_info)
+                        
+                        # Process allowed values from remote data
+                        allowed_values_info = definition.get("allowedValues", []) or []
+                        allowed_values = []
+                        for av in allowed_values_info:
+                            description = av.get("description", "")
+                            
+                            # Handle both remote format {value: {stringValue: "..."}} and local format {value: "..."}
+                            value_obj = av.get("value", {})
+                            value = None
+                            
+                            if isinstance(value_obj, dict):
+                                # Remote format: {value: {stringValue: "..."}, description: "..."}
+                                if "stringValue" in value_obj:
+                                    value = value_obj.get("stringValue")
+                                elif "numberValue" in value_obj:
+                                    value = value_obj.get("numberValue")
+                                elif "booleanValue" in value_obj:
+                                    value = value_obj.get("booleanValue")
+                            else:
+                                # Local format: {value: "...", description: "..."}
+                                value = value_obj
 
-                        if value is not None:
-                            allowed_values.append(
-                                {"value": value, "description": description}
-                            )
+                            if value is not None:
+                                allowed_values.append(
+                                    {"value": value, "description": description}
+                                )
+                        
+                        # Update local property data with remote information
+                        local_prop_data.update({
+                            'value_type': processed_value_type,
+                            'entity_types': processed_entity_types,
+                            'allowedValues': allowed_values,
+                            'allowedValuesCount': len(allowed_values),
+                            'remote_data': remote_match
+                        })
                     
-                    # Update local property data with remote information
+                    # Update local property data with sync information
                     local_prop_data.update({
                         'sync_status': local_prop.sync_status,
                         'sync_status_display': local_prop.get_sync_status_display(),
                         'connection_context': connection_context,  # Keep the connection context
-                        'has_remote_match': True,  # This property definitely has a remote match
-                        'value_type': processed_value_type,
-                        'entity_types': processed_entity_types,
-                        'allowedValues': allowed_values,
-                        'allowedValuesCount': len(allowed_values),
+                        'has_remote_match': bool(remote_match) or recently_synced,  # True if remote match OR recently synced
                         'status': 'synced',
-                        'remote_data': remote_match
                     })
                     
                     # Create combined data with explicit database_id
@@ -776,13 +779,16 @@ class PropertyListView(View):
                 messages.error(request, f"Property with name '{name}' already exists")
                 return redirect("metadata_manager:property_list")
 
+            # Normalize value_type for consistency with remote sync
+            normalized_value_type = _process_value_type(value_type)
+
             # Create the property
             property_obj = StructuredProperty.objects.create(
                 datahub_id=name,
                 name=qualified_name,
                 qualified_name=qualified_name,
                 description=description,
-                value_type=value_type,
+                value_type=normalized_value_type,
                 cardinality=cardinality,
                 immutable=immutable,
                 entity_types=entity_types,
@@ -1073,10 +1079,13 @@ class PropertyDeployView(View):
                     return redirect("metadata_manager:property_detail", property_id=property_id)
                 
                 # Create new property for current connection
+                # Use original qualified_name, but create unique datahub_id if needed
+                unique_datahub_id = f"{property.datahub_id}_{current_connection.name}" if current_connection else property.datahub_id
+                
                 new_property = StructuredProperty.objects.create(
                     name=property.name,
                     description=property.description,
-                    qualified_name=property.qualified_name,
+                    qualified_name=property.qualified_name,  # Keep original qualified_name
                     value_type=property.value_type,
                     cardinality=property.cardinality,
                     immutable=property.immutable,
@@ -1084,7 +1093,7 @@ class PropertyDeployView(View):
                     allowed_values=property.allowed_values,
                     allowed_entity_types=property.allowed_entity_types,
                     urn=property.urn,
-                    datahub_id=property.datahub_id,
+                    datahub_id=unique_datahub_id,  # Make datahub_id unique instead
                     sync_status="LOCAL_ONLY",  # Will be updated to SYNCED after successful sync
                     connection=current_connection,
                     show_in_search_filters=property.show_in_search_filters,
@@ -1309,11 +1318,14 @@ class PropertyPullView(View):
                         updated_count += 1
                         logger.info(f"Updated property {name} with connection: {current_connection.name if current_connection else 'None'}")
                     else:
-                        # Create new property
+                        # Create new property with unique datahub_id
+                        base_qualified_name = qualified_name
+                        unique_datahub_id = f"{name}_{current_connection.name}" if current_connection else name
+                        
                         StructuredProperty.objects.create(
-                            datahub_id=name,
+                            datahub_id=unique_datahub_id,  # Make datahub_id unique instead
                             name=qualified_name,
-                            qualified_name=qualified_name,
+                            qualified_name=base_qualified_name,  # Keep original qualified_name
                             description=description,
                             value_type=value_type,
                             cardinality=cardinality,
@@ -1548,13 +1560,16 @@ def sync_property_to_local(request):
             
             message = f'Property "{existing_property.name}" updated successfully'
         else:
-            # Create new property
+            # Create new property with unique datahub_id
+            base_qualified_name = definition.get("qualifiedName", property_name)
+            unique_datahub_id = f"{base_qualified_name}_{current_connection.name}" if current_connection else base_qualified_name
+            
             new_property = StructuredProperty.objects.create(
-                datahub_id=definition.get("qualifiedName", ""),
+                datahub_id=unique_datahub_id,  # Make datahub_id unique instead
                 name=property_name,
                 description=definition.get("description", ""),
-                qualified_name=definition.get("qualifiedName", property_name),
-                value_type=definition.get("valueType", "STRING"),
+                qualified_name=base_qualified_name,  # Keep original qualified_name
+                value_type=_process_value_type(definition.get("valueType", "STRING")),
                 cardinality=definition.get("cardinality", "SINGLE"),
                 urn=property_urn,
                 sync_status="SYNCED",
@@ -1620,13 +1635,16 @@ def add_remote_property_to_pr(request):
         local_property = StructuredProperty.objects.filter(urn=property_urn).first()
         
         if not local_property:
-            # Create local property from remote data
+            # Create local property from remote data with unique datahub_id
+            base_qualified_name = definition.get("qualifiedName", property_name)
+            unique_datahub_id = f"{base_qualified_name}_{current_connection.name}" if current_connection else base_qualified_name
+            
             local_property = StructuredProperty.objects.create(
-                datahub_id=definition.get("qualifiedName", ""),
+                datahub_id=unique_datahub_id,  # Make datahub_id unique instead
                 name=property_name,
                 description=definition.get("description", ""),
-                qualified_name=definition.get("qualifiedName", property_name),
-                value_type=definition.get("valueType", "STRING"),
+                qualified_name=base_qualified_name,  # Keep original qualified_name
+                value_type=_process_value_type(definition.get("valueType", "STRING")),
                 cardinality=definition.get("cardinality", "SINGLE"),
                 urn=property_urn,
                 sync_status="SYNCED",
@@ -1809,10 +1827,6 @@ class PropertyAddToStagedChangesView(View):
                     description=f"Auto-created {environment_name} environment"
                 )
             
-            # Build base directory path
-            base_dir = Path(os.getcwd()) / "metadata-manager" / environment_name
-            base_dir.mkdir(parents=True, exist_ok=True)
-            
             # Add property to staged changes
             result = add_structured_property_to_staged_changes(
                 property_id=str(property_obj.id),
@@ -1824,8 +1838,8 @@ class PropertyAddToStagedChangesView(View):
                 allowedValues=property_obj.allowed_values or [],
                 entity_types=property_obj.entity_types or [],
                 environment=environment_name,
-                owner=owner,
-                base_dir=str(base_dir)
+                owner=owner
+                # base_dir will be automatically calculated to metadata-manager/{environment}/structured_properties
             )
             
             if not result.get("success"):
@@ -1998,8 +2012,8 @@ class PropertyAddAllToStagedChangesView(View):
                         allowedValues=prop.allowed_values or [],
                         entity_types=prop.entity_types or [],
                         environment=environment,
-                        owner="system",  # Default owner
-                        base_dir="metadata-manager"
+                        owner="system"  # Default owner
+                        # base_dir will be automatically calculated to metadata-manager/{environment}/structured_properties
                     )
                     
                     if result.get("success"):
@@ -2103,16 +2117,23 @@ def import_properties(request):
                         skipped_count += 1
                         continue
                 else:
-                    # Create new property
+                    # Create new property with unique datahub_id
+                    base_qualified_name = property_data.get('qualified_name', '')
+                    # Get current connection for unique naming
+                    from web_ui.views import get_current_connection
+                    current_connection = get_current_connection(request)
+                    unique_datahub_id = f"{property_data.get('name', '')}_{current_connection.name}" if current_connection else property_data.get('name', '')
+                    
                     StructuredProperty.objects.create(
-                        datahub_id=property_data.get('name', ''),
+                        datahub_id=unique_datahub_id,  # Make datahub_id unique instead
                         name=property_data.get('qualified_name', ''),
-                        qualified_name=property_data.get('qualified_name', ''),
+                        qualified_name=base_qualified_name,  # Keep original qualified_name
                         description=property_data.get('description', ''),
-                        value_type=property_data.get('value_type', 'STRING'),
+                        value_type=_process_value_type(property_data.get('value_type', 'STRING')),
                         cardinality=property_data.get('cardinality', 'SINGLE'),
                         entity_types=property_data.get('entity_types', []),
                         urn=property_data.get('urn', ''),
+                        connection=current_connection,  # Set connection
                     )
                     imported_count += 1
                     

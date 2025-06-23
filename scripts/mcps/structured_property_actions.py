@@ -57,11 +57,14 @@ def add_structured_property_to_staged_changes(
     custom_aspects: Optional[Dict[str, Any]] = None,
     environment: str = "dev",
     owner: str = "admin",
-    base_dir: str = "metadata",
+    base_dir: Optional[str] = None,
+    mutation_name: Optional[str] = None,
     **kwargs
 ) -> Dict[str, Any]:
     """
-    Add a structured property to staged changes with comprehensive MCP generation.
+    Add a structured property to staged changes by creating a single MCP file containing all MCPs.
+    This follows the same pattern as tags - creates metadata-manager/{environment}/structured_properties/mcp_file.json
+    containing a simple list of MCPs.
     
     Args:
         property_id: Unique identifier for the structured property
@@ -81,7 +84,8 @@ def add_structured_property_to_staged_changes(
         custom_aspects: Custom aspects dictionary
         environment: Environment name for URN generation
         owner: Owner username
-        base_dir: Base directory for metadata files
+        base_dir: Optional base directory (defaults to metadata-manager/{environment}/structured_properties in repo root)
+        mutation_name: Optional mutation name for deterministic URN generation
         **kwargs: Additional arguments
     
     Returns:
@@ -93,8 +97,68 @@ def add_structured_property_to_staged_changes(
         # Generate structured property URN
         property_urn = f"urn:li:structuredProperty:{property_id}"
         
+        # Determine output directory - use repo root metadata-manager instead of web_ui/metadata-manager
+        if base_dir:
+            output_dir = base_dir
+        else:
+            # Find repository root by looking for characteristic files
+            current_dir = os.path.abspath(os.getcwd())
+            repo_root = None
+            
+            # Search upwards for the repository root (look for README.md and scripts/ directory)
+            search_dir = current_dir
+            for _ in range(10):  # Limit search to avoid infinite loop
+                if (os.path.exists(os.path.join(search_dir, "README.md")) and 
+                    os.path.exists(os.path.join(search_dir, "scripts")) and
+                    os.path.exists(os.path.join(search_dir, "web_ui"))):
+                    repo_root = search_dir
+                    break
+                parent_dir = os.path.dirname(search_dir)
+                if parent_dir == search_dir:  # Reached filesystem root
+                    break
+                search_dir = parent_dir
+            
+            # Fallback: try to calculate from __file__ path
+            if not repo_root:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                if "scripts/mcps" in script_dir:
+                    repo_root = os.path.dirname(os.path.dirname(script_dir))
+                else:
+                    # Last resort: assume we're in a subdirectory and go up
+                    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+            
+            output_dir = os.path.join(repo_root, "metadata-manager", environment, "structured_properties")
+            logger.debug(f"Calculated repo root: {repo_root}, output dir: {output_dir}")
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Use constant filename
+        mcp_file_path = os.path.join(output_dir, "mcp_file.json")
+        
+        # Load existing MCP file or create new list - should be a simple list of MCPs
+        existing_mcps = []
+        if os.path.exists(mcp_file_path):
+            try:
+                with open(mcp_file_path, "r") as f:
+                    file_content = json.load(f)
+                    # Handle both old format (with metadata wrapper) and new format (simple list)
+                    if isinstance(file_content, list):
+                        existing_mcps = file_content
+                    elif isinstance(file_content, dict) and "mcps" in file_content:
+                        # Migrate from old format - extract just the MCPs
+                        existing_mcps = file_content["mcps"]
+                        logger.info(f"Migrating from old format - extracted {len(existing_mcps)} MCPs")
+                    else:
+                        logger.warning(f"Unknown MCP file format, starting fresh")
+                        existing_mcps = []
+                logger.info(f"Loaded existing MCP file with {len(existing_mcps)} existing MCPs")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
+                existing_mcps = []
+        
         # Create MCPs using the comprehensive function
-        mcps = create_structured_property_staged_changes(
+        new_mcps = create_structured_property_staged_changes(
             property_urn=property_urn,
             qualified_name=qualified_name,
             display_name=display_name,
@@ -113,7 +177,7 @@ def add_structured_property_to_staged_changes(
             **kwargs
         )
         
-        if not mcps:
+        if not new_mcps:
             return {
                 "success": False,
                 "message": "Failed to create structured property MCPs",
@@ -122,22 +186,33 @@ def add_structured_property_to_staged_changes(
                 "files_saved": []
             }
         
-        # Save MCPs to single file
-        from scripts.mcps.create_structured_property_mcps import save_structured_property_to_single_file
-        saved_file = save_structured_property_to_single_file(
-            mcps=mcps,
-            base_directory=base_dir,
-            entity_id=property_id
-        )
+        # Remove any existing MCPs for this property URN to avoid duplicates
+        existing_mcps = [
+            mcp for mcp in existing_mcps 
+            if mcp.get("entityUrn") != property_urn
+        ]
+        
+        # Add new MCPs to the list
+        existing_mcps.extend(new_mcps)
+        
+        # Save updated MCP file as a simple list (like tags)
+        from scripts.mcps.create_structured_property_mcps import save_mcp_to_file
+        mcp_saved = save_mcp_to_file(existing_mcps, mcp_file_path)
+        
+        files_saved = []
+        if mcp_saved:
+            files_saved.append(mcp_file_path)
+        
+        logger.info(f"Successfully added structured property '{display_name or property_id}' to staged changes with {len(new_mcps)} MCPs. Total MCPs in file: {len(existing_mcps)}")
         
         return {
             "success": True,
-            "message": f"Successfully created {len(mcps)} MCPs for structured property {property_id}",
+            "message": f"Successfully created {len(new_mcps)} MCPs for structured property {property_id}",
             "property_id": property_id,
             "property_urn": property_urn,
-            "mcps_created": len(mcps),
-            "files_saved": [saved_file] if saved_file else [],
-            "aspects_included": [mcp.get("aspectName", "unknown") for mcp in mcps]
+            "mcps_created": len(new_mcps),
+            "files_saved": files_saved,
+            "aspects_included": [mcp.get("aspectName", "unknown") for mcp in new_mcps]
         }
         
     except Exception as e:
@@ -214,7 +289,7 @@ def add_structured_property_to_staged_changes_legacy(
         custom_aspects=custom_aspects,
         environment=environment,
         owner=owner,
-        base_dir=os.path.join(base_dir, environment, "structured_properties")
+        base_dir=None  # Let the function calculate the correct path
     )
     
     if result.get("success"):
