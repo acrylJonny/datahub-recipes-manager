@@ -57,7 +57,7 @@ def add_domain_to_staged_changes(
     custom_aspects: Optional[Dict[str, Any]] = None,
     environment: str = "dev",
     owner: str = "admin",
-    base_dir: str = "metadata",
+    base_dir: str = "metadata-manager",
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -93,6 +93,9 @@ def add_domain_to_staged_changes(
         # Generate domain URN
         domain_urn = f"urn:li:domain:{domain_id}"
         
+        # Extract mutation_name from kwargs if provided, otherwise use environment
+        mutation_name = kwargs.pop('mutation_name', environment)
+        
         # Create MCPs using the new comprehensive function
         mcps = create_domain_staged_changes(
             domain_urn=domain_urn,
@@ -110,6 +113,8 @@ def add_domain_to_staged_changes(
             parent_domain=parent_domain,
             include_all_aspects=include_all_aspects,
             custom_aspects=custom_aspects,
+            environment=environment,
+            mutation_name=mutation_name,
             **kwargs
         )
         
@@ -122,12 +127,84 @@ def add_domain_to_staged_changes(
                 "files_saved": []
             }
         
-        # Save MCPs to files
-        saved_files = save_mcps_to_files(
-            mcps=mcps,
-            base_directory=base_dir,
-            entity_id=domain_id
-        )
+        # Determine output directory - use repo root metadata-manager instead of web_ui/metadata-manager
+        if base_dir == "metadata-manager":
+            # Find repository root by looking for characteristic files
+            current_dir = os.path.abspath(os.getcwd())
+            repo_root = None
+            
+            # Search upwards for the repository root (look for README.md and scripts/ directory)
+            search_dir = current_dir
+            for _ in range(10):  # Limit search to avoid infinite loop
+                if (os.path.exists(os.path.join(search_dir, "README.md")) and 
+                    os.path.exists(os.path.join(search_dir, "scripts")) and
+                    os.path.exists(os.path.join(search_dir, "web_ui"))):
+                    repo_root = search_dir
+                    break
+                parent_dir = os.path.dirname(search_dir)
+                if parent_dir == search_dir:  # Reached filesystem root
+                    break
+                search_dir = parent_dir
+            
+            # Fallback: try to calculate from __file__ path
+            if not repo_root:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                if "scripts/mcps" in script_dir:
+                    repo_root = os.path.dirname(os.path.dirname(script_dir))
+                else:
+                    # Last resort: assume we're in a subdirectory and go up
+                    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+            
+            output_dir = os.path.join(repo_root, "metadata-manager", environment, "domains")
+            logger.debug(f"Calculated repo root: {repo_root}, output dir: {output_dir}")
+        else:
+            output_dir = os.path.join(base_dir, environment, "domains")
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Use constant filename like tags and structured properties
+        mcp_file_path = os.path.join(output_dir, "mcp_file.json")
+        
+        # Load existing MCP file or create new list - should be a simple list of MCPs
+        existing_mcps = []
+        if os.path.exists(mcp_file_path):
+            try:
+                with open(mcp_file_path, "r") as f:
+                    file_content = json.load(f)
+                    # Handle both old format (with metadata wrapper) and new format (simple list)
+                    if isinstance(file_content, list):
+                        existing_mcps = file_content
+                    elif isinstance(file_content, dict) and "mcps" in file_content:
+                        # Migrate from old format - extract just the MCPs
+                        existing_mcps = file_content["mcps"]
+                        logger.info(f"Migrating from old format - extracted {len(existing_mcps)} MCPs")
+                    else:
+                        logger.warning(f"Unknown MCP file format, starting fresh")
+                        existing_mcps = []
+                logger.info(f"Loaded existing MCP file with {len(existing_mcps)} existing MCPs")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
+                existing_mcps = []
+        
+        # Remove any existing MCPs for this domain URN to avoid duplicates
+        existing_mcps = [
+            mcp for mcp in existing_mcps 
+            if mcp.get("entityUrn") != domain_urn
+        ]
+        
+        # Add new MCPs to the list
+        existing_mcps.extend(mcps)
+        
+        # Save updated MCP file as a simple list (like tags and structured properties)
+        try:
+            with open(mcp_file_path, 'w') as f:
+                json.dump(existing_mcps, f, indent=2)
+            logger.info(f"Saved MCP file with {len(existing_mcps)} MCPs to: {mcp_file_path}")
+            saved_files = [mcp_file_path]
+        except Exception as e:
+            logger.error(f"Failed to save MCP file: {e}")
+            saved_files = []
         
         return {
             "success": True,
@@ -136,7 +213,11 @@ def add_domain_to_staged_changes(
             "domain_urn": domain_urn,
             "mcps_created": len(mcps),
             "files_saved": saved_files,
-            "aspects_included": [mcp.aspectName if hasattr(mcp, 'aspectName') else mcp.get("aspectName", "unknown") for mcp in mcps]
+            "aspects_included": [
+                mcp.get("aspectName", "unknown") if isinstance(mcp, dict)
+                else getattr(mcp, "aspectName", "unknown")
+                for mcp in mcps
+            ]
         }
         
     except Exception as e:
@@ -213,7 +294,7 @@ def add_domain_to_staged_changes_legacy(
         custom_aspects=custom_aspects,
         environment=environment,
         owner=owner,
-        base_dir=os.path.join(base_dir, environment, "domains")
+        base_dir="metadata-manager"
     )
     
     # Convert to legacy format (file paths only)

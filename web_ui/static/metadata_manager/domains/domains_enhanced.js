@@ -364,10 +364,32 @@ function calculateHierarchy() {
 function processTabHierarchy(items, dataAccessType) {
     if (!items || items.length === 0) return;
     
+    console.log(`[DEBUG] Processing hierarchy for ${items.length} items with dataAccessType: ${dataAccessType}`);
+    
     // Create lookup maps and extract parent URNs
     const domainLookup = new Map();
     const childrenMap = new Map();
     const rootDomains = [];
+    
+    // Build a URN mapping for parent resolution (DataHub ID URN -> Deterministic URN)
+    const urnMapping = new Map();
+    items.forEach(item => {
+        const domain = dataAccessType === 'combined' ? (item.combined || item) : item;
+        // Map both ways: deterministic URN and any DataHub ID URN if available
+        urnMapping.set(domain.urn, domain.urn);
+        
+        // If this is a combined domain, check if we have a DataHub ID we can map
+        if (dataAccessType === 'combined' && item.local && item.local.datahub_id) {
+            const datahubUrn = `urn:li:domain:${item.local.datahub_id}`;
+            urnMapping.set(datahubUrn, domain.urn);
+        }
+        // Also check remote data for DataHub URN
+        if (dataAccessType === 'combined' && item.remote && item.remote.urn) {
+            urnMapping.set(item.remote.urn, domain.urn);
+        }
+    });
+    
+    console.log(`[DEBUG] Built URN mapping with ${urnMapping.size} entries`);
     
     // First pass: build lookup map and extract parent URNs
     items.forEach(item => {
@@ -382,8 +404,17 @@ function processTabHierarchy(items, dataAccessType) {
             parentUrn = domain.parent_urn;
         }
         
-        // Store the extracted parent URN back on the domain
+        // Resolve parent URN using our mapping (DataHub ID URN -> Deterministic URN)
+        if (parentUrn && urnMapping.has(parentUrn)) {
+            parentUrn = urnMapping.get(parentUrn);
+        }
+        
+        // Store the resolved parent URN back on the domain
         domain.parent_urn = parentUrn;
+        
+        if (dataAccessType === 'combined') {
+            console.log(`[DEBUG] ${dataAccessType} - Domain: ${domain.name}, URN: ${domain.urn}, Parent URN: ${parentUrn} ${parentUrn !== domain.parent_urn ? `(resolved from ${domain.parent_urn})` : ''}`);
+        }
         
         // Build children map and identify roots
         if (parentUrn) {
@@ -397,6 +428,8 @@ function processTabHierarchy(items, dataAccessType) {
         }
     });
     
+    console.log(`[DEBUG] ${dataAccessType} - Found ${rootDomains.length} root domains and ${childrenMap.size} parent-child relationships`);
+    
     // Build hierarchy starting from root domains
     const hierarchyOrder = [];
     
@@ -406,6 +439,10 @@ function processTabHierarchy(items, dataAccessType) {
         domain.has_children = childrenMap.has(domain.urn);
         domain.is_expanded = false; // Default collapsed
         domain.is_last_child = isLastChild;
+        
+        if (dataAccessType === 'combined' && level > 0) {
+            console.log(`[DEBUG] ${dataAccessType} - Setting hierarchy for ${domain.name}: level=${level}, has_children=${domain.has_children}, parent_urn=${domain.parent_urn}`);
+        }
         
         // Add to hierarchy order
         hierarchyOrder.push(domain);
@@ -424,6 +461,8 @@ function processTabHierarchy(items, dataAccessType) {
         addDomainToHierarchy(rootDomain, 0, isLastRoot);
     });
     
+    console.log(`[DEBUG] ${dataAccessType} - Built hierarchy with ${hierarchyOrder.length} domains`);
+    
     // Rebuild items array in hierarchy order
     if (hierarchyOrder.length > 0) {
         // Store reference to original items before clearing
@@ -439,6 +478,18 @@ function processTabHierarchy(items, dataAccessType) {
                     return itemDomain.urn === domain.urn;
                 });
                 if (originalItem) {
+                    // Transfer hierarchy properties to the combined data
+                    if (originalItem.combined) {
+                        originalItem.combined.hierarchy_level = domain.hierarchy_level;
+                        originalItem.combined.has_children = domain.has_children;
+                        originalItem.combined.is_expanded = domain.is_expanded;
+                        originalItem.combined.is_last_child = domain.is_last_child;
+                        originalItem.combined.parent_urn = domain.parent_urn;
+                        
+                        if (domain.hierarchy_level > 0) {
+                            console.log(`[DEBUG] Transferred hierarchy to combined data for ${originalItem.combined.name}: level=${originalItem.combined.hierarchy_level}, parent_urn=${originalItem.combined.parent_urn}`);
+                        }
+                    }
                     items.push(originalItem);
                 } else {
                     // Create wrapper for combined access
@@ -629,20 +680,19 @@ function renderDomainRow(domain, tabType) {
     // Domain icon and color
     const iconName = domainData.icon_name || 'folder';
     const iconStyle = domainData.icon_style || 'solid';
-    const iconLibrary = domainData.icon_library || 'font-awesome';
+    const iconLibrary = domainData.icon_library || 'MATERIAL';
     const colorHex = domainData.color_hex || '#6c757d';
     
-    // Hierarchy support
+    // Hierarchy support - use calculated values from hierarchy processing
     const level = domainData.hierarchy_level || 0;
     const hasChildren = domainData.has_children || false;
     const isExpanded = domainData.is_expanded || false;
-            // Extract parent URN from parentDomains structure
-            let parentUrn = null;
-            if (domainData.parentDomains && domainData.parentDomains.domains && domainData.parentDomains.domains.length > 0) {
-                parentUrn = domainData.parentDomains.domains[0].urn;
-            } else if (domainData.parent_urn) {
-                parentUrn = domainData.parent_urn;
-            }
+    const parentUrn = domainData.parent_urn;
+    
+    // Debug logging for synced tab
+    if (tabType === 'synced' && (level > 0 || hasChildren)) {
+        console.log(`[DEBUG] Rendering ${tabType} domain: ${name}, level=${level}, hasChildren=${hasChildren}, parentUrn=${parentUrn}`);
+    }
     
     const statusBadgeClass = getStatusBadgeClass(status);
     const actionButtons = getActionButtons(domainData, tabType);
@@ -669,7 +719,7 @@ function renderDomainRow(domain, tabType) {
     }
     
     // Build domain icon
-    const iconClass = iconLibrary === 'font-awesome' ? `fas fa-${iconName}` : iconName;
+    const iconClass = iconLibrary === 'MATERIAL' ? `fas fa-${iconName}` : `fas fa-${iconName}`;
     const domainIcon = `
         <div class="domain-icon" style="background-color: ${colorHex}; color: white;">
             <i class="${iconClass}"></i>
@@ -1232,12 +1282,12 @@ function showDomainDetails(domain) {
             let ownersHTML = `
                 <div class="mb-3">
                     <h6 class="text-primary mb-2">
-                        <i class="fas fa-crown me-1"></i>Domain Owners
+                        <i class="material-icons me-1">account_tree</i>Domain Owners
                     </h6>
                     <div class="ms-3">
                         ${domain.owner_names.map(owner => `
                             <div class="d-flex align-items-center mb-1">
-                                <i class="fas fa-user text-muted me-2"></i>
+                                <i class="material-icons text-muted me-2">person</i>
                                 <span>${escapeHtml(owner)}</span>
                             </div>
                         `).join('')}
@@ -1257,7 +1307,7 @@ function showDomainDetails(domain) {
     
     if (iconElement || colorElement || createdElement) {
         const iconName = domain.icon_name || 'folder';
-        const iconClass = domain.icon_library === 'font-awesome' ? `fas fa-${iconName}` : iconName;
+        const iconClass = domain.icon_library === 'MATERIAL' ? `${iconName}` : iconName;
         const colorHex = domain.color_hex || '#6c757d';
         
         if (iconElement) iconElement.innerHTML = `<i class="${iconClass}"></i> ${iconName}`;
@@ -2497,18 +2547,29 @@ function collapseAllDomains() {
 }
 
 function applyCurrentExpansionState() {
+    console.log('[DEBUG] Applying current expansion state...');
+    
     // Hide all child domains initially (they should be collapsed by default)
     const childRows = document.querySelectorAll('tr[data-level]:not([data-level="0"])');
+    console.log(`[DEBUG] Found ${childRows.length} child rows to hide`);
+    
     childRows.forEach(row => {
+        const level = row.getAttribute('data-level');
+        const urn = row.getAttribute('data-urn');
+        const parentUrn = row.getAttribute('data-parent');
+        console.log(`[DEBUG] Hiding child row: level=${level}, urn=${urn}, parent=${parentUrn}`);
         row.style.display = 'none';
     });
     
     // Then show children of expanded domains
     const expandedButtons = document.querySelectorAll('.expand-button .fa-chevron-down');
+    console.log(`[DEBUG] Found ${expandedButtons.length} expanded buttons`);
+    
     expandedButtons.forEach(icon => {
         const button = icon.closest('.expand-button');
         const row = button.closest('tr');
         const domainUrn = row.getAttribute('data-urn');
+        console.log(`[DEBUG] Showing children for expanded domain: ${domainUrn}`);
         if (domainUrn) {
             showChildrenDomains(domainUrn);
         }
@@ -2566,7 +2627,7 @@ function showDomainViewModal(domain) {
     
     // Icon
     if (domain.icon_name) {
-        const iconLibrary = domain.icon_library === 'font-awesome' ? 'fas' : 'fab';
+        const iconLibrary = domain.icon_library === 'MATERIAL' ? 'MATERIAL' : 'MATERIAL';
         const iconStyle = domain.icon_style || 'solid';
         iconElement.innerHTML = `<i class="${iconLibrary} fa-${domain.icon_name}"></i> ${domain.icon_name}`;
     } else {

@@ -1382,32 +1382,15 @@ function setupBulkSelectionForTab(tabType) {
  * @param {Object} property - The property object
  */
 function addPropertyToStagedChanges(property) {
-    const propertyData = property.combined || property;
-    const propertyId = getDatabaseId(propertyData);
-    
-    // Handle remote-only properties: first sync to local, then add to staged changes
-    if (!propertyId && propertyData.urn) {
-        showNotification('info', 'Syncing remote property to local first, then adding to staged changes...');
-        
-        // First sync the property to local
-        syncPropertyToLocal(property, function(syncedProperty) {
-            // After successful sync, add the synced property to staged changes
-            if (syncedProperty && syncedProperty.id) {
-                addPropertyToStagedChangesInternal(syncedProperty);
-            } else {
-                showNotification('error', 'Failed to sync property to local');
-            }
-        });
-        return;
-    }
-    
-    if (!propertyId) {
-        showNotification('error', 'Cannot add property to staged changes: No database ID found');
-        return;
-    }
-    
-    // For local properties, add directly to staged changes
-    addPropertyToStagedChangesInternal(propertyData);
+    // Always sync to local first, then add to staged changes
+    showNotification('info', 'Syncing property to local first, then adding to staged changes...');
+    syncPropertyToLocal(property, function(syncedProperty) {
+        if (syncedProperty && syncedProperty.id) {
+            addPropertyToStagedChangesInternal(syncedProperty);
+        } else {
+            showNotification('error', 'Failed to sync property to local');
+        }
+    });
 }
 
 function addPropertyToStagedChangesInternal(propertyData) {
@@ -1796,7 +1779,7 @@ function addPropertyToPR(propertyId) {
 }
 
 function addRemotePropertyToPR(propertyUrn) {
-    console.log('Adding remote property to PR:', propertyUrn);
+    console.log('Adding remote property to staged changes:', propertyUrn);
     
     fetch('/metadata/properties/add-remote-to-pr/', {
         method: 'POST',
@@ -1815,8 +1798,42 @@ function addRemotePropertyToPR(propertyUrn) {
         }
     })
     .catch(error => {
-        console.error('Error adding property to PR:', error);
-        showNotification('error', 'Failed to add property to PR');
+        console.error('Error adding property to staged changes:', error);
+        showNotification('error', 'Failed to add property to staged changes');
+    });
+}
+
+function addRemotePropertyToStagedChanges(property) {
+    console.log('Adding remote property to staged changes:', property);
+    
+    const currentEnvironment = getCurrentEnvironment();
+    const mutationName = getCurrentMutationName();
+    
+    const payload = {
+        item_data: property,
+        environment: currentEnvironment,
+        mutation_name: mutationName
+    };
+    
+    fetch('/metadata/properties/remote/stage_changes/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showNotification('success', data.message);
+        } else {
+            showNotification('error', data.error || 'Failed to add remote property to staged changes');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding remote property to staged changes:', error);
+        showNotification('error', 'Failed to add remote property to staged changes');
     });
 }
 
@@ -2059,6 +2076,30 @@ function deleteRemoteProperty(propertyUrn) {
 
 function getCSRFToken() {
     return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+function getCurrentEnvironment() {
+    // Try to get from dropdown first
+    const environmentSelect = document.getElementById('environment-select');
+    if (environmentSelect) {
+        return environmentSelect.value || 'dev';
+    }
+    
+    // Fallback to data attribute or default
+    const container = document.querySelector('[data-environment]');
+    return container ? container.dataset.environment : 'dev';
+}
+
+function getCurrentMutationName() {
+    // Try to get from input first
+    const mutationInput = document.getElementById('mutation-name');
+    if (mutationInput) {
+        return mutationInput.value;
+    }
+    
+    // Fallback to data attribute
+    const container = document.querySelector('[data-mutation-name]');
+    return container ? container.dataset.mutationName : null;
 }
 
 function showNotification(type, message) {
@@ -2479,10 +2520,6 @@ function bulkAddToPR(tabType) {
             JSON.parse(checkbox.getAttribute('data-property') || '{}')
         );
         
-        // Separate remote-only properties from local properties
-        const localProperties = properties.filter(prop => getDatabaseId(prop.combined || prop));
-        const remoteProperties = properties.filter(prop => !getDatabaseId(prop.combined || prop) && (prop.urn || (prop.combined && prop.combined.urn)));
-        
         let processedCount = 0;
         const totalCount = properties.length;
         
@@ -2495,27 +2532,16 @@ function bulkAddToPR(tabType) {
             }
         };
         
-        // Process local properties directly
-        localProperties.forEach(property => {
-            addPropertyToStagedChangesInternal(property.combined || property);
-            updateProgress();
-        });
-        
-        // Process remote properties: sync first, then add to staged changes
-        if (remoteProperties.length > 0) {
-            showNotification('info', `Processing ${remoteProperties.length} remote properties - syncing to local first...`);
-            
-            let syncedCount = 0;
-            remoteProperties.forEach(property => {
-                syncPropertyToLocal(property, (syncedProperty) => {
-                    if (syncedProperty && syncedProperty.id) {
-                        addPropertyToStagedChangesInternal(syncedProperty);
-                        syncedCount++;
-                    }
-                    updateProgress();
-                });
+        // Always sync each property, then add to staged changes
+        showNotification('info', `Syncing and staging ${totalCount} properties...`);
+        properties.forEach(property => {
+            syncPropertyToLocal(property, (syncedProperty) => {
+                if (syncedProperty && syncedProperty.id) {
+                    addPropertyToStagedChangesInternal(syncedProperty);
+                }
+                updateProgress();
             });
-        }
+        });
     }
 }
 

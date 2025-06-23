@@ -115,6 +115,11 @@ urlpatterns = [
         name="property_add_to_staged_changes",
     ),
     path(
+        "properties/remote/stage_changes/",
+        views_properties.PropertyRemoteAddToStagedChangesView.as_view(),
+        name="property_remote_add_to_staged_changes",
+    ),
+    path(
         "properties/<uuid:property_id>/download/",
         views_properties.PropertyDownloadJsonView.as_view(),
         name="property_download_json",

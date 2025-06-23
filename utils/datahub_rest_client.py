@@ -3967,6 +3967,58 @@ class DataHubRestClient:
             self.logger.error(f"Error removing tag owner: {str(e)}")
             return False
 
+    def create_domain(self, domain_id: str, name: str, description: str = "", parent_domain_urn: str = None) -> Optional[str]:
+        """
+        Create a new domain in DataHub.
+
+        Args:
+            domain_id (str): Domain ID (will be used to construct URN)
+            name (str): Domain name
+            description (str): Domain description
+            parent_domain_urn (str): Parent domain URN (optional)
+
+        Returns:
+            str: Domain URN if successful, None otherwise
+        """
+        self.logger.info(f"Creating domain: {name} with ID: {domain_id}")
+
+        mutation = """
+        mutation createDomain($input: CreateDomainInput!) {
+          createDomain(input: $input)
+        }
+        """
+
+        input_data = {
+            "id": domain_id,
+            "name": name,
+            "description": description
+        }
+        
+        if parent_domain_urn:
+            input_data["parentDomain"] = parent_domain_urn
+
+        variables = {"input": input_data}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "createDomain" in result["data"]:
+                domain_urn = result["data"]["createDomain"]
+                if domain_urn:
+                    self.logger.info(f"Successfully created domain {name} with URN: {domain_urn}")
+                    return domain_urn
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(f"GraphQL errors when creating domain: {', '.join(error_messages)}")
+
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating domain: {str(e)}")
+            return None
+
     def update_domain_description(self, domain_urn: str, description: str) -> bool:
         """
         Update the description of a domain.

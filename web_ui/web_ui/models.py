@@ -1950,11 +1950,8 @@ class GitIntegration:
             ):
                 logger.info(f"Exporting domain: {instance_or_template.name}")
 
-                # Get environment (use domain's environment if set, otherwise default)
-                if instance_or_template.environment:
-                    environment = instance_or_template.environment.name.lower()
-                else:
-                    environment = Environment.get_default().name.lower()
+                # Get environment from current application context
+                environment = Environment.get_default().name.lower()
 
                 # Create metadata-manager directory structure
                 metadata_manager_dir = base_dir / "metadata-manager" / environment / "domains"
@@ -2063,11 +2060,8 @@ class GitIntegration:
             ):
                 logger.info(f"Exporting domain: {instance_or_template.name}")
 
-                # Get environment (use domain's environment if set, otherwise default)
-                if instance_or_template.environment:
-                    environment = instance_or_template.environment.name.lower()
-                else:
-                    environment = Environment.get_default().name.lower()
+                # Get environment from current application context
+                environment = Environment.get_default().name.lower()
 
                 # Create metadata-manager directory structure
                 metadata_manager_dir = base_dir / "metadata-manager" / environment / "domains"

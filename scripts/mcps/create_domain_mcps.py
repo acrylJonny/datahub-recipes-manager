@@ -122,10 +122,10 @@ def create_domain_properties_mcp(
 def create_domain_ownership_mcp(
     domain_id: str,
     owner: str,
-    ownership_type: str = "urn:li:ownershipType:dataowner",
+    ownership_type: str = "urn:li:ownershipType:__system__technical_owner",
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain ownership
     """
@@ -139,11 +139,18 @@ def create_domain_ownership_mcp(
         actor=f"urn:li:corpuser:{owner}"
     )
 
+    # Convert ownership type string to enum
+    try:
+        ownership_type_enum = getattr(OwnershipTypeClass, ownership_type.upper())
+    except AttributeError:
+        # Fallback to DATAOWNER if the type is not recognized
+        ownership_type_enum = OwnershipTypeClass.DATAOWNER
+
     ownership = OwnershipClass(
         owners=[
             OwnerClass(
                 owner=f"urn:li:corpuser:{owner}",
-                type=OwnershipTypeClass.from_string(ownership_type),
+                type=ownership_type_enum,
                 source=None
             )
         ],
@@ -158,7 +165,7 @@ def create_domain_ownership_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_status_mcp(
@@ -166,7 +173,7 @@ def create_domain_status_mcp(
     removed: bool = False,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain status (soft delete)
     """
@@ -184,7 +191,7 @@ def create_domain_status_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_global_tags_mcp(
@@ -193,7 +200,7 @@ def create_domain_global_tags_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain global tags
     """
@@ -220,7 +227,7 @@ def create_domain_global_tags_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_glossary_terms_mcp(
@@ -229,7 +236,7 @@ def create_domain_glossary_terms_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain glossary terms associations
     """
@@ -266,7 +273,7 @@ def create_domain_glossary_terms_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_browse_paths_mcp(
@@ -301,7 +308,7 @@ def create_domain_institutional_memory_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain institutional memory
     """
@@ -333,7 +340,7 @@ def create_domain_institutional_memory_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_structured_properties_mcp(
@@ -342,7 +349,7 @@ def create_domain_structured_properties_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain structured properties
     """
@@ -375,7 +382,7 @@ def create_domain_structured_properties_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_forms_mcp(
@@ -384,7 +391,7 @@ def create_domain_forms_mcp(
     mutation_name: Optional[str] = None,
     incomplete_forms: List[str] = None,
     completed_forms: List[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain forms
     """
@@ -424,7 +431,7 @@ def create_domain_forms_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_test_results_mcp(
@@ -434,7 +441,7 @@ def create_domain_test_results_mcp(
     mutation_name: Optional[str] = None,
     failing_tests: List[str] = None,
     passing_tests: List[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain test results
     """
@@ -481,7 +488,7 @@ def create_domain_test_results_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def create_domain_display_properties_mcp(
@@ -492,7 +499,7 @@ def create_domain_display_properties_mcp(
     icon_style: Optional[str] = None,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> MetadataChangeProposalWrapper:
     """
     Create an MCP for domain display properties
     """
@@ -521,7 +528,7 @@ def create_domain_display_properties_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp.to_obj()
+    return mcp
 
 
 def save_mcp_to_file(mcp: Dict[str, Any], output_path: str, enable_dedup: bool = True) -> bool:
@@ -596,51 +603,148 @@ def _remove_timestamp_fields(mcp: Dict[str, Any]) -> None:
                         _remove_timestamp_fields(item)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create Domain MCPs")
-    parser.add_argument("--domain-id", required=True, help="Domain ID")
-    parser.add_argument("--domain-name", required=True, help="Domain name")
-    parser.add_argument("--owner", required=True, help="Owner username")
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description="Create MCP files for domains")
+    parser.add_argument("domain_id", help="Domain ID")
+    parser.add_argument("--name", help="Domain name (defaults to domain_id)")
     parser.add_argument("--description", help="Domain description")
-    parser.add_argument("--environment", help="Environment name")
-    parser.add_argument("--mutation-name", help="Mutation name")
-    parser.add_argument("--output-dir", default="metadata/domains", help="Output directory")
-    parser.add_argument("--log-level", default="INFO", help="Log level")
+    parser.add_argument("--owner", default="admin", help="Owner username")
+    parser.add_argument("--environment", default="dev", help="Environment name")
+    parser.add_argument("--mutation-name", help="Mutation name for URN generation")
+    parser.add_argument("--output-dir", help="Output directory")
+    parser.add_argument("--log-level", default="INFO", help="Logging level")
+    parser.add_argument("--parent-domain", help="Parent domain URN")
+    parser.add_argument("--color-hex", help="Domain color in hex format")
+    parser.add_argument("--icon-name", help="Icon name")
+    parser.add_argument("--icon-style", default="solid", help="Icon style")
+    parser.add_argument("--icon-library", default="material", help="Icon library")
     
-    args = parser.parse_args()
-    
+    return parser.parse_args()
+
+
+def main():
+    """Main function"""
+    args = parse_args()
     setup_logging(args.log_level)
     
-    # Create domain properties MCP
-    domain_properties_mcp = create_domain_properties_mcp(
-        domain_id=args.domain_id,
-        domain_name=args.domain_name,
+    domain_id = args.domain_id
+    domain_name = args.name or domain_id
+    
+    # Use mutation name if available, otherwise fall back to environment
+    mutation_name = args.mutation_name or args.environment
+    env_name = args.environment or args.mutation_name or "default"
+    
+    # Determine output directory
+    if args.output_dir:
+        output_dir = args.output_dir
+    else:
+        # Default to metadata-manager/ENVIRONMENT/domains/
+        output_dir = os.path.join(
+            "metadata-manager", 
+            env_name, 
+            "domains"
+        )
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate a filename-safe version of the domain_id
+    safe_domain_id = domain_id.replace(" ", "_").lower()
+    
+    # Create properties MCP
+    logger.info(f"Creating properties MCP for domain '{domain_id}'...")
+    properties_mcp = create_domain_properties_mcp(
+        domain_id=domain_id,
+        domain_name=domain_name,
         owner=args.owner,
         description=args.description,
+        parent_domain_urn=args.parent_domain,
         environment=args.environment,
         mutation_name=args.mutation_name
     )
     
+    # Save properties MCP
+    properties_file = os.path.join(output_dir, f"{safe_domain_id}_properties.json")
+    properties_saved = save_mcp_to_file(properties_mcp, properties_file)
+    
     # Create ownership MCP
+    logger.info(f"Creating ownership MCP for domain '{domain_id}'...")
     ownership_mcp = create_domain_ownership_mcp(
-        domain_id=args.domain_id,
+        domain_id=domain_id,
         owner=args.owner,
         environment=args.environment,
         mutation_name=args.mutation_name
     )
     
-    # Save MCPs
-    os.makedirs(args.output_dir, exist_ok=True)
+    # Save ownership MCP
+    ownership_file = os.path.join(output_dir, f"{safe_domain_id}_ownership.json")
+    ownership_saved = save_mcp_to_file(ownership_mcp.to_obj(), ownership_file)
     
-    properties_path = os.path.join(args.output_dir, f"{args.domain_id}_domain_properties.json")
-    ownership_path = os.path.join(args.output_dir, f"{args.domain_id}_ownership.json")
+    # Create status MCP
+    logger.info(f"Creating status MCP for domain '{domain_id}'...")
+    status_mcp = create_domain_status_mcp(
+        domain_id=domain_id,
+        environment=args.environment,
+        mutation_name=args.mutation_name
+    )
     
-    save_mcp_to_file(domain_properties_mcp, properties_path)
-    save_mcp_to_file(ownership_mcp, ownership_path)
+    # Save status MCP
+    status_file = os.path.join(output_dir, f"{safe_domain_id}_status.json")
+    status_saved = save_mcp_to_file(status_mcp.to_obj(), status_file)
     
-    print(f"Created domain MCPs:")
-    print(f"  - Properties: {properties_path}")
-    print(f"  - Ownership: {ownership_path}")
+    # Create display properties MCP if display properties are provided
+    display_saved = False
+    if args.color_hex or args.icon_name:
+        logger.info(f"Creating display properties MCP for domain '{domain_id}'...")
+        display_mcp = create_domain_display_properties_mcp(
+            domain_id=domain_id,
+            color_hex=args.color_hex,
+            icon_name=args.icon_name,
+            icon_style=args.icon_style,
+            icon_library=args.icon_library,
+            environment=args.environment,
+            mutation_name=args.mutation_name
+        )
+        
+        # Save display properties MCP
+        display_file = os.path.join(output_dir, f"{safe_domain_id}_display_properties.json")
+        display_saved = save_mcp_to_file(display_mcp.to_obj(), display_file)
+    
+    # Log deduplication results
+    files_created = []
+    files_skipped = []
+    
+    if properties_saved:
+        files_created.append("properties")
+    else:
+        files_skipped.append("properties")
+        
+    if ownership_saved:
+        files_created.append("ownership")
+    else:
+        files_skipped.append("ownership")
+        
+    if status_saved:
+        files_created.append("status")
+    else:
+        files_skipped.append("status")
+        
+    if display_saved:
+        files_created.append("display_properties")
+    else:
+        files_skipped.append("display_properties")
+    
+    if files_created:
+        logger.info(f"Created MCP files for domain '{domain_id}': {', '.join(files_created)}")
+    if files_skipped:
+        logger.info(f"Skipped unchanged MCP files for domain '{domain_id}': {', '.join(files_skipped)}")
+    
+    logger.info(f"Domain URN: {generate_deterministic_urn('domain', domain_id, environment=args.environment, mutation_name=args.mutation_name)}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 def create_domain_staged_changes(
@@ -780,6 +884,7 @@ def create_domain_staged_changes(
         mcps.append(display_mcp)
     
     logger.info(f"Created {len(mcps)} MCPs for domain {domain_urn}")
+    logger.info(f"MCPS: {mcps}")
     return mcps
 
 
@@ -789,12 +894,12 @@ def save_mcps_to_files(
     entity_id: str
 ) -> List[str]:
     """
-    Save multiple MCPs to individual files
+    Save multiple MCPs to a single mcp_file.json containing all MCPs as a list
     
     Args:
         mcps: List of MCP dictionaries
         base_directory: Base directory for saving files
-        entity_id: Entity ID for file naming
+        entity_id: Entity ID for deduplication
     
     Returns:
         List of file paths created
@@ -804,13 +909,126 @@ def save_mcps_to_files(
     # Create base directory
     os.makedirs(base_directory, exist_ok=True)
     
-    for mcp in mcps:
-        aspect_name = mcp.get("aspectName", "unknown")
-        filename = f"{entity_id}_{aspect_name}.json"
-        file_path = os.path.join(base_directory, filename)
-        
-        # Save the MCP
-        if save_mcp_to_file(mcp, file_path):
-            saved_files.append(file_path)
+    # Use constant filename
+    mcp_file_path = os.path.join(base_directory, "mcp_file.json")
     
-    return saved_files 
+    # Load existing MCP file or create new list - should be a simple list of MCPs
+    existing_mcps = []
+    if os.path.exists(mcp_file_path):
+        try:
+            with open(mcp_file_path, "r") as f:
+                file_content = json.load(f)
+                # Handle both old format (with metadata wrapper) and new format (simple list)
+                if isinstance(file_content, list):
+                    existing_mcps = file_content
+                elif isinstance(file_content, dict) and "mcps" in file_content:
+                    # Migrate from old format - extract just the MCPs
+                    existing_mcps = file_content["mcps"]
+                    logger.info(f"Migrating from old format - extracted {len(existing_mcps)} MCPs")
+                else:
+                    logger.warning(f"Unknown MCP file format, starting fresh")
+                    existing_mcps = []
+            logger.info(f"Loaded existing MCP file with {len(existing_mcps)} existing MCPs")
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
+            existing_mcps = []
+    
+    # Convert MCPs to dictionaries if needed
+    new_mcps = []
+    for mcp in mcps:
+        if isinstance(mcp, dict):
+            mcp_dict = mcp
+        else:
+            mcp_dict = mcp.to_obj() if hasattr(mcp, "to_obj") else dict(mcp)
+        new_mcps.append(mcp_dict)
+    
+    # Remove any existing MCPs for this domain to avoid duplicates
+    # Get the domain URN from the first MCP
+    domain_entity_urn = None
+    if new_mcps:
+        domain_entity_urn = new_mcps[0].get("entityUrn")
+    
+    if domain_entity_urn:
+        existing_mcps = [
+            mcp for mcp in existing_mcps 
+            if mcp.get("entityUrn") != domain_entity_urn
+        ]
+    
+    # Add new MCPs to the list
+    existing_mcps.extend(new_mcps)
+    
+    # Save updated MCP file as a simple list
+    mcp_saved = save_mcp_to_file(existing_mcps, mcp_file_path)
+    
+    if mcp_saved:
+        saved_files.append(mcp_file_path)
+    
+    logger.info(f"Successfully added domain '{entity_id}' to staged changes with {len(new_mcps)} MCPs. Total MCPs in file: {len(existing_mcps)}")
+    
+    return saved_files
+
+
+def _mcps_are_equal(mcp1: Dict[str, Any], mcp2: Dict[str, Any]) -> bool:
+    """
+    Compare two MCP dictionaries for equality, ignoring timestamp fields
+    
+    Args:
+        mcp1: First MCP dictionary
+        mcp2: Second MCP dictionary
+    
+    Returns:
+        True if MCPs are functionally equivalent, False otherwise
+    """
+    try:
+        # Create deep copies to avoid modifying originals
+        import copy
+        mcp1_copy = copy.deepcopy(mcp1)
+        mcp2_copy = copy.deepcopy(mcp2)
+        
+        # Remove timestamp fields that change on every run
+        _remove_timestamp_fields(mcp1_copy)
+        _remove_timestamp_fields(mcp2_copy)
+        
+        # Compare the sanitized MCPs
+        return mcp1_copy == mcp2_copy
+    except Exception as e:
+        logger.warning(f"Error comparing MCPs: {e}")
+        return False
+
+
+def _remove_timestamp_fields(mcp: Dict[str, Any]) -> None:
+    """
+    Remove timestamp fields from MCP dictionary (modifies in place)
+    
+    Args:
+        mcp: MCP dictionary to modify
+    """
+    try:
+        # Remove common timestamp fields
+        if isinstance(mcp, dict):
+            # Remove auditStamp timestamps
+            if "aspect" in mcp and isinstance(mcp["aspect"], dict):
+                aspect = mcp["aspect"]
+                
+                # Remove timestamps from ownership aspect
+                if "lastModified" in aspect and isinstance(aspect["lastModified"], dict):
+                    if "time" in aspect["lastModified"]:
+                        del aspect["lastModified"]["time"]
+                
+                # Remove timestamps from any other audit stamps
+                for key, value in aspect.items():
+                    if isinstance(value, dict) and "time" in value:
+                        del value["time"]
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, dict) and "time" in item:
+                                del item["time"]
+            
+            # Remove any top-level timestamp fields
+            if "systemMetadata" in mcp and isinstance(mcp["systemMetadata"], dict):
+                if "lastObserved" in mcp["systemMetadata"]:
+                    del mcp["systemMetadata"]["lastObserved"]
+                if "runId" in mcp["systemMetadata"]:
+                    del mcp["systemMetadata"]["runId"]
+    except Exception as e:
+        logger.warning(f"Error removing timestamp fields: {e}")

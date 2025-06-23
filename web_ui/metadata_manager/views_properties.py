@@ -1596,9 +1596,9 @@ def sync_property_to_local(request):
 
 @require_POST
 def add_remote_property_to_pr(request):
-    """AJAX endpoint to add a remote property to a pull request"""
+    """AJAX endpoint to add a remote property to staged changes (simplified)"""
     try:
-        logger.info("Adding remote property to PR")
+        logger.info("Adding remote property to staged changes")
         
         # Get the property URN from the request
         property_urn = request.POST.get("property_urn")
@@ -1610,10 +1610,7 @@ def add_remote_property_to_pr(request):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
-        # Fetch property from DataHub using list method and filter by URN
-        logger.debug(f"Processing remote property URN: {property_urn}")
-        
-        # Get all remote properties and find the one with matching URN
+        # Fetch property from DataHub
         remote_properties = client.list_structured_properties(count=1000)
         remote_property = None
         
@@ -1626,78 +1623,40 @@ def add_remote_property_to_pr(request):
         if not remote_property:
             return JsonResponse({"success": False, "error": "Property not found in DataHub"})
 
-        # Extract property data from remote
-        definition = remote_property.get("definition", {}) or {}
-        settings = remote_property.get("settings", {}) or {}
-        property_name = definition.get("displayName", "Unknown Property")
-
-        # First, sync the property to local if it doesn't exist
-        local_property = StructuredProperty.objects.filter(urn=property_urn).first()
+        # Get current environment and mutation from global state or settings
+        current_environment = getattr(request, 'current_environment', {'name': 'dev'})
+        mutation_name = getattr(current_environment, 'mutation_name', None)
         
-        if not local_property:
-            # Create local property from remote data with unique datahub_id
-            base_qualified_name = definition.get("qualifiedName", property_name)
-            unique_datahub_id = f"{base_qualified_name}_{current_connection.name}" if current_connection else base_qualified_name
-            
-            local_property = StructuredProperty.objects.create(
-                datahub_id=unique_datahub_id,  # Make datahub_id unique instead
-                name=property_name,
-                description=definition.get("description", ""),
-                qualified_name=base_qualified_name,  # Keep original qualified_name
-                value_type=_process_value_type(definition.get("valueType", "STRING")),
-                cardinality=definition.get("cardinality", "SINGLE"),
-                urn=property_urn,
-                sync_status="SYNCED",
-                last_synced=timezone.now(),
-                show_in_search_filters=settings.get("showInSearchFilters", True),
-                show_as_asset_badge=settings.get("showAsAssetBadge", True),
-                show_in_asset_summary=settings.get("showInAssetSummary", True),
-                show_in_columns_table=settings.get("showInColumnsTable", False),
-                is_hidden=settings.get("isHidden", False),
-            )
-            logger.info(f"Created local copy of remote property: {property_name}")
+        # Use the remote staging endpoint (like glossary does)
+        import json
+        response = PropertyRemoteAddToStagedChangesView().post(
+            type('MockRequest', (), {
+                'body': json.dumps({
+                    'item_data': remote_property,
+                    'environment': current_environment.get('name', 'dev'),
+                    'mutation_name': mutation_name
+                }).encode(),
+                'user': request.user
+            })()
+        )
         
-        # Now use GitIntegration to add to PR
-        if not GIT_INTEGRATION_AVAILABLE or GitIntegration is None:
-            return JsonResponse(
-                {"success": False, "error": "Git integration not available"}
-            )
-        
-        try:
-            # Get current branch and environment info
-            settings = GitSettings.objects.first()
-            current_branch = settings.current_branch if settings else "main"
-            
-            commit_message = f"Add/update property: {property_name}"
-            
-            # Use GitIntegration to push to git
-            logger.info(f"Staging property {local_property.id} to Git branch {current_branch}")
-            git_integration = GitIntegration()
-            result = git_integration.stage_changes(local_property)
-            
-            if result and result.get("success"):
-                logger.info(f"Successfully staged property {local_property.id} to Git branch {current_branch}")
-                
+        if hasattr(response, 'content'):
+            response_data = json.loads(response.content.decode())
+            if response_data.get('status') == 'success':
                 return JsonResponse({
                     "success": True,
-                    "message": f'Property "{property_name}" staged for commit to branch {current_branch}. You can create a PR from the Git Repository tab.',
-                    "branch": current_branch,
-                    "redirect_url": "/github/repo/"
+                    "message": response_data.get('message', 'Remote property added to staged changes successfully')
                 })
             else:
-                error_message = f'Failed to stage property "{property_name}"'
-                if isinstance(result, dict) and "error" in result:
-                    error_message += f": {result['error']}"
-                
-                logger.error(f"Failed to stage property: {error_message}")
-                return JsonResponse({"success": False, "error": error_message})
-                
-        except Exception as git_error:
-            logger.error(f"Error staging property to git: {str(git_error)}")
-            return JsonResponse({"success": False, "error": f"Git staging failed: {str(git_error)}"})
+                return JsonResponse({
+                    "success": False,
+                    "error": response_data.get('error', 'Failed to add remote property to staged changes')
+                })
+        else:
+            return JsonResponse({"success": False, "error": "Unexpected response format"})
 
     except Exception as e:
-        logger.error(f"Error adding remote property to PR: {str(e)}")
+        logger.error(f"Error adding remote property to staged changes: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
 
 
@@ -2236,3 +2195,101 @@ def filter_properties_by_connection(all_properties, current_connection):
                 properties.append(no_connection_props[0])
     
     return properties
+
+@method_decorator(csrf_exempt, name="dispatch")
+class PropertyRemoteAddToStagedChangesView(View):
+    """API endpoint to add a remote property to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.structured_property_actions import add_structured_property_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            property_data = data.get('item_data')
+            
+            if not property_data:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Property data is required"
+                }, status=400)
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Extract property information from remote data
+            definition = property_data.get("definition", {}) or {}
+            settings = property_data.get("settings", {}) or {}
+            property_urn = property_data.get("urn")
+            
+            if not property_urn:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Property URN is required"
+                }, status=400)
+            
+            # Extract property ID from URN (last part after colon)
+            property_id = property_urn.split(':')[-1] if property_urn else None
+            if not property_id:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not extract property ID from URN"
+                }, status=400)
+            
+            property_name = definition.get("displayName", "Unknown Property")
+            qualified_name = definition.get("qualifiedName", property_name)
+            
+            logger.info(f"Adding remote property '{property_name}' to staged changes...")
+            
+            # Add remote property to staged changes using the simplified function
+            result = add_structured_property_to_staged_changes(
+                property_id=property_id,
+                qualified_name=qualified_name,
+                display_name=property_name,
+                description=definition.get("description", ""),
+                value_type=definition.get("valueType", "STRING"),
+                cardinality=definition.get("cardinality", "SINGLE"),
+                allowedValues=definition.get("allowedValues", []),
+                entity_types=definition.get("entityTypes", []),
+                environment=environment_name,
+                owner=owner
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "success": False,
+                    "error": result.get("message", "Failed to add remote property to staged changes")
+                }, status=500)
+            
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
+            
+            message = f"Remote property added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
+            
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "mcps_created": mcps_created,
+                "property_urn": property_urn
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding remote property to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)

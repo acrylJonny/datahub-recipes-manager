@@ -42,9 +42,18 @@ class DomainListView(View):
         try:
             logger.info("Starting DomainListView.get")
             
-            # Get all local domains (database-only operation)
-            domains = Domain.objects.all().order_by("name")
-            logger.debug(f"Found {domains.count()} total domains")
+            # Get current connection to filter domains by connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+            
+            # Get domains relevant to current connection (database-only operation)
+            # Include: domains with no connection (local-only) + domains with current connection (synced)
+            # BUT: if there's a synced domain for current connection with same datahub_id, hide the other connection's version
+            all_domains = Domain.objects.all().order_by("name")
+            domains = filter_domains_by_connection(all_domains, current_connection)
+            
+            logger.debug(f"Found {len(domains)} domains relevant to current connection")
             
             # Get DataHub connection info (quick test only)
             logger.debug("Testing DataHub connection from DomainListView")
@@ -139,9 +148,9 @@ class DomainListView(View):
                 parent_domain_urn=parent_domain_urn if parent_domain_urn else None,
                 icon_name=icon_name,
                 icon_style="solid",  # Default style
-                icon_library="font-awesome",  # Default library
+                icon_library="MATERIAL",  # Default library
                 color_hex=color_hex,
-                connection=current_connection,
+                connection=None,  # No connection until synced to DataHub
                 ownership_data=ownership_data,
             )
             
@@ -284,7 +293,7 @@ class DomainDetailView(View):
             domain.parent_domain_urn = parent_domain_urn if parent_domain_urn else None
             domain.icon_name = icon_name
             domain.icon_style = "solid"  # Default style
-            domain.icon_library = "font-awesome"  # Default library
+            domain.icon_library = "MATERIAL"  # Default library
             domain.color_hex = color_hex
             domain.ownership_data = ownership_data
             
@@ -655,7 +664,7 @@ class DomainPullView(View):
                             icon_data = display_props.get("icon", {})
                             existing_domain.icon_name = icon_data.get("name")
                             existing_domain.icon_style = icon_data.get("style", "solid")
-                            existing_domain.icon_library = icon_data.get("iconLibrary", "font-awesome")
+                            existing_domain.icon_library = icon_data.get("iconLibrary", "MATERIAL")
                             
                             # Update parent domain
                             parent_domains = domain_data.get("parentDomains", {})
@@ -798,7 +807,7 @@ class DomainPullView(View):
                                 icon_data = display_props.get("icon", {})
                                 existing_domain.icon_name = icon_data.get("name")
                                 existing_domain.icon_style = icon_data.get("style", "solid")
-                                existing_domain.icon_library = icon_data.get("iconLibrary", "font-awesome")
+                                existing_domain.icon_library = icon_data.get("iconLibrary", "MATERIAL")
                                 
                                 # Update parent domain
                                 parent_domains = domain_data.get("parentDomains", {})
@@ -873,7 +882,7 @@ class DomainPullView(View):
                                     color_hex=display_props.get("colorHex"),
                                     icon_name=icon_data.get("name"),
                                     icon_style=icon_data.get("style", "solid"),
-                                    icon_library=icon_data.get("iconLibrary", "font-awesome"),
+                                    icon_library=icon_data.get("iconLibrary", "MATERIAL"),
                                     relationships_count=relationships_count,
                                     entities_count=entities_count,
                                     raw_data=domain_data,
@@ -937,6 +946,49 @@ class DomainPullView(View):
             return redirect("metadata_manager:domain_list")
 
 
+def filter_domains_by_connection(all_domains, current_connection):
+    """
+    Filter and return domains based on connection logic - only one row per datahub_id:
+    1. If domain is available for current connection_id -> show in synced
+    2. If domain is available for different connection_id -> show in local-only  
+    3. If domain has no connection_id -> show in local-only
+    Priority: current connection > different connection > no connection
+    
+    Nulls/empty values/empty lists should match to "" or [] for determining if the domain is consistent with the remote datahub
+    """
+    domains = []
+    
+    # Group domains by datahub_id to implement the single-row-per-datahub_id logic
+    domains_by_datahub_id = {}
+    for domain in all_domains:
+        datahub_id = domain.datahub_id or f'no_datahub_id_{domain.id}'  # Use unique identifier for domains without datahub_id
+        if datahub_id not in domains_by_datahub_id:
+            domains_by_datahub_id[datahub_id] = []
+        domains_by_datahub_id[datahub_id].append(domain)
+    
+    # For each datahub_id, select the best domain based on connection priority
+    for datahub_id, domain_list in domains_by_datahub_id.items():
+        if len(domain_list) == 1:
+            # Only one domain with this datahub_id
+            domains.append(domain_list[0])
+        else:
+            # Multiple domains with same datahub_id - apply priority logic
+            current_connection_domains = [d for d in domain_list if d.connection == current_connection]
+            different_connection_domains = [d for d in domain_list if d.connection is not None and d.connection != current_connection]
+            no_connection_domains = [d for d in domain_list if d.connection is None]
+            
+            if current_connection_domains:
+                # Priority 1: Domain for current connection
+                domains.append(current_connection_domains[0])
+            elif different_connection_domains:
+                # Priority 2: Domain for different connection (will appear as local-only)
+                domains.append(different_connection_domains[0])
+            elif no_connection_domains:
+                # Priority 3: Domain with no connection (will appear as local-only)
+                domains.append(no_connection_domains[0])
+    
+    return domains
+
 def get_remote_domains_data(request):
     """AJAX endpoint to get enhanced remote domains data with ownership and relationships"""
     try:
@@ -947,8 +999,23 @@ def get_remote_domains_data(request):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
-        # Get all local domains
-        local_domains = Domain.objects.all().order_by("name")
+        # Get current connection to filter domains by connection
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+        
+        # Get ALL local domains - we'll categorize them based on connection logic
+        all_local_domains = Domain.objects.all().order_by("name")
+        logger.debug(f"Found {all_local_domains.count()} total local domains")
+        
+        # Separate domains based on connection logic:
+        # 1. Domains with no connection (LOCAL_ONLY) - should appear as local-only
+        # 2. Domains with current connection (SYNCED) - should appear as synced if they match remote
+        # 3. Domains with different connection - should appear as local-only relative to current connection
+        #    BUT: if there's a synced domain for current connection with same datahub_id, hide the other connection's version
+        local_domains = filter_domains_by_connection(all_local_domains, current_connection)
+        
+        logger.debug(f"Filtered to {len(local_domains)} domains relevant to current connection")
 
         # Initialize data structures
         synced_items = []
@@ -1096,7 +1163,7 @@ def get_remote_domains_data(request):
                     icon_data = display_props.get("icon") or {} if display_props else {}
                     enhanced_domain["icon_name"] = icon_data.get("name") if icon_data else None
                     enhanced_domain["icon_style"] = icon_data.get("style", "solid") if icon_data else "solid"
-                    enhanced_domain["icon_library"] = icon_data.get("iconLibrary", "font-awesome") if icon_data else "font-awesome"
+                    enhanced_domain["icon_library"] = icon_data.get("iconLibrary", "MATERIAL") if icon_data else "MATERIAL"
                     
                     enhanced_remote_domains[domain_urn] = enhanced_domain
                 
@@ -1107,7 +1174,7 @@ def get_remote_domains_data(request):
                     continue
 
             # Extract domain URNs that exist locally
-            local_domain_urns = set(local_domains.values_list("urn", flat=True))
+            local_domain_urns = set(domain.urn for domain in local_domains)
             
             # Track which remote domains have been matched to avoid duplicates
             matched_remote_urns = set()
@@ -1115,6 +1182,15 @@ def get_remote_domains_data(request):
             # Process local domains
             for domain in local_domains:
                 domain_urn = str(domain.urn)
+                
+                # Create connection context info for frontend decision making
+                connection_context = {
+                    "has_current_connection": current_connection is not None,
+                    "domain_belongs_to_current_connection": domain.connection == current_connection,
+                    "domain_has_connection": domain.connection is not None,
+                    "current_connection_name": current_connection.name if current_connection else None,
+                    "domain_connection_name": domain.connection.name if domain.connection else None,
+                }
                 
                 # Try to find remote match - first by URN, then by datahub_id, then by name
                 remote_match = None
@@ -1137,66 +1213,41 @@ def get_remote_domains_data(request):
                 # Create enhanced local domain data
                 local_domain_data = {
                     "id": domain.id,
+                    "database_id": str(domain.id),  # Explicitly add database_id for clarity
                     "urn": domain_urn,
                     "name": domain.name,
-                    "description": domain.description or "",
-                    "type": "domain",
+                    "description": domain.description or "",  # Normalize null to empty string
                     "sync_status": domain.sync_status,
                     "sync_status_display": domain.get_sync_status_display(),
-                    
-                    # Add parent domain information from local database
-                    "parent_urn": domain.parent_domain_urn,
-                    "parentDomain": domain.parent_domain_urn,
-                    
-                    # Add stored ownership data from local database
-                    "ownership": None,
-                    "owners_count": 0,
-                    "owner_names": [],
-                    
-                    # Add stored entities count from local database
-                    "entities_count": domain.entities_count,
-                    
-                    # Add structured properties (local domains don't have these typically)
-                    "structured_properties": [],
-                    "structured_properties_count": 0,
-                    
-                    # Add display properties from local database
                     "color_hex": domain.color_hex,
                     "icon_name": domain.icon_name,
-                    "icon_style": domain.icon_style,
-                    "icon_library": domain.icon_library,
-                    
-                    # Add local metadata
-                    "created_at": domain.created_at.isoformat() if domain.created_at else None,
-                    "updated_at": domain.updated_at.isoformat() if domain.updated_at else None,
-                    
-                    # Add raw data from local database if available
-                    "raw_data": domain.raw_data if hasattr(domain, 'raw_data') and domain.raw_data else {},
+                    "icon_style": domain.icon_style or "solid",  # Normalize null to default
+                    "icon_library": domain.icon_library or "MATERIAL",  # Normalize null to default
+                    "type": "domain",
+                    "parent_urn": domain.parent_domain_urn,
+                    "parentDomain": domain.parent_domain_urn,
+                    "owners_count": 0,
+                    "owner_names": [],
+                    "entities_count": 0,
+                    "structured_properties": [],
+                    "structured_properties_count": 0,
+                    "connection_context": connection_context,  # Add connection context for frontend action determination
+                    "has_remote_match": bool(remote_match),  # Whether this domain has a remote match
                 }
 
-                # Extract owner names and count from local ownership_data if available
-                if hasattr(domain, 'ownership_data') and domain.ownership_data and domain.ownership_data.get('owners'):
-                    local_domain_data["owners_count"] = len(domain.ownership_data['owners'])
-                    owner_names = []
-                    for owner_info in domain.ownership_data['owners']:
-                        if owner_info and owner_info.get('owner_urn'):
-                            owner_urn = owner_info['owner_urn']
-                            # Extract username/group name from URN
-                            if ':corpuser:' in owner_urn:
-                                owner_name = owner_urn.split(':corpuser:')[-1]
-                            elif ':corpGroup:' in owner_urn:
-                                owner_name = owner_urn.split(':corpGroup:')[-1]
-                            else:
-                                owner_name = owner_urn.split(':')[-1] if ':' in owner_urn else owner_urn
-                            owner_names.append(owner_name)
-                    local_domain_data["owner_names"] = owner_names
-                    local_domain_data["ownership"] = domain.ownership_data
-
                 if remote_match:
-                    # Track this remote domain as matched to avoid showing it in remote-only
-                    matched_remote_urns.add(remote_match.get("urn"))
+                    # Mark this remote URN as matched to avoid duplicates
+                    matched_remote_urns.add(remote_match["urn"])
+                    
+                    # Domain has a remote match - categorize as synced or local-only based on connection
+                    # With single-row-per-datahub_id logic:
+                    # - Synced: Domain belongs to current connection AND (exists remotely OR was recently synced)
+                    # - Local-only: Domain belongs to different connection OR no connection OR (no remote match AND not recently synced)
                     
                     # Check if domain was recently synced (within last 30 seconds)
+                    from django.utils import timezone
+                    from datetime import timedelta
+                    
                     recently_synced = False
                     if hasattr(domain, 'last_synced') and domain.last_synced:
                         time_since_sync = timezone.now() - domain.last_synced
@@ -1208,11 +1259,17 @@ def get_remote_domains_data(request):
                         local_domain_data["sync_status_display"] = "Synced"
                     else:
                         # Check if domain needs status update based on content comparison
+                        # Normalize null/empty values for comparison
                         local_description = domain.description or ""
                         remote_description = remote_match.get("description", "")
+                        
+                        # Normalize other fields that might be null/empty
+                        local_parent_urn = domain.parent_domain_urn or ""
+                        remote_parent_urn = remote_match.get("parent_urn", "")
 
-                        # Update sync status based on comparison
-                        if local_description != remote_description:
+                        # Update sync status based on comparison (handle nulls/empty values)
+                        if (local_description != remote_description or 
+                            local_parent_urn != remote_parent_urn):
                             if domain.sync_status != "MODIFIED":
                                 domain.sync_status = "MODIFIED"
                                 domain.save(update_fields=["sync_status"])
@@ -1254,13 +1311,44 @@ def get_remote_domains_data(request):
                         "combined": combined_data
                     })
                 else:
-                    # Ensure local-only domains have correct status
-                    if domain.sync_status != "LOCAL_ONLY":
-                        domain.sync_status = "LOCAL_ONLY"
-                        domain.save(update_fields=["sync_status"])
-                    local_domain_data["sync_status"] = "LOCAL_ONLY"
-                    local_domain_data["sync_status_display"] = "Local Only"
-
+                    # Domain is local-only relative to current connection
+                    # This includes:
+                    # 1. Domains with no connection (true local-only)
+                    # 2. Domains with different connection (local-only relative to current connection)
+                    # 3. Domains with current connection but no remote match
+                    
+                    # Check if the domain was recently synced to avoid overriding fresh sync status
+                    from django.utils import timezone
+                    from datetime import timedelta
+                    
+                    recently_synced = (
+                        domain.last_synced and 
+                        domain.last_synced > timezone.now() - timedelta(minutes=5)  # 5 minute grace period
+                    )
+                    
+                    # CRITICAL: Only update sync status for domains that belong to current connection
+                    # Domains from other connections should maintain their original sync_status
+                    if domain.connection == current_connection:
+                        # Only update status for domains belonging to current connection
+                        expected_status = "LOCAL_ONLY"
+                        if not remote_match:
+                            # Domain was synced to current connection but no longer exists remotely
+                            expected_status = "REMOTE_DELETED"
+                        
+                        # Only update sync status if it wasn't recently synced and status is different
+                        if not recently_synced and domain.sync_status != expected_status:
+                            domain.sync_status = expected_status
+                            domain.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated domain {domain.name} status to {expected_status}")
+                    
+                    # Update local domain data with current status
+                    local_domain_data.update({
+                        "sync_status": domain.sync_status,
+                        "sync_status_display": domain.get_sync_status_display(),
+                        "connection_context": connection_context,  # Keep the connection context
+                        "has_remote_match": bool(remote_match),  # Whether this domain has a remote match
+                    })
+                    
                     local_only_items.append(local_domain_data)
 
             # Find domains that exist remotely but not locally (and weren't matched to any local domain)
@@ -1403,10 +1491,66 @@ def sync_domain_to_local(request, domain_id=None):
             },
         )
 
-        # Extract and store additional domain properties
+        # Extract and store additional domain properties with parent domain resolution
         parent_domain = remote_domain.get("parentDomain")
         if parent_domain:
-            domain.parent_domain_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+            parent_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+            
+            # Try to resolve parent domain URN to local deterministic URN
+            resolved_parent_urn = None
+            if parent_urn:
+                # First try to find a local domain with the same DataHub URN
+                try:
+                    parent_datahub_id = parent_urn.split(":")[-1] if parent_urn else None
+                    if parent_datahub_id:
+                        local_parent = Domain.objects.filter(datahub_id=parent_datahub_id).first()
+                        if local_parent:
+                            resolved_parent_urn = local_parent.urn
+                except Exception as e:
+                    logger.debug(f"Error resolving parent domain by datahub_id: {str(e)}")
+                
+                # If not found by datahub_id, try to find by exact URN match
+                if not resolved_parent_urn:
+                    try:
+                        local_parent = Domain.objects.filter(urn=parent_urn).first()
+                        if local_parent:
+                            resolved_parent_urn = local_parent.urn
+                    except Exception as e:
+                        logger.debug(f"Error resolving parent domain by URN: {str(e)}")
+                
+                # If still not found, try to find by extracting name from remote parent and generating deterministic URN
+                if not resolved_parent_urn:
+                    try:
+                        # Try to get the parent domain from DataHub to extract its name
+                        remote_parent = client.get_domain(parent_urn)
+                        if remote_parent:
+                            parent_name = remote_parent.get("properties", {}).get("name")
+                            if parent_name:
+                                # Generate deterministic URN for the parent
+                                from utils.urn_utils import get_full_urn_from_name
+                                parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
+                                
+                                # Check if a domain with this deterministic URN exists
+                                local_parent = Domain.objects.filter(urn=parent_deterministic_urn).first()
+                                if local_parent:
+                                    resolved_parent_urn = local_parent.urn
+                    except Exception as e:
+                        logger.debug(f"Error resolving parent domain by name: {str(e)}")
+                
+                # Use the resolved URN if found, otherwise use the original DataHub URN as fallback
+                domain.parent_domain_urn = resolved_parent_urn or parent_urn
+                
+                logger.info(f"Parent domain resolution for {domain.name}:")
+                logger.info(f"  Original parent URN: {parent_urn}")
+                logger.info(f"  Resolved parent URN: {resolved_parent_urn}")
+                logger.info(f"  Final parent URN: {domain.parent_domain_urn}")
+                
+                if resolved_parent_urn and resolved_parent_urn != parent_urn:
+                    logger.info(f"✅ Successfully resolved parent domain URN from {parent_urn} to {resolved_parent_urn}")
+                else:
+                    logger.warning(f"⚠️ Could not resolve parent domain URN {parent_urn} to local deterministic URN")
+        else:
+            domain.parent_domain_urn = None
 
         # Store display properties if available
         display_props = remote_domain.get("displayProperties", {})
@@ -1416,7 +1560,7 @@ def sync_domain_to_local(request, domain_id=None):
             if icon:
                 domain.icon_name = icon.get("name")
                 domain.icon_style = icon.get("style", "solid")
-                domain.icon_library = icon.get("iconLibrary", "font-awesome")
+                domain.icon_library = icon.get("iconLibrary", "MATERIAL")
 
         # Store entities count from remote domain data if available
         entities_info = remote_domain.get("entities", {})
@@ -1511,10 +1655,66 @@ def resync_domain(request, domain_id):
         domain.raw_data = remote_domain
         domain.ownership_data = ownership_data
 
-        # Update additional properties
+        # Update additional properties with parent domain resolution
         parent_domain = remote_domain.get("parentDomain")
         if parent_domain:
-            domain.parent_domain_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+            parent_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+            
+            # Try to resolve parent domain URN to local deterministic URN
+            resolved_parent_urn = None
+            if parent_urn:
+                # First try to find a local domain with the same DataHub URN
+                try:
+                    parent_datahub_id = parent_urn.split(":")[-1] if parent_urn else None
+                    if parent_datahub_id:
+                        local_parent = Domain.objects.filter(datahub_id=parent_datahub_id).first()
+                        if local_parent:
+                            resolved_parent_urn = local_parent.urn
+                except Exception as e:
+                    logger.debug(f"Error resolving parent domain by datahub_id: {str(e)}")
+                
+                # If not found by datahub_id, try to find by exact URN match
+                if not resolved_parent_urn:
+                    try:
+                        local_parent = Domain.objects.filter(urn=parent_urn).first()
+                        if local_parent:
+                            resolved_parent_urn = local_parent.urn
+                    except Exception as e:
+                        logger.debug(f"Error resolving parent domain by URN: {str(e)}")
+                
+                # If still not found, try to find by extracting name from remote parent and generating deterministic URN
+                if not resolved_parent_urn:
+                    try:
+                        # Try to get the parent domain from DataHub to extract its name
+                        remote_parent = client.get_domain(parent_urn)
+                        if remote_parent:
+                            parent_name = remote_parent.get("properties", {}).get("name")
+                            if parent_name:
+                                # Generate deterministic URN for the parent
+                                from utils.urn_utils import get_full_urn_from_name
+                                parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
+                                
+                                # Check if a domain with this deterministic URN exists
+                                local_parent = Domain.objects.filter(urn=parent_deterministic_urn).first()
+                                if local_parent:
+                                    resolved_parent_urn = local_parent.urn
+                    except Exception as e:
+                        logger.debug(f"Error resolving parent domain by name: {str(e)}")
+                
+                # Use the resolved URN if found, otherwise use the original DataHub URN as fallback
+                domain.parent_domain_urn = resolved_parent_urn or parent_urn
+                
+                logger.info(f"Parent domain resolution for {domain.name}:")
+                logger.info(f"  Original parent URN: {parent_urn}")
+                logger.info(f"  Resolved parent URN: {resolved_parent_urn}")
+                logger.info(f"  Final parent URN: {domain.parent_domain_urn}")
+                
+                if resolved_parent_urn and resolved_parent_urn != parent_urn:
+                    logger.info(f"✅ Successfully resolved parent domain URN from {parent_urn} to {resolved_parent_urn}")
+                else:
+                    logger.warning(f"⚠️ Could not resolve parent domain URN {parent_urn} to local deterministic URN")
+        else:
+            domain.parent_domain_urn = None
 
         # Update display properties
         display_props = remote_domain.get("displayProperties", {})
@@ -1524,7 +1724,7 @@ def resync_domain(request, domain_id):
             if icon:
                 domain.icon_name = icon.get("name")
                 domain.icon_style = icon.get("style", "solid")
-                domain.icon_library = icon.get("iconLibrary", "font-awesome")
+                domain.icon_library = icon.get("iconLibrary", "MATERIAL")
 
         # Update entities count from remote domain data if available
         entities_info = remote_domain.get("entities", {})
@@ -1572,9 +1772,44 @@ def push_domain_to_datahub(request, domain_id):
             # Track what needs to be updated
             updates_needed = []
             update_success = True
+            domain_created = False
             
-            # Update description if it exists
-            if domain.description:
+            # First, check if domain exists in DataHub
+            existing_domain = client.get_domain(target_urn)
+            
+            if not existing_domain:
+                # Domain doesn't exist, create it first
+                logger.info(f"Domain {target_urn} doesn't exist in DataHub, creating it")
+                
+                # Extract domain ID from URN for creation
+                domain_id = target_urn.split(":")[-1]
+                
+                # Get parent domain URN if exists
+                parent_domain_urn = None
+                if hasattr(domain, 'parent_urn') and domain.parent_urn:
+                    parent_domain_urn = domain.parent_urn
+                
+                # Create domain
+                created_urn = client.create_domain(
+                    domain_id=domain_id,
+                    name=domain.name,
+                    description=domain.description or "",
+                    parent_domain_urn=parent_domain_urn
+                )
+                
+                if created_urn:
+                    logger.info(f"Successfully created domain in DataHub: {created_urn}")
+                    target_urn = created_urn  # Use the returned URN
+                    updates_needed.append("created")
+                    domain_created = True
+                else:
+                    logger.error(f"Failed to create domain {domain.name} in DataHub")
+                    return JsonResponse({"success": False, "error": f"Failed to create domain {domain.name} in DataHub"})
+            else:
+                logger.debug(f"Domain {target_urn} already exists in DataHub, updating properties")
+            
+            # Update description if it exists and domain wasn't just created (creation includes description)
+            if domain.description and not domain_created:
                 if client.update_domain_description(target_urn, domain.description):
                     updates_needed.append("description")
                 else:
@@ -1590,8 +1825,8 @@ def push_domain_to_datahub(request, domain_id):
                     icon_data = {"name": domain.icon_name}
                     if domain.icon_style:
                         icon_data["style"] = domain.icon_style
-                    if domain.icon_library:
-                        icon_data["iconLibrary"] = domain.icon_library
+                    # DataHub only supports MATERIAL icon library
+                    icon_data["iconLibrary"] = "MATERIAL"
                 
                 if client.update_domain_display_properties(target_urn, color_hex=color_hex, icon=icon_data):
                     updates_needed.append("display properties")
@@ -1884,10 +2119,66 @@ def bulk_sync_domains_to_local(request):
                     },
                 )
                 
-                # Extract and store additional domain properties
+                # Extract and store additional domain properties with parent domain resolution
                 parent_domain = remote_domain.get("parentDomain")
                 if parent_domain:
-                    domain.parent_domain_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+                    parent_urn = parent_domain.get("urn") if isinstance(parent_domain, dict) else parent_domain
+                    
+                    # Try to resolve parent domain URN to local deterministic URN
+                    resolved_parent_urn = None
+                    if parent_urn:
+                        # First try to find a local domain with the same DataHub URN
+                        try:
+                            parent_datahub_id = parent_urn.split(":")[-1] if parent_urn else None
+                            if parent_datahub_id:
+                                local_parent = Domain.objects.filter(datahub_id=parent_datahub_id).first()
+                                if local_parent:
+                                    resolved_parent_urn = local_parent.urn
+                        except Exception as e:
+                            logger.debug(f"Error resolving parent domain by datahub_id: {str(e)}")
+                        
+                        # If not found by datahub_id, try to find by exact URN match
+                        if not resolved_parent_urn:
+                            try:
+                                local_parent = Domain.objects.filter(urn=parent_urn).first()
+                                if local_parent:
+                                    resolved_parent_urn = local_parent.urn
+                            except Exception as e:
+                                logger.debug(f"Error resolving parent domain by URN: {str(e)}")
+                        
+                        # If still not found, try to find by extracting name from remote parent and generating deterministic URN
+                        if not resolved_parent_urn:
+                            try:
+                                # Try to get the parent domain from DataHub to extract its name
+                                remote_parent = client.get_domain(parent_urn)
+                                if remote_parent:
+                                    parent_name = remote_parent.get("properties", {}).get("name")
+                                    if parent_name:
+                                        # Generate deterministic URN for the parent
+                                        from utils.urn_utils import get_full_urn_from_name
+                                        parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
+                                        
+                                        # Check if a domain with this deterministic URN exists
+                                        local_parent = Domain.objects.filter(urn=parent_deterministic_urn).first()
+                                        if local_parent:
+                                            resolved_parent_urn = local_parent.urn
+                            except Exception as e:
+                                logger.debug(f"Error resolving parent domain by name: {str(e)}")
+                        
+                        # Use the resolved URN if found, otherwise use the original DataHub URN as fallback
+                        domain.parent_domain_urn = resolved_parent_urn or parent_urn
+                        
+                        logger.info(f"Parent domain resolution for {domain_name}:")
+                        logger.info(f"  Original parent URN: {parent_urn}")
+                        logger.info(f"  Resolved parent URN: {resolved_parent_urn}")
+                        logger.info(f"  Final parent URN: {domain.parent_domain_urn}")
+                        
+                        if resolved_parent_urn and resolved_parent_urn != parent_urn:
+                            logger.info(f"✅ Successfully resolved parent domain URN from {parent_urn} to {resolved_parent_urn}")
+                        else:
+                            logger.warning(f"⚠️ Could not resolve parent domain URN {parent_urn} to local deterministic URN")
+                else:
+                    domain.parent_domain_urn = None
                 
                 # Store display properties if available
                 display_props = remote_domain.get("displayProperties", {})
@@ -1897,7 +2188,7 @@ def bulk_sync_domains_to_local(request):
                     if icon:
                         domain.icon_name = icon.get("name")
                         domain.icon_style = icon.get("style", "solid")
-                        domain.icon_library = icon.get("iconLibrary", "font-awesome")
+                        domain.icon_library = icon.get("iconLibrary", "MATERIAL")
                 
                 # Store entities count from remote domain data if available
                 entities_info = remote_domain.get("entities", {})
@@ -2006,7 +2297,7 @@ def bulk_add_domains_to_staged_changes(request):
                     display_properties["icon"] = {
                         "name": domain.icon_name,
                         "style": domain.icon_style or "solid",
-                        "iconLibrary": domain.icon_library or "font-awesome"
+                        "iconLibrary": domain.icon_library or "MATERIAL"
                     }
                 
                 # Prepare structured properties from raw_data if available
@@ -2087,7 +2378,7 @@ def bulk_add_domains_to_staged_changes(request):
         }, status=500)
 
 
-@method_decorator(require_POST)
+@require_POST
 def add_domain_to_staged_changes(request, domain_id):
     """Add a domain to staged changes by creating comprehensive MCP files"""
     try:
@@ -2109,7 +2400,7 @@ def add_domain_to_staged_changes(request, domain_id):
             domain = Domain.objects.get(id=domain_id)
         except Domain.DoesNotExist:
             return JsonResponse({
-                "success": False,
+                "status": "error",
                 "error": f"Domain with id {domain_id} not found"
             }, status=404)
         
@@ -2144,7 +2435,7 @@ def add_domain_to_staged_changes(request, domain_id):
             display_properties["icon"] = {
                 "name": domain.icon_name,
                 "style": domain.icon_style or "solid",
-                "iconLibrary": domain.icon_library or "font-awesome"
+                "iconLibrary": domain.icon_library or "MATERIAL"
             }
         
         # Prepare structured properties from raw_data if available
@@ -2189,14 +2480,14 @@ def add_domain_to_staged_changes(request, domain_id):
         if result.get("success"):
             files_created = result.get("files_saved", [])
             return JsonResponse({
-                "success": True,
+                "status": "success",
                 "message": f"Domain '{domain.name}' added to staged changes",
                 "files_created": files_created,
                 "aspects_included": result.get("aspects_included", [])
             })
         else:
             return JsonResponse({
-                "success": False,
+                "status": "error",
                 "error": result.get("message", "Failed to create staged changes")
             })
         
@@ -2206,7 +2497,7 @@ def add_domain_to_staged_changes(request, domain_id):
         logger.error(traceback.format_exc())
         
         return JsonResponse({
-            "success": False,
+            "status": "error",
             "error": f"An error occurred: {str(e)}"
         })
 
@@ -2236,7 +2527,7 @@ class DomainRemoteAddToStagedChangesView(View):
             domain_data = data.get('domain_data')
             if not domain_data:
                 return JsonResponse({
-                    "success": False,
+                    "status": "error",
                     "error": "No domain_data provided"
                 }, status=400)
             
@@ -2263,7 +2554,7 @@ class DomainRemoteAddToStagedChangesView(View):
                     domain_id = domain_data['name'].replace(' ', '_').lower()
                 else:
                     return JsonResponse({
-                        "success": False,
+                        "status": "error",
                         "error": "Remote domain must have either URN or name for ID generation"
                     }, status=400)
             
@@ -2284,7 +2575,7 @@ class DomainRemoteAddToStagedChangesView(View):
                 display_properties["icon"] = {
                     "name": domain_data['icon_name'],
                     "style": domain_data.get('icon_style', 'solid'),
-                    "iconLibrary": domain_data.get('icon_library', 'font-awesome')
+                    "iconLibrary": domain_data.get('icon_library', 'MATERIAL')
                 }
             
             # Prepare structured properties from raw_data if available
@@ -2347,4 +2638,4 @@ class DomainRemoteAddToStagedChangesView(View):
                 
         except Exception as e:
             logger.error(f"Error adding remote domain to staged changes: {str(e)}")
-            return JsonResponse({"error": str(e)}, status=500)
+            return JsonResponse({"status": "error", "error": str(e)}, status=500)

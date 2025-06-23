@@ -165,7 +165,7 @@ def add_structured_property_to_staged_changes(
             description=description,
             value_type=value_type,
             cardinality=cardinality,
-            allowed_values=allowedValues,
+            allowedValues=allowedValues,
             entity_types=entity_types,
             owners=owners,
             tags=tags,
@@ -196,8 +196,14 @@ def add_structured_property_to_staged_changes(
         existing_mcps.extend(new_mcps)
         
         # Save updated MCP file as a simple list (like tags)
-        from scripts.mcps.create_structured_property_mcps import save_mcp_to_file
-        mcp_saved = save_mcp_to_file(existing_mcps, mcp_file_path)
+        try:
+            with open(mcp_file_path, 'w') as f:
+                json.dump(existing_mcps, f, indent=2)
+            logger.info(f"Saved MCP file with {len(existing_mcps)} MCPs to: {mcp_file_path}")
+            mcp_saved = True
+        except Exception as e:
+            logger.error(f"Failed to save MCP file: {e}")
+            mcp_saved = False
         
         files_saved = []
         if mcp_saved:

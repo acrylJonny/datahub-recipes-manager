@@ -1,0 +1,252 @@
+[
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:d0af1aa8-fe87-473d-a7c7-b01710e15f58",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Subscriber Activity\", \"description\": \"Domain for all data around subscriber activity\", \"created\": {\"time\": 1750704188364, \"actor\": \"urn:li:corpuser:urn:li:corpuser:gabe@acryl.io\"}, \"parentDomain\": \"urn:li:domain:0967d2ec-1726-43c6-a128-ae9bf98a05ee\"}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:d0af1aa8-fe87-473d-a7c7-b01710e15f58",
+    "changeType": "UPSERT",
+    "aspectName": "ownership",
+    "aspect": {
+      "value": "{\"owners\": [{\"owner\": \"urn:li:corpuser:urn:li:corpuser:gabe@acryl.io\", \"type\": \"DATAOWNER\"}], \"ownerTypes\": {}, \"lastModified\": {\"time\": 1750704188364, \"actor\": \"urn:li:corpuser:urn:li:corpuser:gabe@acryl.io\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:d0af1aa8-fe87-473d-a7c7-b01710e15f58",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:d0af1aa8-fe87-473d-a7c7-b01710e15f58",
+    "changeType": "UPSERT",
+    "aspectName": "displayProperties",
+    "aspect": {
+      "value": "{\"colorHex\": \"#9f1919\"}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:08f233d3-6c16-597e-9a72-968c0bd3d126",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"commodities\", \"created\": {\"time\": 1750704399771, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:08f233d3-6c16-597e-9a72-968c0bd3d126",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:08f233d3-6c16-597e-9a72-968c0bd3d126",
+    "changeType": "UPSERT",
+    "aspectName": "displayProperties",
+    "aspect": {
+      "value": "{\"colorHex\": \"#ff0000\"}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:0967d2ec-1726-43c6-a128-ae9bf98a05ee",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Subscribers\", \"description\": \"Data for Subscribers\", \"created\": {\"time\": 1750704412853, \"actor\": \"urn:li:corpuser:urn:li:corpuser:shirshanka.das@acryl.io\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:0967d2ec-1726-43c6-a128-ae9bf98a05ee",
+    "changeType": "UPSERT",
+    "aspectName": "ownership",
+    "aspect": {
+      "value": "{\"owners\": [{\"owner\": \"urn:li:corpuser:urn:li:corpuser:shirshanka.das@acryl.io\", \"type\": \"DATAOWNER\"}], \"ownerTypes\": {}, \"lastModified\": {\"time\": 1750704412853, \"actor\": \"urn:li:corpuser:urn:li:corpuser:shirshanka.das@acryl.io\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:0967d2ec-1726-43c6-a128-ae9bf98a05ee",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:0967d2ec-1726-43c6-a128-ae9bf98a05ee",
+    "changeType": "UPSERT",
+    "aspectName": "displayProperties",
+    "aspect": {
+      "value": "{\"colorHex\": \"#fa0000\"}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:test-domain",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Test Domain\", \"description\": \"Test description\", \"created\": {\"time\": 1750704492213, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:test-domain",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:test-remote-domain",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Test Remote Domain\", \"description\": \"Test description\", \"created\": {\"time\": 1750704613654, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:test-remote-domain",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:test-remote-domain-api",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Test Remote Domain API\", \"description\": \"Test description from API\", \"created\": {\"time\": 1750704636575, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:test-remote-domain-api",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:a94c31b3-4302-4f3f-b8b9-7ce07962b004",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"test domain 3\", \"created\": {\"time\": 1750704689845, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:a94c31b3-4302-4f3f-b8b9-7ce07962b004",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:6a77b92f-5dc2-52de-9a6a-dca2d17f6ff9",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Pricing\", \"created\": {\"time\": 1750704689891, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:6a77b92f-5dc2-52de-9a6a-dca2d17f6ff9",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:9ed7a0b0-a51e-5b05-bead-a454b8bea839",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Order book\", \"created\": {\"time\": 1750704689909, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:9ed7a0b0-a51e-5b05-bead-a454b8bea839",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:5d2133e0-3987-520a-93f3-3c858034dcbb",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Reference\", \"created\": {\"time\": 1750704755150, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:5d2133e0-3987-520a-93f3-3c858034dcbb",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  }
+]

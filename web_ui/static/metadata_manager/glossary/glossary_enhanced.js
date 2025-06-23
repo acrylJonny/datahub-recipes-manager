@@ -799,7 +799,7 @@ function generateTableHTMLWithPagination(rootItems, tabType, totalItems, current
                         <th class="text-start" width="160">Description</th>
                         <th class="sortable-header text-center" data-sort="domain" width="120">Domain</th>
                         <th class="sortable-header text-center" data-sort="owners_count" width="70">Owners</th>
-                        <th class="sortable-header text-center" data-sort="custom_properties_count" width="80">Custom<br/>Properties</th>
+                        <th class="sortable-header text-center" data-sort="custom_properties_count" width="120">Custom<br/>Properties</th>
                         <th class="sortable-header text-center" data-sort="structured_properties_count" width="80">Structured<br/>Properties</th>
                         <th class="sortable-header text-center" data-sort="deprecated" width="80">Deprecated</th>
                         <th width="160">URN</th>
@@ -4194,24 +4194,69 @@ function deleteLocalItem(item, suppressNotification = false) {
  * @param {string} message - The message to display
  */
 function showNotification(type, message) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-    notification.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    // Check if we have notifications container
+    let container = document.getElementById('notifications-container');
+    
+    // Create it if it doesn't exist
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notifications-container';
+        container.className = 'position-fixed bottom-0 end-0 p-3';
+        container.style.zIndex = '1050';
+        document.body.appendChild(container);
+    }
+    
+    // Create unique ID
+    const id = 'toast-' + Date.now();
+    
+    // Create toast HTML
+    let bgClass, icon, title;
+    
+    if (type === 'success') {
+        bgClass = 'bg-success';
+        icon = 'fa-check-circle';
+        title = 'Success';
+    } else if (type === 'info') {
+        bgClass = 'bg-info';
+        icon = 'fa-info-circle';
+        title = 'Info';
+    } else if (type === 'warning') {
+        bgClass = 'bg-warning';
+        icon = 'fa-exclamation-triangle';
+        title = 'Warning';
+    } else {
+        bgClass = 'bg-danger';
+        icon = 'fa-exclamation-circle';
+        title = 'Error';
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${bgClass} text-white`;
+    toast.id = id;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.innerHTML = `
+        <div class="toast-header ${bgClass} text-white">
+            <i class="fas ${icon} me-2"></i>
+            <strong class="me-auto">${title}</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">${message}</div>
     `;
     
-    // Add to page
-    document.body.appendChild(notification);
+    container.appendChild(toast);
     
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, 5000);
+    // Initialize and show the toast
+    const toastInstance = new bootstrap.Toast(toast, {
+        delay: 5000
+    });
+    toastInstance.show();
+    
+    // Remove toast from DOM after it's hidden
+    toast.addEventListener('hidden.bs.toast', function () {
+        toast.remove();
+    });
 }
 
 // Checkbox and bulk action handlers with hierarchical selection

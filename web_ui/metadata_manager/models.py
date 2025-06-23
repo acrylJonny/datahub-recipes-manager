@@ -461,7 +461,7 @@ class Domain(BaseMetadataModel):
     )
     icon_name = models.CharField(max_length=100, blank=True, null=True)
     icon_style = models.CharField(max_length=50, blank=True, null=True, default="solid")
-    icon_library = models.CharField(max_length=50, blank=True, null=True, default="font-awesome")
+    icon_library = models.CharField(max_length=50, blank=True, null=True, default="MATERIAL")
     
     # Ownership and relationship counts for quick access
     relationships_count = models.IntegerField(default=0)
@@ -503,7 +503,7 @@ class Domain(BaseMetadataModel):
                 display_props["icon"] = {
                     "name": self.icon_name,
                     "style": self.icon_style or "solid",
-                    "iconLibrary": self.icon_library or "font-awesome",
+                    "iconLibrary": self.icon_library or "MATERIAL",
                 }
             data["displayProperties"] = display_props
         
@@ -518,8 +518,9 @@ class Domain(BaseMetadataModel):
     def display_icon_html(self):
         """Get HTML for displaying the icon"""
         if self.icon_name:
-            library_prefix = "fas" if self.icon_library == "font-awesome" else ""
-            return f'<i class="{library_prefix} fa-{self.icon_name}"></i>'
+            # Use Font Awesome icons for UI display
+            library_prefix = ""
+            return f'<i class="{library_prefix} {self.icon_name}"></i>'
         return ""
 
     @property
