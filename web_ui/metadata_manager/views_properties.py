@@ -173,9 +173,18 @@ class PropertyListView(View):
         try:
             logger.info("Starting PropertyListView.get")
 
-            # Get all properties
-            properties = StructuredProperty.objects.all().order_by("name")
-            logger.debug(f"Found {properties.count()} total properties")
+            # Get current connection to filter properties by connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+            
+            # Get properties relevant to current connection (database-only operation)
+            # Include: properties with no connection (local-only) + properties with current connection (synced)
+            # BUT: if there's a synced property for current connection with same datahub_id, hide the other connection's version
+            all_properties = StructuredProperty.objects.all().order_by("name")
+            properties = filter_properties_by_connection(all_properties, current_connection)
+            
+            logger.debug(f"Found {len(properties)} properties relevant to current connection")
 
             # Get DataHub connection info
             logger.debug("Testing DataHub connection from PropertyListView")
@@ -286,8 +295,23 @@ class PropertyListView(View):
     def _get_properties_data(self, request):
         """Return JSON data for AJAX requests"""
         try:
-            # Get local properties from database
-            local_properties = StructuredProperty.objects.all()
+            # Get current connection to filter properties by connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+            
+            # Get ALL local properties - we'll categorize them based on connection logic
+            all_local_properties = StructuredProperty.objects.all().order_by("name")
+            logger.debug(f"Found {all_local_properties.count()} total local properties")
+            
+            # Separate properties based on connection logic:
+            # 1. Properties with no connection (LOCAL_ONLY) - should appear as local-only
+            # 2. Properties with current connection (SYNCED) - should appear as synced if they match remote
+            # 3. Properties with different connection - should appear as local-only relative to current connection
+            #    BUT: if there's a synced property for current connection with same datahub_id, hide the other connection's version
+            local_properties = filter_properties_by_connection(all_local_properties, current_connection)
+            
+            logger.debug(f"Filtered to {len(local_properties)} properties relevant to current connection")
             
             # Check connection to DataHub for remote properties
             from utils.datahub_utils import test_datahub_connection
@@ -328,15 +352,31 @@ class PropertyListView(View):
             local_only_properties = []
             remote_only_properties = []
             
+            # Create a mapping of urns to Property IDs for quick lookup
+            local_urn_to_id_map = {str(prop.urn): str(prop.id) for prop in local_properties if prop.urn}
+            
             # Process local properties
             for local_prop in local_properties:
                 prop_urn = local_prop.urn
                 if not prop_urn:
                     continue
                 
+                # Determine connection context for this property
+                connection_context = "none"  # Default
+                if local_prop.connection is None:
+                    connection_context = "none"  # No connection
+                elif current_connection and local_prop.connection == current_connection:
+                    connection_context = "current"  # Current connection
+                else:
+                    connection_context = "different"  # Different connection
+                
+                # Check if this property has a remote match
+                remote_match = remote_properties_dict.get(prop_urn)
+                
                 # Convert local property to dict
                 local_prop_data = {
                     'id': str(local_prop.id),
+                    'database_id': str(local_prop.id),  # Explicitly add database_id for clarity
                     'urn': prop_urn,
                     'name': local_prop.name,
                     'qualified_name': local_prop.qualified_name,
@@ -352,15 +392,81 @@ class PropertyListView(View):
                     'show_in_columns_table': local_prop.show_in_columns_table,
                     'is_hidden': local_prop.is_hidden,
                     'immutable': local_prop.immutable,
+                    'sync_status': local_prop.sync_status,
+                    'sync_status_display': local_prop.get_sync_status_display(),
+                    # Add connection context for frontend action determination
+                    'connection_context': connection_context,
+                    'has_remote_match': bool(remote_match),
                 }
                 
-                if prop_urn in remote_properties_dict:
-                    # SYNCED: exists in both local and remote
-                    remote_prop = remote_properties_dict[prop_urn]
+                # Determine categorization based on connection and remote match
+                # With single-row-per-datahub_id logic:
+                # - Synced: Property belongs to current connection AND exists remotely
+                # - Local-only: Property belongs to different connection OR no connection OR no remote match
+                if local_prop.connection == current_connection and remote_match:
+                    # Property exists remotely AND is synced to current connection - categorize as synced
                     
-                    # Override with properly parsed remote data
-                    definition = remote_prop.get('definition', {}) or {}
-                    settings = remote_prop.get('settings', {}) or {}
+                    # Enhanced sync status validation - check if property needs status update
+                    # Skip validation if requested (e.g., after single property edits)
+                    skip_sync_validation = request.GET.get("skip_sync_validation", "false").lower() == "true"
+                    if not skip_sync_validation:
+                        needs_status_update = False
+                        status_change_reason = []
+                        
+                        # Check description changes - handle null/empty values properly
+                        local_description = local_prop.description or ""
+                        remote_description = remote_match.get("definition", {}).get("description", "")
+                        
+                        # Normalize descriptions for comparison
+                        # Handle cases where remote description might be the string "None", None, or empty
+                        def normalize_description(desc):
+                            if desc is None or desc == "None" or desc == "" or (isinstance(desc, str) and desc.strip() == ""):
+                                return ""
+                            return str(desc).strip()
+                        
+                        local_description_normalized = normalize_description(local_description)
+                        remote_description_normalized = normalize_description(remote_description)
+                        
+                        if local_description_normalized != remote_description_normalized:
+                            needs_status_update = True
+                            status_change_reason.append("description")
+                        
+                        # Check name changes
+                        local_name = local_prop.name or ""
+                        remote_name = remote_match.get("definition", {}).get("displayName", "")
+                        if local_name != remote_name:
+                            needs_status_update = True
+                            status_change_reason.append("name")
+                        
+                        # Only update sync status if the property belongs to the current connection
+                        # AND hasn't been recently synced to avoid overriding fresh syncs
+                        from django.utils import timezone
+                        from datetime import timedelta
+                        
+                        recently_synced = (
+                            local_prop.last_synced and 
+                            local_prop.last_synced > timezone.now() - timedelta(seconds=30)
+                        )
+                        
+                        # CRITICAL: Only update sync status for properties that belong to current connection
+                        # Properties from other connections should not have their sync_status modified
+                        if local_prop.connection == current_connection and not recently_synced:
+                            if needs_status_update:
+                                # Property has been modified in DataHub or locally
+                                if local_prop.sync_status != "MODIFIED":
+                                    local_prop.sync_status = "MODIFIED"
+                                    local_prop.save(update_fields=["sync_status"])
+                                    logger.info(f"Updated property {local_prop.name} status to MODIFIED due to changes in: {', '.join(status_change_reason)}")
+                            else:
+                                # Property is in sync
+                                if local_prop.sync_status != "SYNCED":
+                                    local_prop.sync_status = "SYNCED" 
+                                    local_prop.save(update_fields=["sync_status"])
+                                    logger.debug(f"Updated property {local_prop.name} status to SYNCED")
+                    
+                    # Process remote data for synced properties
+                    definition = remote_match.get('definition', {}) or {}
+                    settings = remote_match.get('settings', {}) or {}
                     
                     # Process value type from remote data
                     value_type_info = definition.get('valueType', {}) or {}
@@ -397,19 +503,69 @@ class PropertyListView(View):
                                 {"value": value, "description": description}
                             )
                     
-                    # Update with processed remote data
+                    # Update local property data with remote information
                     local_prop_data.update({
+                        'sync_status': local_prop.sync_status,
+                        'sync_status_display': local_prop.get_sync_status_display(),
+                        'connection_context': connection_context,  # Keep the connection context
+                        'has_remote_match': True,  # This property definitely has a remote match
                         'value_type': processed_value_type,
                         'entity_types': processed_entity_types,
                         'allowedValues': allowed_values,
                         'allowedValuesCount': len(allowed_values),
                         'status': 'synced',
-                        'remote_data': remote_prop
+                        'remote_data': remote_match
                     })
-                    synced_properties.append(local_prop_data)
+                    
+                    # Create combined data with explicit database_id
+                    combined_data = local_prop_data.copy()
+                    combined_data["database_id"] = str(local_prop.id)  # Ensure database_id is set
+                    
+                    synced_properties.append(combined_data)
                 else:
-                    # LOCAL_ONLY: exists only locally
-                    local_prop_data['status'] = 'local_only'
+                    # Property is local-only relative to current connection
+                    # This includes:
+                    # 1. Properties with no connection (true local-only)
+                    # 2. Properties with different connection (local-only relative to current connection)
+                    # 3. Properties with current connection but no remote match
+                    
+                    # Check if the property was recently synced to avoid overriding fresh sync status
+                    from django.utils import timezone
+                    from datetime import timedelta
+                    
+                    recently_synced = (
+                        local_prop.last_synced and 
+                        local_prop.last_synced > timezone.now() - timedelta(minutes=5)  # 5 minute grace period
+                    )
+                    
+                    # CRITICAL: Only update sync status for properties that belong to current connection
+                    # Properties from other connections should maintain their original sync_status
+                    # Skip validation if requested (e.g., after single property edits)
+                    skip_sync_validation = request.GET.get("skip_sync_validation", "false").lower() == "true"
+                    if not skip_sync_validation and local_prop.connection == current_connection:
+                        # Only update status for properties belonging to current connection
+                        expected_status = "LOCAL_ONLY"
+                        if not remote_match:
+                            # Property was synced to current connection but no longer exists remotely
+                            expected_status = "REMOTE_DELETED"
+                        
+                        # Only update sync status if it wasn't recently synced and status is different
+                        if not recently_synced and local_prop.sync_status != expected_status:
+                            local_prop.sync_status = expected_status
+                            local_prop.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated property {local_prop.name} status to {expected_status}")
+                    elif skip_sync_validation:
+                        logger.debug(f"Skipping sync status validation for property {local_prop.name} - skip_sync_validation=true")
+                    
+                    # Update local property data with current status
+                    local_prop_data.update({
+                        'sync_status': local_prop.sync_status,
+                        'sync_status_display': local_prop.get_sync_status_display(),
+                        'connection_context': connection_context,  # Keep the connection context
+                        'has_remote_match': bool(remote_match),  # Whether this property has a remote match
+                        'status': 'local_only'
+                    })
+                    
                     local_only_properties.append(local_prop_data)
             
             # Process remote-only properties
@@ -461,7 +617,20 @@ class PropertyListView(View):
                                 {"value": value, "description": description}
                             )
                     
+                    # For remote-only properties, we need the property name for generating a consistent ID
+                    # This is needed for frontend actions like deletion
+                    property_name = prop_name or qualified_name or prop_urn.split(":")[-1]
+                    
+                    # Generate a deterministic UUID based on the urn
+                    import hashlib
+                    import uuid
+                    # Create a stable UUID based on the urn - this ensures consistent IDs
+                    urn_hash = hashlib.md5(prop_urn.encode()).hexdigest()
+                    deterministic_uuid = str(uuid.UUID(urn_hash))
+                    
                     remote_prop_enhanced = {
+                        'id': deterministic_uuid,
+                        'database_id': deterministic_uuid,  # Add a specific database_id field to make it clear this is for database operations
                         'urn': prop_urn,
                         'name': prop_name,
                         'qualified_name': qualified_name,
@@ -478,6 +647,8 @@ class PropertyListView(View):
                         'is_hidden': settings.get('isHidden', False),
                         'immutable': definition.get('immutable', False),
                         'status': 'remote_only',
+                        'sync_status': 'REMOTE_ONLY',
+                        'sync_status_display': 'Remote Only',
                         'remote_data': remote_prop
                     }
                     
@@ -879,6 +1050,51 @@ class PropertyDeployView(View):
             
             property = get_object_or_404(StructuredProperty, id=property_id)
 
+            # Get current connection from request session
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Check if this property already has a connection and it's different from current connection
+            if property.connection is not None and current_connection and property.connection != current_connection:
+                # Create a new row for the current connection instead of modifying existing one
+                logger.info(f"Property '{property.name}' has connection {property.connection.name}, creating new row for {current_connection.name}")
+                
+                # Check if a property with same datahub_id already exists for current connection
+                existing_for_current_connection = StructuredProperty.objects.filter(
+                    datahub_id=property.datahub_id,
+                    connection=current_connection
+                ).first()
+                
+                if existing_for_current_connection:
+                    error_msg = f"Property '{property.name}' already exists for the current connection"
+                    if is_ajax:
+                        return JsonResponse({'success': False, 'error': error_msg})
+                    messages.error(request, error_msg)
+                    return redirect("metadata_manager:property_detail", property_id=property_id)
+                
+                # Create new property for current connection
+                new_property = StructuredProperty.objects.create(
+                    name=property.name,
+                    description=property.description,
+                    qualified_name=property.qualified_name,
+                    value_type=property.value_type,
+                    cardinality=property.cardinality,
+                    immutable=property.immutable,
+                    entity_types=property.entity_types,
+                    allowed_values=property.allowed_values,
+                    allowed_entity_types=property.allowed_entity_types,
+                    urn=property.urn,
+                    datahub_id=property.datahub_id,
+                    sync_status="LOCAL_ONLY",  # Will be updated to SYNCED after successful sync
+                    connection=current_connection,
+                    show_in_search_filters=property.show_in_search_filters,
+                    show_as_asset_badge=property.show_as_asset_badge,
+                    show_in_asset_summary=property.show_in_asset_summary,
+                    show_in_columns_table=property.show_in_columns_table,
+                    is_hidden=property.is_hidden,
+                )
+                property = new_property  # Use the new property for the rest of the sync process
+
             # Get DataHub client
             client = get_datahub_client_from_request(request)
             if not client or not client.test_connection():
@@ -905,9 +1121,11 @@ class PropertyDeployView(View):
                 )
 
                 if urn:
-                    # Mark as synced
+                    # Mark as synced and set connection
                     property.sync_status = "SYNCED"
                     property.last_synced = timezone.now()
+                    if current_connection:
+                        property.connection = current_connection
                     property.save()
 
                     success_msg = f"Property '{property.name}' created in DataHub successfully"
@@ -931,9 +1149,11 @@ class PropertyDeployView(View):
                 )
 
                 if success:
-                    # Mark as synced
+                    # Mark as synced and set connection
                     property.sync_status = "SYNCED"
                     property.last_synced = timezone.now()
+                    if current_connection:
+                        property.connection = current_connection
                     property.save()
 
                     success_msg = f"Property '{property.name}' updated in DataHub successfully"
@@ -970,6 +1190,10 @@ class PropertyPullView(View):
     def post(self, request, only_post=False):
         """Pull properties from DataHub"""
         try:
+            # Get current connection from request session
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
             # Get DataHub client
             client = get_datahub_client_from_request(request)
             if not client or not client.test_connection():
@@ -1077,9 +1301,13 @@ class PropertyPullView(View):
                         existing_property.is_hidden = is_hidden
                         existing_property.sync_status = "SYNCED"
                         existing_property.last_synced = timezone.now()
+                        # Set connection if available
+                        if current_connection:
+                            existing_property.connection = current_connection
                         existing_property.save()
 
                         updated_count += 1
+                        logger.info(f"Updated property {name} with connection: {current_connection.name if current_connection else 'None'}")
                     else:
                         # Create new property
                         StructuredProperty.objects.create(
@@ -1095,6 +1323,7 @@ class PropertyPullView(View):
                             urn=urn,
                             sync_status="SYNCED",
                             last_synced=timezone.now(),
+                            connection=current_connection,  # Set connection
                             show_in_search_filters=show_in_search_filters,
                             show_as_asset_badge=show_as_asset_badge,
                             show_in_asset_summary=show_in_asset_summary,
@@ -1103,6 +1332,7 @@ class PropertyPullView(View):
                         )
 
                         imported_count += 1
+                        logger.info(f"Created new property {name} with connection: {current_connection.name if current_connection else 'None'}")
                 except Exception as e:
                     logger.error(f"Error processing property {urn}: {str(e)}")
                     continue
@@ -1291,6 +1521,10 @@ def sync_property_to_local(request):
         
         property_name = definition.get("displayName", "Unknown Property")
         
+        # Get current connection from request session
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        
         # Check if we already have this property
         existing_property = StructuredProperty.objects.filter(
             urn=property_urn
@@ -1307,6 +1541,9 @@ def sync_property_to_local(request):
             existing_property.is_hidden = settings.get("isHidden", False)
             existing_property.sync_status = "SYNCED"
             existing_property.last_synced = timezone.now()
+            # Set connection if available
+            if current_connection:
+                existing_property.connection = current_connection
             existing_property.save()
             
             message = f'Property "{existing_property.name}" updated successfully'
@@ -1322,6 +1559,7 @@ def sync_property_to_local(request):
                 urn=property_urn,
                 sync_status="SYNCED",
                 last_synced=timezone.now(),
+                connection=current_connection,  # Set connection
                 show_in_search_filters=settings.get("showInSearchFilters", True),
                 show_as_asset_badge=settings.get("showAsAssetBadge", True),
                 show_in_asset_summary=settings.get("showInAssetSummary", True),
@@ -1726,21 +1964,9 @@ class PropertyAddAllToStagedChangesView(View):
             from web_ui.views import get_current_connection
             current_connection = get_current_connection(request)
             
-            # Get properties relevant to current connection
-            # Include: properties with no connection (local-only) + properties with current connection (synced)
+            # Get properties relevant to current connection using the same logic as the list view
             all_properties = StructuredProperty.objects.all()
-            properties = []
-            for prop in all_properties:
-                if prop.connection is None:
-                    # True local-only properties (no connection)
-                    properties.append(prop)
-                elif current_connection and prop.connection == current_connection:
-                    # Properties synced to current connection
-                    properties.append(prop)
-                elif current_connection is None and prop.connection is None:
-                    # Backward compatibility: if no current connection, show unconnected properties
-                    properties.append(prop)
-                # Properties with different connections are excluded from this connection's view
+            properties = filter_properties_by_connection(all_properties, current_connection)
             
             if not properties:
                 return JsonResponse({
@@ -1948,3 +2174,44 @@ class PropertyDownloadJsonView(View):
                 'success': False,
                 'error': f'Error downloading property: {str(e)}'
             })
+
+def filter_properties_by_connection(all_properties, current_connection):
+    """
+    Filter and return properties based on connection logic - only one row per datahub_id:
+    1. If property is available for current connection_id -> show in synced
+    2. If property is available for different connection_id -> show in local-only  
+    3. If property has no connection_id -> show in local-only
+    Priority: current connection > different connection > no connection
+    """
+    properties = []
+    
+    # Group properties by datahub_id to implement the single-row-per-datahub_id logic
+    properties_by_datahub_id = {}
+    for prop in all_properties:
+        datahub_id = prop.datahub_id or f'no_datahub_id_{prop.id}'  # Use unique identifier for properties without datahub_id
+        if datahub_id not in properties_by_datahub_id:
+            properties_by_datahub_id[datahub_id] = []
+        properties_by_datahub_id[datahub_id].append(prop)
+    
+    # For each datahub_id, select the best property based on connection priority
+    for datahub_id, property_list in properties_by_datahub_id.items():
+        if len(property_list) == 1:
+            # Only one property with this datahub_id
+            properties.append(property_list[0])
+        else:
+            # Multiple properties with same datahub_id - apply priority logic
+            current_connection_props = [p for p in property_list if p.connection == current_connection]
+            different_connection_props = [p for p in property_list if p.connection is not None and p.connection != current_connection]
+            no_connection_props = [p for p in property_list if p.connection is None]
+            
+            if current_connection_props:
+                # Priority 1: Property for current connection
+                properties.append(current_connection_props[0])
+            elif different_connection_props:
+                # Priority 2: Property for different connection (will appear as local-only)
+                properties.append(different_connection_props[0])
+            elif no_connection_props:
+                # Priority 3: Property with no connection (will appear as local-only)
+                properties.append(no_connection_props[0])
+    
+    return properties

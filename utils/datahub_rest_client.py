@@ -10165,30 +10165,124 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
 
         mutation = """
         mutation createStructuredProperty($input: CreateStructuredPropertyInput!) {
-          createStructuredProperty(input: $input)
+          createStructuredProperty(input: $input) {
+            urn
+            type
+            exists
+            definition {
+              displayName
+              qualifiedName
+              description
+              valueType {
+                urn
+                type
+                __typename
+              }
+              cardinality
+              entityTypes {
+                urn
+                type
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
         }
         """
 
-        # Build property definition
-        property_definition = {
+        # Map simple value types to DataHub URNs if needed
+        value_type_mapping = {
+            "STRING": "urn:li:dataType:datahub.string",
+            "NUMBER": "urn:li:dataType:datahub.number",
+            "DATE": "urn:li:dataType:datahub.date",
+            "BOOLEAN": "urn:li:dataType:datahub.boolean",
+            "URN": "urn:li:dataType:datahub.urn"
+        }
+        
+        # Use the mapped value type if it's a simple string, otherwise use as-is
+        formatted_value_type = value_type_mapping.get(value_type.upper(), value_type) if isinstance(value_type, str) and not value_type.startswith("urn:") else value_type
+
+        # Build the input according to DataHub's CreateStructuredPropertyInput schema
+        input_data = {
+            "id": display_name,
             "qualifiedName": qualified_name or display_name,
             "displayName": display_name,
             "description": description,
-            "valueType": value_type,
+            "valueType": formatted_value_type,
             "cardinality": cardinality
         }
 
         if entity_types:
-            property_definition["entityTypes"] = entity_types
+            # Ensure entity types are formatted as URNs
+            formatted_entity_types = []
+            for entity_type in entity_types:
+                if isinstance(entity_type, str) and not entity_type.startswith("urn:"):
+                    formatted_entity_types.append(f"urn:li:entityType:datahub.{entity_type}")
+                else:
+                    formatted_entity_types.append(entity_type)
+            input_data["entityTypes"] = formatted_entity_types
 
         if allowedValues:
-            property_definition["allowedValues"] = allowedValues
+            # Format allowed values according to DataHub's AllowedValueInput structure
+            formatted_allowed_values = []
+            for allowed_value in allowedValues:
+                formatted_value = {}
+                
+                # Handle different input formats
+                if isinstance(allowed_value, dict):
+                    # If it's already a dict, check if it has the correct structure
+                    if 'value' in allowed_value:
+                        # Extract the actual value from the nested structure
+                        raw_value = allowed_value['value']
+                        if isinstance(raw_value, dict):
+                            # Handle nested value structures like {"double": 30}
+                            if 'double' in raw_value:
+                                formatted_value["numberValue"] = raw_value['double']
+                            elif 'string' in raw_value:
+                                formatted_value["stringValue"] = raw_value['string']
+                            else:
+                                # Try to infer the type
+                                for key, val in raw_value.items():
+                                    if key in ['double', 'float', 'number']:
+                                        formatted_value["numberValue"] = val
+                                    elif key in ['string', 'str']:
+                                        formatted_value["stringValue"] = val
+                        else:
+                            # Direct value, infer type
+                            if isinstance(raw_value, (int, float)):
+                                formatted_value["numberValue"] = float(raw_value)
+                            else:
+                                formatted_value["stringValue"] = str(raw_value)
+                    elif 'stringValue' in allowed_value or 'numberValue' in allowed_value:
+                        # Already in correct format
+                        formatted_value = allowed_value.copy()
+                    else:
+                        # Dict without proper structure, try to infer
+                        if 'description' in allowed_value:
+                            formatted_value["description"] = allowed_value['description']
+                        
+                        # Look for value indicators
+                        for key, val in allowed_value.items():
+                            if key not in ['description']:
+                                if isinstance(val, (int, float)):
+                                    formatted_value["numberValue"] = float(val)
+                                else:
+                                    formatted_value["stringValue"] = str(val)
+                                break
+                else:
+                    # Direct value, infer type
+                    if isinstance(allowed_value, (int, float)):
+                        formatted_value["numberValue"] = float(allowed_value)
+                    else:
+                        formatted_value["stringValue"] = str(allowed_value)
+                
+                formatted_allowed_values.append(formatted_value)
+            
+            input_data["allowedValues"] = formatted_allowed_values
 
         variables = {
-            "input": {
-                "id": display_name,
-                "definition": property_definition
-            }
+            "input": input_data
         }
 
         try:
@@ -10196,8 +10290,9 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
             self.logger.debug(f"Create structured property GraphQL result: {result}")
 
             if result and "data" in result and "createStructuredProperty" in result["data"]:
-                created_urn = result["data"]["createStructuredProperty"]
-                if created_urn:
+                created_property = result["data"]["createStructuredProperty"]
+                if created_property and created_property.get("urn"):
+                    created_urn = created_property["urn"]
                     self.logger.info(f"Successfully created structured property: {created_urn}")
                     return created_urn
 

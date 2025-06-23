@@ -980,7 +980,11 @@ function getActionButtons(property, tabType) {
     const propertyUrn = property.urn;
     const status = property.status;
     
-    console.log(`Getting action buttons for property: ${property.name}, id: ${propertyId}, status: ${status}`);
+    // Get connection context information
+    const connectionContext = property.connection_context || 'none'; // "current", "different", "none"
+    const hasRemoteMatch = property.has_remote_match || false;
+    
+    console.log(`Getting action buttons for property: ${property.name}, id: ${propertyId}, status: ${status}, connection: ${connectionContext}, hasRemote: ${hasRemoteMatch}`);
     
     // 1. View button - always available
     buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary view-property" data-property-urn="${propertyUrn || propertyId}" title="View Details">
@@ -1003,10 +1007,12 @@ function getActionButtons(property, tabType) {
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
             <i class="fas fa-file-download"></i>
         </button>`);
-        // 5. Resync button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-info resync-property" onclick="resyncProperty('${propertyId}')" title="Resync">
-            <i class="fas fa-sync-alt"></i>
-        </button>`);
+        // 5. Resync button - Only for properties that belong to current connection and have remote match
+        if (connectionContext === 'current' && hasRemoteMatch) {
+            buttons.push(`<button type="button" class="btn btn-sm btn-outline-info resync-property" onclick="resyncProperty('${propertyId}')" title="Resync">
+                <i class="fas fa-sync-alt"></i>
+            </button>`);
+        }
         // 6. Push to DataHub button
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
             <i class="fas fa-upload"></i>
@@ -1028,7 +1034,7 @@ function getActionButtons(property, tabType) {
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary download-json" onclick="downloadPropertyJson('${propertyId}')" title="Download JSON">
             <i class="fas fa-file-download"></i>
         </button>`);
-        // 5. Push to DataHub button
+        // 5. Push to DataHub button - Show for ALL properties in local tab regardless of their connection or sync status
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
             <i class="fas fa-upload"></i>
         </button>`);
