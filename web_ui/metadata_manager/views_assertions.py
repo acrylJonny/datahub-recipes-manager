@@ -922,14 +922,14 @@ def get_remote_assertions_data(request):
                             enhanced_remote_assertions[assertion_urn] = enhanced_assertion
 
             # Extract assertion URNs that exist locally and map them
-            local_assertion_urns = {}  # Map original_urn -> local assertion
+            local_assertion_urns = {}  # Map urn -> local assertion  
             local_assertion_ids = {}   # Map assertion_id -> local assertion
             
             try:
                 for assertion in local_assertions:
-                    # Map by original URN if it exists (synced assertions)
-                    if assertion.original_urn:
-                        local_assertion_urns[assertion.original_urn] = assertion
+                    # Map by URN if it exists (synced assertions)
+                    if hasattr(assertion, 'urn') and assertion.urn:
+                        local_assertion_urns[assertion.urn] = assertion
                     # Also map by ID for local-only assertions - handle UUID safely
                     try:
                         assertion_id = str(assertion.id)  # Convert to string to avoid UUID issues
@@ -950,7 +950,7 @@ def get_remote_assertions_data(request):
                         # Create enhanced local assertion data
                         local_assertion_data = {
                             "id": str(assertion.id),  # Convert to string to avoid UUID issues
-                            "urn": assertion.original_urn or f"urn:li:assertion:local:{assertion.id}",
+                            "urn": getattr(assertion, 'urn', None) or f"urn:li:assertion:local:{assertion.id}",
                             "name": assertion.name,
                             "description": assertion.description or "",
                             "type": assertion.assertion_type or assertion.type,
@@ -1001,9 +1001,10 @@ def get_remote_assertions_data(request):
                         sync_status = getattr(assertion, 'sync_status', 'LOCAL_ONLY')
                         if sync_status == "SYNCED":
                             # This is a synced assertion
-                            if assertion.original_urn and assertion.original_urn in enhanced_remote_assertions:
+                            assertion_urn = getattr(assertion, 'urn', None)
+                            if assertion_urn and assertion_urn in enhanced_remote_assertions:
                                 # Found in remote results - perfect sync
-                                remote_data = enhanced_remote_assertions[assertion.original_urn]
+                                remote_data = enhanced_remote_assertions[assertion_urn]
                                 synced_items.append({
                                     "local": local_assertion_data,
                                     "remote": remote_data,
@@ -1014,8 +1015,8 @@ def get_remote_assertions_data(request):
                                     }
                                 })
                                 # Remove from remote-only list since it's synced
-                                del enhanced_remote_assertions[assertion.original_urn]
-                            elif assertion.original_urn:
+                                del enhanced_remote_assertions[assertion_urn]
+                            elif assertion_urn:
                                 # Synced but not found in current remote search (could be indexing delay)
                                 # Still treat as synced since we have the sync_status
                                 synced_items.append({
@@ -1028,7 +1029,7 @@ def get_remote_assertions_data(request):
                                     }
                                 })
                             else:
-                                # Marked as synced but no original_urn - data inconsistency
+                                # Marked as synced but no urn - data inconsistency
                                 local_assertion_data["sync_status"] = "LOCAL_ONLY"
                                 local_assertion_data["sync_status_display"] = "Local Only (Sync Error)"
                                 local_only_items.append(local_assertion_data)
@@ -1212,9 +1213,11 @@ def sync_assertion_to_local(request):
                                 if custom_assertion and isinstance(custom_assertion, dict) and "entityUrn" in custom_assertion:
                                     entity_urn = custom_assertion["entityUrn"]
         
-        # Extract assertion type
+        # Extract assertion type and handle $UNKNOWN enum case
         assertion_type = info.get("type", "UNKNOWN")
-        if assertion_type == "UNKNOWN":
+        
+        # Handle the $UNKNOWN enum case from DataHub GraphQL
+        if assertion_type == "$UNKNOWN" or assertion_type == "UNKNOWN" or not assertion_type:
             # Try to determine type from the info structure
             if info.get("datasetAssertion"):
                 assertion_type = "DATASET"
@@ -1230,6 +1233,14 @@ def sync_assertion_to_local(request):
                 assertion_type = "SCHEMA"
             elif info.get("customAssertion"):
                 assertion_type = "CUSTOM"
+            else:
+                # Fallback to SQL if we can't determine type
+                assertion_type = "SQL"
+                logger.warning(f"Could not determine assertion type for {assertion_urn}, defaulting to SQL")
+        
+        # Clean up any remaining enum artifacts
+        if assertion_type.startswith("$"):
+            assertion_type = "SQL"  # Safe fallback
         
         # Extract platform information
         platform_name = None
@@ -1265,13 +1276,14 @@ def sync_assertion_to_local(request):
         if status_data and isinstance(status_data, dict):
             removed = status_data.get("removed", False)
         
-        # Check if assertion already exists (by urn or original_urn)
+        # Check if assertion already exists (by urn)
         existing_assertion = None
         try:
             existing_assertion = Assertion.objects.get(urn=deterministic_urn)
         except Assertion.DoesNotExist:
+            # Check if we have an assertion with this urn already
             try:
-                existing_assertion = Assertion.objects.get(original_urn=assertion_urn)
+                existing_assertion = Assertion.objects.get(urn=assertion_urn)
             except Assertion.DoesNotExist:
                 pass
         
@@ -1281,8 +1293,7 @@ def sync_assertion_to_local(request):
             existing_assertion.description = description
             existing_assertion.type = assertion_type  # Legacy field
             existing_assertion.assertion_type = assertion_type
-            existing_assertion.urn = deterministic_urn
-            existing_assertion.original_urn = assertion_urn
+            existing_assertion.urn = assertion_urn  # Use the actual DataHub URN
             existing_assertion.entity_urn = entity_urn
             existing_assertion.platform_name = platform_name
             existing_assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
@@ -1304,7 +1315,7 @@ def sync_assertion_to_local(request):
             existing_assertion.config = existing_assertion.config or {}
             existing_assertion.config.update({
                 "synced_from_datahub": True,
-                "original_urn": assertion_urn,
+                "datahub_urn": assertion_urn,
                 "raw_data": assertion_data
             })
             
@@ -1320,13 +1331,12 @@ def sync_assertion_to_local(request):
                 assertion_type=assertion_type,
                 config={
                     "synced_from_datahub": True,
-                    "original_urn": assertion_urn,
+                    "datahub_urn": assertion_urn,
                     "raw_data": assertion_data
                 },
                 
                 # URN tracking
-                urn=deterministic_urn,
-                original_urn=assertion_urn,
+                urn=assertion_urn,  # Use the actual DataHub URN
                 
                 # Entity and platform info
                 entity_urn=entity_urn,
@@ -1496,9 +1506,11 @@ def resync_assertion(request, assertion_id):
                                 if custom_assertion and isinstance(custom_assertion, dict) and "entityUrn" in custom_assertion:
                                     entity_urn = custom_assertion["entityUrn"]
         
-        # Update assertion type
+        # Update assertion type and handle $UNKNOWN enum case
         assertion_type = info.get("type", "UNKNOWN")
-        if assertion_type == "UNKNOWN":
+        
+        # Handle the $UNKNOWN enum case from DataHub GraphQL
+        if assertion_type == "$UNKNOWN" or assertion_type == "UNKNOWN" or not assertion_type:
             # Try to determine type from the info structure
             if info.get("datasetAssertion"):
                 assertion_type = "DATASET"
@@ -1514,6 +1526,14 @@ def resync_assertion(request, assertion_id):
                 assertion_type = "SCHEMA"
             elif info.get("customAssertion"):
                 assertion_type = "CUSTOM"
+            else:
+                # Fallback to SQL if we can't determine type
+                assertion_type = "SQL"
+                logger.warning(f"Could not determine assertion type for {assertion_urn}, defaulting to SQL")
+        
+        # Clean up any remaining enum artifacts
+        if assertion_type.startswith("$"):
+            assertion_type = "SQL"  # Safe fallback
         
         # Update platform information
         platform_name = None
@@ -1548,7 +1568,7 @@ def resync_assertion(request, assertion_id):
         # Update all fields
         assertion.type = assertion_type  # Legacy field
         assertion.assertion_type = assertion_type
-        assertion.original_urn = assertion_urn
+        assertion.urn = assertion_urn  # Use the actual DataHub URN
         assertion.entity_urn = entity_urn
         assertion.platform_name = platform_name
         assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
@@ -2145,7 +2165,7 @@ def generate_custom_assertion_input(assertion):
     """Generate UpsertCustomAssertionInput from assertion config"""
     config = assertion.config
     return {
-        "urn": config.get("original_urn"),
+        "urn": config.get("datahub_urn") or assertion.urn,
         "input": {
             "entityUrn": config.get("entity_urn", config.get("dataset_urn", "")),
             "type": config.get("custom_type", "CUSTOM"),

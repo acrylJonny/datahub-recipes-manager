@@ -6,6 +6,8 @@
 
 {% block extra_css %}
 <link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 <style>
     .description-cell {
         max-width: 300px;
@@ -55,136 +57,106 @@
     
     /* Filter styling */
     .filter-row {
-        min-height: 80px;
+        min-height: 70px;
     }
     
     .filter-stat {
-        padding: 1rem;
+        cursor: pointer;
         transition: all 0.2s ease;
-        cursor: default;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
         height: 100%;
         display: flex;
         flex-direction: column;
+        align-items: center;
         justify-content: center;
+        min-height: 70px;
     }
     
-    .clickable-stat {
-        cursor: pointer;
+    .filter-stat:last-child {
+        border-right: none;
     }
     
-    .clickable-stat:hover {
+    .filter-stat:hover {
         background-color: #f8f9fa;
     }
     
-    .clickable-stat.active {
-        background-color: #e3f2fd;
-        border-color: #2196f3;
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
     }
     
-    .col-md-2-5 {
-        flex: 0 0 20%;
-        max-width: 20%;
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
     }
     
-    /* Filter text styling - prevent wrapping */
-    .filter-stat .text-muted {
-        white-space: nowrap;
-        font-size: 0.8rem;
-        line-height: 1.2;
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
     }
     
-    /* Adjust filter column widths for longer text */
-    .filter-row .col-3 {
-        min-width: 0;
-        flex: 1;
-    }
-    
-    /* Ensure action buttons don't wrap */
-    .table td:nth-child(8) .btn-group {
-        white-space: nowrap;
-    }
-    
-    /* Sorting styles */
+    /* Sortable table headers */
     .sortable-header {
         cursor: pointer;
         user-select: none;
         position: relative;
+        padding-right: 20px !important;
     }
     
     .sortable-header:hover {
         background-color: #e9ecef !important;
     }
     
-    .sortable-header.sorted {
-        background-color: #e3f2fd !important;
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
     }
     
-    .sort-indicator {
-        font-size: 0.8em;
-        margin-left: 5px;
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
         color: #007bff;
     }
     
-    /* Pagination styles */
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Pagination styling */
     .pagination-container {
         display: flex;
-        justify-content: between;
+        justify-content: space-between;
         align-items: center;
         padding: 1rem;
-        background-color: #f8f9fa;
         border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
     }
     
     .pagination-info {
-        font-size: 0.9rem;
         color: #6c757d;
+        font-size: 0.9rem;
     }
-
-    /* Bulk actions styling - same as tags */
-    .bulk-actions {
-        display: none;
-        background-color: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-        padding: 0.75rem 1rem;
-        margin: 0;
-    }
-
-    .bulk-actions.show {
-        display: block;
-    }
-
-    .bulk-actions-bar .bulk-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    /* Pagination styles matching tags */
+    
     .pagination .page-link {
         color: #007bff;
-        background-color: #fff;
-        border: 1px solid #dee2e6;
-        padding: 0.375rem 0.75rem;
-        margin-left: -1px;
-        line-height: 1.25;
-        text-decoration: none;
-        transition: all 0.15s ease-in-out;
-    }
-
-    .pagination .page-link:hover {
-        z-index: 2;
-        color: #0056b3;
-        text-decoration: none;
-        background-color: #e9ecef;
         border-color: #dee2e6;
     }
-
+    
     .pagination .page-item.active .page-link {
-        z-index: 3;
         background-color: #007bff;
         border-color: #007bff;
         color: white !important;
     }
-
+    
     .pagination .page-item.disabled .page-link {
         color: #6c757d;
         pointer-events: none;
@@ -192,29 +164,356 @@
         background-color: #fff;
         border-color: #dee2e6;
     }
-
+    
+    /* Items per page selector */
+    .items-per-page {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .items-per-page select {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    /* Table column constraints */
+    .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
+        width: 40px;
+        max-width: 40px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* Name */
+        max-width: 150px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* Dataset Name */
+        max-width: 150px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* Entity URN */
+        max-width: 170px;
+        min-width: 140px;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* Platform */
+        width: 100px;
+        max-width: 100px;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* Browse Path */
+        max-width: 150px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* Instance */
+        width: 110px;
+        max-width: 110px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* State */
+        width: 80px;
+        max-width: 80px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(9), .table td:nth-child(9) { /* Result */
+        width: 80px;
+        max-width: 80px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(10), .table td:nth-child(10) { /* Assertions */
+        width: 60px;
+        max-width: 60px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(11), .table td:nth-child(11) { /* Sync Status */
+        width: 100px;
+        max-width: 100px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(12), .table td:nth-child(12) { /* Actions */
+        width: 200px;
+        max-width: 200px;
+        text-align: left;
+    }
+    
     /* Text truncation for table cells */
     .table td {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        position: relative;
     }
-
-    /* Sorting icons */
-    .sort-icon {
-        color: #6c757d;
+    
+    .table td code {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+    
+    /* Badge styling */
+    .badge {
         font-size: 0.75rem;
-        transition: color 0.15s ease;
+    }
+    
+    .bulk-actions {
+        display: none;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .bulk-actions.show {
+        display: block;
     }
 
-    .sortable-header:hover .sort-icon {
+    .table th {
+        background-color: #f8f9fa;
+        border-top: none;
+    }
+    
+    .clickable-stat {
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .clickable-stat:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    .clickable-stat.active {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Filter Statistics Styling */
+    .filter-row {
+        min-height: 70px;
+    }
+    
+    .filter-stat {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-right: 1px solid #e9ecef;
+        padding: 1rem 0.5rem;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 70px;
+    }
+    
+    .filter-stat:last-child {
+        border-right: none;
+    }
+    
+    .filter-stat:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .clickable-stat:not(.multi-select).active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .multi-select.active {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .clickable-stat.active .text-muted {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
         color: #007bff;
     }
-
-    .sortable-header.sorted .sort-icon {
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
         color: #007bff;
     }
-
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .pagination .page-link {
+        color: #007bff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: white !important;
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        pointer-events: none;
+        cursor: auto;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+    
+    /* Items per page selector */
+    .items-per-page {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .items-per-page select {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    /* Table column constraints */
+    .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
+        width: 40px;
+        max-width: 40px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* Name */
+        max-width: 150px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* Dataset Name */
+        max-width: 150px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* Entity URN */
+        max-width: 170px;
+        min-width: 140px;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* Platform */
+        width: 100px;
+        max-width: 100px;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* Browse Path */
+        max-width: 150px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* Instance */
+        width: 110px;
+        max-width: 110px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* State */
+        width: 80px;
+        max-width: 80px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(9), .table td:nth-child(9) { /* Result */
+        width: 80px;
+        max-width: 80px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(10), .table td:nth-child(10) { /* Assertions */
+        width: 60px;
+        max-width: 60px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(11), .table td:nth-child(11) { /* Sync Status */
+        width: 100px;
+        max-width: 100px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(12), .table td:nth-child(12) { /* Actions */
+        width: 200px;
+        max-width: 200px;
+        text-align: left;
+    }
+    
+    /* Text truncation for table cells */
+    .table td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        position: relative;
+    }
+    
+    .table td code {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+    
+    /* Badge styling */
+    .badge {
+        font-size: 0.75rem;
+    }
+    
     /* Row striping and hover effects */
     .table-success-subtle {
         background-color: rgba(25, 135, 84, 0.075);
@@ -287,6 +586,12 @@
     .table td:last-child .btn-group {
         white-space: nowrap;
     }
+    
+    /* Custom column width for overview statistics */
+    .col-md-2-5 {
+        flex: 1;
+        max-width: none;
+    }
 </style>
 {% endblock %}
 
@@ -313,19 +618,11 @@
                             <i class="fas fa-sync-alt me-1"></i> Bulk Actions
                         </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAll()">
-                                <i class="fas fa-sync-alt me-2"></i> Resync All
-                            </a></li>
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAll()">
-                                <i class="fas fa-file-export me-2"></i> Export All
-                            </a></li>
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllToStagedChanges()">
-                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
-                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="bulkResyncContracts('all')"><i class="fas fa-sync-alt me-2"></i>Resync All</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="bulkSyncToLocal('all')"><i class="fas fa-download me-2"></i>Sync All to Local</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="bulkAddToStagedChanges('all')"><i class="fas fa-layer-group me-2"></i>Add All to Staged Changes</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportModal()">
-                                <i class="fas fa-file-import me-2"></i> Import from JSON
-                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="bulkDownloadJson('all')"><i class="fas fa-download me-2"></i>Export All as JSON</a></li>
                         </ul>
                     </div>
 
@@ -386,14 +683,14 @@
                                     </div>
                                 </div>
                                 <div class="col-md-2-5 border-end">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
-                                        <div class="h5 mb-0" id="local-only-count">0</div>
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local" data-category="overview">
+                                        <div class="h5 mb-0" id="local-count">0</div>
                                         <div class="text-muted">Local Only</div>
                                     </div>
                                 </div>
                                 <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
-                                        <div class="h5 mb-0" id="remote-only-count">0</div>
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-count">0</div>
                                         <div class="text-muted">Remote Only</div>
                                     </div>
                                 </div>
@@ -405,31 +702,28 @@
                 <!-- Contracts Tabs -->
                 <ul class="nav nav-tabs mb-4" id="contractTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced-items" 
-                               type="button" role="tab" aria-controls="synced-items" aria-selected="true">
+                        <button class="nav-link active" id="synced-tab" data-bs-toggle="tab" data-bs-target="#synced" type="button" role="tab">
                             <i class="fas fa-sync-alt me-1"></i> Synced Contracts
-                            <span class="badge bg-success ms-1" id="synced-badge">0</span>
+                            <span class="badge bg-success rounded-pill" id="synced-badge">0</span>
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local-items" 
-                               type="button" role="tab" aria-controls="local-items" aria-selected="false">
+                        <button class="nav-link" id="local-tab" data-bs-toggle="tab" data-bs-target="#local" type="button" role="tab">
                             <i class="fas fa-laptop me-1"></i> Local Only Contracts
-                            <span class="badge bg-secondary ms-1" id="local-badge">0</span>
+                            <span class="badge bg-warning rounded-pill" id="local-badge">0</span>
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote-items" 
-                               type="button" role="tab" aria-controls="remote-items" aria-selected="false">
+                        <button class="nav-link" id="remote-tab" data-bs-toggle="tab" data-bs-target="#remote" type="button" role="tab">
                             <i class="fas fa-server me-1"></i> Remote Only Contracts
-                            <span class="badge bg-info ms-1" id="remote-badge">0</span>
+                            <span class="badge bg-info rounded-pill" id="remote-badge">0</span>
                         </button>
                     </li>
                 </ul>
                 
-                <div class="tab-content" id="contractTabsContent">
+                <div class="tab-content" id="contractTabContent">
                     <!-- Synced Contracts Tab -->
-                    <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
+                    <div class="tab-pane fade show active" id="synced" role="tabpanel">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Synced Contracts</h5>
@@ -472,7 +766,7 @@
                     </div>
                     
                     <!-- Local Contracts Tab -->
-                    <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
+                    <div class="tab-pane fade" id="local" role="tabpanel">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Local Only Contracts</h5>
@@ -515,7 +809,7 @@
                     </div>
                     
                     <!-- Remote Contracts Tab -->
-                    <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
+                    <div class="tab-pane fade" id="remote" role="tabpanel">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">Remote Only Contracts</h5>
@@ -665,7 +959,7 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <!-- Data Contracts Enhanced JavaScript -->
-<script src="{% static 'metadata_manager/data_contracts/data_contracts_enhanced.js' %}"></script>
+<script src="{% static 'metadata_manager/data_contracts/data_contracts_enhanced.js' %}?v={{ cache_version }}"></script>
 
 <style>
 #modal-raw-json {

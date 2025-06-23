@@ -269,8 +269,35 @@ function processContractsData(rawData) {
         datahub_token: rawData.datahub_token || ''
     };
 
-    // For now, put all contracts in remote_only_items since data contracts are typically remote
-    if (rawData.remote_data_contracts) {
+    // Process synced items
+    if (rawData.synced_items && Array.isArray(rawData.synced_items)) {
+        processed.synced_items = rawData.synced_items.map(contract => ({
+            ...contract,
+            sync_status: contract.sync_status || 'SYNCED',
+            sync_status_display: contract.sync_status_display || 'Synced'
+        }));
+    }
+
+    // Process local only items  
+    if (rawData.local_only_items && Array.isArray(rawData.local_only_items)) {
+        processed.local_only_items = rawData.local_only_items.map(contract => ({
+            ...contract,
+            sync_status: 'LOCAL_ONLY',
+            sync_status_display: 'Local Only'
+        }));
+    }
+
+    // Process remote only items
+    if (rawData.remote_only_items && Array.isArray(rawData.remote_only_items)) {
+        processed.remote_only_items = rawData.remote_only_items.map(contract => ({
+            ...contract,
+            sync_status: 'REMOTE_ONLY',
+            sync_status_display: 'Remote Only'
+        }));
+    }
+
+    // Fallback: if we have remote_data_contracts but no remote_only_items, use that
+    if (rawData.remote_data_contracts && Array.isArray(rawData.remote_data_contracts) && processed.remote_only_items.length === 0) {
         processed.remote_only_items = rawData.remote_data_contracts.map(contract => ({
             ...contract,
             sync_status: 'REMOTE_ONLY',
@@ -632,30 +659,16 @@ function generateTableHTML(items, tabType) {
                         <th width="30">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th class="sortable-header" data-sort="urn" width="180">
-                            <i class="fas fa-file-contract me-1"></i> URN
-                        </th>
-                        <th class="sortable-header" data-sort="entityUrn" width="180">
-                            <i class="fas fa-database me-1"></i> Entity URN
-                        </th>
-                        <th class="sortable-header" data-sort="dataset_name" width="150">
-                            <i class="fas fa-table me-1"></i> Dataset
-                        </th>
-                        <th class="sortable-header" data-sort="dataset_browse_path" width="200">
-                            <i class="fas fa-folder me-1"></i> Browse Path
-                        </th>
-                        <th class="sortable-header" data-sort="dataset_platform" width="100">
-                            <i class="fas fa-server me-1"></i> Platform
-                        </th>
-                        <th class="sortable-header" data-sort="dataset_platform_instance" width="100">
-                            <i class="fas fa-cloud me-1"></i> Instance
-                        </th>
-                        <th class="sortable-header" data-sort="state" width="80">
-                            <i class="fas fa-flag me-1"></i> State
-                        </th>
-                        <th class="sortable-header" data-sort="assertions" width="60">
-                            <i class="fas fa-check-circle me-1"></i> Assertions
-                        </th>
+                        <th class="sortable-header" data-sort="name" width="150">Name</th>
+                        <th class="sortable-header" data-sort="dataset_name" width="150">Dataset Name</th>
+                        <th class="sortable-header" data-sort="entityUrn" width="170">Entity URN</th>
+                        <th class="sortable-header" data-sort="dataset_platform" width="100">Platform</th>
+                        <th class="sortable-header" data-sort="dataset_browse_path" width="150">Browse Path</th>
+                        <th class="sortable-header" data-sort="dataset_platform_instance" width="110">Instance</th>
+                        <th class="sortable-header" data-sort="state" width="80">State</th>
+                        <th class="sortable-header" data-sort="result" width="80">Result</th>
+                        <th class="sortable-header" data-sort="assertions" width="60">Assertions</th>
+                        <th class="sortable-header" data-sort="sync_status" width="100">Sync Status</th>
                         <th width="200">Actions</th>
                     </tr>
                 </thead>
@@ -688,19 +701,29 @@ function renderContractRow(contract, tabType) {
     
     // Look for dataset info first from enhanced data
     if (contract.dataset_info) {
-        // Remove dataset_info.properties.name from compute path - just use the base computed_browse_path
-        datasetBrowsePath = contract.dataset_info.computed_browse_path || 'N/A';
+        // Use computed_browse_path which has the correct logic without dataset name appended
+        if (contract.dataset_info.computed_browse_path) {
+            datasetBrowsePath = contract.dataset_info.computed_browse_path;
+        }
+        
+        // Extract platform information
         if (contract.dataset_info.platform && contract.dataset_info.platform.name) {
             datasetPlatform = contract.dataset_info.platform.name;
         }
+        
+        // Extract platform instance
         if (contract.dataset_info.dataPlatformInstance && contract.dataset_info.dataPlatformInstance.properties && contract.dataset_info.dataPlatformInstance.properties.name) {
             datasetPlatformInstance = contract.dataset_info.dataPlatformInstance.properties.name;
         }
-        // Get dataset name from dataset URN instead of properties.name
-        if (contract.dataset_info.urn) {
-            const urnParts = contract.dataset_info.urn.split(',');
-            if (urnParts.length > 0) {
-                datasetName = urnParts[urnParts.length - 1].replace(/[)]/g, '');
+        
+        // Get dataset name from properties.name if available, otherwise extract from URN
+        if (contract.dataset_info.properties && contract.dataset_info.properties.name) {
+            datasetName = contract.dataset_info.properties.name;
+        } else if (contract.dataset_info.urn) {
+            // Extract name from URN format: urn:li:dataset:(urn:li:dataPlatform:platform,dataset_name,ENV)
+            const matches = contract.dataset_info.urn.match(/urn:li:dataset:\(urn:li:dataPlatform:[^,]+,([^,)]+)/);
+            if (matches && matches[1]) {
+                datasetName = matches[1];
             }
         }
     }
@@ -725,6 +748,16 @@ function renderContractRow(contract, tabType) {
         stateBadgeClass = 'bg-success';
     } else if (state.toLowerCase() === 'pending') {
         stateBadgeClass = 'bg-warning';
+    }
+    
+    // Get result status from contract.result.type
+    const result = contract.result || {};
+    const resultType = result.type || 'Unknown';
+    let resultBadgeClass = 'bg-secondary';
+    if (resultType.toLowerCase() === 'passing') {
+        resultBadgeClass = 'bg-success';
+    } else if (resultType.toLowerCase() === 'failing') {
+        resultBadgeClass = 'bg-danger';
     }
     
     // Count assertions - handle different data structures
@@ -759,37 +792,54 @@ function renderContractRow(contract, tabType) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&apos;');
     
+    // Extract contract name - prefer properties.name, then derive from URN, fallback to 'Unknown'
+    let contractName = 'Unknown Contract';
+    if (properties.name) {
+        contractName = properties.name;
+    } else if (urn) {
+        const urnParts = urn.split(':');
+        if (urnParts.length > 2) {
+            contractName = urnParts[urnParts.length - 1];
+        }
+    }
+
     return `
         <tr data-item='${safeJsonData}'>
             <td>
                 <input type="checkbox" class="form-check-input item-checkbox" value="${contract.urn || contract.id}">
             </td>
-            <td title="${DataUtils.safeEscapeHtml(urn)}">
+            <td title="${DataUtils.safeEscapeHtml(contractName)}">
                 <div class="d-flex align-items-center">
                     <i class="${typeIcon} me-2"></i>
-                    <code class="small text-truncate" style="max-width: 150px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(urn, 30))}</code>
+                    <strong>${DataUtils.formatDisplayText(contractName, 25)}</strong>
                 </div>
             </td>
-            <td title="${DataUtils.safeEscapeHtml(entityUrn)}">
-                <code class="small text-truncate" style="max-width: 150px; display: inline-block;">${DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(entityUrn, 30))}</code>
-            </td>
             <td title="${DataUtils.safeEscapeHtml(datasetName)}">
-                <span class="fw-medium text-truncate d-inline-block" style="max-width: 130px;">${datasetName === 'Unknown' ? '<span class="text-muted">Unknown</span>' : DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(datasetName, 20))}</span>
+                <strong>${DataUtils.formatDisplayText(datasetName, 25)}</strong>
             </td>
-            <td title="${DataUtils.safeEscapeHtml(datasetBrowsePath)}">
-                <span class="text-truncate d-inline-block" style="max-width: 150px;">${datasetBrowsePath === 'N/A' ? '<span class="text-muted">N/A</span>' : '<code class="small">' + DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(datasetBrowsePath, 25)) + '</code>'}</span>
+            <td title="${DataUtils.safeEscapeHtml(entityUrn)}">
+                <code class="small">${DataUtils.formatDisplayText(entityUrn, 35)}</code>
             </td>
             <td title="${DataUtils.safeEscapeHtml(datasetPlatform)}">
                 <span class="badge bg-secondary">${DataUtils.safeEscapeHtml(datasetPlatform)}</span>
             </td>
+            <td title="${DataUtils.safeEscapeHtml(datasetBrowsePath)}">
+                ${datasetBrowsePath === 'N/A' ? '<span class="text-muted">N/A</span>' : '<code class="small">' + DataUtils.formatDisplayText(datasetBrowsePath, 25) + '</code>'}
+            </td>
             <td title="${DataUtils.safeEscapeHtml(datasetPlatformInstance)}">
-                ${datasetPlatformInstance ? '<span class="badge bg-light text-dark">' + DataUtils.safeEscapeHtml(datasetPlatformInstance) + '</span>' : '<span class="text-muted">-</span>'}
+                ${datasetPlatformInstance ? '<span class="badge bg-light text-dark">' + DataUtils.safeEscapeHtml(DataUtils.formatDisplayText(datasetPlatformInstance, 15)) + '</span>' : '<span class="text-muted">-</span>'}
             </td>
             <td>
                 <span class="badge ${stateBadgeClass}">${DataUtils.safeEscapeHtml(state)}</span>
             </td>
+            <td>
+                <span class="badge ${resultBadgeClass}">${DataUtils.safeEscapeHtml(resultType)}</span>
+            </td>
             <td class="text-center">
                 <span class="badge bg-info">${assertionCount}</span>
+            </td>
+            <td>
+                <span class="badge ${statusClass}">${contract.sync_status_display || contract.sync_status || 'Unknown'}</span>
             </td>
             <td>
                 <div class="btn-group" role="group">
@@ -945,7 +995,7 @@ function getEmptyStateHTML(tabType, hasSearch) {
     if (hasSearch) {
         return `
             <tr>
-                <td colspan="10" class="text-center py-4 text-muted">
+                <td colspan="12" class="text-center py-4 text-muted">
                     <i class="fas fa-search fa-2x mb-2"></i><br>
                     No contracts found matching your search criteria.
                 </td>
@@ -961,7 +1011,7 @@ function getEmptyStateHTML(tabType, hasSearch) {
     
     return `
         <tr>
-            <td colspan="10" class="text-center py-4 text-muted">
+            <td colspan="12" class="text-center py-4 text-muted">
                 <i class="fas fa-file-contract fa-2x mb-2"></i><br>
                 ${emptyStates[tabType]}
             </td>
@@ -1009,25 +1059,43 @@ function restoreSortState(content, tabType) {
 
 function getSortValue(contract, column) {
     switch (column) {
-        case 'urn':
-            return contract.urn || '';
-        case 'entityUrn':
-            return contract.properties?.entityUrn || '';
+        case 'name':
+            // Extract contract name using same logic as render
+            const properties = contract.properties || {};
+            if (properties.name) {
+                return properties.name;
+            } else if (contract.urn) {
+                const urnParts = contract.urn.split(':');
+                if (urnParts.length > 2) {
+                    return urnParts[urnParts.length - 1];
+                }
+            }
+            return 'Unknown Contract';
         case 'dataset_name':
+            // Extract dataset name using same logic as render
             if (contract.dataset_info && contract.dataset_info.properties && contract.dataset_info.properties.name) {
                 return contract.dataset_info.properties.name;
+            } else if (contract.dataset_info && contract.dataset_info.urn) {
+                // Extract name from URN format: urn:li:dataset:(urn:li:dataPlatform:platform,dataset_name,ENV)
+                const matches = contract.dataset_info.urn.match(/urn:li:dataset:\(urn:li:dataPlatform:[^,]+,([^,)]+)/);
+                if (matches && matches[1]) {
+                    return matches[1];
+                }
             }
-            return contract.dataset_name || '';
-        case 'dataset_browse_path':
-            if (contract.dataset_info && contract.dataset_info.computed_browse_path) {
-                return contract.dataset_info.computed_browse_path;
-            }
-            return contract.dataset_browse_path || '';
+            return contract.dataset_name || 'Unknown';
+        case 'entityUrn':
+            return contract.properties?.entityUrn || '';
         case 'dataset_platform':
             if (contract.dataset_info && contract.dataset_info.platform && contract.dataset_info.platform.name) {
                 return contract.dataset_info.platform.name;
             }
             return contract.dataset_platform || '';
+        case 'dataset_browse_path':
+            // Use computed_browse_path which has the correct logic
+            if (contract.dataset_info && contract.dataset_info.computed_browse_path) {
+                return contract.dataset_info.computed_browse_path;
+            }
+            return contract.dataset_browse_path || '';
         case 'dataset_platform_instance':
             if (contract.dataset_info && contract.dataset_info.dataPlatformInstance && contract.dataset_info.dataPlatformInstance.properties && contract.dataset_info.dataPlatformInstance.properties.name) {
                 return contract.dataset_info.dataPlatformInstance.properties.name;
@@ -1041,10 +1109,18 @@ function getSortValue(contract, column) {
             // Count assertions for sorting
             let count = 0;
             const props = contract.properties || {};
-            if (props.freshness) count += Array.isArray(props.freshness) ? props.freshness.length : 1;
-            if (props.schema) count += Array.isArray(props.schema) ? props.schema.length : 1;
-            if (props.dataQuality) count += Array.isArray(props.dataQuality) ? props.dataQuality.length : 1;
+            if (props.freshness) {
+                count += Array.isArray(props.freshness) ? props.freshness.length : (props.freshness.assertion ? 1 : 0);
+            }
+            if (props.schema) {
+                count += Array.isArray(props.schema) ? props.schema.length : (props.schema.assertion ? 1 : 0);
+            }
+            if (props.dataQuality) {
+                count += Array.isArray(props.dataQuality) ? props.dataQuality.length : (props.dataQuality.assertion ? 1 : 0);
+            }
             return count;
+        case 'sync_status':
+            return contract.sync_status || '';
         default:
             return '';
     }
@@ -1551,7 +1627,7 @@ async function syncContractToLocal(contract, suppressNotifications = false) {
             showNotification(`Syncing contract "${contract.name || contract.urn}" to local...`, 'info');
         }
         
-        const response = await fetch('/metadata/data-contracts/sync-to-local/', {
+        const response = await fetch('/metadata_manager/data-contracts/sync-to-local/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1589,7 +1665,7 @@ async function resyncContract(contract) {
     try {
         showNotification(`Resyncing contract "${contract.name || contract.urn}"...`, 'info');
         
-        const response = await fetch(`/metadata/data-contracts/${contract.id}/resync/`, {
+        const response = await fetch(`/metadata_manager/data-contracts/${contract.id}/resync/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1635,7 +1711,7 @@ async function addContractToStagedChanges(contract) {
         formData.append('contract_urn', contract.urn);
         formData.append('csrfmiddlewaretoken', getCsrfToken());
         
-        const response = await fetch('/metadata/data-contracts/stage_changes/', {
+        const response = await fetch('/metadata_manager/data-contracts/stage_changes/', {
             method: 'POST',
             body: formData
         });

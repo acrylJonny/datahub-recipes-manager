@@ -6805,12 +6805,15 @@ class DataHubRestClient:
                         # Add basic info structure to maintain compatibility with views
                         entity["info"] = {
                             "description": "Assertion details not available due to schema compatibility",
-                            "type": "UNKNOWN"  # Use string instead of enum
+                            "type": "SQL"  # Use SQL as fallback instead of UNKNOWN to avoid enum issues
                         }
                         # Add basic platform info
                         entity["platform"] = {
                             "name": "Unknown Platform"
                         }
+                        # Clean up any enum artifacts that might cause issues
+                        if "type" in entity and entity["type"] == "$UNKNOWN":
+                            entity["type"] = "ASSERTION"
             
             return {"success": True, "data": search_results}
             
@@ -9820,10 +9823,7 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
                     else:
                         self.logger.debug(f"Unexpected browsePaths structure: {browse_paths}")
             
-            # Add the entity name at the end if available
-            properties = entity.get("properties")
-            if properties and properties.get("name"):
-                browse_path_parts.append(properties.get("name"))
+            # Don't add the entity name at the end - this was causing duplication
             
             # Join with '/' to create the final browse path
             return "/".join(browse_path_parts) if browse_path_parts else ""
