@@ -34,33 +34,44 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python"]
-          args: ["web_ui/manage.py", "runserver", "0.0.0.0:8000"]
+          command: ["./run_web_ui.sh"]
+          args: 
+            - "production"
+            - "--host"
+            - "{{ .Values.config.uvicorn.host }}"
+            - "--port"
+            - "{{ .Values.config.uvicorn.port }}"
+            - "--workers"
+            - "{{ .Values.config.uvicorn.workers }}"
+            - "--log-level"
+            - "{{ .Values.config.uvicorn.logLevel }}"
           ports:
             - name: http
-              containerPort: 8000
+              containerPort: {{ .Values.config.uvicorn.port }}
               protocol: TCP
           livenessProbe:
+            httpGet:
+              path: /health/
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
             httpGet:
               path: /health/
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-          readinessProbe:
-            httpGet:
-              path: /health/
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
             - name: DEBUG
               value: "{{ .Values.config.debug }}"
             - name: DJANGO_SETTINGS_MODULE
-              value: "config.settings.{{ .Values.config.djangoSettings }}"
+              value: "web_ui.settings"
             - name: DATAHUB_URL
               value: "{{ .Values.config.datahubUrl }}"
             - name: DATABASE_URL
@@ -82,6 +93,8 @@ spec:
               mountPath: /app/recipes
             - name: templates
               mountPath: /app/templates
+            - name: metadata
+              mountPath: /app/metadata-manager
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -136,4 +149,18 @@ spec:
       {{- end }}
       resources:
         requests:
-          storage: {{ .Values.persistence.volumes.templates.size }} 
+          storage: {{ .Values.persistence.volumes.templates.size }}
+  - metadata:
+      name: metadata
+    spec:
+      accessModes: [ "{{ .Values.persistence.volumes.metadata.accessMode }}" ]
+      {{- if .Values.persistence.storageClass }}
+      {{- if (eq "-" .Values.persistence.storageClass) }}
+      storageClassName: ""
+      {{- else }}
+      storageClassName: "{{ .Values.persistence.storageClass }}"
+      {{- end }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.volumes.metadata.size }} 

@@ -71,6 +71,40 @@
                 </div>
 
                 <div class="mb-3">
+                    <label class="form-label">Platform Instance Mapping</label>
+                    <div class="form-text mb-2">
+                        Map platform instance names between environments. For example, map "DEV-MYSQL" to "PROD-MYSQL" when syncing from dev to prod.
+                        <a href="#" data-bs-toggle="modal" data-bs-target="#platformMappingHelp">View examples</a>
+                    </div>
+                    
+                    <div id="platformMappingContainer">
+                        <!-- Initial empty row -->
+                        <div class="platform-mapping-row mb-2">
+                            <div class="row g-2">
+                                <div class="col-md-5">
+                                    <input type="text" class="form-control mapping-from" placeholder="From (source instance)" name="mapping_from[]">
+                                </div>
+                                <div class="col-md-5">
+                                    <input type="text" class="form-control mapping-to" placeholder="To (target instance)" name="mapping_to[]">
+                                </div>
+                                <div class="col-md-2">
+                                    <button type="button" class="btn btn-outline-danger btn-sm remove-mapping" title="Remove mapping">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="addMapping">
+                        <i class="fas fa-plus me-1"></i> Add Mapping
+                    </button>
+                    
+                    <!-- Hidden field to store JSON -->
+                    <input type="hidden" id="platform_instance_mapping" name="platform_instance_mapping" value="{}">
+                </div>
+
+                <div class="mb-3">
                     <label class="form-label">Custom Properties</label>
                     <div class="form-text mb-2">
                         Add key-value pairs for custom properties that will be applied during metadata transformation.
@@ -111,6 +145,45 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Platform Mapping Help Modal -->
+<div class="modal fade" id="platformMappingHelp" tabindex="-1" aria-labelledby="platformMappingHelpLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="platformMappingHelpLabel">Platform Instance Mapping Examples</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Platform instance mapping allows you to transform platform instance names when syncing metadata between environments.</p>
+                
+                <h6>Common Use Cases</h6>
+                <ul>
+                    <li><strong>DEV-MYSQL</strong> → <strong>PROD-MYSQL</strong> (Environment promotion)</li>
+                    <li><strong>dev-snowflake</strong> → <strong>production-snowflake</strong> (Naming convention changes)</li>
+                    <li><strong>staging-postgres</strong> → <strong>prod-postgres</strong> (Stage to production)</li>
+                    <li><strong>test-databricks</strong> → <strong>prod-databricks</strong> (Test to production)</li>
+                </ul>
+
+                <h6>How It Works</h6>
+                <p>When syncing metadata to a new environment, the system will:</p>
+                <ol>
+                    <li>Look for the source platform instance name in the "From" column</li>
+                    <li>Replace it with the corresponding "To" value</li>
+                    <li>Update all references in metadata URNs and properties</li>
+                </ol>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Tip:</strong> This is especially useful when your development and production environments use different naming conventions for the same logical platform.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -162,6 +235,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const addButton = document.getElementById('addProperty');
     const hiddenInput = document.getElementById('custom_properties');
     const form = document.getElementById('mutationForm');
+
+    // Platform instance mapping elements
+    const mappingContainer = document.getElementById('platformMappingContainer');
+    const addMappingButton = document.getElementById('addMapping');
+    const mappingHiddenInput = document.getElementById('platform_instance_mapping');
 
     // Add new property row
     addButton.addEventListener('click', function() {
@@ -233,6 +311,80 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialize
     updateRemoveButtons();
+
+    // Platform Instance Mapping functionality
+    
+    // Add new mapping row
+    addMappingButton.addEventListener('click', function() {
+        const newRow = document.createElement('div');
+        newRow.className = 'platform-mapping-row mb-2';
+        newRow.innerHTML = `
+            <div class="row g-2">
+                <div class="col-md-5">
+                    <input type="text" class="form-control mapping-from" placeholder="From (source instance)" name="mapping_from[]">
+                </div>
+                <div class="col-md-5">
+                    <input type="text" class="form-control mapping-to" placeholder="To (target instance)" name="mapping_to[]">
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-outline-danger btn-sm remove-mapping" title="Remove mapping">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        mappingContainer.appendChild(newRow);
+        updateMappingRemoveButtons();
+    });
+
+    // Remove mapping row
+    mappingContainer.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-mapping')) {
+            const row = e.target.closest('.platform-mapping-row');
+            row.remove();
+            updateMappingRemoveButtons();
+            updateMappingHiddenInput();
+        }
+    });
+
+    // Update remove buttons visibility for mappings
+    function updateMappingRemoveButtons() {
+        const rows = mappingContainer.querySelectorAll('.platform-mapping-row');
+        rows.forEach((row, index) => {
+            const removeBtn = row.querySelector('.remove-mapping');
+            // Always show remove button if there's more than one row
+            removeBtn.style.display = rows.length > 1 ? 'inline-block' : 'none';
+        });
+    }
+
+    // Update hidden input with mapping JSON
+    function updateMappingHiddenInput() {
+        const mappings = {};
+        const fromInputs = mappingContainer.querySelectorAll('.mapping-from');
+        const toInputs = mappingContainer.querySelectorAll('.mapping-to');
+        
+        fromInputs.forEach((fromInput, index) => {
+            const from = fromInput.value.trim();
+            const to = toInputs[index].value.trim();
+            if (from && to) {
+                mappings[from] = to;
+            }
+        });
+        
+        mappingHiddenInput.value = JSON.stringify(mappings);
+    }
+
+    // Update hidden input when mapping inputs change
+    mappingContainer.addEventListener('input', updateMappingHiddenInput);
+
+    // Update on form submit
+    form.addEventListener('submit', function() {
+        updateHiddenInput();
+        updateMappingHiddenInput();
+    });
+
+    // Initialize mapping remove buttons
+    updateMappingRemoveButtons();
 });
 </script>
 {% endblock %} 

@@ -134,6 +134,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Filter functionality
     setupFilterHandlers();
     setupBulkActions();
+    setupPaginationHandlers();
 });
 
 function setupBulkActions() {
@@ -631,15 +632,31 @@ function generateTableHTML(items, tabType) {
                         <th width="30">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th class="sortable-header" data-sort="urn" width="180">URN</th>
-                        <th class="sortable-header" data-sort="entityUrn" width="180">Entity URN</th>
-                        <th class="sortable-header" data-sort="dataset_name" width="150">Dataset</th>
-                        <th class="sortable-header" data-sort="dataset_platform" width="100">Platform</th>
-                        <th class="sortable-header" data-sort="dataset_browse_path" width="200">Browse Path</th>
-                        <th class="sortable-header" data-sort="state" width="80">State</th>
-                        <th class="sortable-header" data-sort="result" width="80">Result</th>
-                        <th class="sortable-header" data-sort="assertions" width="60">Assertions</th>
-                        <th width="140">Actions</th>
+                        <th class="sortable-header" data-sort="urn" width="180">
+                            <i class="fas fa-file-contract me-1"></i> URN
+                        </th>
+                        <th class="sortable-header" data-sort="entityUrn" width="180">
+                            <i class="fas fa-database me-1"></i> Entity URN
+                        </th>
+                        <th class="sortable-header" data-sort="dataset_name" width="150">
+                            <i class="fas fa-table me-1"></i> Dataset
+                        </th>
+                        <th class="sortable-header" data-sort="dataset_browse_path" width="200">
+                            <i class="fas fa-folder me-1"></i> Browse Path
+                        </th>
+                        <th class="sortable-header" data-sort="dataset_platform" width="100">
+                            <i class="fas fa-server me-1"></i> Platform
+                        </th>
+                        <th class="sortable-header" data-sort="dataset_platform_instance" width="100">
+                            <i class="fas fa-cloud me-1"></i> Instance
+                        </th>
+                        <th class="sortable-header" data-sort="state" width="80">
+                            <i class="fas fa-flag me-1"></i> State
+                        </th>
+                        <th class="sortable-header" data-sort="assertions" width="60">
+                            <i class="fas fa-check-circle me-1"></i> Assertions
+                        </th>
+                        <th width="200">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -662,8 +679,6 @@ function renderContractRow(contract, tabType) {
     const entityUrn = properties.entityUrn || '';
     const status = contract.status || {};
     const state = status.state || 'Unknown';
-    const result = contract.result || {};
-    const resultType = result.type || 'Unknown';
     
     // Extract dataset information from dataset_info if available
     let datasetName = 'Unknown';
@@ -673,16 +688,20 @@ function renderContractRow(contract, tabType) {
     
     // Look for dataset info first from enhanced data
     if (contract.dataset_info) {
-        // Get dataset name from dataset_info.properties.name
-        if (contract.dataset_info.properties && contract.dataset_info.properties.name) {
-            datasetName = contract.dataset_info.properties.name;
-        }
+        // Remove dataset_info.properties.name from compute path - just use the base computed_browse_path
         datasetBrowsePath = contract.dataset_info.computed_browse_path || 'N/A';
         if (contract.dataset_info.platform && contract.dataset_info.platform.name) {
             datasetPlatform = contract.dataset_info.platform.name;
         }
         if (contract.dataset_info.dataPlatformInstance && contract.dataset_info.dataPlatformInstance.properties && contract.dataset_info.dataPlatformInstance.properties.name) {
             datasetPlatformInstance = contract.dataset_info.dataPlatformInstance.properties.name;
+        }
+        // Get dataset name from dataset URN instead of properties.name
+        if (contract.dataset_info.urn) {
+            const urnParts = contract.dataset_info.urn.split(',');
+            if (urnParts.length > 0) {
+                datasetName = urnParts[urnParts.length - 1].replace(/[)]/g, '');
+            }
         }
     }
     
@@ -706,14 +725,6 @@ function renderContractRow(contract, tabType) {
         stateBadgeClass = 'bg-success';
     } else if (state.toLowerCase() === 'pending') {
         stateBadgeClass = 'bg-warning';
-    }
-    
-    // Get result badge class - passing is green, failing is red
-    let resultBadgeClass = 'bg-secondary';
-    if (resultType.toLowerCase() === 'passing') {
-        resultBadgeClass = 'bg-success';
-    } else if (resultType.toLowerCase() === 'failing') {
-        resultBadgeClass = 'bg-danger';
     }
     
     // Count assertions - handle different data structures
@@ -866,7 +877,7 @@ function generatePaginationHTML(totalItems, tabType) {
     let paginationHTML = `
         <div class="pagination-container">
             <div class="pagination-info">
-                Showing ${startItem}-${endItem} of ${totalItems} contracts
+                Showing ${startItem}-${endItem} of ${totalItems} data contracts
             </div>
             <nav aria-label="Table pagination">
                 <ul class="pagination mb-0">
@@ -915,6 +926,15 @@ function generatePaginationHTML(totalItems, tabType) {
     paginationHTML += `
                 </ul>
             </nav>
+            <div class="d-flex align-items-center">
+                <label for="itemsPerPage-${tabType}" class="form-label me-2 mb-0">Items per page:</label>
+                <select class="form-select form-select-sm" id="itemsPerPage-${tabType}" style="width: auto;">
+                    <option value="10" ${pagination.itemsPerPage === 10 ? 'selected' : ''}>10</option>
+                    <option value="25" ${pagination.itemsPerPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${pagination.itemsPerPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${pagination.itemsPerPage === 100 ? 'selected' : ''}>100</option>
+                </select>
+            </div>
         </div>
     `;
     
@@ -1652,6 +1672,30 @@ function showNotification(message, type = 'info') {
             notification.remove();
         }
     }, 5000);
+}
+
+// Add event handlers for items per page selectors
+function setupPaginationHandlers() {
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        document.addEventListener('change', function(e) {
+            if (e.target.id === `itemsPerPage-${tabType}`) {
+                currentPagination[tabType].itemsPerPage = parseInt(e.target.value);
+                currentPagination[tabType].page = 1; // Reset to first page
+                displayTabContent(tabType);
+            }
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (e.target.matches(`.page-link[data-tab="${tabType}"]`)) {
+                e.preventDefault();
+                const page = parseInt(e.target.dataset.page);
+                if (page && page !== currentPagination[tabType].page) {
+                    currentPagination[tabType].page = page;
+                    displayTabContent(tabType);
+                }
+            }
+        });
+    });
 }
 
 console.log('Data Contracts script loaded successfully'); 

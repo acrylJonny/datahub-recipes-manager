@@ -6206,13 +6206,15 @@ def mutation_create(request):
         platform_instance = request.POST.get("platform_instance")
         env = request.POST.get("env")
         custom_properties = request.POST.get("custom_properties", "{}")
+        platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
         
         try:
             # Validate JSON
             import json
             custom_props = json.loads(custom_properties) if custom_properties else {}
+            platform_mapping = json.loads(platform_instance_mapping) if platform_instance_mapping else {}
         except json.JSONDecodeError:
-            messages.error(request, "Invalid JSON format for custom properties")
+            messages.error(request, "Invalid JSON format for custom properties or platform instance mapping")
             return render(
                 request,
                 "mutations/create.html",
@@ -6229,6 +6231,7 @@ def mutation_create(request):
             platform_instance=platform_instance,
             env=env,
             custom_properties=custom_props,
+            platform_instance_mapping=platform_mapping,
         )
 
         messages.success(request, f'Mutation "{name}" created successfully.')
@@ -6247,13 +6250,15 @@ def mutation_edit(request, mutation_id):
         mutation.platform_instance = request.POST.get("platform_instance")
         mutation.env = request.POST.get("env")
         custom_properties = request.POST.get("custom_properties", "{}")
+        platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
         
         try:
             # Validate JSON
             import json
             mutation.custom_properties = json.loads(custom_properties) if custom_properties else {}
+            mutation.platform_instance_mapping = json.loads(platform_instance_mapping) if platform_instance_mapping else {}
         except json.JSONDecodeError:
-            messages.error(request, "Invalid JSON format for custom properties")
+            messages.error(request, "Invalid JSON format for custom properties or platform instance mapping")
             return render(
                 request,
                 "mutations/edit.html",
@@ -6268,14 +6273,15 @@ def mutation_edit(request, mutation_id):
         messages.success(request, f'Mutation "{mutation.name}" updated successfully.')
         return redirect("environments")
 
-    # Serialize custom_properties for display
+    # Serialize custom_properties and platform_instance_mapping for display
     import json
     mutation_data = {
         'name': mutation.name,
         'description': mutation.description,
         'platform_instance': mutation.platform_instance,
         'env': mutation.env,
-        'custom_properties': json.dumps(mutation.custom_properties, indent=2) if mutation.custom_properties else '{}'
+        'custom_properties': json.dumps(mutation.custom_properties, indent=2) if mutation.custom_properties else '{}',
+        'platform_instance_mapping': json.dumps(mutation.platform_instance_mapping, indent=2) if mutation.platform_instance_mapping else '{}'
     }
     
     return render(

@@ -69,8 +69,20 @@ show_help() {
     echo ""
 }
 
+# Function to detect if running in container
+is_container() {
+    # Check common container indicators
+    [ -f /.dockerenv ] || [ -n "${KUBERNETES_SERVICE_HOST}" ] || [ "${DOCKER_CONTAINER}" = "true" ]
+}
+
 # Function to check virtual environment
 check_venv() {
+    # Skip venv setup if running in container
+    if is_container; then
+        print_info "Detected container environment, skipping virtual environment setup..."
+        return 0
+    fi
+    
     if [ ! -d "venv" ]; then
         print_info "Virtual environment not found. Creating one..."
         python3 -m venv venv
@@ -82,6 +94,12 @@ check_venv() {
 
 # Function to install dependencies
 install_dependencies() {
+    # Skip dependency installation if running in container (already installed)
+    if is_container; then
+        print_info "Detected container environment, dependencies already installed..."
+        return 0
+    fi
+    
     print_info "Installing/upgrading dependencies..."
     pip install -r requirements-web.txt
     print_status "Dependencies installed"

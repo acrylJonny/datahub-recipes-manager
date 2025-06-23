@@ -183,6 +183,7 @@ class Mutation(models.Model):
     platform_instance = models.CharField(max_length=255, help_text="Platform instance identifier")
     env = models.CharField(max_length=255, help_text="Environment identifier")
     custom_properties = models.JSONField(default=dict, help_text="Custom properties as JSON")
+    platform_instance_mapping = models.JSONField(default=dict, help_text="Platform instance mapping (from -> to) for syncing between environments")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -201,6 +202,16 @@ class Mutation(models.Model):
         result = []
         for key, value in self.custom_properties.items():
             result.append(f"{key}: {value}")
+        return ", ".join(result)
+    
+    def get_platform_instance_mapping_display(self):
+        """Return a formatted string of platform instance mappings."""
+        if not self.platform_instance_mapping:
+            return "No platform instance mappings"
+        
+        result = []
+        for from_instance, to_instance in self.platform_instance_mapping.items():
+            result.append(f"{from_instance} → {to_instance}")
         return ", ".join(result)
 
 
