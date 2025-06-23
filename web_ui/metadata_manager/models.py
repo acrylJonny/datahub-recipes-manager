@@ -16,6 +16,7 @@ class BaseMetadataModel(models.Model):
         ("REMOTE_ONLY", "Remote Only"),
         ("MODIFIED", "Modified"),
         ("PENDING_PUSH", "Pending Push"),
+        ("REMOTE_DELETED", "Remote Deleted"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

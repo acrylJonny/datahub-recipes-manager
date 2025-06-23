@@ -1,0 +1,62 @@
+[
+  {
+    "entityType": "tag",
+    "entityUrn": "urn:li:tag:bbe74d7cc4cbb8b19d55585dadb3713f",
+    "changeType": "UPSERT",
+    "aspectName": "tagProperties",
+    "aspect": {
+      "value": "{\"name\": \"AVG\", \"description\": \"Tag: AVG\"}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "tag",
+    "entityUrn": "urn:li:tag:bbe74d7cc4cbb8b19d55585dadb3713f",
+    "changeType": "UPSERT",
+    "aspectName": "ownership",
+    "aspect": {
+      "value": "{\"owners\": [{\"owner\": \"urn:li:corpuser:admin\", \"type\": \"DATAOWNER\"}], \"ownerTypes\": {}, \"lastModified\": {\"time\": 1750681735638, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "tag",
+    "entityUrn": "urn:li:tag:b3ff5c26537fd592fa0be12e04e2fcf7",
+    "changeType": "UPSERT",
+    "aspectName": "tagProperties",
+    "aspect": {
+      "value": "{\"name\": \"BINFIELD\", \"description\": \"Tag: BINFIELD\"}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "tag",
+    "entityUrn": "urn:li:tag:b3ff5c26537fd592fa0be12e04e2fcf7",
+    "changeType": "UPSERT",
+    "aspectName": "ownership",
+    "aspect": {
+      "value": "{\"owners\": [{\"owner\": \"urn:li:corpuser:admin\", \"type\": \"DATAOWNER\"}], \"ownerTypes\": {}, \"lastModified\": {\"time\": 1750681735647, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "tag",
+    "entityUrn": "urn:li:tag:0fa0ef24d6902b250bb02b7515164c26",
+    "changeType": "UPSERT",
+    "aspectName": "tagProperties",
+    "aspect": {
+      "value": "{\"name\": \"CALCULATEDFIELD\", \"description\": \"Tag: CALCULATEDFIELD\"}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "tag",
+    "entityUrn": "urn:li:tag:0fa0ef24d6902b250bb02b7515164c26",
+    "changeType": "UPSERT",
+    "aspectName": "ownership",
+    "aspect": {
+      "value": "{\"owners\": [{\"owner\": \"urn:li:corpuser:admin\", \"type\": \"DATAOWNER\"}], \"ownerTypes\": {}, \"lastModified\": {\"time\": 1750681735659, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  }
+]

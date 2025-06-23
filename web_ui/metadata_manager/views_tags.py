@@ -251,6 +251,58 @@ def ensure_ownership_data_column_exists():
         logger.error(f"Error creating ownership_data column: {str(e)}")
         return False
 
+def filter_tags_by_connection(all_tags, current_connection):
+    """
+    Filter and return tags based on connection logic - only one row per datahub_id:
+    1. If tag is available for current connection_id -> show in synced
+    2. If tag is available for different connection_id -> show in local-only  
+    3. If tag has no connection_id -> show in local-only
+    Priority: current connection > different connection > no connection
+    """
+    tags = []
+    
+    # Group tags by datahub_id to implement the single-row-per-datahub_id logic
+    tags_by_datahub_id = {}
+    for tag in all_tags:
+        datahub_id = tag.datahub_id or f'no_datahub_id_{tag.id}'  # Use unique identifier for tags without datahub_id
+        if datahub_id not in tags_by_datahub_id:
+            tags_by_datahub_id[datahub_id] = []
+        tags_by_datahub_id[datahub_id].append(tag)
+    
+    for datahub_id, tag_group in tags_by_datahub_id.items():
+        # Find the best tag to show based on priority
+        selected_tag = None
+        
+        # Priority 1: Tag with current connection (highest priority)
+        for tag in tag_group:
+            if current_connection and tag.connection == current_connection:
+                selected_tag = tag
+                break
+        
+        # Priority 2: Tag with different connection (if no current connection tag found)
+        if not selected_tag:
+            for tag in tag_group:
+                if tag.connection and tag.connection != current_connection:
+                    selected_tag = tag
+                    break
+        
+        # Priority 3: Tag with no connection (lowest priority)
+        if not selected_tag:
+            for tag in tag_group:
+                if tag.connection is None:
+                    selected_tag = tag
+                    break
+        
+        # Fallback: If somehow no tag matches above criteria, take the first one
+        if not selected_tag and tag_group:
+            selected_tag = tag_group[0]
+        
+        # Add the selected tag to results
+        if selected_tag:
+            tags.append(selected_tag)
+    
+    return tags
+
 class TagListView(View):
     """View to list and create tags"""
 
@@ -266,19 +318,9 @@ class TagListView(View):
             
             # Get tags relevant to current connection (database-only operation)
             # Include: tags with no connection (local-only) + tags with current connection (synced)
+            # BUT: if there's a synced tag for current connection with same datahub_id, hide the other connection's version
             all_tags = Tag.objects.all().order_by("name")
-            tags = []
-            for tag in all_tags:
-                if tag.connection is None:
-                    # True local-only tags (no connection)
-                    tags.append(tag)
-                elif current_connection and tag.connection == current_connection:
-                    # Tags synced to current connection
-                    tags.append(tag)
-                elif current_connection is None and tag.connection is None:
-                    # Backward compatibility: if no current connection, show unconnected tags
-                    tags.append(tag)
-                # Tags with different connections are excluded from this connection's view
+            tags = filter_tags_by_connection(all_tags, current_connection)
             
             logger.debug(f"Found {len(tags)} tags relevant to current connection")
 
@@ -329,7 +371,7 @@ class TagListView(View):
         try:
             name = request.POST.get("name")
             description = request.POST.get("description", "")
-            color = request.POST.get("color", "#0d6efd")
+            color = request.POST.get("color")
             owners = request.POST.getlist("owners[]")  # Get list of selected owners
             ownership_types = request.POST.getlist("ownership_types[]")  # Get list of ownership types
             logger.debug(f"Tag creation form data: name={name}, owners={owners}, ownership_types={ownership_types}")
@@ -341,9 +383,9 @@ class TagListView(View):
                 ownership_types = request.POST.getlist("ownership_types")
                 logger.debug(f"Alternate ownership params: owners={owners}, ownership_types={ownership_types}")
 
-            # If color is empty, set to default color rather than None
+            # If color is empty, set to None to preserve null values
             if not color or color.strip() == "":
-                color = "#0d6efd"  # Default bootstrap primary color
+                color = None
 
             if not name:
                 messages.error(request, "Tag name is required")
@@ -472,25 +514,26 @@ class TagDetailView(View):
                                 remote_description = remote_tag.get("description", "")
 
                                 properties = remote_tag.get("properties", {}) or {}
-                                remote_color = properties.get("colorHex", "#0d6efd")
-                                local_color = tag.color or "#0d6efd"
+                                remote_color = properties.get("colorHex")
+                                local_color = tag.color
+                                
+                                # Normalize colors for comparison (handle null/empty values properly)
+                                remote_color_normalized = remote_color if remote_color and remote_color.strip() else None
+                                local_color_normalized = local_color if local_color and local_color.strip() else None
 
                                 # If different, mark as modified
                                 if (
                                     local_description != remote_description
-                                    or local_color != remote_color
+                                    or local_color_normalized != remote_color_normalized
                                 ) and tag.sync_status != "MODIFIED":
                                     tag.sync_status = "MODIFIED"
                                     tag.save(update_fields=["sync_status"])
-
-                                # If the same but marked as modified, update to synced
-                                elif (
-                                    local_description == remote_description
-                                    and local_color == remote_color
-                                    and tag.sync_status == "MODIFIED"
-                                ):
-                                    tag.sync_status = "SYNCED"
-                                    tag.save(update_fields=["sync_status"])
+                                    logger.debug(f"Updated tag {local_tag.name} status to MODIFIED")
+                                else:
+                                    if local_tag.sync_status != "SYNCED":
+                                        local_tag.sync_status = "SYNCED" 
+                                        local_tag.save(update_fields=["sync_status"])
+                                        logger.debug(f"Updated tag {local_tag.name} status to SYNCED")
                         except Exception as e:
                             logger.warning(
                                 f"Error fetching remote tag information: {str(e)}"
@@ -541,9 +584,9 @@ class TagDetailView(View):
             logger.info(f"  ownership_types: {ownership_types}")
             logger.info(f"  is_ajax: {is_ajax}")
 
-            # If color is empty, set to default color rather than None
+            # If color is empty, set to None to preserve null values
             if not color or color.strip() == "":
-                color = "#0d6efd"  # Default bootstrap primary color
+                color = None
 
             if not name:
                 error_msg = "Tag name is required"
@@ -570,9 +613,10 @@ class TagDetailView(View):
 
             # If this tag exists remotely and we're changing details, mark as modified
             if tag.sync_status in ["SYNCED", "REMOTE_ONLY"] and (
-                tag.description != description or tag.color != color
+                tag.name != name or tag.description != description or tag.color != color
             ):
                 tag.sync_status = "MODIFIED"
+                logger.info(f"Tag '{tag.name}' marked as MODIFIED due to local changes")
 
             # Update the tag
             tag.name = name
@@ -747,7 +791,7 @@ class TagDeployView(View):
                     client.set_tag_color(result, tag.color)
 
                 # Update tag with remote info
-                tag.original_urn = result
+                tag.urn = result  # Store the DataHub URN
                 tag.datahub_id = tag_id_portion
                 tag.sync_status = "SYNCED"
                 tag.last_synced = timezone.now()
@@ -983,9 +1027,10 @@ class TagPullView(View):
         properties = tag_data.get("properties", {}) or {}  # Handle None case
         color_hex = properties.get("colorHex")  # Will be None if not present
 
-        # Use a default color if none provided (to satisfy NOT NULL constraint)
-        if color_hex is None or color_hex.strip() == "":
-            color_hex = "#0d6efd"  # Default bootstrap primary color
+        # Preserve null/empty colors from DataHub instead of forcing a default
+        # Only use default if the database requires NOT NULL and we have no value
+        if color_hex is not None and color_hex.strip() == "":
+            color_hex = None  # Convert empty string to None for consistency
 
         description = tag_data.get("description", "")
 
@@ -1011,7 +1056,7 @@ class TagPullView(View):
             # Update the existing tag
             existing_tag.name = name
             existing_tag.description = description
-            existing_tag.color = color_hex  # Now has default value if none provided
+            existing_tag.color = color_hex  # Preserve null/empty colors from DataHub
             existing_tag.ownership_data = ownership_data  # Add ownership data
             existing_tag.sync_status = "SYNCED"
             existing_tag.last_synced = timezone.now()
@@ -1029,7 +1074,7 @@ class TagPullView(View):
             new_tag = Tag.objects.create(
                 name=name,
                 description=description,
-                color=color_hex,  # Now has default value if none provided
+                color=color_hex,  # Preserve null/empty colors from DataHub
                 urn=tag_urn,
                 datahub_id=tag_id,
                 ownership_data=ownership_data,  # Add ownership data
@@ -1470,6 +1515,7 @@ def get_remote_tags_data(request):
         query = request.GET.get("query", "*")
         start = int(request.GET.get("start", 0))
         count = int(request.GET.get("count", 100))
+        skip_sync_validation = request.GET.get("skip_sync_validation", "false").lower() == "true"
         
         # Get current connection to filter tags by connection
         from web_ui.views import get_current_connection
@@ -1484,18 +1530,8 @@ def get_remote_tags_data(request):
         # 1. Tags with no connection (LOCAL_ONLY) - should appear as local-only
         # 2. Tags with current connection (SYNCED) - should appear as synced if they match remote
         # 3. Tags with different connection - should appear as local-only relative to current connection
-        local_tags = []
-        for tag in all_local_tags:
-            if tag.connection is None:
-                # True local-only tags (no connection)
-                local_tags.append(tag)
-            elif current_connection and tag.connection == current_connection:
-                # Tags synced to current connection
-                local_tags.append(tag)
-            elif current_connection is None and tag.connection is None:
-                # Backward compatibility: if no current connection, show unconnected tags
-                local_tags.append(tag)
-            # Tags with different connections are excluded from this connection's view
+        #    BUT: if there's a synced tag for current connection with same datahub_id, hide the other connection's version
+        local_tags = filter_tags_by_connection(all_local_tags, current_connection)
         
         logger.debug(f"Filtered to {len(local_tags)} tags relevant to current connection")
         
@@ -1545,6 +1581,14 @@ def get_remote_tags_data(request):
                             owner_name = owner_urn.split(':')[-1] if ':' in owner_urn else owner_urn
                         owner_names.append(owner_name)
             
+            # Determine connection context for frontend decision making
+            connection_context = "none"  # Default for tags with no connection
+            if local_tag.connection:
+                if local_tag.connection == current_connection:
+                    connection_context = "current"
+                else:
+                    connection_context = "different"
+            
             local_tag_data = {
                 "id": str(local_tag.id),  # Ensure ID is always a string
                 "database_id": str(local_tag.id),  # Explicitly add database_id for clarity
@@ -1555,6 +1599,9 @@ def get_remote_tags_data(request):
                 "urn": tag_urn,
                 "sync_status": local_tag.sync_status,
                 "sync_status_display": local_tag.get_sync_status_display(),
+                # Add connection context for frontend action determination
+                "connection_context": connection_context,
+                "has_remote_match": bool(remote_match),
                 # Add ownership information for local tags
                 "owners_count": owners_count,
                 "owner_names": owner_names,
@@ -1565,38 +1612,119 @@ def get_remote_tags_data(request):
             }
             
             # Determine categorization based on connection and remote match
-            if remote_match and local_tag.connection == current_connection:
+            # With single-row-per-datahub_id logic:
+            # - Synced: Tag belongs to current connection AND exists remotely
+            # - Local-only: Tag belongs to different connection OR no connection OR no remote match
+            if local_tag.connection == current_connection and remote_match:
                 # Tag exists remotely AND is synced to current connection - categorize as synced
                 
-                # Check if tag needs status update, but don't override recently synced tags
-                local_description = local_tag.description or ""
-                remote_description = remote_match.get("description", "")
-                
-                remote_color = remote_match.get("colorHex", "#0d6efd")
-                local_color = local_tag.color or "#0d6efd"
-                
-                # Only update sync status if the tag hasn't been recently synced
-                # Check if last_synced is within the last 30 seconds to avoid overriding fresh syncs
-                from django.utils import timezone
-                from datetime import timedelta
-                
-                recently_synced = (
-                    local_tag.last_synced and 
-                    local_tag.last_synced > timezone.now() - timedelta(seconds=30)
-                )
-                
-                if not recently_synced:
-                    # Update sync status based on comparison
-                    if (local_description != remote_description or local_color != remote_color):
-                        if local_tag.sync_status != "MODIFIED":
-                            local_tag.sync_status = "MODIFIED"
-                            local_tag.save(update_fields=["sync_status"])
-                            logger.debug(f"Updated tag {local_tag.name} status to MODIFIED")
-                    else:
-                        if local_tag.sync_status != "SYNCED":
-                            local_tag.sync_status = "SYNCED" 
-                            local_tag.save(update_fields=["sync_status"])
-                            logger.debug(f"Updated tag {local_tag.name} status to SYNCED")
+                # Enhanced sync status validation - check if tag needs status update
+                # Skip validation if requested (e.g., after single tag edits)
+                if not skip_sync_validation:
+                    needs_status_update = False
+                    status_change_reason = []
+                    
+                    # Check description changes - handle null/empty values properly
+                    local_description = local_tag.description or ""
+                    remote_description = remote_match.get("description", "")
+                    
+                    # Normalize descriptions for comparison
+                    # Handle cases where remote description might be the string "None", None, or empty
+                    def normalize_description(desc):
+                        if desc is None or desc == "None" or desc == "" or (isinstance(desc, str) and desc.strip() == ""):
+                            return ""
+                        return str(desc).strip()
+                    
+                    local_description_normalized = normalize_description(local_description)
+                    remote_description_normalized = normalize_description(remote_description)
+                    
+                    if local_description_normalized != remote_description_normalized:
+                        needs_status_update = True
+                        status_change_reason.append("description")
+                        logger.debug(f"Description change detected for {local_tag.name}: local='{local_description_normalized}' vs remote='{remote_description_normalized}' (original: local='{local_description}', remote='{remote_description}')")
+                    
+                    # Check color changes - preserve null/empty values from DataHub
+                    remote_color = remote_match.get("colorHex")  # Don't use default here
+                    local_color = local_tag.color
+                    
+                    # Handle null/empty comparisons properly
+                    # Both null/empty should be considered equal
+                    remote_color_normalized = remote_color if remote_color and remote_color.strip() else None
+                    local_color_normalized = local_color if local_color and local_color.strip() else None
+                    
+                    if remote_color_normalized != local_color_normalized:
+                        needs_status_update = True
+                        status_change_reason.append("color")
+                        logger.debug(f"Color change detected for {local_tag.name}: local='{local_color_normalized}' vs remote='{remote_color_normalized}'")
+                    
+                    # Check ownership changes - handle null/empty ownership properly
+                    local_ownership = local_tag.ownership_data or {}
+                    local_owners = local_ownership.get("owners", [])
+                    
+                    remote_ownership = remote_match.get("ownership", {}) or {}
+                    remote_owners = remote_ownership.get("owners", []) or []
+                    
+                    # Normalize empty/null ownership to empty lists for comparison
+                    # If local ownership_data is None, treat as empty
+                    if local_tag.ownership_data is None:
+                        local_owners = []
+                    
+                    # If remote ownership is empty/null or has no owners, treat as empty
+                    if not remote_ownership or not remote_owners:
+                        remote_owners = []
+                    
+                    # Convert remote ownership format to local format for comparison
+                    remote_owners_normalized = []
+                    for remote_owner in remote_owners:
+                        if remote_owner and remote_owner.get("owner", {}).get("urn"):
+                            owner_urn = remote_owner["owner"]["urn"]
+                            ownership_type = remote_owner.get("ownershipType", {}).get("urn", "urn:li:ownershipType:__system__technical_owner")
+                            remote_owners_normalized.append({
+                                "owner_urn": owner_urn,
+                                "ownership_type_urn": ownership_type
+                            })
+                    
+                    # Compare ownership by creating sets of (owner_urn, ownership_type_urn) tuples
+                    local_ownership_set = set()
+                    for owner in local_owners:
+                        if owner and owner.get("owner_urn"):
+                            local_ownership_set.add((owner["owner_urn"], owner.get("ownership_type_urn", "urn:li:ownershipType:__system__technical_owner")))
+                    
+                    remote_ownership_set = set()
+                    for owner in remote_owners_normalized:
+                        remote_ownership_set.add((owner["owner_urn"], owner["ownership_type_urn"]))
+                    
+                    # Both empty ownership should be considered equal
+                    if local_ownership_set != remote_ownership_set:
+                        needs_status_update = True
+                        status_change_reason.append("ownership")
+                        logger.debug(f"Ownership change detected for {local_tag.name}: local={len(local_ownership_set)} owners, remote={len(remote_ownership_set)} owners")
+                    
+                    # Only update sync status if the tag belongs to the current connection
+                    # AND hasn't been recently synced to avoid overriding fresh syncs
+                    from django.utils import timezone
+                    from datetime import timedelta
+                    
+                    recently_synced = (
+                        local_tag.last_synced and 
+                        local_tag.last_synced > timezone.now() - timedelta(seconds=30)
+                    )
+                    
+                    # CRITICAL: Only update sync status for tags that belong to current connection
+                    # Tags from other connections should not have their sync_status modified
+                    if local_tag.connection == current_connection and not recently_synced:
+                        if needs_status_update:
+                            # Tag has been modified in DataHub or locally
+                            if local_tag.sync_status != "MODIFIED":
+                                local_tag.sync_status = "MODIFIED"
+                                local_tag.save(update_fields=["sync_status"])
+                                logger.info(f"Updated tag {local_tag.name} status to MODIFIED due to changes in: {', '.join(status_change_reason)}")
+                        else:
+                            # Tag is in sync
+                            if local_tag.sync_status != "SYNCED":
+                                local_tag.sync_status = "SYNCED" 
+                                local_tag.save(update_fields=["sync_status"])
+                                logger.debug(f"Updated tag {local_tag.name} status to SYNCED")
                 
                 # Update local tag data with remote information, but preserve local ownership if remote is empty
                 remote_ownership = remote_match.get("ownership")
@@ -1611,6 +1739,8 @@ def get_remote_tags_data(request):
                 local_tag_data.update({
                     "sync_status": local_tag.sync_status,
                     "sync_status_display": local_tag.get_sync_status_display(),
+                    "connection_context": connection_context,  # Keep the connection context
+                    "has_remote_match": True,  # This tag definitely has a remote match
                     "owners_count": final_owners_count,
                     "owner_names": final_owner_names,
                     "relationships_count": remote_match.get("relationships_count", 0),
@@ -1644,54 +1774,33 @@ def get_remote_tags_data(request):
                     local_tag.last_synced > timezone.now() - timedelta(minutes=5)  # 5 minute grace period
                 )
                 
-                # Only update sync status to LOCAL_ONLY if it wasn't recently synced
-                if not recently_synced and local_tag.sync_status != "LOCAL_ONLY":
-                    local_tag.sync_status = "LOCAL_ONLY"
-                    local_tag.save(update_fields=["sync_status"])
-                    logger.debug(f"Updated tag {local_tag.name} status to LOCAL_ONLY")
+                # CRITICAL: Only update sync status for tags that belong to current connection
+                # Tags from other connections should maintain their original sync_status
+                # Skip validation if requested (e.g., after single tag edits)
+                if not skip_sync_validation and local_tag.connection == current_connection:
+                    # Only update status for tags belonging to current connection
+                    expected_status = "LOCAL_ONLY"
+                    if not remote_match:
+                        # Tag was synced to current connection but no longer exists remotely
+                        expected_status = "REMOTE_DELETED"
+                    
+                    # Only update sync status if it wasn't recently synced and status is different
+                    if not recently_synced and local_tag.sync_status != expected_status:
+                        local_tag.sync_status = expected_status
+                        local_tag.save(update_fields=["sync_status"])
+                        logger.debug(f"Updated tag {local_tag.name} status to {expected_status}")
+                elif skip_sync_validation:
+                    logger.debug(f"Skipping sync status validation for tag {local_tag.name} - skip_sync_validation=true")
                 
-                # For recently synced tags without remote match, treat as synced but with missing remote data
-                if recently_synced and local_tag.sync_status == "SYNCED":
-                    # This is a recently synced tag that should be in synced category even without remote match
-                    local_tag_data.update({
-                        "sync_status": local_tag.sync_status,
-                        "sync_status_display": local_tag.get_sync_status_display(),
-                        "owners_count": owners_count,
-                        "owner_names": owner_names,
-                        "relationships_count": 0,
-                        "ownership": local_tag.ownership_data or None,
-                        "ownership_data": local_tag.ownership_data or None,
-                        "relationships": None,
-                    })
-                    
-                    # Create a fake remote match for recently synced tags
-                    fake_remote_match = {
-                        "urn": local_tag.urn,
-                        "name": local_tag.name,
-                        "description": local_tag.description or "",
-                        "colorHex": local_tag.color or "#0d6efd",
-                        "ownership": local_tag.ownership_data,
-                        "owner_names": owner_names,
-                        "relationships_count": 0,
-                        "relationships": None,
-                    }
-                    
-                    # Create combined data with explicit database_id
-                    combined_data = local_tag_data.copy()
-                    combined_data["database_id"] = str(local_tag.id)
-                    
-                    synced_tags.append({
-                        "local": local_tag_data,
-                        "remote": fake_remote_match,
-                        "combined": combined_data
-                    })
-                else:
-                    # True local-only tag
-                    local_tag_data["sync_status"] = local_tag.sync_status
-                    local_tag_data["sync_status_display"] = local_tag.get_sync_status_display()
-                    # Ensure ownership_data is preserved for local-only tags
-                    local_tag_data["ownership_data"] = local_tag.ownership_data
-                    local_only_tags.append(local_tag_data)
+                # Update local tag data with current status
+                local_tag_data.update({
+                    "sync_status": local_tag.sync_status,
+                    "sync_status_display": local_tag.get_sync_status_display(),
+                    "connection_context": connection_context,  # Keep the connection context
+                    "has_remote_match": bool(remote_match),  # Whether this tag has a remote match
+                })
+                
+                local_only_tags.append(local_tag_data)
         
         # Find remote-only tags
         for tag_urn, remote_tag in remote_tags.items():
@@ -2070,9 +2179,25 @@ class TagAddToStagedChangesView(View):
                     description=f"Auto-created {environment_name} environment"
                 )
             
-            # Build base directory path
-            base_dir = Path(os.getcwd()) / "metadata-manager" / environment_name
+            # Build base directory path - find repo root and use correct location
+            # When running from web_ui/, we need to go up one level to get to repo root
+            current_dir = Path(os.getcwd())
+            if current_dir.name == "web_ui":
+                repo_root = current_dir.parent
+            else:
+                # Try to find repo root by looking for characteristic files
+                repo_root = current_dir
+                for _ in range(5):  # Search up to 5 levels
+                    if (repo_root / "README.md").exists() and (repo_root / "scripts").exists() and (repo_root / "web_ui").exists():
+                        break
+                    repo_root = repo_root.parent
+                else:
+                    # Fallback: assume current directory
+                    repo_root = current_dir
+            
+            base_dir = repo_root / "metadata-manager" / environment_name / "tags"
             base_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Using base directory for staged changes: {base_dir}")
             
             # Add tag to staged changes
             result = add_tag_to_staged_changes(
@@ -2125,6 +2250,40 @@ class TagSyncToDataHubView(View):
                     "success": False,
                     "error": f"Tag with ID {tag_id} not found"
                 }, status=404)
+
+            # Get current connection from request session
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Check if this tag already has a connection and it's different from current connection
+            if tag.connection is not None and current_connection and tag.connection != current_connection:
+                # Create a new row for the current connection instead of modifying existing one
+                logger.info(f"Tag '{tag.name}' has connection {tag.connection.name}, creating new row for {current_connection.name}")
+                
+                # Check if a tag with same datahub_id already exists for current connection
+                existing_for_current_connection = Tag.objects.filter(
+                    datahub_id=tag.datahub_id,
+                    connection=current_connection
+                ).first()
+                
+                if existing_for_current_connection:
+                    return JsonResponse({
+                        "success": False,
+                        "error": f"Tag '{tag.name}' already exists for the current connection"
+                    }, status=400)
+                
+                # Create new tag for current connection
+                new_tag = Tag.objects.create(
+                    name=tag.name,
+                    description=tag.description,
+                    color=tag.color,
+                    urn=tag.urn,
+                    datahub_id=tag.datahub_id,
+                    ownership_data=tag.ownership_data,
+                    sync_status="LOCAL_ONLY",  # Will be updated to SYNCED after successful sync
+                    connection=current_connection,
+                )
+                tag = new_tag  # Use the new tag for the rest of the sync process
 
             # Get DataHub client
             client = get_datahub_client_from_request(request)
@@ -2222,12 +2381,8 @@ class TagSyncToDataHubView(View):
             except Exception as e:
                 logger.warning(f"Failed to handle sync user ownership cleanup: {str(e)}")
 
-            # Get current connection from request session
-            from web_ui.views import get_current_connection
-            current_connection = get_current_connection(request)
-            
             # Update tag with remote info
-            tag.original_urn = result
+            tag.urn = result  # Store the DataHub URN
             tag.datahub_id = tag_id_portion
             tag.sync_status = "SYNCED"
             tag.last_synced = timezone.now()
@@ -2287,15 +2442,15 @@ class TagPushToDataHubView(View):
                 }, status=500)
 
             # For pushing, we should use the existing URN to update the tag
-            if not tag.original_urn:
+            if not tag.urn:
                 return JsonResponse({
                     "success": False,
-                    "error": "Cannot push tag without original URN. This tag may not be properly synced."
+                    "error": "Cannot push tag without URN. This tag may not be properly synced."
                 }, status=400)
 
             # Update the tag description if it's different
             if tag.description:
-                success = client.update_tag_description(tag.original_urn, tag.description)
+                success = client.update_tag_description(tag.urn, tag.description)
                 if not success:
                     return JsonResponse({
                         "success": False,
@@ -2305,7 +2460,7 @@ class TagPushToDataHubView(View):
             # Set color if specified and not empty
             if tag.color and tag.color.strip() and tag.color != "#0d6efd":
                 try:
-                    client.set_tag_color(tag.original_urn, tag.color)
+                    client.set_tag_color(tag.urn, tag.color)
                 except Exception as e:
                     logger.warning(f"Failed to set tag color: {str(e)}")
 
@@ -2320,7 +2475,7 @@ class TagPushToDataHubView(View):
                         ownership_type = owner.get("ownership_type_urn") or owner.get("type", "urn:li:ownershipType:__system__technical_owner")
                         
                         if owner_urn:
-                            client.add_tag_owner(tag.original_urn, owner_urn, ownership_type)
+                            client.add_tag_owner(tag.urn, owner_urn, ownership_type)
                             intended_owners.append((owner_urn, ownership_type))
                     except Exception as e:
                         logger.warning(f"Failed to add owner {owner_urn}: {str(e)}")
@@ -2346,7 +2501,7 @@ class TagPushToDataHubView(View):
                         
                         for ownership_type in common_ownership_types:
                             try:
-                                client.remove_tag_owner(tag.original_urn, sync_user_urn, ownership_type)
+                                client.remove_tag_owner(tag.urn, sync_user_urn, ownership_type)
                                 logger.debug(f"Removed sync user {sync_user_urn} with ownership type {ownership_type}")
                             except Exception as e:
                                 # It's normal for this to fail if the user doesn't have this ownership type
@@ -2366,7 +2521,7 @@ class TagPushToDataHubView(View):
             return JsonResponse({
                 "success": True,
                 "message": f"Tag '{tag.name}' successfully pushed to DataHub",
-                "tag_urn": tag.original_urn
+                "tag_urn": tag.urn
             })
 
         except Exception as e:
@@ -2498,7 +2653,7 @@ class TagBulkSyncToDataHubView(View):
                     current_connection = get_current_connection(request)
                     
                     # Update tag with remote info
-                    tag.original_urn = result
+                    tag.urn = result  # Store the DataHub URN
                     tag.datahub_id = tag_id_portion
                     tag.sync_status = "SYNCED"
                     tag.last_synced = timezone.now()
@@ -2693,24 +2848,43 @@ class TagBulkResyncView(View):
                     if tag.urn:
                         remote_tag = client.get_tag(tag.urn)
                         if remote_tag:
-                            # Update tag with remote data
-                            properties = remote_tag.get("properties") or {}
-                            tag.name = properties.get("name", tag.name) or remote_tag.get("name", tag.name)
-                            tag.description = properties.get("description", "") or remote_tag.get("description", "")
-                            tag.color = properties.get("colorHex", tag.color)
-
+                            # Update tag with remote data - refresh completely with DataHub version
+                            properties = remote_tag.get("properties") if remote_tag else None
+                            if properties is None:
+                                properties = {}
                             
-                            # Update ownership data from remote
-                            ownership = remote_tag.get("ownership")
-                            if ownership and ownership.get("owners"):
-                                # Convert DataHub ownership format to our format
+                            tag_name = properties.get("name") if properties else None
+                            if not tag_name:
+                                tag_name = remote_tag.get("name") if remote_tag else tag.name
+                            
+                            tag.name = tag_name or tag.name
+                            tag.description = properties.get("description", "") if properties else (remote_tag.get("description", "") if remote_tag else "")
+                            tag.color = properties.get("colorHex") if properties else None
+
+                            # Extract and update datahub_id from URN
+                            if tag.urn and ':' in tag.urn:
+                                tag.datahub_id = tag.urn.split(':')[-1]
+                            
+                            # Get current connection and set it
+                            from web_ui.views import get_current_connection
+                            current_connection = get_current_connection(request)
+                            if current_connection:
+                                tag.connection = current_connection
+                            
+                            # Convert and update ownership data from DataHub format to local format
+                            ownership_data = None
+                            remote_ownership = remote_tag.get("ownership") if remote_tag else None
+                            if remote_ownership and remote_ownership.get("owners"):
+                                # Convert DataHub ownership format to our local format
                                 owners_list = []
-                                for owner_info in ownership["owners"]:
-                                    owner = owner_info.get("owner", {})
-                                    ownership_type = owner_info.get("ownershipType", {})
+                                for owner_info in remote_ownership["owners"]:
+                                    if not owner_info:
+                                        continue
+                                    owner = owner_info.get("owner", {}) if owner_info else {}
+                                    ownership_type = owner_info.get("ownershipType", {}) if owner_info else {}
                                     
-                                    owner_urn = owner.get("urn", "")
-                                    ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner")
+                                    owner_urn = owner.get("urn", "") if owner else ""
+                                    ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner") if ownership_type else "urn:li:ownershipType:__system__technical_owner"
                                     
                                     if owner_urn:
                                         owners_list.append({
@@ -2719,17 +2893,17 @@ class TagBulkResyncView(View):
                                         })
                                 
                                 if owners_list:
-                                    tag.ownership_data = {"owners": owners_list}
-                                else:
-                                    tag.ownership_data = None
-                            else:
-                                # Clear ownership if none in remote
-                                tag.ownership_data = None
+                                    ownership_data = {"owners": owners_list}
                             
+                            # Set ownership data (clear if none in remote)
+                            tag.ownership_data = ownership_data
+                            
+                            # Mark as synced and update sync timestamp
                             tag.sync_status = "SYNCED"
                             tag.last_synced = timezone.now()
                             tag.save()
                             success_count += 1
+                            logger.info(f"Successfully resynced tag '{tag.name}' from DataHub")
                         else:
                             error_count += 1
                             errors.append(f"Tag {tag.name}: Not found in DataHub")
@@ -2790,24 +2964,44 @@ class TagResyncAllView(View):
                     # Get remote tag data
                     remote_tag = client.get_tag(tag.urn)
                     if remote_tag:
-                        # Update tag with remote data
-                        properties = remote_tag.get("properties") or {}
-                        tag.name = properties.get("name", tag.name) or remote_tag.get("name", tag.name)
-                        tag.description = properties.get("description", "") or remote_tag.get("description", "")
-                        tag.color = properties.get("colorHex", tag.color)
+                        # Update tag with remote data - refresh completely with DataHub version
+                        properties = remote_tag.get("properties") if remote_tag else None
+                        if properties is None:
+                            properties = {}
+                        
+                        tag_name = properties.get("name") if properties else None
+                        if not tag_name:
+                            tag_name = remote_tag.get("name") if remote_tag else tag.name
+                        
+                        tag.name = tag_name or tag.name
+                        tag.description = properties.get("description", "") if properties else (remote_tag.get("description", "") if remote_tag else "")
+                        tag.color = properties.get("colorHex") if properties else None
 
                         
-                        # Update ownership data from remote
-                        ownership = remote_tag.get("ownership")
-                        if ownership and ownership.get("owners"):
-                            # Convert DataHub ownership format to our format
+                        # Extract and update datahub_id from URN
+                        if tag.urn and ':' in tag.urn:
+                            tag.datahub_id = tag.urn.split(':')[-1]
+                        
+                        # Get current connection and set it
+                        from web_ui.views import get_current_connection
+                        current_connection = get_current_connection(request)
+                        if current_connection:
+                            tag.connection = current_connection
+                        
+                        # Convert and update ownership data from DataHub format to local format
+                        ownership_data = None
+                        remote_ownership = remote_tag.get("ownership") if remote_tag else None
+                        if remote_ownership and remote_ownership.get("owners"):
+                            # Convert DataHub ownership format to our local format
                             owners_list = []
-                            for owner_info in ownership["owners"]:
-                                owner = owner_info.get("owner", {})
-                                ownership_type = owner_info.get("ownershipType", {})
+                            for owner_info in remote_ownership["owners"]:
+                                if not owner_info:
+                                    continue
+                                owner = owner_info.get("owner", {}) if owner_info else {}
+                                ownership_type = owner_info.get("ownershipType", {}) if owner_info else {}
                                 
-                                owner_urn = owner.get("urn", "")
-                                ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner")
+                                owner_urn = owner.get("urn", "") if owner else ""
+                                ownership_type_urn = ownership_type.get("urn", "urn:li:ownershipType:__system__technical_owner") if ownership_type else "urn:li:ownershipType:__system__technical_owner"
                                 
                                 if owner_urn:
                                     owners_list.append({
@@ -2816,17 +3010,17 @@ class TagResyncAllView(View):
                                     })
                             
                             if owners_list:
-                                tag.ownership_data = {"owners": owners_list}
-                            else:
-                                tag.ownership_data = None
-                        else:
-                            # Clear ownership if none in remote
-                            tag.ownership_data = None
+                                ownership_data = {"owners": owners_list}
                         
+                        # Set ownership data (clear if none in remote)
+                        tag.ownership_data = ownership_data
+                        
+                        # Mark as synced and update sync timestamp
                         tag.sync_status = "SYNCED"
                         tag.last_synced = timezone.now()
                         tag.save()
                         success_count += 1
+                        logger.info(f"Successfully resynced tag '{tag.name}' from DataHub")
                     else:
                         error_count += 1
                         errors.append(f"Tag {tag.name}: Not found in DataHub")
@@ -2870,19 +3064,9 @@ class TagExportAllView(View):
             
             # Get tags relevant to current connection
             # Include: tags with no connection (local-only) + tags with current connection (synced)
+            # BUT: if there's a synced tag for current connection with same datahub_id, hide the other connection's version
             all_tags = Tag.objects.all()
-            tags = []
-            for tag in all_tags:
-                if tag.connection is None:
-                    # True local-only tags (no connection)
-                    tags.append(tag)
-                elif current_connection and tag.connection == current_connection:
-                    # Tags synced to current connection
-                    tags.append(tag)
-                elif current_connection is None and tag.connection is None:
-                    # Backward compatibility: if no current connection, show unconnected tags
-                    tags.append(tag)
-                # Tags with different connections are excluded from this connection's view
+            tags = filter_tags_by_connection(all_tags, current_connection)
             
             tags_data = []
             for tag in tags:
@@ -3019,7 +3203,7 @@ class TagImportJsonView(View):
                     # Set tag fields
                     tag.name = name
                     tag.description = tag_data.get('description', '')
-                    tag.color = tag_data.get('color', '#0d6efd')
+                    tag.color = tag_data.get('color')
 
                     tag.urn = tag_data.get('urn', '')
                     tag.datahub_id = tag_data.get('datahub_id', '')
@@ -3088,19 +3272,9 @@ class TagAddAllToStagedChangesView(View):
             
             # Get tags relevant to current connection
             # Include: tags with no connection (local-only) + tags with current connection (synced)
+            # BUT: if there's a synced tag for current connection with same datahub_id, hide the other connection's version
             all_tags = Tag.objects.all()
-            tags = []
-            for tag in all_tags:
-                if tag.connection is None:
-                    # True local-only tags (no connection)
-                    tags.append(tag)
-                elif current_connection and tag.connection == current_connection:
-                    # Tags synced to current connection
-                    tags.append(tag)
-                elif current_connection is None and tag.connection is None:
-                    # Backward compatibility: if no current connection, show unconnected tags
-                    tags.append(tag)
-                # Tags with different connections are excluded from this connection's view
+            tags = filter_tags_by_connection(all_tags, current_connection)
             
             if not tags:
                 return JsonResponse({
@@ -3213,8 +3387,8 @@ class TagResyncView(View):
                     "error": "Could not connect to DataHub. Check your connection settings."
                 }, status=500)
             
-            # Get the tag URN - use original_urn if available, otherwise urn
-            tag_urn = getattr(tag, 'original_urn', None) or tag.urn
+            # Get the tag URN
+            tag_urn = tag.urn
             if not tag_urn:
                 return JsonResponse({
                     'success': False,
@@ -3235,23 +3409,30 @@ class TagResyncView(View):
                     'error': f'Error fetching tag from DataHub: {str(e)}'
                 }, status=500)
             
-            # Update local tag with remote data
+            # Update local tag with remote data - refresh completely with DataHub version
             try:
-                # Extract tag name from URN if not provided
-                tag_name = remote_tag.get('properties', {}).get('name')
+                logger.info(f"Resyncing tag '{tag.name}' with DataHub data")
+                
+                # Extract basic properties from remote tag with proper null checks
+                properties = remote_tag.get('properties') if remote_tag else None
+                if properties is None:
+                    properties = {}
+                
+                tag_name = properties.get('name') if properties else None
+                if not tag_name:
+                    tag_name = remote_tag.get('name') if remote_tag else tag.name
                 if not tag_name and tag_urn:
                     tag_name = tag_urn.split(':')[-1]
                 
-                # Update tag properties
+                # Update all basic tag properties from DataHub
                 tag.name = tag_name or tag.name
-                tag.description = remote_tag.get('properties', {}).get('description', '')
-                tag.color = remote_tag.get('properties', {}).get('colorHex', '#0d6efd')
+                tag.description = properties.get('description', '') if properties else (remote_tag.get('description', '') if remote_tag else '')
+                tag.color = properties.get('colorHex') if properties else None
                 tag.urn = tag_urn
-                # Set original_urn if the field exists
-                if hasattr(tag, 'original_urn'):
-                    tag.original_urn = tag_urn
-                tag.sync_status = 'SYNCED'
-                tag.last_synced = timezone.now()
+                
+                # Extract and update datahub_id from URN
+                if tag_urn and ':' in tag_urn:
+                    tag.datahub_id = tag_urn.split(':')[-1]
                 
                 # Get current connection and set it
                 from web_ui.views import get_current_connection
@@ -3259,20 +3440,49 @@ class TagResyncView(View):
                 if current_connection:
                     tag.connection = current_connection
                 
-                # Update ownership data if available
-                ownership_data = remote_tag.get('ownership')
-                if ownership_data:
-                    tag.ownership_data = ownership_data
+                # Convert and update ownership data from DataHub format to local format
+                ownership_data = None
+                remote_ownership = remote_tag.get('ownership') if remote_tag else None
+                if remote_ownership and remote_ownership.get('owners'):
+                    # Convert DataHub ownership format to our local format
+                    owners_list = []
+                    for owner_info in remote_ownership['owners']:
+                        if not owner_info:
+                            continue
+                        owner = owner_info.get('owner', {}) if owner_info else {}
+                        ownership_type = owner_info.get('ownershipType', {}) if owner_info else {}
+                        
+                        owner_urn = owner.get('urn', '') if owner else ''
+                        ownership_type_urn = ownership_type.get('urn', 'urn:li:ownershipType:__system__technical_owner') if ownership_type else 'urn:li:ownershipType:__system__technical_owner'
+                        
+                        if owner_urn:
+                            owners_list.append({
+                                'owner_urn': owner_urn,
+                                'ownership_type_urn': ownership_type_urn
+                            })
+                    
+                    if owners_list:
+                        ownership_data = {'owners': owners_list}
+                        logger.info(f"Updated ownership data with {len(owners_list)} owners")
                 
+                # Set ownership data (clear if none in remote)
+                tag.ownership_data = ownership_data
+                
+                # Mark as synced and update sync timestamp
+                tag.sync_status = 'SYNCED'
+                tag.last_synced = timezone.now()
+                
+                # Save all changes
                 tag.save()
                 
+                logger.info(f"Successfully resynced tag '{tag.name}' from DataHub")
                 return JsonResponse({
                     'success': True,
                     'message': f"Tag '{tag.name}' successfully resynced from DataHub"
                 })
                 
             except Exception as e:
-                logger.error(f"Error updating local tag: {str(e)}")
+                logger.error(f"Error updating local tag during resync: {str(e)}")
                 return JsonResponse({
                     'success': False,
                     'error': f'Error updating local tag: {str(e)}'

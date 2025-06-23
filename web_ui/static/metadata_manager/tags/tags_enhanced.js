@@ -426,7 +426,7 @@ function renderAllTabs() {
     displayTabContent('remote');
 }
 
-function loadTagsData() {
+function loadTagsData(skipSyncValidation = false) {
     showLoading(true);
     
     // Reset the tag data cache
@@ -435,7 +435,13 @@ function loadTagsData() {
     // Clear any existing selections to prevent stale data issues
     clearAllSelections();
     
-    fetch('/metadata/tags/remote-data/')
+    // Build URL with optional skip_sync_validation parameter
+    let url = '/metadata/tags/remote-data/';
+    if (skipSyncValidation) {
+        url += '?skip_sync_validation=true';
+    }
+    
+    fetch(url)
     .then(response => response.json())
     .then(data => {
         if (data.success) {
@@ -810,8 +816,8 @@ function renderTagRow(tag, tabType) {
                         <i class="fas fa-eye"></i>
                     </button>
                     
-                    <!-- View in DataHub button if applicable (only for synced/remote tags) -->
-                    ${urn && !urn.includes('local:') && tagData.sync_status !== 'LOCAL_ONLY' ? `
+                    <!-- View in DataHub button if tag exists in DataHub for current connection -->
+                    ${shouldShowDataHubViewButton(tagData, tabType) ? `
                         <a href="${getDataHubUrl(urn, 'tag')}" 
                            class="btn btn-sm btn-outline-info" 
                            target="_blank" title="View in DataHub">
@@ -912,6 +918,10 @@ function getActionButtons(tag, tabType) {
     const tagData = tag.combined || tag;
     const urn = tagData.urn || '';
     
+    // Get connection context information
+    const connectionContext = tagData.connection_context || 'none'; // "current", "different", "none"
+    const hasRemoteMatch = tagData.has_remote_match || false;
+    
     // Get the proper database ID for this tag
     const databaseId = getDatabaseId(tagData);
     
@@ -927,8 +937,9 @@ function getActionButtons(tag, tabType) {
         `;
     }
 
-    // 2. Sync to DataHub - Only for local-only tags
-    if (tabType === 'local' && tagData.sync_status === 'LOCAL_ONLY') {
+    // 2. Sync to DataHub - For tags in local tab
+    // Show for ALL tags in local tab regardless of their connection or sync status
+    if (tabType === 'local') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-success sync-to-datahub" 
                     title="Sync to DataHub">
@@ -937,8 +948,8 @@ function getActionButtons(tag, tabType) {
         `;
     }
     
-    // 2b. Resync - Only for synced tags that are modified or synced
-    if (tabType === 'synced' && (tagData.sync_status === 'MODIFIED' || tagData.sync_status === 'SYNCED')) {
+    // 2b. Resync - Only for synced tags (tags that belong to current connection and have remote match)
+    if (tabType === 'synced' && connectionContext === 'current' && hasRemoteMatch) {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-info resync-tag" 
                     title="Resync from DataHub">
@@ -948,7 +959,7 @@ function getActionButtons(tag, tabType) {
     }
     
     // 2c. Push to DataHub - Only for synced tags that are modified
-    if (tabType === 'synced' && tagData.sync_status === 'MODIFIED') {
+    if (tabType === 'synced' && connectionContext === 'current' && tagData.sync_status === 'MODIFIED') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-success push-to-datahub" 
                     title="Push to DataHub">
@@ -957,8 +968,8 @@ function getActionButtons(tag, tabType) {
         `;
     }
     
-    // 3. Sync to Local - Only for remote/synced tags
-    if (tabType === 'remote' || (tabType === 'synced' && tagData.is_remote)) {
+    // 3. Sync to Local - Only for remote-only tags
+    if (tabType === 'remote') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-primary sync-to-local" 
                     title="Sync to Local">
@@ -1011,6 +1022,35 @@ function getActionButtons(tag, tabType) {
     }
     
     return actionButtons;
+}
+
+function shouldShowDataHubViewButton(tagData, tabType) {
+    const urn = tagData.urn || '';
+    const connectionContext = tagData.connection_context || 'none';
+    const hasRemoteMatch = tagData.has_remote_match || false;
+    
+    // Don't show for local URNs or empty URNs
+    if (!urn || urn.includes('local:')) {
+        return false;
+    }
+    
+    // Show for remote-only tags (they definitely exist in DataHub)
+    if (tabType === 'remote') {
+        return true;
+    }
+    
+    // For synced tab: show only if tag belongs to current connection AND has remote match
+    if (tabType === 'synced') {
+        return connectionContext === 'current' && hasRemoteMatch;
+    }
+    
+    // For local tab: don't show View in DataHub button
+    // These tags either don't exist in DataHub or belong to different connections
+    if (tabType === 'local') {
+        return false;
+    }
+    
+    return false;
 }
 
 function getDataHubUrl(urn, type) {
@@ -1903,34 +1943,6 @@ function bulkSyncToLocal(tabType) {
             
             const tag = selectedTags[index];
             
-            // For remote-only tags, we need to handle them differently
-            if (tag.sync_status === 'REMOTE_ONLY') {
-                // For remote-only tags, we need to create them first
-                // This would typically be handled by the pull functionality
-                // For now, we'll skip these and count them as errors
-                console.log(`Skipping remote-only tag: ${tag.name || tag.urn}`);
-                errorCount++;
-                processedCount++;
-                processNextTag(index + 1);
-                return;
-            }
-            
-            // We need the database ID for the API call
-            const tagId = getDatabaseId(tag);
-            if (!tagId) {
-                console.error('Cannot sync tag without a database ID:', tag);
-                errorCount++;
-                processedCount++;
-                processNextTag(index + 1);
-                return;
-            }
-            
-            console.log('Using database ID for sync to local:', tagId);
-            
-            // Format the tag ID as a UUID with dashes if needed
-            const formattedTagId = formatTagId(tagId);
-            console.log(`Formatted tag ID for sync: ${formattedTagId}`);
-            
             // Get a proper name for the tag
             let tagName = tag.name;
             if (!tagName) {
@@ -1949,7 +1961,79 @@ function bulkSyncToLocal(tabType) {
                 }
             }
             
-            // Make the API call to sync this tag
+            // For remote-only tags, we need to use the URN-based API endpoint
+            if (tag.sync_status === 'REMOTE_ONLY') {
+                const tagUrn = tag.urn;
+                if (!tagUrn) {
+                    console.error('Cannot sync remote tag without a URN:', tag);
+                    errorCount++;
+                    processedCount++;
+                    setTimeout(() => processNextTag(index + 1), 100);
+                    return;
+                }
+                
+                console.log(`Syncing remote-only tag to local: ${tagName} (${tagUrn})`);
+                
+                // Use the pull endpoint for remote-only tags
+                fetch('/metadata/tags/pull/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        urns: [tagUrn]
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to sync remote tag ${tagName}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log(`Successfully synced remote tag: ${tagName}`);
+                    successCount++;
+                    processedCount++;
+                    
+                    // Update progress
+                    if (processedCount % 5 === 0 || processedCount === selectedTags.length) {
+                        showNotification('success', `Progress: ${processedCount}/${selectedTags.length} tags processed`);
+                    }
+                    
+                    // Add a small delay before processing the next tag to prevent database locks
+                    setTimeout(() => processNextTag(index + 1), 100);
+                })
+                .catch(error => {
+                    console.error(`Error syncing remote tag ${tagName}:`, error);
+                    errorCount++;
+                    processedCount++;
+                    
+                    // Add a small delay before processing the next tag despite the error
+                    setTimeout(() => processNextTag(index + 1), 100);
+                });
+                
+                return; // Exit early for remote-only tags
+            }
+            
+            // For existing local tags, we need the database ID for the API call
+            const tagId = getDatabaseId(tag);
+            if (!tagId) {
+                console.error('Cannot sync tag without a database ID:', tag);
+                errorCount++;
+                processedCount++;
+                setTimeout(() => processNextTag(index + 1), 100);
+                return;
+            }
+            
+            console.log('Using database ID for sync to local:', tagId);
+            
+            // Format the tag ID as a UUID with dashes if needed
+            const formattedTagId = formatTagId(tagId);
+            console.log(`Formatted tag ID for sync: ${formattedTagId}`);
+            
+            // Make the API call to sync this existing tag
             fetch(`/metadata/api/tags/${formattedTagId}/sync_to_local/`, {
                 method: 'POST',
                 headers: {
@@ -1973,16 +2057,16 @@ function bulkSyncToLocal(tabType) {
                     showNotification('success', `Progress: ${processedCount}/${selectedTags.length} tags processed`);
                 }
                 
-                // Process the next tag
-                processNextTag(index + 1);
+                // Add a small delay before processing the next tag to prevent database locks
+                setTimeout(() => processNextTag(index + 1), 100);
             })
             .catch(error => {
                 console.error(`Error syncing tag ${tagName}:`, error);
                 errorCount++;
                 processedCount++;
                 
-                // Process the next tag despite the error
-                processNextTag(index + 1);
+                // Add a small delay before processing the next tag despite the error
+                setTimeout(() => processNextTag(index + 1), 100);
             });
         }
         
@@ -2982,9 +3066,9 @@ function syncTagToDataHub(tag) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
             setTimeout(() => {
-                // Refresh the data to show updated sync status
+                // Refresh the data to show updated sync status (skip validation for single tag operation)
                 if (typeof loadTagsData === 'function') {
-                    loadTagsData();
+                    loadTagsData(true); // Skip sync validation to prevent mass status updates
                 } else {
                     window.location.reload();
                 }
@@ -3039,9 +3123,9 @@ function pushTagToDataHub(tag) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
             setTimeout(() => {
-                // Refresh the data to show updated sync status
+                // Refresh the data to show updated sync status (skip validation for single tag operation)
                 if (typeof loadTagsData === 'function') {
-                    loadTagsData();
+                    loadTagsData(true); // Skip sync validation to prevent mass status updates
                 } else {
                     window.location.reload();
                 }
@@ -3100,9 +3184,9 @@ function resyncTag(tag) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
             setTimeout(() => {
-                // Refresh the data to show updated sync status
+                // Refresh the data to show updated sync status (skip validation for single tag operation)
                 if (typeof loadTagsData === 'function') {
-                    loadTagsData();
+                    loadTagsData(true); // Skip sync validation to prevent mass status updates
                 } else {
                     window.location.reload();
                 }
@@ -3164,9 +3248,9 @@ function deleteRemoteTag(tag) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
             setTimeout(() => {
-                // Refresh the data to show updated list
+                // Refresh the data to show updated list (skip validation for single tag operation)
                 if (typeof loadTagsData === 'function') {
-                    loadTagsData();
+                    loadTagsData(true); // Skip sync validation to prevent mass status updates
                 } else {
                     window.location.reload();
                 }
@@ -3546,9 +3630,9 @@ function handleTagFormSubmission(event) {
                 
                 showNotification('success', data.message || `Tag ${isEditMode ? 'updated' : 'created'} successfully!`);
                 
-                // Refresh the data
+                // Refresh the data (skip sync validation since we just edited a single tag)
                 if (typeof loadTagsData === 'function') {
-                    loadTagsData();
+                    loadTagsData(true); // Skip sync validation to prevent mass status updates
                 } else {
                     window.location.reload();
                 }
@@ -3562,9 +3646,9 @@ function handleTagFormSubmission(event) {
             
             showNotification('success', `Tag ${isEditMode ? 'updated' : 'created'} successfully!`);
             
-            // Refresh the data
+            // Refresh the data (skip sync validation since we just edited a single tag)
             if (typeof loadTagsData === 'function') {
-                loadTagsData();
+                loadTagsData(true); // Skip sync validation to prevent mass status updates
             } else {
                 window.location.reload();
             }

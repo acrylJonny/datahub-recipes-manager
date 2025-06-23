@@ -205,7 +205,7 @@ def add_tag_to_staged_changes(
                     # Last resort: assume we're in a subdirectory and go up
                     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
             
-            output_dir = os.path.join(repo_root, "metadata-manager", environment)
+            output_dir = os.path.join(repo_root, "metadata-manager", environment, "tags")
             logger.debug(f"Calculated repo root: {repo_root}, output dir: {output_dir}")
         
         # Create output directory if it doesn't exist
@@ -214,23 +214,26 @@ def add_tag_to_staged_changes(
         # Use constant filename
         mcp_file_path = os.path.join(output_dir, "mcp_file.json")
         
-        # Load existing MCP file or create new structure
-        existing_mcp_data = {"mcps": [], "metadata": {"entities": []}}
+        # Load existing MCP file or create new list - should be a simple list of MCPs
+        existing_mcps = []
         if os.path.exists(mcp_file_path):
             try:
                 with open(mcp_file_path, "r") as f:
-                    existing_mcp_data = json.load(f)
-                    # Ensure required structure exists
-                    if "mcps" not in existing_mcp_data:
-                        existing_mcp_data["mcps"] = []
-                    if "metadata" not in existing_mcp_data:
-                        existing_mcp_data["metadata"] = {"entities": []}
-                    if "entities" not in existing_mcp_data["metadata"]:
-                        existing_mcp_data["metadata"]["entities"] = []
-                logger.info(f"Loaded existing MCP file with {len(existing_mcp_data['mcps'])} existing MCPs")
+                    file_content = json.load(f)
+                    # Handle both old format (with metadata wrapper) and new format (simple list)
+                    if isinstance(file_content, list):
+                        existing_mcps = file_content
+                    elif isinstance(file_content, dict) and "mcps" in file_content:
+                        # Migrate from old format - extract just the MCPs
+                        existing_mcps = file_content["mcps"]
+                        logger.info(f"Migrating from old format - extracted {len(existing_mcps)} MCPs")
+                    else:
+                        logger.warning(f"Unknown MCP file format, starting fresh")
+                        existing_mcps = []
+                logger.info(f"Loaded existing MCP file with {len(existing_mcps)} existing MCPs")
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
-                existing_mcp_data = {"mcps": [], "metadata": {"entities": []}}
+                existing_mcps = []
         
         # Create new MCPs for this tag
         new_mcps = []
@@ -258,49 +261,22 @@ def add_tag_to_staged_changes(
         
         # Remove any existing MCPs for this tag URN to avoid duplicates
         tag_entity_urn = properties_mcp.get("entityUrn")
-        existing_mcp_data["mcps"] = [
-            mcp for mcp in existing_mcp_data["mcps"] 
+        existing_mcps = [
+            mcp for mcp in existing_mcps 
             if mcp.get("entityUrn") != tag_entity_urn
         ]
         
-        # Remove existing metadata entry for this tag
-        existing_mcp_data["metadata"]["entities"] = [
-            entity for entity in existing_mcp_data["metadata"]["entities"]
-            if entity.get("tag_urn") != tag_urn
-        ]
+        # Add new MCPs to the list
+        existing_mcps.extend(new_mcps)
         
-        # Add new MCPs
-        existing_mcp_data["mcps"].extend(new_mcps)
-        
-        # Add metadata entry for this tag
-        tag_metadata = {
-            "tag_name": tag_name,
-            "tag_id": tag_id,
-            "tag_urn": tag_urn,
-            "entity_urn": tag_entity_urn,
-            "environment": environment,
-            "owner": owner,
-            "updated_at": int(time.time() * 1000),
-            "mcp_count": len(new_mcps)
-        }
-        existing_mcp_data["metadata"]["entities"].append(tag_metadata)
-        
-        # Update global metadata
-        existing_mcp_data["metadata"].update({
-            "total_mcps": len(existing_mcp_data["mcps"]),
-            "total_entities": len(existing_mcp_data["metadata"]["entities"]),
-            "last_updated": int(time.time() * 1000),
-            "environment": environment
-        })
-        
-        # Save updated MCP file
-        mcp_saved = save_mcp_to_file(existing_mcp_data, mcp_file_path)
+        # Save updated MCP file as a simple list
+        mcp_saved = save_mcp_to_file(existing_mcps, mcp_file_path)
         
         created_files = {}
         if mcp_saved:
             created_files["mcp_file"] = mcp_file_path
         
-        logger.info(f"Successfully added tag '{tag_name}' to staged changes with {len(new_mcps)} MCPs. Total MCPs in file: {len(existing_mcp_data['mcps'])}")
+        logger.info(f"Successfully added tag '{tag_name}' to staged changes with {len(new_mcps)} MCPs. Total MCPs in file: {len(existing_mcps)}")
         
         # Return the path to the created file
         return created_files
