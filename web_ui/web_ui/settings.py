@@ -38,6 +38,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",  # Django REST Framework
+    "drf_spectacular",  # OpenAPI 3.0 schema generation
     # Project apps
     "web_ui",
     "policy_manager",
@@ -45,6 +47,12 @@ INSTALLED_APPS = [
     "template_manager",
     "test_runner",
     "metadata_manager",
+    "env_vars",
+    "environments",
+    "policies",
+    "recipe_instances",
+    "github",
+    "metadata_sync",
     # Third-party apps
     "django_extensions",
 ]
@@ -231,3 +239,52 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "web_ui.auth_backends.AnonymousUserBackend",
 ]
+
+# REST Framework configuration
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
+    ],
+    # Remove authentication requirements for API documentation
+    'DEFAULT_PERMISSION_CLASSES': [],
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+}
+
+# Spectacular settings for OpenAPI documentation
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'DataHub Recipes Manager API',
+    'DESCRIPTION': 'API documentation for DataHub Recipes Manager - manage DataHub connections, recipes, policies, and metadata',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    # Remove security schemes from the schema
+    'SECURITY': [],
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': False,  # Disable authorization persistence
+        'displayOperationId': False,  # Clean up UI
+        'filter': True,  # Enable endpoint filtering
+        'supportedSubmitMethods': ['get', 'post', 'put', 'delete', 'patch'],
+        'tryItOutEnabled': True,
+        # Remove the Authorize button completely
+        'supportedSubmitMethods': ['get', 'post', 'put', 'delete', 'patch'],
+    },
+    'TAGS': [
+        {'name': 'Connections', 'description': 'DataHub connection management'},
+        {'name': 'Recipes', 'description': 'Recipe template and instance management'},
+        {'name': 'Policies', 'description': 'DataHub policy management'},
+        {'name': 'Metadata', 'description': 'Metadata entity management'},
+        {'name': 'Settings', 'description': 'Application settings'},
+        {'name': 'Templates', 'description': 'Recipe template management'},
+        {'name': 'Environment Variables', 'description': 'Environment variable management'},
+        {'name': 'GitHub', 'description': 'GitHub integration endpoints'},
+        {'name': 'Dashboard', 'description': 'Dashboard data endpoints'},
+    ],
+}

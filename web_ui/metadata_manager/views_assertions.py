@@ -833,6 +833,11 @@ def get_remote_assertions_data(request):
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
 
+        # Get current connection to filter assertions by connection (consistent with tags/properties)
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+
         # Get all local assertions
         local_assertions = Assertion.objects.all().order_by("name")
 
@@ -959,11 +964,11 @@ def get_remote_assertions_data(request):
                             
                             # Use stored ownership and relationship data
                             "ownership": getattr(assertion, 'ownership_data', None),
-                            "owners_count": getattr(assertion, 'owners_count', 0),
+                            "owners_count": len(getattr(assertion, 'ownership_data', {}).get('owners', [])) if getattr(assertion, 'ownership_data', None) else 0,
                             "owner_names": [],
                             
                             "relationships": getattr(assertion, 'relationships_data', None),
-                            "relationships_count": getattr(assertion, 'relationships_count', 0),
+                            "relationships_count": len(getattr(assertion, 'relationships_data', {}).get('relationships', [])) if getattr(assertion, 'relationships_data', None) else 0,
                             
                             # Assertion-specific data
                             "entity_urn": getattr(assertion, 'entity_urn', None),
@@ -997,28 +1002,44 @@ def get_remote_assertions_data(request):
                                 owner_names.append(name)
                             local_assertion_data["owner_names"] = owner_names
 
-                        # Categorize based on sync status
+                        # Determine connection context for this assertion
+                        connection_context = "none"  # Default
+                        if assertion.connection is None:
+                            connection_context = "none"  # No connection
+                        elif current_connection and assertion.connection == current_connection:
+                            connection_context = "current"  # Current connection
+                        else:
+                            connection_context = "different"  # Different connection
+
+                        # Categorize based on sync status AND connection context (like tags/properties)
                         sync_status = getattr(assertion, 'sync_status', 'LOCAL_ONLY')
-                        if sync_status == "SYNCED":
-                            # This is a synced assertion
-                            assertion_urn = getattr(assertion, 'urn', None)
-                            if assertion_urn and assertion_urn in enhanced_remote_assertions:
+                        assertion_urn = getattr(assertion, 'urn', None)
+                        
+                        # Check if this assertion has a remote match
+                        remote_match = enhanced_remote_assertions.get(assertion_urn) if assertion_urn else None
+                        
+                        # Apply the same logic as tags/properties for proper categorization
+                        if (sync_status == "SYNCED" and 
+                            connection_context == "current" and 
+                            current_connection):
+                            # This is a synced assertion for the current connection
+                            if remote_match:
                                 # Found in remote results - perfect sync
-                                remote_data = enhanced_remote_assertions[assertion_urn]
                                 synced_items.append({
                                     "local": local_assertion_data,
-                                    "remote": remote_data,
+                                    "remote": remote_match,
                                     "combined": {
                                         **local_assertion_data,
                                         "sync_status": "SYNCED",
                                         "sync_status_display": "Synced",
+                                        "connection_context": connection_context,
+                                        "has_remote_match": True,
                                     }
                                 })
                                 # Remove from remote-only list since it's synced
                                 del enhanced_remote_assertions[assertion_urn]
-                            elif assertion_urn:
+                            else:
                                 # Synced but not found in current remote search (could be indexing delay)
-                                # Still treat as synced since we have the sync_status
                                 synced_items.append({
                                     "local": local_assertion_data,
                                     "remote": None,  # Not found in current search
@@ -1026,15 +1047,17 @@ def get_remote_assertions_data(request):
                                         **local_assertion_data,
                                         "sync_status": "SYNCED",
                                         "sync_status_display": "Synced (Remote Pending Index)",
+                                        "connection_context": connection_context,
+                                        "has_remote_match": False,
                                     }
                                 })
-                            else:
-                                # Marked as synced but no urn - data inconsistency
-                                local_assertion_data["sync_status"] = "LOCAL_ONLY"
-                                local_assertion_data["sync_status_display"] = "Local Only (Sync Error)"
-                                local_only_items.append(local_assertion_data)
                         else:
-                            # Local-only, modified, or pending push
+                            # Local-only relative to current connection
+                            # This includes: different connection, no connection, or not synced
+                            local_assertion_data.update({
+                                "connection_context": connection_context,
+                                "has_remote_match": bool(remote_match),
+                            })
                             local_only_items.append(local_assertion_data)
                     except Exception as e:
                         logger.error(f"Error processing assertion {assertion.name}: {str(e)}")
@@ -1154,10 +1177,18 @@ def sync_assertion_to_local(request):
         if not assertion_urn:
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
-        # Get DataHub connection
+        # Get DataHub connection and current connection context
         connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Get current connection context - essential for proper sync status determination
+        from web_ui.views import get_current_connection
+        current_connection = None
+        try:
+            current_connection = get_current_connection(request)
+        except Exception as e:
+            logger.warning(f"Could not get current connection: {str(e)}")
         
         # Get the assertion data from DataHub
         result = client.get_assertions(query=f'urn:"{assertion_urn}"', count=1)
@@ -1242,6 +1273,29 @@ def sync_assertion_to_local(request):
         if assertion_type.startswith("$"):
             assertion_type = "SQL"  # Safe fallback
         
+        # Extract additional comprehensive data from assertion
+        run_events_data = assertion_data.get("runEvents", {})
+        monitor_data = assertion_data.get("monitor", {})
+        tags_data = assertion_data.get("tags", {})
+        
+        # Extract schedule information from monitor data
+        schedule_info = None
+        if monitor_data and isinstance(monitor_data, dict):
+            schedule_info = monitor_data.get("schedule", {})
+        
+        # Extract latest run status from run events
+        latest_run_status = None
+        if run_events_data and isinstance(run_events_data, dict):
+            run_events = run_events_data.get("runEvents", [])
+            if run_events and len(run_events) > 0:
+                latest_run = run_events[0]  # Assume first is most recent
+                latest_run_status = latest_run.get("result", {}).get("type")
+        
+        logger.debug(f"Extracted comprehensive data for {assertion_urn}: type={assertion_type}, "
+                   f"schedule={bool(schedule_info)}, latest_status={latest_run_status}, "
+                   f"run_events={len(run_events_data.get('runEvents', []) if run_events_data else [])}, "
+                   f"tags={len(tags_data.get('tags', []) if tags_data else [])}")
+        
         # Extract platform information
         platform_name = None
         platform_data = assertion_data.get("platform")
@@ -1301,15 +1355,20 @@ def sync_assertion_to_local(request):
             existing_assertion.sync_status = "SYNCED"
             existing_assertion.last_synced = timezone.now()
             
-            # Update comprehensive data
+            # Update connection tracking - essential for proper sync/local determination
+            existing_assertion.connection = current_connection
+            
+            # Update comprehensive data with all extracted information
             existing_assertion.info_data = info
             existing_assertion.ownership_data = ownership_data
-            existing_assertion.owners_count = owners_count
             existing_assertion.relationships_data = relationships_data
-            existing_assertion.relationships_count = relationships_count
-            existing_assertion.run_events_data = assertion_data.get("runEvents")
-            existing_assertion.tags_data = assertion_data.get("tags")
-            existing_assertion.monitor_data = assertion_data.get("monitor")
+            existing_assertion.run_events_data = run_events_data
+            existing_assertion.tags_data = tags_data
+            existing_assertion.monitor_data = monitor_data
+            
+            # Update legacy fields for backward compatibility 
+            if latest_run_status:
+                existing_assertion.last_status = latest_run_status
             
             # Update config
             existing_assertion.config = existing_assertion.config or {}
@@ -1348,15 +1407,19 @@ def sync_assertion_to_local(request):
                 sync_status="SYNCED",  # Mark as synced since we just synced it
                 last_synced=timezone.now(),
                 
-                # Comprehensive data storage
+                # Connection tracking - essential for proper sync/local determination
+                connection=current_connection,
+                
+                # Comprehensive data storage - using extracted variables
                 info_data=info,
                 ownership_data=ownership_data,
-                owners_count=owners_count,
                 relationships_data=relationships_data,
-                relationships_count=relationships_count,
-                run_events_data=assertion_data.get("runEvents"),
-                tags_data=assertion_data.get("tags"),
-                monitor_data=assertion_data.get("monitor"),
+                run_events_data=run_events_data,
+                tags_data=tags_data,
+                monitor_data=monitor_data,
+                
+                # Legacy fields for backward compatibility
+                last_status=latest_run_status,
             )
             action = "created"
         
@@ -1445,10 +1508,14 @@ def resync_assertion(request, assertion_id):
         if not assertion_urn:
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
-        # Get DataHub connection
+        # Get DataHub connection and current connection context
         connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Get current connection context for proper sync handling
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
         
         # Get the latest assertion data from DataHub
         result = client.get_assertions(query=f'urn:"{assertion_urn}"', count=1)
@@ -1574,15 +1641,29 @@ def resync_assertion(request, assertion_id):
         assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
         assertion.removed = removed
         
-        # Update comprehensive data
+        # Extract comprehensive data like in sync_assertion_to_local
+        run_events_data = assertion_data.get("runEvents", {})
+        monitor_data = assertion_data.get("monitor", {})
+        tags_data = assertion_data.get("tags", {})
+        
+        # Extract latest run status from run events
+        latest_run_status = None
+        if run_events_data and isinstance(run_events_data, dict):
+            run_events = run_events_data.get("runEvents", [])
+            if run_events and len(run_events) > 0:
+                latest_run = run_events[0]  # Assume first is most recent
+                latest_run_status = latest_run.get("result", {}).get("type")
+        
+        # Update comprehensive data with all extracted information
         assertion.info_data = info
         assertion.ownership_data = ownership_data
-        assertion.owners_count = owners_count
         assertion.relationships_data = relationships_data
-        assertion.relationships_count = relationships_count
-        assertion.run_events_data = assertion_data.get("runEvents")
-        assertion.tags_data = assertion_data.get("tags")
-        assertion.monitor_data = assertion_data.get("monitor")
+        assertion.run_events_data = run_events_data
+        assertion.tags_data = tags_data
+        assertion.monitor_data = monitor_data
+        
+        # Update connection tracking - essential for proper sync/local determination
+        assertion.connection = current_connection
         
         # Update config and sync status
         assertion.config = assertion.config or {}
@@ -1590,6 +1671,10 @@ def resync_assertion(request, assertion_id):
         assertion.config["last_synced"] = timezone.now().isoformat()
         assertion.sync_status = "SYNCED"
         assertion.last_synced = timezone.now()
+        
+        # Update legacy fields for backward compatibility
+        if latest_run_status:
+            assertion.last_status = latest_run_status
         
         assertion.save()
         

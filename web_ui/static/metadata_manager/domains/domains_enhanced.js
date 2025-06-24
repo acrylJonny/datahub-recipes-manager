@@ -920,7 +920,7 @@ function getActionButtons(domain, tabType) {
                 buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-domain" onclick="editDomain('${domainId}')" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>`);
-                buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-domain-to-pr" onclick="addDomainToPR('${domainId}')" title="Add to PR">
+                buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged-changes" onclick="addDomainToStagedChanges(${JSON.stringify(domain).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
                     <i class="fab fa-github"></i>
                 </button>`);
                 buttons.push(`<button type="button" class="btn btn-sm btn-outline-info resync-domain" onclick="resyncDomain('${domainId}')" title="Resync">
@@ -938,7 +938,7 @@ function getActionButtons(domain, tabType) {
                 buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-domain" onclick="editDomain('${domainId}')" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>`);
-                buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-domain-to-pr" onclick="addDomainToPR('${domainId}')" title="Add to PR">
+                buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged-changes" onclick="addDomainToStagedChanges(${JSON.stringify(domain).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
                     <i class="fab fa-github"></i>
                 </button>`);
                 buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-domain" onclick="pushDomainToDataHub('${domainId}')" title="Push to DataHub">
@@ -953,7 +953,7 @@ function getActionButtons(domain, tabType) {
                 buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-domain" onclick="editDomain('${domainId}')" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>`);
-                buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-domain-to-pr" onclick="addDomainToPR('${domainId}')" title="Add to PR">
+                buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged-changes" onclick="addDomainToStagedChanges(${JSON.stringify(domain).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
                     <i class="fab fa-github"></i>
                 </button>`);
                 buttons.push(`<button type="button" class="btn btn-sm btn-outline-info resync-domain" onclick="resyncDomain('${domainId}')" title="Resync">
@@ -969,7 +969,7 @@ function getActionButtons(domain, tabType) {
         }
     } else {
         // Remote-only domain actions (no edit button for remote-only domains)
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-remote-domain-to-pr" onclick="addRemoteDomainToPR('${domainUrn}')" title="Add to PR">
+        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-to-staged-changes" onclick="addDomainToStagedChanges(${JSON.stringify(domain).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
             <i class="fab fa-github"></i>
         </button>`);
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary sync-domain-to-local" onclick="syncDomainToLocal('${domainUrn}')" title="Sync to Local">

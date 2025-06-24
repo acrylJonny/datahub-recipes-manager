@@ -1561,4 +1561,182 @@ def add_data_product_to_staged_changes(request, data_product_id):
         return JsonResponse({
             "success": False,
             "error": f"An error occurred: {str(e)}"
-        }) 
+        })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DataProductRemoteAddToStagedChangesView(View):
+    """API endpoint to add a remote data product to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.data_product_actions import add_data_product_to_staged_changes as add_data_product_mcps_remote
+            
+            data = json.loads(request.body)
+            
+            # Get the data product data from the request
+            product_data = data.get('product_data')
+            if not product_data:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "No product_data provided"
+                }, status=400)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # For remote data products, we need to ensure we have an ID for MCP creation
+            # If the remote product doesn't have an ID, we'll generate one from the URN or name
+            product_id = product_data.get('id')
+            if not product_id:
+                if product_data.get('urn'):
+                    # Extract ID from URN
+                    urn_parts = product_data['urn'].split(':')
+                    if len(urn_parts) >= 3:
+                        product_id = urn_parts[-1]
+                    else:
+                        product_id = product_data['urn']
+                elif product_data.get('name'):
+                    # Use name as ID
+                    product_id = product_data['name'].replace(' ', '_').lower()
+                else:
+                    return JsonResponse({
+                        "status": "error",
+                        "error": "Remote data product must have either URN or name for ID generation"
+                    }, status=400)
+            
+            # Prepare ownership data
+            owners = []
+            if product_data.get('ownership_data') and isinstance(product_data['ownership_data'], dict):
+                ownership_list = product_data['ownership_data'].get("owners", [])
+                for owner_info in ownership_list:
+                    owner_urn = owner_info.get("owner_urn")
+                    if owner_urn:
+                        owners.append(owner_urn)
+            
+            # Prepare tags from raw_data if available
+            tags = []
+            raw_data = product_data.get('raw_data')
+            if raw_data and isinstance(raw_data, dict):
+                global_tags = raw_data.get("globalTags", {})
+                if global_tags and global_tags.get("tags"):
+                    for tag_info in global_tags["tags"]:
+                        tag_urn = tag_info.get("tag", {}).get("urn")
+                        if tag_urn:
+                            tags.append(tag_urn)
+            
+            # Prepare glossary terms from raw_data if available
+            terms = []
+            if raw_data and isinstance(raw_data, dict):
+                glossary_terms = raw_data.get("glossaryTerms", {})
+                if glossary_terms and glossary_terms.get("terms"):
+                    for term_info in glossary_terms["terms"]:
+                        term_urn = term_info.get("term", {}).get("urn")
+                        if term_urn:
+                            terms.append(term_urn)
+            
+            # Prepare structured properties from raw_data if available
+            structured_properties = []
+            if raw_data and isinstance(raw_data, dict):
+                structured_props = raw_data.get("structuredProperties", {})
+                if structured_props and structured_props.get("properties"):
+                    for prop in structured_props["properties"]:
+                        prop_urn = prop.get("structuredProperty", {}).get("urn")
+                        values = prop.get("values", [])
+                        if prop_urn and values:
+                            structured_properties.append({
+                                "propertyUrn": prop_urn,
+                                "values": values
+                            })
+            
+            # Prepare institutional memory links from raw_data if available
+            links = []
+            if raw_data and isinstance(raw_data, dict):
+                institutional_memory = raw_data.get("institutionalMemory", {})
+                if institutional_memory and institutional_memory.get("elements"):
+                    for element in institutional_memory["elements"]:
+                        url = element.get("url")
+                        description = element.get("description", "")
+                        if url:
+                            links.append({
+                                "url": url,
+                                "description": description
+                            })
+            
+            # Prepare custom properties from raw_data if available
+            custom_properties = {}
+            if raw_data and isinstance(raw_data, dict):
+                custom_props = raw_data.get("properties", {})
+                if custom_props:
+                    custom_properties = custom_props
+            
+            # Get domain URN(s)
+            domains = []
+            if product_data.get('domain_urn'):
+                domains.append(product_data['domain_urn'])
+            elif raw_data and isinstance(raw_data, dict):
+                domain_info = raw_data.get("domain", {})
+                if domain_info and domain_info.get("urn"):
+                    domains.append(domain_info["urn"])
+            
+            # Add remote data product to staged changes using the comprehensive function
+            result = add_data_product_mcps_remote(
+                data_product_id=product_id,
+                name=product_data.get('name', 'Unknown'),
+                description=product_data.get('description', ''),
+                external_url=product_data.get('external_url'),
+                owners=owners if owners else None,
+                tags=tags if tags else None,
+                terms=terms if terms else None,
+                domains=domains if domains else None,
+                links=links if links else None,
+                custom_properties=custom_properties if custom_properties else None,
+                structured_properties=structured_properties if structured_properties else None,
+                sub_types=None,  # TODO: Extract sub_types if stored
+                deprecated=False,  # TODO: Extract deprecated status if stored
+                deprecation_note="",  # TODO: Extract deprecation note if stored
+                include_all_aspects=True,
+                environment=environment_name,
+                owner=owner,
+                base_dir="metadata-manager"
+            )
+            
+            # Provide feedback about files created
+            if result.get("success"):
+                files_created = result.get("files_saved", [])
+                files_created_count = len(files_created)
+                
+                message = f"Remote data product added to staged changes: {files_created_count} file(s) created"
+                
+                # Return success response
+                return JsonResponse({
+                    "success": True,
+                    "message": message,
+                    "files_created": files_created,
+                    "files_created_count": files_created_count,
+                    "aspects_included": result.get("aspects_included", [])
+                })
+            else:
+                return JsonResponse({
+                    "success": False,
+                    "error": result.get("message", "Failed to create staged changes")
+                }, status=500)
+                
+        except Exception as e:
+            logger.error(f"Error adding remote data product to staged changes: {str(e)}")
+            return JsonResponse({"success": False, "error": str(e)}, status=500)

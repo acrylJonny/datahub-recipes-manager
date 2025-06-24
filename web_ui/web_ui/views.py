@@ -1621,70 +1621,10 @@ def settings(request):
         if request.method == "POST":
             section = request.POST.get("section", "")
 
+            # Legacy connection handling removed - use Connections management instead
             if section == "connection" or section == "datahub_connection":
-                # Update connection settings
-                datahub_url = request.POST.get("datahub_url", "").strip()
-                datahub_token = request.POST.get("datahub_token", "").strip()
-                verify_ssl = "verify_ssl" in request.POST
-                timeout = request.POST.get("timeout", "30")
-
-                # Validate timeout
-                try:
-                    timeout_int = int(timeout)
-                    if timeout_int < 5 or timeout_int > 300:
-                        timeout_int = 30
-                except (ValueError, TypeError):
-                    timeout_int = 30
-
-                # Save settings to database
-                AppSettings.set("datahub_url", datahub_url)
-                if datahub_token:  # Only update token if provided
-                    AppSettings.set("datahub_token", datahub_token)
-                AppSettings.set("verify_ssl", "true" if verify_ssl else "false")
-                AppSettings.set("timeout", str(timeout_int))
-
-                # Sync settings with metadata_manager Environment model
-                try:
-                    from metadata_manager.models import (
-                        Environment as MetadataEnvironment,
-                    )
-
-                    default_env = MetadataEnvironment.objects.filter(
-                        is_default=True
-                    ).first()
-                    if default_env:
-                        default_env.datahub_url = datahub_url
-                        if datahub_token:
-                            default_env.datahub_token = datahub_token
-                        default_env.save()
-                        logger.info(
-                            f"Synced settings with metadata manager default environment: {default_env.name}"
-                        )
-                    else:
-                        logger.warning(
-                            "No default environment found in metadata_manager"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Error syncing settings with metadata_manager: {str(e)}"
-                    )
-
-                # Test connection if requested
-                if "test_connection" in request.POST:
-                    # Force a new client instance with the updated settings
-                    connected, client = test_datahub_connection()
-
-                    if connected and client:
-                        messages.success(request, "Successfully connected to DataHub")
-                    else:
-                        messages.error(
-                            request,
-                            "Failed to connect to DataHub. Please check your settings.",
-                        )
-                else:
-                    messages.success(request, "DataHub connection settings updated")
-
-                return redirect("settings")
+                messages.warning(request, "Legacy connection settings have been disabled. Please use the new Connection Management system.")
+                return redirect("connections_list")
 
             elif section == "github_settings":
                 # Handle GitHub settings
@@ -1785,13 +1725,6 @@ def settings(request):
 
         # Get current settings for display
         try:
-            # DataHub connection settings
-            datahub_url = AppSettings.get("datahub_url", "")
-            verify_ssl = AppSettings.get_bool("verify_ssl", True)
-            timeout = AppSettings.get_int("timeout", 30)
-
-            # Test current connection
-            connected, client = test_datahub_connection()
 
             # Git settings
             from web_ui.models import GitSettings
@@ -1824,11 +1757,6 @@ def settings(request):
             }
 
             context = {
-                "datahub_url": datahub_url,
-                "verify_ssl": verify_ssl,
-                "timeout": timeout,
-                "has_token": bool(AppSettings.get("datahub_token")),
-                "is_connected": connected,
                 "github_form": github_form,
                 "github_configured": git_settings.enabled and git_settings.token and git_settings.username and git_settings.repository,
                 "config": config,
@@ -6208,6 +6136,12 @@ def mutation_create(request):
         custom_properties = request.POST.get("custom_properties", "{}")
         platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
         
+        # Get checkbox values for apply mutations to entities
+        apply_to_tags = request.POST.get("apply_to_tags") == "on"
+        apply_to_glossary_terms = request.POST.get("apply_to_glossary_terms") == "on"
+        apply_to_structured_properties = request.POST.get("apply_to_structured_properties") == "on"
+        apply_to_domains = request.POST.get("apply_to_domains") == "on"
+        
         try:
             # Validate JSON
             import json
@@ -6224,14 +6158,18 @@ def mutation_create(request):
                 },
             )
 
-        # Create the mutation
+        # Create the mutation - use default values for platform_instance and env since they're handled via mapping
         Mutation.objects.create(
             name=name,
             description=description,
-            platform_instance=platform_instance,
-            env=env,
+            platform_instance=platform_instance or "default",  # Provide default value since field is removed from form
+            env=env or "default",  # Provide default value since field is removed from form
             custom_properties=custom_props,
             platform_instance_mapping=platform_mapping,
+            apply_to_tags=apply_to_tags,
+            apply_to_glossary_terms=apply_to_glossary_terms,
+            apply_to_structured_properties=apply_to_structured_properties,
+            apply_to_domains=apply_to_domains,
         )
 
         messages.success(request, f'Mutation "{name}" created successfully.')
@@ -6247,10 +6185,17 @@ def mutation_edit(request, mutation_id):
     if request.method == "POST":
         mutation.name = request.POST.get("name")
         mutation.description = request.POST.get("description")
-        mutation.platform_instance = request.POST.get("platform_instance")
-        mutation.env = request.POST.get("env")
+        # Keep existing values for platform_instance and env since they're handled via mapping
+        mutation.platform_instance = request.POST.get("platform_instance") or mutation.platform_instance
+        mutation.env = request.POST.get("env") or mutation.env
         custom_properties = request.POST.get("custom_properties", "{}")
         platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
+        
+        # Get checkbox values for apply mutations to entities
+        mutation.apply_to_tags = request.POST.get("apply_to_tags") == "on"
+        mutation.apply_to_glossary_terms = request.POST.get("apply_to_glossary_terms") == "on"
+        mutation.apply_to_structured_properties = request.POST.get("apply_to_structured_properties") == "on"
+        mutation.apply_to_domains = request.POST.get("apply_to_domains") == "on"
         
         try:
             # Validate JSON

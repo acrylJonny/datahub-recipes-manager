@@ -1,0 +1,367 @@
+openapi: 3.0.3
+info:
+  title: DataHub Recipes Manager API
+  version: 1.0.0
+  description: API documentation for DataHub Recipes Manager - manage DataHub connections,
+    recipes, policies, and metadata
+paths:
+  /api/connections/:
+    get:
+      operationId: connections_retrieve
+      description: Get a list of all configured DataHub connections
+      summary: List DataHub connections
+      tags:
+      - Connections
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/connections/{connection_id}/:
+    get:
+      operationId: connections_retrieve_2
+      description: Get detailed information about a specific DataHub connection
+      summary: Get connection details
+      parameters:
+      - in: path
+        name: connection_id
+        schema:
+          type: integer
+        description: ID of the connection to retrieve
+        required: true
+      tags:
+      - Connections
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/connections/{connection_id}/test/:
+    post:
+      operationId: connections_test_create
+      description: Test connectivity to a DataHub instance
+      summary: Test connection
+      parameters:
+      - in: path
+        name: connection_id
+        schema:
+          type: integer
+        description: ID of the connection to test
+        required: true
+      tags:
+      - Connections
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/connections/switch/:
+    post:
+      operationId: connections_switch_create
+      description: Switch the current connection context for the session
+      summary: Switch active connection
+      tags:
+      - Connections
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/dashboard/data/:
+    get:
+      operationId: dashboard_data_retrieve
+      description: Get data for the main dashboard including recipes and policies
+        count
+      summary: Get dashboard data
+      tags:
+      - Dashboard
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/env-vars/instances/:
+    get:
+      operationId: env_vars_instances_retrieve
+      description: Get a list of all environment variable instances
+      summary: List environment variable instances
+      tags:
+      - Environment Variables
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/env-vars/instances/{instance_id}/json/:
+    get:
+      operationId: env_vars_instances_json_retrieve
+      description: Get JSON representation of an environment variable instance
+      summary: Get environment variable instance JSON
+      parameters:
+      - in: path
+        name: instance_id
+        schema:
+          type: integer
+        description: ID of the instance
+        required: true
+      tags:
+      - Environment Variables
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/env-vars/templates/:
+    get:
+      operationId: env_vars_templates_retrieve
+      description: Get a list of all environment variable templates
+      summary: List environment variable templates
+      tags:
+      - Environment Variables
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/env-vars/templates/{template_id}/:
+    get:
+      operationId: env_vars_templates_retrieve_2
+      description: Get details of a specific environment variable template
+      summary: Get environment variable template
+      parameters:
+      - in: path
+        name: template_id
+        schema:
+          type: integer
+        description: ID of the template
+        required: true
+      tags:
+      - Environment Variables
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/github/branch-diff/:
+    get:
+      operationId: github_branch_diff_retrieve
+      description: Get diff between branches in GitHub repository
+      summary: Get branch diff
+      tags:
+      - GitHub
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: github_branch_diff_create
+      description: Get diff between branches in GitHub repository
+      summary: Get branch diff
+      tags:
+      - GitHub
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/github/branches/:
+    get:
+      operationId: github_branches_retrieve
+      description: Load available branches from the configured GitHub repository
+      summary: Load GitHub branches
+      tags:
+      - GitHub
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: github_branches_create
+      description: Load available branches from the configured GitHub repository
+      summary: Load GitHub branches
+      tags:
+      - GitHub
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/github/file-diff/:
+    get:
+      operationId: github_file_diff_retrieve
+      description: Get diff for a specific file in GitHub repository
+      summary: Get file diff
+      tags:
+      - GitHub
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: github_file_diff_create
+      description: Get diff for a specific file in GitHub repository
+      summary: Get file diff
+      tags:
+      - GitHub
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/metadata/users-groups/:
+    get:
+      operationId: metadata_users_groups_retrieve
+      description: Get users and groups from DataHub for metadata management
+      summary: Get users and groups
+      tags:
+      - Metadata
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/policies/data/:
+    get:
+      operationId: policies_data_retrieve
+      description: Get data for policies list with filtering and pagination
+      summary: Get policies data
+      tags:
+      - Policies
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/recipes/data/:
+    get:
+      operationId: recipes_data_retrieve
+      description: Get data for recipes list with filtering and pagination
+      summary: Get recipes data
+      tags:
+      - Recipes
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/settings/:
+    get:
+      operationId: settings_retrieve
+      description: Retrieve current application settings including policy, recipe,
+        and advanced settings
+      summary: Get application settings
+      tags:
+      - Settings
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/settings/git/:
+    get:
+      operationId: settings_git_retrieve
+      description: Retrieve current Git repository integration settings
+      summary: Get Git integration settings
+      tags:
+      - Settings
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/settings/system/:
+    get:
+      operationId: settings_system_retrieve
+      description: Get general system information and health status
+      summary: Get system information
+      tags:
+      - Settings
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/templates/{template_id}/env-vars/:
+    get:
+      operationId: templates_env_vars_retrieve
+      description: Get environment variable instances for a specific template
+      summary: Get template environment variable instances
+      parameters:
+      - in: path
+        name: template_id
+        schema:
+          type: integer
+        description: ID of the template
+        required: true
+      tags:
+      - Templates
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/templates/{template_id}/preview/:
+    get:
+      operationId: templates_preview_retrieve
+      description: Preview a recipe template with environment variables applied
+      summary: Preview recipe template
+      parameters:
+      - in: path
+        name: template_id
+        schema:
+          type: integer
+        description: ID of the template to preview
+        required: true
+      tags:
+      - Templates
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      responses:
+        '200':
+          description: No response body
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+tags:
+- name: Connections
+  description: DataHub connection management
+- name: Recipes
+  description: Recipe template and instance management
+- name: Policies
+  description: DataHub policy management
+- name: Metadata
+  description: Metadata entity management
+- name: Settings
+  description: Application settings

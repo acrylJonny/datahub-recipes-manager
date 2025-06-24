@@ -466,18 +466,36 @@ function getActionButtons(product, tabType) {
     
     // View button (always available)
     buttons.push(`
-        <button type="button" class="btn btn-sm btn-outline-info view-item" 
+        <button type="button" class="btn btn-sm btn-outline-primary view-item" 
                 onclick="showProductDetails(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
                 title="View Details">
             <i class="fas fa-eye"></i>
         </button>
     `);
     
+    // View in DataHub button - only for non-local products
+    if (product.urn && !product.urn.includes('local:') && tabType !== 'local') {
+        buttons.push(`
+            <a href="${getDataHubUrl(product.urn, 'dataProduct')}" 
+               class="btn btn-sm btn-outline-info" 
+               target="_blank" title="View in DataHub">
+                <i class="fas fa-external-link-alt"></i>
+            </a>
+        `);
+    }
+    
     // Tab-specific actions
     switch (tabType) {
         case 'synced':
             buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-primary" 
+                <button type="button" class="btn btn-sm btn-outline-warning" 
+                        onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Add to Staged Changes">
+                    <i class="fab fa-github"></i>
+                </button>
+            `);
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-info" 
                         onclick="resyncProduct('${product.id}', '${product.urn}', this)"
                         title="Resync">
                     <i class="fas fa-sync-alt"></i>
@@ -490,8 +508,22 @@ function getActionButtons(product, tabType) {
                     <i class="fas fa-upload"></i>
                 </button>
             `);
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-danger" 
+                        onclick="deleteLocalProduct('${product.id}', this)"
+                        title="Delete Local">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `);
             break;
         case 'local':
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-warning" 
+                        onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Add to Staged Changes">
+                    <i class="fab fa-github"></i>
+                </button>
+            `);
             buttons.push(`
                 <button type="button" class="btn btn-sm btn-outline-success" 
                         onclick="syncProductToDataHub('${product.id}', this)"
@@ -509,7 +541,14 @@ function getActionButtons(product, tabType) {
             break;
         case 'remote':
             buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-primary" 
+                <button type="button" class="btn btn-sm btn-outline-warning" 
+                        onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Add to Staged Changes">
+                    <i class="fab fa-github"></i>
+                </button>
+            `);
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-info" 
                         onclick="syncProductToLocal('${product.urn}', this)"
                         title="Sync to Local">
                     <i class="fas fa-download"></i>
@@ -524,24 +563,6 @@ function getActionButtons(product, tabType) {
             `);
             break;
     }
-    
-    // Download JSON (always available)
-    buttons.push(`
-        <button type="button" class="btn btn-sm btn-outline-secondary" 
-                onclick="downloadProductJson(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
-                title="Download JSON">
-            <i class="fas fa-download"></i>
-        </button>
-    `);
-    
-    // Add to staged changes (always available)
-    buttons.push(`
-        <button type="button" class="btn btn-sm btn-outline-warning" 
-                onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
-                title="Add to Staged Changes">
-            <i class="fab fa-github"></i>
-        </button>
-    `);
     
     return `<div class="btn-group" role="group">${buttons.join('')}</div>`;
 }
@@ -767,6 +788,10 @@ function showNotification(type, message) {
         bgClass = 'bg-info';
         icon = 'fa-info-circle';
         title = 'Info';
+    } else if (type === 'warning') {
+        bgClass = 'bg-warning';
+        icon = 'fa-exclamation-triangle';
+        title = 'Warning';
     } else {
         bgClass = 'bg-danger';
         icon = 'fa-exclamation-circle';
@@ -890,9 +915,102 @@ function downloadProductJson(product) {
 }
 
 function addProductToStagedChanges(product) {
-    // Implementation for adding to staged changes
-    console.log('Adding product to staged changes:', product);
-    showSuccess('Product added to staged changes');
+    const productName = product.name || 'Unknown';
+    
+    // Check if this is a remote-only product that needs to be staged directly
+    if (product.sync_status === 'REMOTE_ONLY' || !product.id) {
+        console.log(`Product "${productName}" is remote-only, staging directly...`);
+        
+        // Show loading notification
+        showNotification('info', `Adding remote product "${productName}" to staged changes...`);
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        // Use the remote staging endpoint - we'll need to create this endpoint
+        fetch('/metadata/data-products/remote/stage_changes/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                product_data: product,
+                environment: currentEnvironment.name,
+                mutation_name: mutationName
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Add remote product to staged changes response:', data);
+            if (data.success) {
+                showNotification('success', data.message || `Remote product added to staged changes successfully`);
+                if (data.files_created && data.files_created.length > 0) {
+                    console.log('Created files:', data.files_created);
+                }
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding remote product to staged changes:', error);
+            showNotification('error', `Error adding remote product to staged changes: ${error.message}`);
+        });
+        return;
+    }
+    
+    if (!product.id) {
+        console.error('Cannot add product to staged changes without an ID:', product);
+        showNotification('error', 'Error adding to staged changes: Missing product ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('info', `Adding product "${productName}" to staged changes...`);
+    
+    // Get current environment and mutation from global state or settings
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = currentEnvironment.mutation_name || null;
+    
+    // Use the staged changes endpoint
+    fetch(`/metadata/data-products/${product.id}/stage_changes/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Add product to staged changes response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `Product added to staged changes successfully`);
+            if (data.files_created && data.files_created.length > 0) {
+                console.log('Created files:', data.files_created);
+            }
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding product to staged changes:', error);
+        showNotification('error', `Error adding product to staged changes: ${error.message}`);
+    });
 }
 
 // Bulk action functions
@@ -1020,10 +1138,38 @@ function bulkAddToPR(tabType) {
         return;
     }
     
-    console.log('Bulk adding to PR:', selectedProducts);
-    showNotification('success', `Starting to add ${selectedProducts.length} data product(s) to staged changes...`);
-    // TODO: Implement actual add to PR logic
-    // After implementation, add single refresh: await loadProductsData();
+    if (!confirm(`Are you sure you want to add ${selectedProducts.length} product(s) to staged changes?`)) {
+        return;
+    }
+    
+    showNotification('info', `Starting to add ${selectedProducts.length} data product(s) to staged changes...`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Process products sequentially to avoid overwhelming the server
+    selectedProducts.forEach((product, index) => {
+        setTimeout(() => {
+            try {
+                addProductToStagedChanges(product);
+                successCount++;
+                
+                // Show final result after all products are processed
+                if (index === selectedProducts.length - 1) {
+                    setTimeout(() => {
+                        if (errorCount === 0) {
+                            showNotification('success', `Successfully added ${successCount} data product(s) to staged changes`);
+                        } else {
+                            showNotification('warning', `Completed: ${successCount} added successfully, ${errorCount} failed`);
+                        }
+                    }, 1000);
+                }
+            } catch (error) {
+                console.error(`Error adding product ${product.name} to staged changes:`, error);
+                errorCount++;
+            }
+        }, index * 500); // Stagger requests by 500ms
+    });
 }
 
 async function bulkDeleteLocal(tabType) {

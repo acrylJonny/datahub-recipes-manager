@@ -7280,9 +7280,16 @@ class DataHubRestClient:
             if result and "errors" in result:
                 # Check for specific GraphQL validation errors
                 errors = self._get_graphql_errors(result)
+                self.logger.warning(f"GraphQL listTests returned errors: {len(errors)} error(s)")
+                if errors:
+                    self.logger.debug(f"First error: {errors[0]}")
+                
                 for error in errors:
                     if "FieldUndefined" in error or "Unknown type" in error or "listTests" in error:
                         self.logger.warning("listTests query not supported in this DataHub version")
+                        return []
+                    elif "non null type" in error or "wrongly returned a null value" in error:
+                        self.logger.warning("listTests query returned null values, skipping failed query")
                         return []
                     else:
                         self.logger.error(f"GraphQL error listing tests: {error}")

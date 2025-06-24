@@ -1,0 +1,12 @@
+[
+  {
+    "entityType": "domain",
+    "entityUrn": "urn:li:domain:16b92ac1-acd2-45fc-b341-4a4d43ec77fd",
+    "changeType": "UPSERT",
+    "aspectName": "domainProperties",
+    "aspect": {
+      "value": "{\"customProperties\": {}, \"name\": \"Engineering\", \"created\": {\"time\": 1750770990534, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  

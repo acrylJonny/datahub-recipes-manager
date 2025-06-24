@@ -398,13 +398,11 @@ function loadPropertiesData(skipSyncValidation = false) {
                 filters: data.filters || { value_types: {}, entity_types: {} }
             };
             
-            console.log('=== PROPERTIES DATA CATEGORIZATION ===');
             console.log('Raw data from server:', data.data.length, 'properties');
             console.log('Raw data sample:', data.data.slice(0, 3));
             console.log('Synced items:', propertiesData.synced_items.length, propertiesData.synced_items);
             console.log('Local only items:', propertiesData.local_only_items.length, propertiesData.local_only_items);
             console.log('Remote only items:', propertiesData.remote_only_items.length, propertiesData.remote_only_items);
-            console.log('=== END CATEGORIZATION ===');
             
             updateStatistics(data.statistics);
             updateFilterRows();
@@ -500,7 +498,6 @@ function updateContentFilterStats() {
 }
 
 function updateFilterRows() {
-    console.log('=== UPDATING FILTER ROWS ===');
     console.log('propertiesData.filters:', propertiesData.filters);
     
     // Update value type filters
@@ -1382,15 +1379,21 @@ function setupBulkSelectionForTab(tabType) {
  * @param {Object} property - The property object
  */
 function addPropertyToStagedChanges(property) {
-    // Always sync to local first, then add to staged changes
-    showNotification('info', 'Syncing property to local first, then adding to staged changes...');
-    syncPropertyToLocal(property, function(syncedProperty) {
-        if (syncedProperty && syncedProperty.id) {
-            addPropertyToStagedChangesInternal(syncedProperty);
-        } else {
-            showNotification('error', 'Failed to sync property to local');
-        }
-    });
+    
+    // Get property data
+    const propertyData = property.combined || property;
+    const databaseId = getDatabaseId(propertyData);
+    
+    // Check if this is already a local/synced property or a remote-only property
+    if (databaseId) {
+        // Property already exists locally (synced or local-only), add directly to staged changes
+        showNotification('info', 'Adding property to staged changes...');
+        addPropertyToStagedChangesInternal(propertyData);
+    } else {
+        // Remote-only property - add directly to staged changes using remote endpoint
+        showNotification('info', 'Adding remote property to staged changes...');
+        addRemotePropertyToStagedChanges(property);
+    }
 }
 
 function addPropertyToStagedChangesInternal(propertyData) {
@@ -1413,7 +1416,9 @@ function addPropertyToStagedChangesInternal(propertyData) {
     }
     
     // Make API call to add property to staged changes
-    fetch(`/metadata/properties/${propertyId}/stage_changes/`, {
+    const url = `/metadata/properties/${propertyId}/stage_changes/`;
+    console.log('🔗 Making request to URL:', url);
+    fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -1461,31 +1466,35 @@ function addPropertyToStagedChangesInternal(propertyData) {
  * @returns {string|null} - The database ID or null if not found
  */
 function getDatabaseId(propertyData) {
+    console.log('🔍 getDatabaseId called with property:', propertyData.name);
+    console.log('🔍 Property status:', propertyData.status, 'sync_status:', propertyData.sync_status);
+    
+    // First check if this is a remote-only property
+    if (propertyData.status === 'remote_only' || propertyData.sync_status === 'REMOTE_ONLY') {
+        console.log('🔍 Property is remote-only, returning null (no local database ID)');
+        return null;
+    }
+    
     // For combined objects (synced properties), check local first
     if (propertyData.local && propertyData.local.id) {
+        console.log('🔍 Found database ID from propertyData.local.id:', propertyData.local.id);
         return propertyData.local.id;
     }
     
-    // For local-only properties, use the id directly
+    // For local-only or synced properties, use the id directly
     if (propertyData.id) {
+        console.log('🔍 Found database ID from propertyData.id:', propertyData.id);
         return propertyData.id;
     }
     
     // Check for database_id field (explicitly added by backend)
     if (propertyData.database_id) {
+        console.log('🔍 Found database ID from propertyData.database_id:', propertyData.database_id);
         return propertyData.database_id;
     }
     
-    // For remote-only properties, try to extract from URN
-    if (propertyData.urn) {
-        const urnParts = propertyData.urn.split(':');
-        if (urnParts.length >= 4) {
-            return urnParts[3]; // Return the database ID part
-        }
-    }
-    
     // Log warning if we couldn't find an ID
-    console.warn('Could not find database ID for property:', propertyData);
+    console.warn('🔍 Could not find database ID for property:', propertyData.name);
     return null;
 }
 
@@ -2532,15 +2541,21 @@ function bulkAddToPR(tabType) {
             }
         };
         
-        // Always sync each property, then add to staged changes
-        showNotification('info', `Syncing and staging ${totalCount} properties...`);
+        // Process properties based on their type
+        showNotification('info', `Processing ${totalCount} properties for staged changes...`);
         properties.forEach(property => {
-            syncPropertyToLocal(property, (syncedProperty) => {
-                if (syncedProperty && syncedProperty.id) {
-                    addPropertyToStagedChangesInternal(syncedProperty);
-                }
+            const propertyData = property.combined || property;
+            const databaseId = getDatabaseId(propertyData);
+            
+            if (databaseId) {
+                // Property already exists locally (synced or local-only), add directly to staged changes
+                addPropertyToStagedChangesInternal(propertyData);
                 updateProgress();
-            });
+            } else {
+                // Remote-only property - add directly to staged changes using remote endpoint
+                addRemotePropertyToStagedChanges(property);
+                updateProgress();
+            }
         });
     }
 }

@@ -180,10 +180,17 @@ class Mutation(models.Model):
     
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
-    platform_instance = models.CharField(max_length=255, help_text="Platform instance identifier")
-    env = models.CharField(max_length=255, help_text="Environment identifier")
+    platform_instance = models.CharField(max_length=255, blank=True, null=True, help_text="Platform instance identifier (deprecated - use platform_instance_mapping)")
+    env = models.CharField(max_length=255, blank=True, null=True, help_text="Environment identifier (deprecated - use platform_instance_mapping)")
     custom_properties = models.JSONField(default=dict, help_text="Custom properties as JSON")
     platform_instance_mapping = models.JSONField(default=dict, help_text="Platform instance mapping (from -> to) for syncing between environments")
+    
+    # Apply mutations to entities - these will generate new URN values when staging changes
+    apply_to_tags = models.BooleanField(default=False, help_text="Apply mutations to tags")
+    apply_to_glossary_terms = models.BooleanField(default=False, help_text="Apply mutations to glossary terms")
+    apply_to_structured_properties = models.BooleanField(default=False, help_text="Apply mutations to structured properties")
+    apply_to_domains = models.BooleanField(default=False, help_text="Apply mutations to domains")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

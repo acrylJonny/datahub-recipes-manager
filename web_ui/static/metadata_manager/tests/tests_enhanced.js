@@ -2,6 +2,9 @@
 // Enhanced functionality for tests page
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize connection cache
+    getCurrentConnectionCache();
+    
     // Show loading indicator
     document.getElementById('loading-indicator').style.display = 'block';
     document.getElementById('tests-content').style.display = 'none';
@@ -26,6 +29,56 @@ let currentSort = {
     direction: 'asc',
     tabType: null
 };
+
+// Connection-specific cache management (following tags pattern)
+let testsCacheByConnection = {};
+let currentConnectionId = null;
+
+// Get or create cache for current connection
+function getCurrentConnectionCache() {
+    if (!currentConnectionId) {
+        // Try to get connection ID from the page
+        const connectionElement = document.getElementById('current-connection-name');
+        if (connectionElement && connectionElement.dataset.connectionId) {
+            currentConnectionId = connectionElement.dataset.connectionId;
+        } else {
+            // Fallback to default connection
+            currentConnectionId = 'default';
+        }
+    }
+    
+    if (!testsCacheByConnection[currentConnectionId]) {
+        testsCacheByConnection[currentConnectionId] = {
+            testsData: [],
+            lastFetched: null,
+            cacheExpiry: 5 * 60 * 1000 // 5 minutes
+        };
+    }
+    
+    return testsCacheByConnection[currentConnectionId];
+}
+
+// Function to switch to a specific connection cache
+function switchConnectionCache(connectionId) {
+    console.log(`Switching tests cache from ${currentConnectionId} to ${connectionId}`);
+    currentConnectionId = connectionId;
+    
+    // Reload tests data for the new connection
+    loadTestsData();
+}
+
+// Function to clear cache for a specific connection
+function clearConnectionCache(connectionId) {
+    if (testsCacheByConnection[connectionId]) {
+        delete testsCacheByConnection[connectionId];
+        console.log(`Cleared tests cache for connection: ${connectionId}`);
+    }
+}
+
+// Make cache globally accessible for connection switching
+window.testsCacheByConnection = testsCacheByConnection;
+window.switchConnectionCache = switchConnectionCache;
+window.clearConnectionCache = clearConnectionCache;
 
 function setupEventListeners() {
     // Refresh button
@@ -61,6 +114,9 @@ function setupEventListeners() {
     
     // Tab switching handlers
     setupTabSwitchHandlers();
+    
+    // Action button listeners
+    setupActionButtonListeners();
 }
 
 function setupSearchListeners() {
@@ -109,7 +165,7 @@ function setupEditFormHandler() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showNotification('Test updated successfully', 'success');
+                    showNotification('success', 'Test updated successfully');
                     
                     // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('editTestModal'));
@@ -118,12 +174,12 @@ function setupEditFormHandler() {
                     // Refresh tests data
                     loadTestsData();
                 } else {
-                    showNotification(data.error || 'Failed to update test', 'error');
+                    showNotification('error', data.error || 'Failed to update test');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showNotification('Error updating test', 'error');
+                showNotification('error', 'Error updating test');
             })
             .finally(() => {
                 // Restore button state
@@ -217,31 +273,97 @@ function updateOverviewActiveState(tabType) {
     }
 }
 
+function setupActionButtonListeners() {
+    // Use event delegation for dynamically added buttons
+    document.addEventListener('click', function(e) {
+        const target = e.target.closest('button');
+        if (!target) return;
+        
+        // Get the test data from the row
+        const row = target.closest('tr');
+        if (!row) return;
+        
+        const itemData = row.getAttribute('data-item');
+        let testData = null;
+        
+        if (itemData) {
+            try {
+                const parsedData = JSON.parse(itemData.replace(/&quot;/g, '"').replace(/&apos;/g, "'"));
+                const cacheKey = parsedData.urn || parsedData.id;
+                testData = window.testDataCache[cacheKey] || parsedData;
+            } catch (e) {
+                console.error('Error parsing test data:', e);
+                return;
+            }
+        }
+        
+        if (!testData) return;
+        
+        // Handle different action buttons
+        if (target.classList.contains('view-item')) {
+            e.preventDefault();
+            viewTest(testData.urn);
+        } else if (target.classList.contains('edit-test')) {
+            e.preventDefault();
+            editTest(testData.urn);
+        } else if (target.classList.contains('add-to-staged')) {
+            e.preventDefault();
+            addTestToStagedChanges(testData);
+        } else if (target.classList.contains('download-json')) {
+            e.preventDefault();
+            downloadTestJson(testData);
+        } else if (target.classList.contains('sync-to-datahub')) {
+            e.preventDefault();
+            syncTestToDataHub(testData);
+        } else if (target.classList.contains('sync-to-local')) {
+            e.preventDefault();
+            syncTestToLocal(testData.urn);
+        } else if (target.classList.contains('resync-test')) {
+            e.preventDefault();
+            resyncTest(testData);
+        } else if (target.classList.contains('push-to-datahub')) {
+            e.preventDefault();
+            pushTestToDataHub(testData);
+        } else if (target.classList.contains('delete-remote-test')) {
+            e.preventDefault();
+            deleteRemoteTest(testData.urn);
+        }
+    });
+}
+
 function loadTestsData() {
+    console.log('Loading tests data...');
+    
     // Hide error states and show loading
     document.getElementById('loading-indicator').style.display = 'block';
     document.getElementById('tests-content').style.display = 'none';
     
-    fetch('/metadata/tests/data/', {
+    fetch('/metadata/tests/remote-data/', {
         method: 'GET',
         headers: {
             'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/json',
         },
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Tests data response status:', response.status);
+        return response.json();
+    })
     .then(data => {
+        console.log('Tests data received:', data);
         testsData = data.tests || [];
         filteredTests = [...testsData];
+        
+        console.log(`Loaded ${testsData.length} tests`);
         
         // Update statistics
         updateStatistics();
         
-                    // Load initial tab content
-            loadTabContent('synced');
-            
-            // Set initial overview active state
-            updateOverviewActiveState('synced');
+        // Load initial tab content
+        loadTabContent('synced');
+        
+        // Set initial overview active state
+        updateOverviewActiveState('synced');
         
         // Hide loading and show content
         document.getElementById('loading-indicator').style.display = 'none';
@@ -250,7 +372,7 @@ function loadTestsData() {
     .catch(error => {
         console.error('Error loading tests data:', error);
         document.getElementById('loading-indicator').style.display = 'none';
-        showNotification('Error loading tests data', 'error');
+        showNotification('error', 'Error loading tests data');
     });
 }
 
@@ -536,53 +658,114 @@ function getTestSortValue(test, column) {
 }
 
 function getActionButtons(test, tabType) {
-    const buttons = [];
+    // Get test data
+    const testData = test.combined || test;
+    const urn = testData.urn || '';
     
-    // View button for all tabs
-    buttons.push(`<button class="btn btn-sm btn-outline-info" onclick="viewTest('${test.urn}')" title="View Details">
-        <i class="fas fa-eye"></i>
-    </button>`);
+    // Get connection context information
+    const connectionContext = testData.connection_context || 'none'; // "current", "different", "none"
+    const hasRemoteMatch = testData.has_remote_match || false;
     
-    // Edit button for synced and local tests (not remote-only)
+    // Get the proper database ID for this test
+    const databaseId = getDatabaseId(testData);
+    
+    let actionButtons = '';
+    
+    // 1. Edit Test - For local and synced tests
+    if (tabType === 'local' || tabType === 'synced') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-warning edit-test" 
+                    title="Edit Test">
+                <i class="fas fa-edit"></i>
+            </button>
+        `;
+    }
+
+    // 2. Sync to DataHub - For tests in local tab
+    // Show for ALL tests in local tab regardless of their connection or sync status
+    if (tabType === 'local') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success sync-to-datahub" 
+                    title="Sync to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
+    }
+    
+    // 2b. Resync - Only for synced tests (tests that belong to current connection and have remote match)
+    if (tabType === 'synced' && connectionContext === 'current' && hasRemoteMatch) {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-info resync-test" 
+                    title="Resync from DataHub">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        `;
+    }
+    
+    // 2c. Push to DataHub - Only for synced tests that are modified
+    if (tabType === 'synced' && connectionContext === 'current' && testData.sync_status === 'MODIFIED') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success push-to-datahub" 
+                    title="Push to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
+    }
+    
+    // 3. Sync to Local - Only for remote-only tests
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-primary sync-to-local" 
+                    title="Sync to Local">
+                <i class="fas fa-download"></i>
+            </button>
+        `;
+    }
+    
+    // 4. Download JSON - Available for all tests
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-secondary download-json"
+                title="Download JSON">
+            <i class="fas fa-file-download"></i>
+        </button>
+    `;
+
+    // 5. Add to Staged Changes - Available for all tests
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
+                title="Add to Staged Changes">
+            <i class="fab fa-github"></i>
+        </button>
+    `;
+
+    // 6. Delete Local Test - Only for synced and local tests
     if (tabType === 'synced' || tabType === 'local') {
-        buttons.push(`<button class="btn btn-sm btn-outline-primary" onclick="editTest('${test.urn}')" title="Edit Test">
-            <i class="fas fa-edit"></i>
-        </button>`);
+        // Use a simple form with a POST action for direct deletion
+        // This avoids all the complex JavaScript ID handling
+        actionButtons += `
+            <form method="POST" action="/metadata/tests/${testData.id}/delete/" 
+                  style="display:inline;" 
+                  onsubmit="return confirm('Are you sure you want to delete this test? This action cannot be undone.');">
+                <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        title="Delete Local Test">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </form>
+        `;
     }
     
-    if (tabType === 'synced') {
-        buttons.push(`<button class="btn btn-sm btn-outline-success" onclick="pushTestToDataHub('${test.id}')" title="Push to DataHub">
-            <i class="fas fa-upload"></i>
-        </button>`);
-        buttons.push(`<button class="btn btn-sm btn-outline-warning" onclick="addTestToPR('${test.id}')" title="Add to PR">
-            <i class="fab fa-github"></i>
-        </button>`);
-        buttons.push(`<button class="btn btn-sm btn-outline-danger" onclick="deleteLocalTest('${test.id}')" title="Remove from Local (keeps on DataHub)">
-            <i class="fas fa-trash"></i>
-        </button>`);
-    } else if (tabType === 'local') {
-        buttons.push(`<button class="btn btn-sm btn-outline-success" onclick="pushTestToDataHub('${test.id}')" title="Push to DataHub">
-            <i class="fas fa-upload"></i>
-        </button>`);
-        buttons.push(`<button class="btn btn-sm btn-outline-warning" onclick="addTestToPR('${test.id}')" title="Add to PR">
-            <i class="fab fa-github"></i>
-        </button>`);
-        buttons.push(`<button class="btn btn-sm btn-outline-danger" onclick="deleteLocalTest('${test.id}')" title="Delete Local Test">
-            <i class="fas fa-trash"></i>
-        </button>`);
-    } else if (tabType === 'remote') {
-        buttons.push(`<button class="btn btn-sm btn-outline-primary" onclick="syncTestToLocal('${test.urn}')" title="Sync to Local">
-            <i class="fas fa-download"></i>
-        </button>`);
-        buttons.push(`<button class="btn btn-sm btn-outline-warning" onclick="addRemoteTestToPR('${test.urn}')" title="Add to PR">
-            <i class="fab fa-github"></i>
-        </button>`);
-        buttons.push(`<button class="btn btn-sm btn-outline-danger" onclick="deleteRemoteTest('${test.urn}')" title="Delete from DataHub">
-            <i class="fas fa-trash"></i>
-        </button>`);
+    // 7. Delete Remote Test - Only for remote-only tests
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-danger delete-remote-test" 
+                    title="Delete from DataHub">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
     }
     
-    return `<div class="btn-group" role="group">${buttons.join('')}</div>`;
+    return actionButtons;
 }
 
 function setupBulkSelection(tabType) {
@@ -630,7 +813,7 @@ function viewTest(testUrn) {
     // Find the test data
     const test = testsData.find(t => t.urn === testUrn);
     if (!test) {
-        showNotification('Test not found', 'error');
+        showNotification('error', 'Test not found');
         return;
     }
     
@@ -646,7 +829,7 @@ function editTest(testUrn) {
     // Find the test data
     const test = testsData.find(t => t.urn === testUrn);
     if (!test) {
-        showNotification('Test not found', 'error');
+        showNotification('error', 'Test not found');
         return;
     }
     
@@ -669,13 +852,19 @@ function populateEditTestModal(test) {
     document.getElementById('editTestDescription').value = test.description || '';
     document.getElementById('editTestCategory').value = test.category || '';
     
-    // Handle definition JSON - convert to YAML if needed
+    // Handle definition JSON - format for editing
     let definitionText = '';
     if (test.definition_json) {
         try {
             if (typeof test.definition_json === 'string') {
-                // If it's already a string, use it directly
-                definitionText = test.definition_json;
+                // Try to parse and reformat for better editing
+                try {
+                    const parsed = JSON.parse(test.definition_json);
+                    definitionText = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    // If parsing fails, use the string as-is
+                    definitionText = test.definition_json;
+                }
             } else {
                 // If it's an object, stringify it
                 definitionText = JSON.stringify(test.definition_json, null, 2);
@@ -684,23 +873,298 @@ function populateEditTestModal(test) {
             definitionText = test.definition_json || '';
         }
     }
-    document.getElementById('editTestDefinition').value = definitionText;
+    
+    const editDefinitionElement = document.getElementById('editTestDefinition');
+    editDefinitionElement.value = definitionText;
+    
+    // Add JSON validation on input
+    editDefinitionElement.addEventListener('input', function() {
+        try {
+            if (this.value.trim()) {
+                JSON.parse(this.value);
+                this.classList.remove('is-invalid');
+                this.classList.add('is-valid');
+            } else {
+                this.classList.remove('is-invalid', 'is-valid');
+            }
+        } catch (e) {
+            this.classList.remove('is-valid');
+            this.classList.add('is-invalid');
+        }
+    });
 }
 
 function addTestToPR(testId) {
-    showNotification('Add to PR functionality will be implemented', 'info');
+    showNotification('info', 'Add to PR functionality will be implemented');
 }
 
 function addRemoteTestToPR(testUrn) {
-    showNotification('Add remote test to PR functionality will be implemented', 'info');
+    showNotification('info', 'Add remote test to PR functionality will be implemented');
+}
+
+function addTestToStagedChanges(testData) {
+    console.log('Adding test to staged changes:', testData);
+    
+    // Get the proper database ID for this test
+    const databaseId = getDatabaseId(testData);
+    
+    if (!databaseId) {
+        // This is a remote-only test, use the remote endpoint
+        addRemoteTestToStagedChanges(testData);
+        return;
+    }
+    
+    console.log('Using database ID for staged changes:', databaseId);
+    
+    // Get current environment and mutation from global state or settings
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = currentEnvironment.mutation_name || null;
+    
+    console.log('Making API call to:', `/metadata/tests/${databaseId}/stage_changes/`);
+    
+    // Make API call to create test files
+    fetch(`/metadata/tests/${databaseId}/stage_changes/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to add test to staged changes');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Show success notification
+        showNotification('success', `Test successfully added to staged changes: ${data.files_created.join(', ')}`);
+    })
+    .catch(error => {
+        console.error('Error adding test to staged changes:', error);
+        showNotification('error', `Error adding test to staged changes: ${error.message}`);
+    });
+}
+
+function addRemoteTestToStagedChanges(testData) {
+    console.log('Adding remote test to staged changes:', testData);
+    
+    // Get current environment and mutation from global state or settings
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = currentEnvironment.mutation_name || null;
+    
+    // Make API call to create test files for remote test
+    fetch('/metadata/tests/remote/stage_changes/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            test_urn: testData.urn,
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to add remote test to staged changes');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Show success notification
+        showNotification('success', `Remote test successfully added to staged changes: ${data.files_created.join(', ')}`);
+    })
+    .catch(error => {
+        console.error('Error adding remote test to staged changes:', error);
+        showNotification('error', `Error adding remote test to staged changes: ${error.message}`);
+    });
+}
+
+function downloadTestJson(testData) {
+    console.log('Downloading test JSON:', testData);
+    
+    // Create a JSON object with the test data
+    const testDataForDownload = {
+        test: testData,
+        metadata: {
+            exported_at: new Date().toISOString(),
+            source: window.location.origin
+        }
+    };
+    
+    // Convert to pretty JSON
+    const jsonData = JSON.stringify(testDataForDownload, null, 2);
+    
+    // Create a blob and initiate download
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `test-${testData.name || 'unknown'}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+    
+    showNotification('success', 'Test exported successfully.');
+}
+
+function syncTestToDataHub(testData) {
+    console.log('syncTestToDataHub called with:', testData);
+    
+    const testId = getDatabaseId(testData);
+    
+    if (!testId) {
+        console.error('Cannot sync test without a database ID:', testData);
+        showNotification('error', 'Error syncing test: Missing test database ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('success', `Syncing test "${testData.name}" to DataHub...`);
+    
+    // Make the API call to sync this test to DataHub
+    fetch(`/metadata/tests/${testId}/sync_to_datahub/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Sync to DataHub response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Refresh the page to show updated sync status
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error syncing test to DataHub:', error);
+        showNotification('error', `Error syncing test: ${error.message}`);
+    });
+}
+
+function resyncTest(testData) {
+    console.log('resyncTest called with:', testData);
+    
+    const testId = getDatabaseId(testData);
+    
+    if (!testId) {
+        console.error('Cannot resync test without a database ID:', testData);
+        showNotification('error', 'Error resyncing test: Missing test database ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('success', `Resyncing test "${testData.name}" from DataHub...`);
+    
+    // Make the API call to resync this test from DataHub
+    fetch(`/metadata/tests/${testId}/resync/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Resync response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Refresh the page to show updated data
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error resyncing test:', error);
+        showNotification('error', `Error resyncing test: ${error.message}`);
+    });
+}
+
+function pushTestToDataHub(testData) {
+    console.log('pushTestToDataHub called with:', testData);
+    
+    const testId = getDatabaseId(testData);
+    
+    if (!testId) {
+        console.error('Cannot push test without a database ID:', testData);
+        showNotification('error', 'Error pushing test: Missing test database ID.');
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('success', `Pushing test "${testData.name}" to DataHub...`);
+    
+    // Make the API call to push this test to DataHub
+    fetch(`/metadata/tests/${testId}/push_to_datahub/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Push to DataHub response:', data);
+        if (data.success) {
+            showNotification('success', data.message);
+            // Refresh the page to show updated sync status
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error pushing test to DataHub:', error);
+        showNotification('error', `Error pushing test: ${error.message}`);
+    });
 }
 
 function syncTestToLocal(testUrn) {
-    showNotification('Sync to local functionality will be implemented', 'info');
+    showNotification('info', 'Sync to local functionality will be implemented');
 }
 
 function pushTestToDataHub(testId) {
-    showNotification('Push to DataHub functionality will be implemented', 'info');
+    showNotification('info', 'Push to DataHub functionality will be implemented');
 }
 
 function deleteLocalTest(testId) {
@@ -770,17 +1234,140 @@ function bulkPushTests(tabType) {
 function bulkAddToPR(tabType) {
     const selectedTests = getSelectedTests(tabType);
     if (selectedTests.length === 0) {
-        showNotification('No tests selected', 'warning');
+        showNotification('error', 'Please select tests to add to staged changes.');
         return;
     }
     
-    showNotification(`Bulk add to PR functionality will be implemented for ${selectedTests.length} tests`, 'info');
+    // Validate all selected tests have valid IDs and exist in current data
+    const validatedTests = [];
+    const invalidTests = [];
+    
+    selectedTests.forEach(test => {
+        const testId = getDatabaseId(test);
+        if (!testId) {
+            invalidTests.push(test);
+            return;
+        }
+        
+        // Check if the test exists in current cached data
+        const cacheKey = test.urn || test.id;
+        const cachedTest = window.testDataCache[cacheKey];
+        if (!cachedTest) {
+            console.warn('Test not found in current cache, may be stale:', test);
+            invalidTests.push(test);
+            return;
+        }
+        
+        validatedTests.push(test);
+    });
+    
+    if (invalidTests.length > 0) {
+        console.error('Found invalid or stale tests:', invalidTests);
+        showNotification('error', `${invalidTests.length} selected tests are invalid or from stale data. Please refresh the page and try again.`);
+        
+        // Clear selections to prevent further issues
+        clearAllSelections();
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to add ${validatedTests.length} test(s) to staged changes?`)) {
+        console.log(`Bulk add ${validatedTests.length} validated tests to staged changes for ${tabType}:`, validatedTests);
+        
+        // Show loading indicator
+        showNotification('success', `Starting to add ${validatedTests.length} tests to staged changes...`);
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        // Process each test sequentially
+        let successCount = 0;
+        let errorCount = 0;
+        let processedCount = 0;
+        let createdFiles = [];
+        
+        // Create a function to process tests one by one
+        function processNextTest(index) {
+            if (index >= validatedTests.length) {
+                // All tests processed
+                if (successCount > 0) {
+                    showNotification('success', `Completed: ${successCount} tests added to staged changes, ${errorCount} failed.`);
+                    if (createdFiles.length > 0) {
+                        console.log('Created files:', createdFiles);
+                    }
+                } else if (errorCount > 0) {
+                    showNotification('error', `Failed to add any tests to staged changes. ${errorCount} errors occurred.`);
+                }
+                return;
+            }
+            
+            const test = validatedTests[index];
+            
+            // We need the ID for the API call - use the validated database ID
+            const testId = getDatabaseId(test);
+            if (!testId) {
+                console.error('Cannot add test to staged changes without an ID:', test);
+                errorCount++;
+                processedCount++;
+                processNextTest(index + 1);
+                return;
+            }
+            
+            // Make the API call to add this test to staged changes
+            fetch(`/metadata/tests/${testId}/stage_changes/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    environment: currentEnvironment.name,
+                    mutation_name: mutationName
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to add test ${test.name || test.urn} to staged changes`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log(`Successfully added test to staged changes: ${test.name || test.urn}`);
+                successCount++;
+                processedCount++;
+                
+                // Track created files
+                if (data.files_created && data.files_created.length > 0) {
+                    createdFiles = [...createdFiles, ...data.files_created];
+                }
+                
+                // Update progress
+                if (processedCount % 5 === 0 || processedCount === validatedTests.length) {
+                    showNotification('success', `Progress: ${processedCount}/${validatedTests.length} tests processed`);
+                }
+                
+                // Process the next test
+                processNextTest(index + 1);
+            })
+            .catch(error => {
+                console.error(`Error adding test ${test.name || test.urn} to staged changes:`, error);
+                errorCount++;
+                processedCount++;
+                
+                // Process the next test despite the error
+                processNextTest(index + 1);
+            });
+        }
+        
+        // Start processing tests
+        processNextTest(0);
+    }
 }
 
 function bulkDeleteLocal(tabType) {
     const selectedTests = getSelectedTests(tabType);
     if (selectedTests.length === 0) {
-        showNotification('No tests selected', 'warning');
+        showNotification('warning', 'No tests selected');
         return;
     }
     
@@ -820,15 +1407,15 @@ function bulkDeleteLocal(tabType) {
             const failed = results.length - successful;
             
             if (failed === 0) {
-                showNotification(`Successfully deleted ${successful} test(s)`, 'success');
+                showNotification('success', `Successfully deleted ${successful} test(s)`);
             } else {
-                showNotification(`Deleted ${successful} test(s), ${failed} failed`, 'warning');
+                showNotification('warning', `Deleted ${successful} test(s), ${failed} failed`);
             }
             
             loadTestsData(); // Refresh data
         })
         .catch(error => {
-            showNotification('Error during bulk delete', 'error');
+            showNotification('error', 'Error during bulk delete');
             console.error('Error:', error);
         });
     }
@@ -837,26 +1424,59 @@ function bulkDeleteLocal(tabType) {
 function bulkSyncToLocal(tabType) {
     const selectedTests = getSelectedTests(tabType);
     if (selectedTests.length === 0) {
-        showNotification('No tests selected', 'warning');
+        showNotification('warning', 'No tests selected');
         return;
     }
     
-    showNotification(`Bulk sync to local functionality will be implemented for ${selectedTests.length} tests`, 'info');
+    showNotification('info', `Bulk sync to local functionality will be implemented for ${selectedTests.length} tests`);
 }
 
 function bulkDeleteRemote(tabType) {
     const selectedTests = getSelectedTests(tabType);
     if (selectedTests.length === 0) {
-        showNotification('No tests selected', 'warning');
+        showNotification('warning', 'No tests selected');
         return;
     }
     
-    showNotification(`Bulk delete remote functionality will be implemented for ${selectedTests.length} tests`, 'info');
+    showNotification('info', `Bulk delete remote functionality will be implemented for ${selectedTests.length} tests`);
 }
 
 function getSelectedTests(tabType) {
-    const checkboxes = document.querySelectorAll(`.test-checkbox[data-tab="${tabType}"]:checked`);
-    return Array.from(checkboxes).map(cb => cb.getAttribute('data-test-id'));
+    const checkboxes = document.querySelectorAll(`#${tabType}-items .item-checkbox:checked`);
+    return Array.from(checkboxes).map(checkbox => {
+        const row = checkbox.closest('tr');
+        const itemData = row.getAttribute('data-item');
+        if (itemData) {
+            try {
+                const parsedData = JSON.parse(itemData.replace(/&quot;/g, '"').replace(/&apos;/g, "'"));
+                const cacheKey = parsedData.urn || parsedData.id;
+                return window.testDataCache[cacheKey] || parsedData;
+            } catch (e) {
+                console.error('Error parsing item data:', e);
+                return null;
+            }
+        }
+        return null;
+    }).filter(item => item !== null);
+}
+
+function clearAllSelections() {
+    const checkboxes = document.querySelectorAll('.item-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    
+    // Update bulk action visibility for all tabs
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        updateBulkActionVisibility(tabType);
+    });
+}
+
+function getCsrfToken() {
+    return document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+           document.cookie.split('; ')
+               .find(row => row.startsWith('csrftoken='))
+               ?.split('=')[1];
 }
 
 function getCSRFToken() {
@@ -887,17 +1507,43 @@ function populateTestViewModal(test) {
         document.getElementById('modal-test-last-run').textContent = 'No results';
     }
     
-    // Show definition if available
+    // Show definition if available with syntax highlighting
     const definitionElement = document.getElementById('modal-test-definition');
     if (test.definition_json && test.definition_json.trim()) {
         try {
-            const formatted = JSON.stringify(JSON.parse(test.definition_json), null, 2);
-            definitionElement.textContent = formatted;
+            let definitionData;
+            if (typeof test.definition_json === 'string') {
+                definitionData = JSON.parse(test.definition_json);
+            } else {
+                definitionData = test.definition_json;
+            }
+            
+            // Create a formatted JSON with syntax highlighting
+            const formatted = JSON.stringify(definitionData, null, 2);
+            
+            // Clear the element and create a code block
+            definitionElement.innerHTML = '';
+            const codeBlock = document.createElement('pre');
+            codeBlock.className = 'language-json';
+            const codeElement = document.createElement('code');
+            codeElement.className = 'language-json';
+            codeElement.textContent = formatted;
+            codeBlock.appendChild(codeElement);
+            definitionElement.appendChild(codeBlock);
+            
+            // Apply syntax highlighting if Prism.js is available
+            if (typeof Prism !== 'undefined') {
+                Prism.highlightElement(codeElement);
+            }
         } catch (e) {
-            definitionElement.textContent = test.definition_json;
+            // If JSON parsing fails, show as plain text
+            definitionElement.innerHTML = '';
+            const preElement = document.createElement('pre');
+            preElement.textContent = test.definition_json;
+            definitionElement.appendChild(preElement);
         }
     } else {
-        definitionElement.textContent = 'No definition available';
+        definitionElement.innerHTML = '<span class="text-muted">No definition available</span>';
     }
 }
 
@@ -949,22 +1595,183 @@ function getCSRFToken() {
     return document.querySelector('[name=csrfmiddlewaretoken]').value;
 }
 
-function showNotification(message, type = 'info') {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show notification`;
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+// Helper functions (consistent with tags page)
+
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'SYNCED':
+            return 'bg-success';
+        case 'MODIFIED':
+            return 'bg-warning';
+        case 'LOCAL_ONLY':
+            return 'bg-info';
+        case 'REMOTE_ONLY':
+            return 'bg-secondary';
+        case 'NOT_SYNCED':
+            return 'bg-light text-dark';
+        default:
+            return 'bg-secondary';
+    }
+}
+
+function shouldShowDataHubViewButton(testData, tabType) {
+    const urn = testData.urn || '';
+    const connectionContext = testData.connection_context || 'none';
+    const hasRemoteMatch = testData.has_remote_match || false;
+    
+    // Don't show for local URNs or empty URNs
+    if (!urn || urn.includes('local:')) {
+        return false;
+    }
+    
+    // Show for remote-only tests (they definitely exist in DataHub)
+    if (tabType === 'remote') {
+        return true;
+    }
+    
+    // For synced tab: show only if test belongs to current connection AND has remote match
+    if (tabType === 'synced') {
+        return connectionContext === 'current' && hasRemoteMatch;
+    }
+    
+    // For local tab: don't show View in DataHub button
+    // These tests either don't exist in DataHub or belong to different connections
+    if (tabType === 'local') {
+        return false;
+    }
+    
+    return false;
+}
+
+function getDataHubUrl(urn, type) {
+    if (!testsData.datahub_url || !urn) return '#';
+    
+    // Ensure no double slashes and don't encode URN colons
+    const baseUrl = testsData.datahub_url.replace(/\/+$/, ''); // Remove trailing slashes
+    return `${baseUrl}/test/${urn}`;
+}
+
+function getDatabaseId(testData) {
+    // Check if test has a valid database ID and is not remote-only
+    if (testData.sync_status === 'REMOTE_ONLY' || testData.status === 'remote_only') {
+        return null; // Remote-only tests don't have valid database IDs
+    }
+    
+    // Return the database ID if available and test is not remote-only
+    return testData.id || testData.datahub_id || null;
+}
+
+function escapeHtml(text) {
+    // Use global utility for consistent HTML escaping
+    if (typeof DataUtils !== 'undefined' && DataUtils.safeEscapeHtml) {
+        return DataUtils.safeEscapeHtml(text);
+    }
+    
+    // Fallback implementation
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function sanitizeDataForAttribute(item, maxDescriptionLength = 200) {
+    // First ensure we have a valid name property
+    const testData = item.combined || item;
+    
+    // Make a copy of the item to avoid modifying the original
+    const sanitizedItem = {...testData};
+    
+    // Ensure name is properly set
+    if (!sanitizedItem.name) {
+        if (sanitizedItem.properties?.name) {
+            sanitizedItem.name = sanitizedItem.properties.name;
+        } else if (sanitizedItem.urn) {
+            // Extract name from URN as fallback
+            const urnParts = sanitizedItem.urn.split(':');
+            if (urnParts.length > 0) {
+                sanitizedItem.name = urnParts[urnParts.length - 1];
+            }
+        }
+        
+        if (!sanitizedItem.name) {
+            sanitizedItem.name = 'Unnamed Test';
+        }
+    }
+    
+    // Use global utility for consistent data sanitization if available
+    if (typeof DataUtils !== 'undefined' && DataUtils.createDisplaySafeItem) {
+        return DataUtils.createDisplaySafeItem(sanitizedItem, {
+            descriptionLength: maxDescriptionLength,
+            nameLength: 100,
+            urnLength: 500
+        });
+    }
+    
+    // Fallback implementation
+    return sanitizedItem;
+}
+
+function showNotification(type, message) {
+    // Check if we have notifications container
+    let container = document.getElementById('notifications-container');
+    
+    // Create it if it doesn't exist
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notifications-container';
+        container.className = 'position-fixed bottom-0 end-0 p-3';
+        container.style.zIndex = '1050';
+        document.body.appendChild(container);
+    }
+    
+    // Create unique ID
+    const id = 'toast-' + Date.now();
+    
+    // Create toast HTML
+    let bgClass, icon, title;
+    
+    if (type === 'success') {
+        bgClass = 'bg-success';
+        icon = 'fa-check-circle';
+        title = 'Success';
+    } else if (type === 'info') {
+        bgClass = 'bg-info';
+        icon = 'fa-info-circle';
+        title = 'Info';
+    } else if (type === 'warning') {
+        bgClass = 'bg-warning';
+        icon = 'fa-exclamation-triangle';
+        title = 'Warning';
+    } else {
+        bgClass = 'bg-danger';
+        icon = 'fa-exclamation-circle';
+        title = 'Error';
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${bgClass} text-white`;
+    toast.id = id;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.innerHTML = `
+        <div class="toast-header ${bgClass} text-white">
+            <i class="fas ${icon} me-2"></i>
+            <strong class="me-auto">${title}</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">${message}</div>
     `;
     
-    // Add to page
-    document.body.appendChild(notification);
+    container.appendChild(toast);
     
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, 5000);
+    // Initialize and show the toast
+    const toastInstance = new bootstrap.Toast(toast, {
+        delay: 5000
+    });
+    toastInstance.show();
+    
+    // Remove toast from DOM after it's hidden
+    toast.addEventListener('hidden.bs.toast', function () {
+        toast.remove();
+    });
 } 

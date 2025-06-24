@@ -23,6 +23,8 @@ from django.shortcuts import redirect
 from web_ui import views as web_ui_views
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from . import api_views
 
 
 # Redirect to dashboard by default
@@ -111,6 +113,35 @@ urlpatterns = [
     path("refresh-logs/", web_ui_views.refresh_logs, name="refresh_logs"),
     # Settings
     path("settings/", web_ui_views.settings, name="settings"),
+    # API Documentation
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+    # API Endpoints
+    path("api/settings/", api_views.get_settings, name="api-settings"),
+    path("api/settings/git/", api_views.get_git_settings, name="api-git-settings"),
+    path("api/settings/system/", api_views.get_system_info, name="api-system-info"),
+    path("api/connections/", api_views.list_connections, name="api-connections"),
+    path("api/connections/<int:connection_id>/", api_views.get_connection, name="api-connection-detail"),
+    path("api/connections/<int:connection_id>/test/", api_views.test_connection, name="api-connection-test"),
+    path("api/connections/switch/", api_views.switch_connection, name="api-connection-switch"),
+    # Templates and Environment Variables
+    path("api/templates/<int:template_id>/preview/", api_views.recipe_template_preview, name="api-template-preview"),
+    path("api/templates/<int:template_id>/env-vars/", api_views.template_env_vars_instances, name="api-template-env-vars"),
+    path("api/env-vars/templates/", api_views.env_vars_template_list, name="api-env-vars-templates"),
+    path("api/env-vars/templates/<int:template_id>/", api_views.env_vars_template_get, name="api-env-vars-template"),
+    path("api/env-vars/instances/", api_views.env_vars_instance_list, name="api-env-vars-instances"),
+    path("api/env-vars/instances/<int:instance_id>/json/", api_views.env_vars_instance_json, name="api-env-vars-instance-json"),
+    # GitHub Integration
+    path("api/github/branches/", api_views.github_load_branches, name="api-github-branches"),
+    path("api/github/branch-diff/", api_views.github_branch_diff, name="api-github-branch-diff"),
+    path("api/github/file-diff/", api_views.github_file_diff, name="api-github-file-diff"),
+    # Metadata Management
+    path("api/metadata/users-groups/", api_views.get_users_and_groups, name="api-metadata-users-groups"),
+    # Dashboard and Data
+    path("api/dashboard/data/", api_views.dashboard_data, name="api-dashboard-data"),
+    path("api/recipes/data/", api_views.recipes_data, name="api-recipes-data"),
+    path("api/policies/data/", api_views.policies_data, name="api-policies-data"),
     # DataHub Connections
     path("connections/", web_ui_views.connections_list, name="connections_list"),
     path("connections/create/", web_ui_views.connection_create, name="connection_create"),

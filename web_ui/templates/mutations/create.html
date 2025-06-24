@@ -33,24 +33,11 @@
             <form method="post" id="mutationForm">
                 {% csrf_token %}
                 
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="name" name="name" 
-                                   value="{{ form_data.name|default:'' }}" required>
-                            <div class="form-text">Unique identifier for this mutation</div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label for="platform_instance" class="form-label">Platform Instance <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="platform_instance" name="platform_instance" 
-                                   value="{{ form_data.platform_instance|default:'' }}" required>
-                            <div class="form-text">Platform instance identifier (e.g., prod-snowflake, dev-postgres)</div>
-                        </div>
-                    </div>
+                <div class="mb-3">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" 
+                           value="{{ form_data.name|default:'' }}" required>
+                    <div class="form-text">Unique identifier for this mutation</div>
                 </div>
 
                 <div class="row">
@@ -59,7 +46,7 @@
                             <label for="env" class="form-label">Environment <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="env" name="env" 
                                    value="{{ form_data.env|default:'' }}" required>
-                            <div class="form-text">Environment identifier (e.g., PROD, DEV, STAGING)</div>
+                            <div class="form-text">Environment identifier (e.g., PROD, DEV, STG)</div>
                         </div>
                     </div>
                 </div>
@@ -68,6 +55,57 @@
                     <label for="description" class="form-label">Description</label>
                     <textarea class="form-control" id="description" name="description" rows="3">{{ form_data.description|default:'' }}</textarea>
                     <div class="form-text">Optional description of what this mutation does</div>
+                </div>
+
+                <!-- Apply mutations to entities section -->
+                <div class="mb-4">
+                    <h6 class="form-label">Apply Mutations to Entities</h6>
+                    <div class="form-text mb-3">
+                        Select which entity types should have mutations applied when staging changes. 
+                        This will generate new URN values for each of these entities during the mutation process.
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="apply_to_tags" name="apply_to_tags" 
+                                       {% if form_data.apply_to_tags %}checked{% endif %}>
+                                <label class="form-check-label" for="apply_to_tags">
+                                    <strong>Tags</strong>
+                                </label>
+                                <div class="form-text">Apply mutations to tag entities</div>
+                            </div>
+                            
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="apply_to_glossary_terms" name="apply_to_glossary_terms" 
+                                       {% if form_data.apply_to_glossary_terms %}checked{% endif %}>
+                                <label class="form-check-label" for="apply_to_glossary_terms">
+                                    <strong>Glossary Terms</strong>
+                                </label>
+                                <div class="form-text">Apply mutations to glossary term entities</div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="apply_to_structured_properties" name="apply_to_structured_properties" 
+                                       {% if form_data.apply_to_structured_properties %}checked{% endif %}>
+                                <label class="form-check-label" for="apply_to_structured_properties">
+                                    <strong>Structured Properties</strong>
+                                </label>
+                                <div class="form-text">Apply mutations to structured property entities</div>
+                            </div>
+                            
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="apply_to_domains" name="apply_to_domains" 
+                                       {% if form_data.apply_to_domains %}checked{% endif %}>
+                                <label class="form-check-label" for="apply_to_domains">
+                                    <strong>Domains</strong>
+                                </label>
+                                <div class="form-text">Apply mutations to domain entities</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="mb-3">

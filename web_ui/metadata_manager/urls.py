@@ -564,6 +564,11 @@ urlpatterns = [
         views_data_products.add_data_product_to_staged_changes,
         name="data_product_add_to_staged_changes",
     ),
+    path(
+        "data-products/remote/stage_changes/",
+        views_data_products.DataProductRemoteAddToStagedChangesView.as_view(),
+        name="data_product_remote_add_to_staged_changes",
+    ),
     # Assertions
     path(
         "assertions/",
@@ -644,6 +649,7 @@ urlpatterns = [
     # Metadata Tests
     path("tests/", views_tests.TestListView.as_view(), name="tests_list"),
     path("tests/data/", views_tests.TestListView.as_view(), name="tests_data"),
+    path("tests/remote-data/", views_tests.get_remote_tests_data, name="get_remote_tests_data"),
     path("tests/create/", views_tests.TestDetailView.as_view(), name="test_create"),
     path(
         "tests/<str:test_urn>/",
@@ -666,6 +672,16 @@ urlpatterns = [
         name="test_push_github",
     ),
     path("tests/import/", views_tests.TestImportView.as_view(), name="test_import"),
+    path(
+        "tests/<str:test_id>/stage_changes/",
+        views_tests.TestStageChangesView.as_view(),
+        name="test_stage_changes",
+    ),
+    path(
+        "tests/remote/stage_changes/",
+        views_tests.TestRemoteStageChangesView.as_view(),
+        name="test_remote_stage_changes",
+    ),
     # Sync
     path("sync/", views_sync.SyncConfigListView.as_view(), name="sync_config_list"),
     path(

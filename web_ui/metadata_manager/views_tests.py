@@ -115,16 +115,18 @@ class TestListView(View):
             # Check connection to DataHub for remote tests
             connected, client = test_datahub_connection()
             remote_tests = []
+            remote_tests_dict = {}
             
             if connected and client:
                 try:
-                    tests_response = client.list_tests()
+                    # Use smaller count to avoid hitting corrupted test data
+                    tests_response = client.list_tests(query="*", start=0, count=100)
                     if tests_response:
                         remote_tests = tests_response
+                        # Create dictionary for fast lookups
+                        remote_tests_dict = {test.get('urn'): test for test in remote_tests if test.get('urn')}
                 except Exception as e:
                     logger.error(f"Error fetching remote tests: {str(e)}")
-
-
 
             # Get local test URNs for comparison
             local_test_urns = set(test.urn for test in local_tests if test.urn)
@@ -141,11 +143,8 @@ class TestListView(View):
                     continue
                     
                 remote_match = None
-                if connected and client:
-                    try:
-                        remote_match = client.get_test(test_urn)
-                    except Exception as e:
-                        logger.error(f"Error fetching remote test: {str(e)}")
+                if connected and client and test_urn in remote_tests_dict:
+                    remote_match = remote_tests_dict[test_urn]
 
                 # Create local test data
                 local_test_data = {
@@ -204,6 +203,9 @@ class TestListView(View):
                     has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
                     is_failing = bool(results.get('failingCount', 0) > 0)
                     
+                    # Generate datahub_id for remote-only test
+                    datahub_id = f"{current_connection.name if current_connection else 'default'}_{test_urn}"
+                    
                     remote_test_enhanced = {
                         'id': test_urn,  # Use URN as ID for remote-only tests
                         'urn': test_urn,
@@ -221,6 +223,9 @@ class TestListView(View):
                         'failing_count': results.get('failingCount', 0),
                         'last_run': results.get('lastRunTimestampMillis'),
                         'sync_status': 'REMOTE_ONLY',
+                        'datahub_id': datahub_id,
+                        'connection_context': 'current',
+                        'has_remote_match': True,
                     }
                     remote_only_tests.append(remote_test_enhanced)
 
@@ -254,6 +259,173 @@ class TestListView(View):
             })
 
 
+def get_remote_tests_data(request):
+    """Get comprehensive tests data with proper connection handling for AJAX requests."""
+    try:
+        logger.info("Loading comprehensive tests data via AJAX")
+        
+        # Get DataHub client using connection system (this handles connection switching)
+        from utils.datahub_utils import get_datahub_client_from_request
+        client = get_datahub_client_from_request(request)
+        
+        if not client:
+            return JsonResponse({
+                "success": False,
+                "error": "No active DataHub connection configured. Please configure a connection."
+            })
+        
+        # Test connection
+        if not client.test_connection():
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot connect to DataHub with current connection"
+            })
+        
+        # Get current connection info for debugging
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+        
+        # Get local tests from database
+        local_tests = Test.objects.all()
+        logger.debug(f"Found {local_tests.count()} local tests")
+        
+        # Get remote tests from DataHub
+        remote_tests = []
+        remote_tests_dict = {}
+        
+        try:
+            # Use smaller count to avoid hitting corrupted test data
+            tests_response = client.list_tests(query="*", start=0, count=100)
+            if tests_response:
+                remote_tests = tests_response
+                # Create dictionary for fast lookups
+                remote_tests_dict = {test.get('urn'): test for test in remote_tests if test.get('urn')}
+                logger.debug(f"Found {len(remote_tests)} remote tests")
+        except Exception as e:
+            logger.error(f"Error fetching remote tests: {str(e)}")
+
+        # Get local test URNs for comparison
+        local_test_urns = set(test.urn for test in local_tests if test.urn)
+        
+        # Categorize tests
+        synced_tests = []
+        local_only_tests = []
+        remote_only_tests = []
+        
+        # Process local tests
+        for local_test in local_tests:
+            test_urn = local_test.urn
+            if not test_urn:
+                continue
+                
+            remote_match = None
+            if test_urn in remote_tests_dict:
+                remote_match = remote_tests_dict[test_urn]
+
+            # Generate datahub_id based on connection and URN
+            connection_context = 'current' if current_connection else 'none'
+            datahub_id = f"{current_connection.name if current_connection else 'default'}_{test_urn}"
+            
+            # Create local test data
+            local_test_data = {
+                'id': str(local_test.id),
+                'urn': test_urn,
+                'name': local_test.name,
+                'description': local_test.description or '',
+                'category': local_test.category or '',
+                'type': local_test.category or 'Test',
+                'environment': 'default',
+                'definition_json': local_test.definition_json,
+                'sync_status': local_test.sync_status,
+                'datahub_id': datahub_id,
+                'connection_context': connection_context,
+                'has_remote_match': test_urn in remote_tests_dict,
+                # Add empty results for local-only tests
+                'results': {},
+                'has_results': False,
+                'is_failing': False,
+                'passing_count': 0,
+                'failing_count': 0,
+                'last_run': None,
+            }
+            
+            if remote_match:
+                # SYNCED: exists in both local and remote
+                results = remote_match.get('results', {})
+                has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
+                is_failing = bool(results.get('failingCount', 0) > 0)
+                
+                # Update local test data with remote information
+                local_test_data.update({
+                    'status': 'synced',
+                    'definition_json': local_test.definition_json or remote_match.get('definition_json', ''),
+                    'results': results,
+                    'has_results': has_results,
+                    'is_failing': is_failing,
+                    'passing_count': results.get('passingCount', 0),
+                    'failing_count': results.get('failingCount', 0),
+                    'last_run': results.get('lastRunTimestampMillis'),
+                })
+                
+                synced_tests.append(local_test_data)
+            else:
+                # LOCAL_ONLY: exists only locally
+                local_test_data['status'] = 'local_only'
+                local_only_tests.append(local_test_data)
+        
+        # Find remote-only tests
+        for test_urn, remote_test in remote_tests_dict.items():
+            if test_urn not in local_test_urns:
+                # REMOTE_ONLY: exists only on DataHub
+                test_name = remote_test.get('name', '').strip()
+                results = remote_test.get('results', {})
+                has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
+                is_failing = bool(results.get('failingCount', 0) > 0)
+                
+                remote_test_enhanced = {
+                    'id': test_urn,  # Use URN as ID for remote-only tests
+                    'urn': test_urn,
+                    'name': test_name,
+                    'description': remote_test.get('description', ''),
+                    'category': remote_test.get('category', ''),
+                    'type': remote_test.get('category', 'Test'),
+                    'environment': 'default',
+                    'status': 'remote_only',
+                    'definition_json': remote_test.get('definition_json', ''),
+                    'results': results,
+                    'has_results': has_results,
+                    'is_failing': is_failing,
+                    'passing_count': results.get('passingCount', 0),
+                    'failing_count': results.get('failingCount', 0),
+                    'last_run': results.get('lastRunTimestampMillis'),
+                    'sync_status': 'REMOTE_ONLY',
+                }
+                remote_only_tests.append(remote_test_enhanced)
+
+        # Combine all tests for final output
+        all_tests = []
+        all_tests.extend(synced_tests)
+        all_tests.extend(local_only_tests)
+        all_tests.extend(remote_only_tests)
+
+        logger.info(f"Returning {len(all_tests)} tests: {len(synced_tests)} synced, {len(local_only_tests)} local-only, {len(remote_only_tests)} remote-only")
+
+        return JsonResponse({
+            'success': True,
+            'tests': all_tests,
+            'total': len(all_tests)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting remote tests data: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': f"Error getting remote tests data: {str(e)}",
+            'tests': []
+        })
+
+
 class TestDetailView(View):
     """View to create or edit metadata tests"""
 
@@ -269,8 +441,11 @@ class TestDetailView(View):
 
             if not is_new and connected and client:
                 try:
-                    # Fetch test from DataHub
-                    test = client.get_test(test_urn)
+                    # Fetch test from DataHub using list_tests with smaller count to avoid corrupted data
+                    tests = client.list_tests(query="*", start=0, count=100)
+                    test = next((t for t in tests if t.get('urn') == test_urn), None)
+                    if not test:
+                        logger.warning(f"Test not found with URN: {test_urn}")
                 except Exception as e:
                     logger.error(f"Error fetching test: {str(e)}")
                     messages.error(request, f"Error fetching test: {str(e)}")
@@ -623,8 +798,9 @@ class TestGitPushView(View):
                     {"success": False, "message": "GitHub integration not enabled"}
                 )
 
-            # Get test from DataHub
-            test = client.get_test(test_urn)
+            # Get test from DataHub using list_tests with smaller count to avoid corrupted data
+            tests = client.list_tests(query="*", start=0, count=100)
+            test = next((t for t in tests if t.get('urn') == test_urn), None)
             if not test:
                 return JsonResponse({"success": False, "message": "Test not found"})
 
@@ -755,8 +931,9 @@ class TestExportView(View):
                 )
                 return redirect("metadata_manager:tests_list")
 
-            # Get test from DataHub
-            test = client.get_test(test_urn)
+            # Get test from DataHub using list_tests with smaller count to avoid corrupted data
+            tests = client.list_tests(query="*", start=0, count=100)
+            test = next((t for t in tests if t.get('urn') == test_urn), None)
             if not test:
                 messages.error(request, "Test not found.")
                 return redirect("metadata_manager:tests_list")
@@ -911,3 +1088,154 @@ class TestImportView(View):
             logger.error(f"Error importing test: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
             return redirect("metadata_manager:test_import")
+
+
+class TestStageChangesView(View):
+    """View to add a test to staged changes"""
+    
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request, test_id):
+        """Add a test to staged changes"""
+        try:
+            # Get the test from database
+            test = Test.objects.get(id=test_id)
+            
+            # Get environment and mutation name from request
+            data = json.loads(request.body)
+            environment = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Create test JSON object for staging
+            test_data = {
+                'urn': test.urn,
+                'name': test.name,
+                'description': test.description or '',
+                'category': test.category or '',
+                'definition': test.definition_json or {},
+                'yaml_definition': test.yaml_definition or '',
+                'environment': environment
+            }
+            
+            # Determine the metadata_tests directory path
+            metadata_tests_dir = os.path.join('metadata_tests', environment)
+            os.makedirs(metadata_tests_dir, exist_ok=True)
+            
+            # Create individual JSON file for this test (following the pattern for tests)
+            # Extract test name from URN for filename
+            test_name_for_file = test.urn.split(':')[-1] if test.urn else test.name
+            test_filename = f"test_{test_name_for_file}.json"
+            test_file_path = os.path.join(metadata_tests_dir, test_filename)
+            
+            # Write test JSON file
+            with open(test_file_path, 'w') as f:
+                json.dump(test_data, f, indent=2)
+            
+            logger.info(f"Test staged to {test_file_path}")
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Test successfully added to staged changes',
+                'files_created': [test_file_path]
+            })
+            
+        except Test.DoesNotExist:
+            logger.error(f"Test with ID {test_id} not found")
+            return JsonResponse({
+                'success': False,
+                'error': 'Test not found'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"Error staging test changes: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error staging test changes: {str(e)}'
+            }, status=500)
+
+
+class TestRemoteStageChangesView(View):
+    """View to add a remote test to staged changes"""
+    
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request):
+        """Add a remote test to staged changes"""
+        try:
+            # Get the test URN from request
+            data = json.loads(request.body)
+            test_urn = data.get('test_urn')
+            environment = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            if not test_urn:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Test URN is required'
+                }, status=400)
+            
+            # Get remote test data from DataHub
+            from utils.datahub_utils import get_datahub_client_from_request
+            client = get_datahub_client_from_request(request)
+            
+            if not client:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No active DataHub connection'
+                }, status=400)
+            
+            # Find the test in remote tests
+            remote_tests = client.list_tests(query="*", start=0, count=100)
+            remote_test = None
+            for test in remote_tests:
+                if test.get('urn') == test_urn:
+                    remote_test = test
+                    break
+            
+            if not remote_test:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Remote test not found'
+                }, status=404)
+            
+            # Create test JSON object for staging
+            test_data = {
+                'urn': test_urn,
+                'name': remote_test.get('name', ''),
+                'description': remote_test.get('description', ''),
+                'category': remote_test.get('category', ''),
+                'definition': remote_test.get('definition_json', {}),
+                'environment': environment
+            }
+            
+            # Determine the metadata_tests directory path
+            metadata_tests_dir = os.path.join('metadata_tests', environment)
+            os.makedirs(metadata_tests_dir, exist_ok=True)
+            
+            # Create individual JSON file for this test
+            # Extract test name from URN for filename
+            test_name_for_file = test_urn.split(':')[-1] if test_urn else 'unknown_test'
+            test_filename = f"test_{test_name_for_file}.json"
+            test_file_path = os.path.join(metadata_tests_dir, test_filename)
+            
+            # Write test JSON file
+            with open(test_file_path, 'w') as f:
+                json.dump(test_data, f, indent=2)
+            
+            logger.info(f"Remote test staged to {test_file_path}")
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Remote test successfully added to staged changes',
+                'files_created': [test_file_path]
+            })
+            
+        except Exception as e:
+            logger.error(f"Error staging remote test changes: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error staging remote test changes: {str(e)}'
+            }, status=500)
