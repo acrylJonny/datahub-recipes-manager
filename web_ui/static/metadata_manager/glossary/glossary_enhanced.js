@@ -4607,7 +4607,7 @@ function bulkDownloadJson(tabType) {
     showNotification('success', `Downloaded ${selectedItems.length} items as JSON`);
 }
 
-function bulkAddToPR(tabType) {
+async function bulkAddToPR(tabType) {
     const selectedItems = tabType === 'global' ? getAllSelectedItems() : getSelectedItems(tabType);
     if (selectedItems.length === 0) {
         showNotification('warning', 'No items selected for adding to staged changes');
@@ -4618,24 +4618,119 @@ function bulkAddToPR(tabType) {
         return;
     }
     
-    // Process each item sequentially
+    // Process each item sequentially to avoid race conditions on the same MCP file
     let successCount = 0;
     let errorCount = 0;
     
-    selectedItems.forEach(item => {
+    showNotification('info', `Starting to add ${selectedItems.length} items to staged changes...`);
+    
+    for (const item of selectedItems) {
         try {
-            addToStagedChanges(item);
+            // Convert the synchronous-looking addToStagedChanges to return a promise
+            await new Promise((resolve, reject) => {
+                const itemType = item.type === 'node' ? 'Node' : 'Term';
+                const itemName = item.name || 'Unknown';
+                
+                // Check if this is a remote-only item that needs to be staged directly
+                if (item.sync_status === 'REMOTE_ONLY' || !item.id) {
+                    console.log(`Item "${itemName}" is remote-only, staging directly...`);
+                    
+                    // Get current environment and mutation from global state or settings
+                    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+                    const mutationName = currentEnvironment.mutation_name || null;
+                    
+                    // Use the remote staging endpoint
+                    fetch('/metadata/glossary/remote/stage_changes/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCsrfToken()
+                        },
+                        body: JSON.stringify({
+                            item_data: item,
+                            environment: currentEnvironment.name,
+                            mutation_name: mutationName
+                        })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Add remote to staged changes response:', data);
+                        if (data.status === 'success') {
+                            resolve(data);
+                        } else {
+                            reject(new Error(data.error || 'Unknown error occurred'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error adding remote item to staged changes:', error);
+                        reject(error);
+                    });
+                    return;
+                }
+                
+                if (!item.id) {
+                    console.error('Cannot add item to staged changes without an ID:', item);
+                    reject(new Error('Missing item ID'));
+                    return;
+                }
+                
+                // Get current environment and mutation from global state or settings
+                const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+                const mutationName = currentEnvironment.mutation_name || null;
+                
+                // Use the staged changes endpoint
+                const stageUrl = item.type === 'node' ? 
+                    `/metadata/glossary/nodes/${item.id}/stage_changes/` : 
+                    `/metadata/glossary/terms/${item.id}/stage_changes/`;
+                
+                fetch(stageUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        environment: currentEnvironment.name,
+                        mutation_name: mutationName
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Add to staged changes response:', data);
+                    if (data.status === 'success') {
+                        resolve(data);
+                    } else {
+                        reject(new Error(data.error || 'Unknown error occurred'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error adding item to staged changes:', error);
+                    reject(error);
+                });
+            });
+            
             successCount++;
+            console.log(`Successfully added ${item.name} to staged changes (${successCount}/${selectedItems.length})`);
         } catch (error) {
             console.error(`Error adding item ${item.name} to staged changes:`, error);
             errorCount++;
         }
-    });
+    }
     
     if (errorCount > 0) {
         showNotification('warning', `Added ${successCount} items to staged changes, ${errorCount} errors`);
     } else {
-        showNotification('success', `Added ${successCount} items to staged changes`);
+        showNotification('success', `Successfully added all ${successCount} items to staged changes`);
     }
 }
 
