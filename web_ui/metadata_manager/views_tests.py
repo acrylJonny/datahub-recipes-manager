@@ -1373,16 +1373,24 @@ class TestSyncToLocalView(View):
             }, status=500)
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 class TestStageChangesView(View):
-    """View to add a test to staged changes"""
-    
-    @method_decorator(require_POST)
-    def dispatch(self, *args, **kwargs):
-        return super().dispatch(*args, **kwargs)
+    """View to add a test to staged changes using MCP pattern"""
     
     def post(self, request, test_id):
         """Add a local test to staged changes"""
         try:
+            import sys
+            import os
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.test_actions import add_test_to_staged_changes
+            
             # Get the test from the database
             test = Test.objects.get(id=test_id)
             
@@ -1390,6 +1398,9 @@ class TestStageChangesView(View):
             data = json.loads(request.body)
             environment = data.get('environment', 'dev')
             mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
             
             # Extract platform instance from entity_urn if available
             platform_name = None
@@ -1399,7 +1410,7 @@ class TestStageChangesView(View):
             if test.entity_urn:
                 platform_name, platform_instance, original_environment = extract_platform_instance_from_urn(test.entity_urn)
                 
-                # Update assertion model with platform instance
+                # Update test model with platform instance
                 test.platform_name = platform_name
                 test.platform_instance = platform_instance
                 test.save()
@@ -1430,82 +1441,45 @@ class TestStageChangesView(View):
                 except Exception as e:
                     logger.warning(f"Error applying platform mapping: {str(e)}")
             
-            # Create test JSON object for staging in the format expected by the workflow
-            test_data = {
-                'name': test.name,
-                'test_type': test.category or 'CUSTOM',
-                'operation': 'create',
-                'description': test.description or '',
-                'category': test.category or '',
-                'platform': platform_name,
-                'platform_instance': platform_instance,
-                'environment': environment,
-                'staged_by': 'web_ui',
-                'created_at': test.created_at.isoformat() if hasattr(test, 'created_at') and test.created_at else None,
-                'graphql_input': {
-                    'mutation': 'createTest',  # Will be determined by test type
-                    'input': {
-                        'urn': modified_entity_urn or test.urn,
-                        'name': test.name,
-                        'description': test.description or '',
-                        'category': test.category or '',
-                        'definition': test.definition_json or {},
-                        'yaml_definition': test.yaml_definition or '',
-                    }
-                },
-                'metadata': {
-                    'stage_source': 'web_ui_staging',
-                    'original_test_id': test.id,
-                    'original_urn': test.urn,
-                    'original_entity_urn': test.entity_urn,
-                    'file_created_at': None  # Will be set below
-                }
-            }
+            # Add test to staged changes using the MCP pattern
+            result = add_test_to_staged_changes(
+                test_id=str(test.id),
+                test_urn=test.urn,
+                test_name=test.name,
+                test_type=test.category or "CUSTOM",
+                description=test.description,
+                category=test.category,
+                entity_urn=modified_entity_urn or test.entity_urn,
+                definition=test.definition_json or {},
+                yaml_definition=test.yaml_definition,
+                platform=platform_name,
+                platform_instance=platform_instance,
+                environment=environment,
+                owner=owner,
+                mutation_name=mutation_name
+            )
             
-            # Determine the metadata_tests directory path - matching the pattern for tests staging
-            from pathlib import Path
+            if not result.get("success"):
+                return JsonResponse({
+                    "success": False,
+                    "error": result.get("message", "Failed to add test to staged changes")
+                }, status=500)
             
-            # When running from web_ui/, we need to go up one level to get to repo root
-            current_dir = Path(os.getcwd())
-            if current_dir.name == "web_ui":
-                repo_root = current_dir.parent
-            else:
-                # Try to find repo root by looking for characteristic files
-                repo_root = current_dir
-                for _ in range(5):  # Search up to 5 levels
-                    if (repo_root / "README.md").exists() and (repo_root / "scripts").exists() and (repo_root / "web_ui").exists():
-                        break
-                    repo_root = repo_root.parent
-                else:
-                    # Fallback: assume current directory
-                    repo_root = current_dir
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
             
-            metadata_tests_dir = repo_root / "metadata-manager" / environment / "metadata_tests"
-            metadata_tests_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create individual JSON file for this test
-            # Extract test name from URN for filename, sanitize for filesystem
-            test_name_for_file = test.urn.split(':')[-1] if test.urn else test.name
-            # Replace invalid characters and add test category for better organization
-            safe_name = "".join(c for c in test_name_for_file if c.isalnum() or c in ('_', '-')).rstrip()
-            category_part = f"_{test.category}" if test.category else ""
-            test_filename = f"test_{safe_name}{category_part}.json"
-            test_file_path = metadata_tests_dir / test_filename
-            
-            # Add timestamp to metadata
-            from datetime import datetime
-            test_data['metadata']['file_created_at'] = datetime.now().isoformat()
-            
-            # Write test JSON file
-            with open(str(test_file_path), 'w') as f:
-                json.dump(test_data, f, indent=2)
-            
-            logger.info(f"Test staged to {test_file_path}")
+            message = f"Test added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
             
             return JsonResponse({
                 'success': True,
-                'message': f'Test successfully added to staged changes',
-                'files_created': [str(test_file_path)]
+                'message': message,
+                'files_created': files_created,
+                'files_created_count': files_created_count,
+                'mcps_created': mcps_created,
+                'test_id': str(test.id),
+                'test_urn': test.urn
             })
             
         except Test.DoesNotExist:
@@ -1522,69 +1496,111 @@ class TestStageChangesView(View):
             }, status=500)
 
 
+@method_decorator(csrf_exempt, name="dispatch")
 class TestRemoteStageChangesView(View):
-    """View to add a remote test to staged changes via database intermediate layer"""
-    
-    @method_decorator(require_POST)
-    def dispatch(self, *args, **kwargs):
-        return super().dispatch(*args, **kwargs)
+    """API endpoint to add a remote test to staged changes without syncing to local first"""
     
     def post(self, request):
-        """Add a remote test to staged changes by first syncing to database"""
         try:
-            # Get the test URN from request
-            data = json.loads(request.body)
-            test_urn = data.get('test_urn')
-            environment = data.get('environment', 'dev')
-            mutation_name = data.get('mutation_name')
+            import json
+            import os
+            import sys
             
-            if not test_urn:
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.test_actions import add_test_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            test_data = data.get('item_data')
+            
+            if not test_data:
                 return JsonResponse({
-                    'success': False,
-                    'error': 'Test URN is required'
+                    "status": "error",
+                    "error": "Test data is required"
                 }, status=400)
             
-            # First, sync the remote test to local database
-            sync_view = TestSyncToLocalView()
-            sync_result = sync_view.post(request, test_urn)
-            
-            # Check if sync was successful
-            sync_data = json.loads(sync_result.content)
-            if not sync_data.get('success'):
+            test_urn = test_data.get('urn')
+            if not test_urn:
                 return JsonResponse({
-                    'success': False,
-                    'error': f"Failed to sync remote test to database: {sync_data.get('error', 'Unknown error')}"
-                }, status=500)
+                    "status": "error",
+                    "error": "Test URN is required"
+                }, status=400)
             
-            # Get the test ID from sync result
-            test_id = sync_data.get('test_id')
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Extract test ID from URN (last part after colon)
+            test_id = test_urn.split(':')[-1] if test_urn else None
             if not test_id:
                 return JsonResponse({
-                    'success': False,
-                    'error': 'Failed to get test ID after sync'
+                    "status": "error",
+                    "error": "Could not extract test ID from URN"
+                }, status=400)
+            
+            # Extract test information from remote data
+            test_name = test_data.get('name', 'Unknown Test')
+            test_type = test_data.get('category', 'CUSTOM')
+            description = test_data.get('description', '')
+            category = test_data.get('category', '')
+            entity_urn = test_data.get('entity_urn', '')
+            definition = test_data.get('definition_json') or test_data.get('definition', {})
+            yaml_definition = test_data.get('yaml_definition', '')
+            platform = test_data.get('platform_name')
+            platform_instance = test_data.get('platform_instance')
+            
+            logger.info(f"Adding remote test '{test_name}' to staged changes...")
+            
+            # Add remote test to staged changes using the MCP pattern
+            result = add_test_to_staged_changes(
+                test_id=test_id,
+                test_urn=test_urn,
+                test_name=test_name,
+                test_type=test_type,
+                description=description,
+                category=category,
+                entity_urn=entity_urn,
+                definition=definition,
+                yaml_definition=yaml_definition,
+                platform=platform,
+                platform_instance=platform_instance,
+                environment=environment_name,
+                owner=owner,
+                mutation_name=mutation_name
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "status": "error",
+                    "error": result.get("message", "Failed to add remote test to staged changes")
                 }, status=500)
             
-            # Now stage the test from the database
-            stage_view = TestStageChangesView()
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
             
-            # Create a new request with the test_id and original data
-            stage_request = request
-            stage_request._body = json.dumps({
-                'environment': environment,
-                'mutation_name': mutation_name
-            }).encode('utf-8')
+            message = f"Remote test added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
             
-            stage_result = stage_view.post(stage_request, test_id)
-            
-            # Return the staging result
-            return stage_result
-            
-        except Exception as e:
-            logger.error(f"Error staging remote test changes: {str(e)}")
             return JsonResponse({
-                'success': False,
-                'error': f'Error staging remote test changes: {str(e)}'
-            }, status=500)
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "mcps_created": mcps_created,
+                "test_urn": test_urn
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding remote test to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
 
 
 class TestSyncToDataHubView(View):

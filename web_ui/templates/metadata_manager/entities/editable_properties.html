@@ -6,7 +6,8 @@
 <style>
 /* Multi-select dropdown styling */
 .multi-select-dropdown {
-    position: relative;
+    position: relative !important;
+    z-index: 1010 !important;
 }
 
 .multi-select-dropdown select[multiple] {
@@ -24,12 +25,19 @@
     flex-wrap: wrap;
     gap: 0.25rem;
     align-items: center;
+    position: relative !important;
+    z-index: 1010 !important;
 }
 
 .multi-select-display:focus {
     border-color: #86b7fe;
     outline: 0;
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    z-index: 1010 !important;
+}
+
+.multi-select-display:hover {
+    z-index: 1010 !important;
 }
 
 .multi-select-placeholder {
@@ -62,7 +70,7 @@
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-    z-index: 1000;
+    z-index: 1020 !important;
     max-height: 200px;
     overflow-y: auto;
     display: none;
@@ -85,6 +93,55 @@
 
 .multi-select-option:last-child {
     border-bottom: none;
+}
+
+/* Force dropdown containers to stay on top */
+.card-body .col-md-3,
+.card-body .col-md-6 {
+    position: relative !important;
+    z-index: 1005 !important;
+}
+
+/* Platform dropdown (higher priority than platform instance) */
+#platform {
+    z-index: 1020 !important;
+}
+
+/* Platform dropdown container and elements - highest priority */
+#platform.form-select + .multi-select-dropdown {
+    z-index: 1020 !important;
+}
+
+#platform.form-select + .multi-select-dropdown .multi-select-display {
+    z-index: 1020 !important;
+}
+
+#platform.form-select + .multi-select-dropdown .multi-select-dropdown-menu {
+    z-index: 1020 !important;
+}
+
+/* Platform instance dropdown (lower priority) */
+#platformInstance {
+    z-index: 1015 !important;
+}
+
+/* Platform instance dropdown container and elements - lower priority */
+#platformInstance.form-select + .multi-select-dropdown {
+    z-index: 1015 !important;
+}
+
+#platformInstance.form-select + .multi-select-dropdown .multi-select-display {
+    z-index: 1015 !important;
+}
+
+#platformInstance.form-select + .multi-select-dropdown .multi-select-dropdown-menu {
+    z-index: 1015 !important;
+}
+
+/* Ensure the entire filter card stays above other content but below modals */
+.card.mb-4 {
+    position: relative !important;
+    z-index: 1000 !important;
 }
 </style>
 {% endblock %}
@@ -110,8 +167,8 @@
             <button type="button" class="btn btn-outline-secondary me-2" id="downloadButton">
                 <i class="fas fa-download me-1"></i> Download
             </button>
-            <button type="button" class="btn btn-success me-2" id="addAllToStagedChangesButton">
-                                        <i class="fas fa-plus me-1"></i> Add Filtered to Staged Changes
+            <button type="button" class="btn btn-success me-2" id="addAllToStagedChangesButton" style="pointer-events: auto !important;" onclick="console.log('Button clicked via onclick');">
+                <i class="fas fa-download me-1"></i> Export with Mutations
             </button>
         </div>
     </div>
@@ -124,6 +181,19 @@
             </div>
         {% endfor %}
     {% endif %}
+
+    <!-- Search Performance Notice - moved above filters -->
+    <div class="alert alert-info mb-4" role="alert">
+        <div class="d-flex">
+            <div class="me-3">
+                <i class="fas fa-info-circle fa-2x"></i>
+            </div>
+            <div>
+                <h5 class="alert-heading">Search Performance Notice</h5>
+                <p class="mb-0">Comprehensive search across all platforms, instances, and browse paths may take longer in large environments. Results are cached temporarily for better pagination performance.</p>
+            </div>
+        </div>
+    </div>
 
     <!-- Filters -->
     <div class="card mb-4">
@@ -175,23 +245,28 @@
                         <div class="card-body">
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="form-label">Browse Path</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text">/</span>
-                                        <input type="text" class="form-control" id="browsePath" name="browsePath" placeholder="Enter browse path">
+                                    <div class="mb-3">
+                                        <label class="form-label">Platform Instance</label>
+                                        <select class="form-select" id="platformInstance" name="platformInstance" multiple>
+                                            <!-- Options will be populated dynamically -->
+                                        </select>
+                                        <div class="form-text">
+                                            Filter by specific platform instance (includes "Empty" for entities without instances)
+                                        </div>
                                     </div>
-                                    <div class="form-text">
-                                        Filter by directory path (e.g. "prod/data")
+                                    <div>
+                                        <label class="form-label">Browse Path</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">/</span>
+                                            <input type="text" class="form-control" id="browsePath" name="browsePath" placeholder="Enter browse path">
+                                        </div>
+                                        <div class="form-text">
+                                            Filter by directory path (e.g. "prod/data")
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">Platform Instance</label>
-                                    <select class="form-select" id="platformInstance" name="platformInstance" multiple>
-                                        <!-- Options will be populated dynamically -->
-                                    </select>
-                                    <div class="form-text">
-                                        Filter by specific platform instance (includes "Empty" for entities without instances)
-                                    </div>
+                                    
                                 </div>
                             </div>
                         </div>
@@ -202,19 +277,6 @@
     </div>
 
     <!-- Recent browse paths container will be added here dynamically -->
-
-    <!-- Add info alert above the entities card -->
-    <div class="alert alert-info mb-4" role="alert">
-        <div class="d-flex">
-            <div class="me-3">
-                <i class="fas fa-info-circle fa-2x"></i>
-            </div>
-            <div>
-                <h5 class="alert-heading">Search Performance Notice</h5>
-                <p class="mb-0">Comprehensive search across all platforms, instances, and browse paths may take longer in large environments. Results are cached temporarily for better pagination performance.</p>
-            </div>
-        </div>
-    </div>
 
     <!-- Cache Status -->
     <div class="row mb-3">
@@ -233,7 +295,7 @@
     </div>
 
     <!-- Entities List -->
-    <div class="card">
+    <div class="card" style="z-index: 1; position: relative;">
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0">Entities</h5>
             <div>
@@ -566,6 +628,132 @@ document.addEventListener('DOMContentLoaded', function() {
         connectionId: null
     };
     
+    // Multi-select dropdown functionality - INITIALIZE EARLY
+    function initializeMultiSelect(selectElement) {
+        const container = selectElement.parentElement;
+        container.classList.add('multi-select-dropdown');
+        
+        // Create display element
+        const display = document.createElement('div');
+        display.className = 'multi-select-display';
+        display.tabIndex = 0;
+        
+        // Create dropdown menu
+        const menu = document.createElement('div');
+        menu.className = 'multi-select-dropdown-menu';
+        
+        // Update display based on selected values
+        function updateDisplay() {
+            const selectedOptions = Array.from(selectElement.selectedOptions);
+            display.innerHTML = '';
+            
+            if (selectedOptions.length === 0) {
+                const placeholder = document.createElement('span');
+                placeholder.className = 'multi-select-placeholder';
+                placeholder.textContent = selectElement.id === 'platform' ? 'All Platforms' : 'All Instances';
+                display.appendChild(placeholder);
+            } else {
+                selectedOptions.forEach(option => {
+                    const tag = document.createElement('span');
+                    tag.className = 'multi-select-tag';
+                    tag.innerHTML = `
+                        ${option.textContent}
+                        <span class="remove" data-value="${option.value}">×</span>
+                    `;
+                    display.appendChild(tag);
+                });
+            }
+        }
+        
+        // Update menu options
+        function updateMenu() {
+            menu.innerHTML = '';
+            Array.from(selectElement.options).forEach(option => {
+                const menuOption = document.createElement('div');
+                menuOption.className = 'multi-select-option';
+                menuOption.textContent = option.textContent;
+                menuOption.dataset.value = option.value;
+                
+                if (option.selected) {
+                    menuOption.classList.add('selected');
+                }
+                
+                menuOption.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    option.selected = !option.selected;
+                    updateDisplay();
+                    updateMenu();
+                    
+                    // Trigger change event for filtering
+                    selectElement.dispatchEvent(new Event('change'));
+                });
+                
+                menu.appendChild(menuOption);
+            });
+        }
+        
+        // Handle tag removal
+        display.addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove')) {
+                const value = e.target.dataset.value;
+                const option = selectElement.querySelector(`option[value="${value}"]`);
+                if (option) {
+                    option.selected = false;
+                    updateDisplay();
+                    updateMenu();
+                    selectElement.dispatchEvent(new Event('change'));
+                }
+                e.stopPropagation();
+            }
+        });
+        
+        // Toggle dropdown
+        display.addEventListener('click', function() {
+            const isVisible = menu.style.display === 'block';
+            
+            // Close all other multi-select dropdowns
+            document.querySelectorAll('.multi-select-dropdown-menu').forEach(m => {
+                m.style.display = 'none';
+            });
+            
+            menu.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                updateMenu();
+            }
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!container.contains(e.target)) {
+                menu.style.display = 'none';
+            }
+        });
+        
+        // Insert elements
+        selectElement.style.display = 'none';
+        container.insertBefore(display, selectElement);
+        container.appendChild(menu);
+        
+        updateDisplay();
+        
+        return {
+            updateOptions: function(options) {
+                selectElement.innerHTML = '';
+                options.forEach(option => {
+                    const optionElement = document.createElement('option');
+                    optionElement.value = option.value;
+                    optionElement.textContent = option.text;
+                    selectElement.appendChild(optionElement);
+                });
+                updateDisplay();
+            }
+        };
+    }
+    
+    // Initialize multi-select dropdowns EARLY - before other functions that use them
+    const platformMultiSelect = initializeMultiSelect(document.getElementById('platform'));
+    const platformInstanceMultiSelect = initializeMultiSelect(document.getElementById('platformInstance'));
+    
     // Get current connection ID from the base template's connection dropdown
     function getCurrentConnectionId() {
         const connectionElement = document.getElementById('current-connection-name');
@@ -653,16 +841,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // Clear loading option
-        platformSelect.innerHTML = '<option value="">All Platforms</option>';
+        // Create options for multi-select
+        const options = platforms.map(platform => ({
+            value: platform,
+            text: platform.charAt(0).toUpperCase() + platform.slice(1)
+        }));
         
-        // Add platform options
-        platforms.forEach(platform => {
-            const option = document.createElement('option');
-            option.value = platform;
-            option.textContent = platform.charAt(0).toUpperCase() + platform.slice(1);
-            platformSelect.appendChild(option);
-        });
+        platformMultiSelect.updateOptions(options);
         
         // Enable platform dropdown
         platformSelect.disabled = false;
@@ -798,28 +983,39 @@ document.addEventListener('DOMContentLoaded', function() {
         updatePlatformInstancesDropdown();
     }
     
-    // Helper function to populate platform instance dropdown
+    // Helper function to populate platform instance dropdown (using multi-select)
     function populatePlatformInstanceDropdown(instances) {
-        const platformInstanceSelect = document.getElementById('platformInstance');
-        
-        platformInstanceSelect.innerHTML = '<option value="">All Instances</option>';
+        const options = [
+            { value: '__EMPTY__', text: 'Empty (No Instance)' }
+        ];
         
         instances.forEach(instance => {
-            const option = document.createElement('option');
-            option.value = instance;
-            option.textContent = instance;
-            platformInstanceSelect.appendChild(option);
+            options.push({
+                value: instance,
+                text: instance
+            });
         });
+        
+        platformInstanceMultiSelect.updateOptions(options);
     }
     
-    // Load all platforms initially
-    loadPlatforms();
+    // Load all platforms initially (for all entity types)
+    loadPlatformsForConnection();
     
     // Load users and groups for ownership lookup in parallel
     loadUsersAndGroups();
     
     // Load structured properties for advanced filtering in parallel
     loadStructuredProperties();
+    
+    // Initialize platform instance dropdown with empty state
+    populatePlatformInstanceDropdown([]);
+    
+    // Load initial data for all platforms and entity types
+    setTimeout(() => {
+        console.log('Loading initial data for all platforms and entity types...');
+        loadEntities(1); // This will load all data initially
+    }, 1500); // Give platform loading time to complete
     
     // Create a global function to handle connection changes (called from base template)
     window.switchConnectionCache = function(newConnectionId) {
@@ -894,44 +1090,60 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     
     // Add event listeners for platform changes
-    document.getElementById('platform').addEventListener('change', function() {
-        updatePlatformInstancesDropdown();
-        // Only apply client-side filters if we have entities loaded
-        if (allEntities.length > 0) {
-            applyClientSideFilters();
-        }
-    });
-    document.getElementById('entityType').addEventListener('change', function() {
-        loadPlatforms(this.value);
-        // Apply client-side filtering if we have loaded entities
-        if (allEntities.length > 0) {
-            applyClientSideFilters();
-        }
-    });
+    const platformElement = document.getElementById('platform');
+    if (platformElement) {
+        platformElement.addEventListener('change', function() {
+            updatePlatformInstancesDropdown();
+            // Only apply client-side filters if we have entities loaded
+            if (allEntities.length > 0) {
+                applyClientSideFilters();
+            }
+        });
+    }
+    
+    const entityTypeElement = document.getElementById('entityType');
+    if (entityTypeElement) {
+        entityTypeElement.addEventListener('change', function() {
+            // Don't reload platforms - just apply client-side filtering
+            if (allEntities.length > 0) {
+                applyClientSideFilters();
+            }
+        });
+    }
     
     // Add event listeners for client-side filtering (only for advanced filters)
-    document.getElementById('browsePath').addEventListener('input', debounce(function() {
-        if (allEntities.length > 0) {
-            applyClientSideFilters();
-        }
-    }, 300));
-    document.getElementById('platformInstance').addEventListener('change', function() {
-        if (allEntities.length > 0) {
-            applyClientSideFilters();
-        }
-    });
+    const browsePathElement = document.getElementById('browsePath');
+    if (browsePathElement) {
+        browsePathElement.addEventListener('input', debounce(function() {
+            if (allEntities.length > 0) {
+                applyClientSideFilters();
+            }
+        }, 300));
+    }
+    
+    const platformInstanceElement = document.getElementById('platformInstance');
+    if (platformInstanceElement) {
+        platformInstanceElement.addEventListener('change', function() {
+            if (allEntities.length > 0) {
+                applyClientSideFilters();
+            }
+        });
+    }
     
     // Toggle advanced filters visibility
-    document.getElementById('toggleAdvancedFilters').addEventListener('click', function() {
-        const advancedFilters = document.querySelector('.advanced-filters');
-        if (advancedFilters.style.display === 'none') {
-            advancedFilters.style.display = 'block';
-            this.innerHTML = '<i class="fas fa-chevron-up me-1"></i> Hide Advanced Filters';
-        } else {
-            advancedFilters.style.display = 'none';
-            this.innerHTML = '<i class="fas fa-sliders-h me-1"></i> Advanced Filters';
-        }
-    });
+    const toggleAdvancedFiltersElement = document.getElementById('toggleAdvancedFilters');
+    if (toggleAdvancedFiltersElement) {
+        toggleAdvancedFiltersElement.addEventListener('click', function() {
+            const advancedFilters = document.querySelector('.advanced-filters');
+            if (advancedFilters.style.display === 'none') {
+                advancedFilters.style.display = 'block';
+                this.innerHTML = '<i class="fas fa-chevron-up me-1"></i> Hide Advanced Filters';
+            } else {
+                advancedFilters.style.display = 'none';
+                this.innerHTML = '<i class="fas fa-sliders-h me-1"></i> Advanced Filters';
+            }
+        });
+    }
     
     // Track recently used browse paths
     let recentBrowsePaths = [];
@@ -1063,9 +1275,23 @@ document.addEventListener('DOMContentLoaded', function() {
             // Platform instance filter (multi-select)
             if (selectedPlatformInstances.length > 0) {
                 const entityInstance = getEntityPlatformInstance(entity);
-                const matches = selectedPlatformInstances.some(instance => 
-                    entityInstance && entityInstance.toLowerCase() === instance.toLowerCase()
-                );
+                const hasEmptyFilter = selectedPlatformInstances.includes('__EMPTY__');
+                const otherInstances = selectedPlatformInstances.filter(instance => instance !== '__EMPTY__');
+                
+                let matches = false;
+                
+                // Check for "Empty" filter - matches entities WITHOUT platform instances
+                if (hasEmptyFilter && (!entityInstance || entityInstance === '')) {
+                    matches = true;
+                }
+                
+                // Check for specific instance matches
+                if (otherInstances.length > 0 && entityInstance) {
+                    matches = matches || otherInstances.some(instance => 
+                        entityInstance.toLowerCase() === instance.toLowerCase()
+                    );
+                }
+                
                 if (!matches) {
                     return false;
                 }
@@ -3401,7 +3627,9 @@ document.addEventListener('DOMContentLoaded', function() {
     updateCacheStatus('Ready to search entities...');
     
     // Handle filter form submission
-    document.getElementById('filterForm').addEventListener('submit', function(e) {
+    const filterForm = document.getElementById('filterForm');
+    if (filterForm) {
+        filterForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
         // Clear the cache when filters change
@@ -3412,7 +3640,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Load entities with the new filters
         loadEntities();
-    });
+        });
+    }
     
     // Function to show notifications  
     function showNotification(message, type = 'info') {
@@ -3548,82 +3777,109 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Select/deselect all checkboxes
-    document.getElementById('selectAllCheckbox').addEventListener('change', function() {
-        const checkboxes = document.querySelectorAll('.entity-checkbox');
-        checkboxes.forEach(cb => cb.checked = this.checked);
-    });
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.entity-checkbox');
+            checkboxes.forEach(cb => cb.checked = this.checked);
+        });
+    }
     
-    // Add the Add All to Staged Changes functionality
-    document.getElementById('addAllToStagedChangesButton').addEventListener('click', function() {
-        const entitiesToAdd = filteredEntities.length > 0 ? filteredEntities : allEntities;
+    // Add the Export Entities with Mutations functionality
+    const exportButton = document.getElementById('addAllToStagedChangesButton');
+    console.log('Export button found:', !!exportButton);
+    if (exportButton) {
+        console.log('Export button styles:', window.getComputedStyle(exportButton).pointerEvents);
+        console.log('Export button disabled:', exportButton.disabled);
         
-        if (entitiesToAdd.length === 0) {
-            showNotification('No entities to add to staged changes', 'warning');
-            return;
-        }
-        
-        // Disable the button and show loading state
-        this.disabled = true;
-        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Processing...';
-        
-        const filterText = filteredEntities.length > 0 && filteredEntities.length !== allEntities.length ? 
-            ` (filtered from ${allEntities.length})` : '';
-        
-        // Show a confirmation dialog
-        if (confirm(`This will add ${entitiesToAdd.length} entities${filterText} to staged changes. This process may take some time. Continue?`)) {
-            const entityUrns = entitiesToAdd.map(entity => entity.urn);
+        exportButton.addEventListener('click', function() {
+            console.log('Export button clicked');
+            console.log('allEntities:', allEntities?.length || 0);
+            console.log('filteredEntities:', filteredEntities?.length || 0);
             
-            // Get current environment and mutation from global state or settings
-            const currentEnvironment = window.currentEnvironment || { name: 'dev' };
-            const mutationName = currentEnvironment.mutation_name || null;
+            const entitiesToAdd = filteredEntities.length > 0 ? filteredEntities : allEntities;
             
-            // Call the bulk API endpoint
-            fetch('/metadata/entities/editable/bulk-add-to-staged-changes/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken')
-                },
-                body: JSON.stringify({
-                    entity_urns: entityUrns,
-                    environment: currentEnvironment.name,
-                    mutation_name: mutationName
+            if (!entitiesToAdd || entitiesToAdd.length === 0) {
+                showNotification('No entities to export. Please search for entities first.', 'warning');
+                return;
+            }
+            
+            // Disable the button and show loading state
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Processing...';
+            
+            const filterText = filteredEntities.length > 0 && filteredEntities.length !== allEntities.length ? 
+                ` (filtered from ${allEntities.length})` : '';
+            
+            // Show a confirmation dialog
+            if (confirm(`This will export ${entitiesToAdd.length} entities${filterText} with environment mutations applied. Continue?`)) {
+                
+                // Call the export API endpoint with mutations
+                fetch('/metadata/entities/editable/export-with-mutations/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        entities: entitiesToAdd,
+                        include_mutations: true,
+                        export_format: 'metadata_migration'
+                    })
                 })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Show success message
-                    let message = `Successfully added ${data.success_count || entityUrns.length} entities to staged changes.`;
-                    if (data.files_created_count) {
-                        message += ` ${data.files_created_count} files created.`;
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
                     }
-                    showNotification(message, 'success');
-                    
-                    if (data.errors && data.errors.length > 0) {
-                        console.warn('Some entities failed:', data.errors);
-                        showNotification(`${data.error_count} entities failed. Check console for details.`, 'warning');
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        // Show success message with file location
+                        const message = data.message || 
+                            `Successfully exported ${data.entity_count} entities to ${data.environment} environment`;
+                        
+                        showNotification(message, 'success');
+                        
+                        // Show additional details
+                        if (data.mcp_files_generated > 0) {
+                            setTimeout(() => {
+                                showNotification(
+                                    `Generated ${data.mcp_files_generated} MCP files in ${data.directory}`, 
+                                    'info'
+                                );
+                            }, 2000);
+                        }
+                        
+                        console.log('Export details:', {
+                            file_path: data.file_path,
+                            directory: data.directory,
+                            mcp_files: data.mcp_files_generated,
+                            environment: data.environment
+                        });
+                    } else {
+                        // Show error message
+                        showNotification(`Failed to export entities: ${data.error}`, 'error');
                     }
-                } else {
-                    // Show error message
-                    showNotification(`Failed to add entities to staged changes: ${data.error}`, 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Error adding entities to staged changes:', error);
-                showNotification(`Failed to add entities to staged changes: ${error.message}`, 'error');
-            })
-            .finally(() => {
-                // Reset button state
+                })
+                .catch(error => {
+                    console.error('Error exporting entities:', error);
+                    showNotification(`Failed to export entities: ${error.message}`, 'error');
+                })
+                .finally(() => {
+                    // Reset button state
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-download me-1"></i> Export with Mutations';
+                });
+            } else {
+                // Reset button if user cancels
                 this.disabled = false;
-                this.innerHTML = '<i class="fas fa-plus me-1"></i> Add Filtered to Staged Changes';
-            });
-        } else {
-            // Reset button if user cancels
-            this.disabled = false;
-            this.innerHTML = '<i class="fas fa-plus me-1"></i> Add Filtered to Staged Changes';
-        }
-    });
+                this.innerHTML = '<i class="fas fa-download me-1"></i> Export with Mutations';
+            }
+        });
+    } else {
+        console.error('Export button not found!');
+    }
 
 
     
@@ -4314,135 +4570,9 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
-    // Multi-select dropdown functionality
-    function initializeMultiSelect(selectElement) {
-        const container = selectElement.parentElement;
-        container.classList.add('multi-select-dropdown');
-        
-        // Create display element
-        const display = document.createElement('div');
-        display.className = 'multi-select-display';
-        display.tabIndex = 0;
-        
-        // Create dropdown menu
-        const menu = document.createElement('div');
-        menu.className = 'multi-select-dropdown-menu';
-        
-        // Update display based on selected values
-        function updateDisplay() {
-            const selectedOptions = Array.from(selectElement.selectedOptions);
-            display.innerHTML = '';
-            
-            if (selectedOptions.length === 0) {
-                const placeholder = document.createElement('span');
-                placeholder.className = 'multi-select-placeholder';
-                placeholder.textContent = selectElement.id === 'platform' ? 'All Platforms' : 'All Instances';
-                display.appendChild(placeholder);
-            } else {
-                selectedOptions.forEach(option => {
-                    const tag = document.createElement('span');
-                    tag.className = 'multi-select-tag';
-                    tag.innerHTML = `
-                        ${option.textContent}
-                        <span class="remove" data-value="${option.value}">×</span>
-                    `;
-                    display.appendChild(tag);
-                });
-            }
-        }
-        
-        // Update menu options
-        function updateMenu() {
-            menu.innerHTML = '';
-            Array.from(selectElement.options).forEach(option => {
-                const menuOption = document.createElement('div');
-                menuOption.className = 'multi-select-option';
-                menuOption.textContent = option.textContent;
-                menuOption.dataset.value = option.value;
-                
-                if (option.selected) {
-                    menuOption.classList.add('selected');
-                }
-                
-                menuOption.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    option.selected = !option.selected;
-                    updateDisplay();
-                    updateMenu();
-                    
-                    // Trigger change event for filtering
-                    selectElement.dispatchEvent(new Event('change'));
-                });
-                
-                menu.appendChild(menuOption);
-            });
-        }
-        
-        // Handle tag removal
-        display.addEventListener('click', function(e) {
-            if (e.target.classList.contains('remove')) {
-                const value = e.target.dataset.value;
-                const option = selectElement.querySelector(`option[value="${value}"]`);
-                if (option) {
-                    option.selected = false;
-                    updateDisplay();
-                    updateMenu();
-                    selectElement.dispatchEvent(new Event('change'));
-                }
-                e.stopPropagation();
-            }
-        });
-        
-        // Toggle dropdown
-        display.addEventListener('click', function() {
-            const isVisible = menu.style.display === 'block';
-            
-            // Close all other multi-select dropdowns
-            document.querySelectorAll('.multi-select-dropdown-menu').forEach(m => {
-                m.style.display = 'none';
-            });
-            
-            menu.style.display = isVisible ? 'none' : 'block';
-            if (!isVisible) {
-                updateMenu();
-            }
-        });
-        
-        // Close dropdown when clicking outside
-        document.addEventListener('click', function(e) {
-            if (!container.contains(e.target)) {
-                menu.style.display = 'none';
-            }
-        });
-        
-        // Insert elements
-        selectElement.style.display = 'none';
-        container.insertBefore(display, selectElement);
-        container.appendChild(menu);
-        
-        updateDisplay();
-        
-        return {
-            updateOptions: function(options) {
-                selectElement.innerHTML = '';
-                options.forEach(option => {
-                    const optionElement = document.createElement('option');
-                    optionElement.value = option.value;
-                    optionElement.textContent = option.text;
-                    selectElement.appendChild(optionElement);
-                });
-                updateDisplay();
-            }
-        };
-    }
-    
-    // Initialize multi-select dropdowns
-    const platformMultiSelect = initializeMultiSelect(document.getElementById('platform'));
-    const platformInstanceMultiSelect = initializeMultiSelect(document.getElementById('platformInstance'));
-    
-    // Update platform loading to work with multi-select and be connection-specific
-    function loadPlatforms(entityType = '') {
-        const currentConnection = getCurrentConnectionId();
+    // Load platforms for a specific connection (used when connection changes)
+    function loadPlatformsForConnection(entityType = '', connectionId = null) {
+        const currentConnection = connectionId || getCurrentConnectionId();
         console.log('Loading platforms for entity type:', entityType, 'connection:', currentConnection);
         
         const applyButton = document.getElementById('applyFiltersButton');
@@ -4452,12 +4582,10 @@ document.addEventListener('DOMContentLoaded', function() {
             spinner.style.display = 'inline-block';
         }
         
-        // Use connection-specific platform endpoint
-        const url = entityType ? 
-            `/metadata/platforms/?entity_type=${encodeURIComponent(entityType)}` : 
-            '/metadata/platforms/';
+        // Use connection-specific platform endpoint - load ALL platforms initially 
+        const url = '/metadata/platforms/'; // Don't filter by entity type - get all platforms
         
-        console.log('Fetching platforms from:', url, 'for connection:', currentConnection);
+        console.log('Fetching all platforms from:', url, 'for connection:', currentConnection);
         
         fetch(url)
             .then(response => response.json())
@@ -4484,22 +4612,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     spinner.style.display = 'none';
                 }
             });
-    }
-    
-    // Update platform instance population to include "Empty" option
-    function populatePlatformInstanceDropdown(instances) {
-        const options = [
-            { value: '__EMPTY__', text: 'Empty (No Instance)' }
-        ];
-        
-        instances.forEach(instance => {
-            options.push({
-                value: instance,
-                text: instance
-            });
-        });
-        
-        platformInstanceMultiSelect.updateOptions(options);
     }
     
     // Update client-side filtering to handle multi-select values

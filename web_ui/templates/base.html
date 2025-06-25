@@ -72,6 +72,17 @@
         .text-purple {
             color: #6f42c1;
         }
+        
+        /* Ensure metadata dropdown has highest z-index */
+        .navbar-nav .nav-item.dropdown .dropdown-menu {
+            z-index: 99999 !important;
+        }
+        
+        /* Specifically target the metadata dropdown */
+        .navbar-nav .nav-item.dropdown:has(.dropdown-toggle[href*="metadata"]) .dropdown-menu,
+        .navbar-nav .nav-item.dropdown .dropdown-menu:has(.dropdown-item[href*="metadata"]) {
+            z-index: 99999 !important;
+        }
     </style>
     
     <!-- Custom CSS -->

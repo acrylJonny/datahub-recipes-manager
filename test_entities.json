@@ -1,0 +1,167 @@
+{
+  "metadata": {
+    "export_timestamp": "2024-03-15T14:30:22.123456",
+    "export_format": "metadata_migration",
+    "source_environment": "dev",
+    "entity_count": 2,
+    "mutations_applied": true,
+    "mutations_count": 2
+  },
+  "entities": [
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:databricks,DEV.taa_us_axcess_dev.commondmstage.clientemployeeplanflatdim,PROD)",
+      "type": "DATASET",
+      "name": "clientemployeeplanflatdim",
+      "ownership": {
+        "owners": [
+          {
+            "owner": {
+              "urn": "urn:li:corpuser:amuktha.chandra@wolterskluwer.com"
+            },
+            "ownershipType": {
+              "urn": "urn:li:ownershipType:__system__dataowner"
+            }
+          }
+        ]
+      },
+      "platform": {
+        "name": "databricks",
+        "properties": {
+          "displayName": "Databricks"
+        }
+      },
+      "dataPlatformInstance": null,
+      "domain": {
+        "urn": "urn:li:domain:test-domain-dev"
+      },
+      "browsePaths": [],
+      "browsePathV2": {
+        "path": [
+          {
+            "entity": {}
+          },
+          {
+            "entity": {
+              "properties": {
+                "name": "taa_us_axcess_dev"
+              }
+            }
+          },
+          {
+            "entity": {
+              "properties": {
+                "name": "commondmstage"
+              }
+            }
+          }
+        ]
+      },
+      "editableProperties": null,
+      "editableSchemaMetadata": null,
+      "deprecation": null,
+      "schemaMetadata": {
+        "fields": [
+          {
+            "fieldPath": "AccountID",
+            "schemaFieldEntity": {
+              "deprecation": null,
+              "structuredProperties": null
+            },
+            "tags": {
+              "tags": [
+                {
+                  "tag": {
+                    "urn": "urn:li:tag:test-tag-dev"
+                  }
+                }
+              ]
+            },
+            "glossaryTerms": {
+              "terms": [
+                {
+                  "term": {
+                    "urn": "urn:li:glossaryTerm:4cd9bec9-9d93-442c-9230-6cf15bca1713",
+                    "glossaryTermInfo": {
+                      "name": "Account Number"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "tags": {
+        "tags": [
+          {
+            "tag": {
+              "urn": "urn:li:tag:test-entity-tag-dev"
+            }
+          }
+        ]
+      },
+      "glossaryTerms": {
+        "terms": [
+          {
+            "term": {
+              "urn": "urn:li:glossaryTerm:test-term-dev"
+            }
+          }
+        ]
+      },
+      "structuredProperties": {
+        "properties": [
+          {
+            "structuredProperty": {
+              "urn": "urn:li:structuredProperty:test-property-dev"
+            },
+            "values": ["test-value"]
+          }
+        ]
+      }
+    },
+    {
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,DEV.database.schema.table2,PROD)",
+      "type": "DATASET", 
+      "name": "table2",
+      "platform": {
+        "name": "snowflake",
+        "properties": {
+          "displayName": "Snowflake"
+        }
+      },
+      "dataPlatformInstance": null,
+      "domain": null,
+      "browsePaths": [],
+      "browsePathV2": {
+        "path": [
+          {
+            "entity": {
+              "properties": {
+                "name": "database"
+              }
+            }
+          },
+          {
+            "entity": {
+              "properties": {
+                "name": "schema"
+              }
+            }
+          }
+        ]
+      },
+      "tags": {
+        "tags": [
+          {
+            "tag": {
+              "urn": "urn:li:tag:another-tag-dev"
+            }
+          }
+        ]
+      },
+      "glossaryTerms": null,
+      "structuredProperties": null
+    }
+  ]
+} 

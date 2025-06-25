@@ -2237,3 +2237,183 @@ def get_structured_properties(request):
     except Exception as e:
         logger.error(f"Error getting structured properties: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["POST"])
+def export_entities_with_mutations(request):
+    """Export entities with environment-specific mutations applied and save to environment directory."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        import json
+        import os
+        from datetime import datetime
+        from django.conf import settings
+        from web_ui.models import Environment
+        
+        # Try to import MutationStore, but continue without it if it fails
+        try:
+            from web_ui.services.mutation_store import MutationStore
+        except ImportError as import_error:
+            logger.error(f"Could not import MutationStore: {import_error}")
+            MutationStore = None
+        
+        # Parse request data
+        data = json.loads(request.body)
+        entities = data.get('entities', [])
+        include_mutations = data.get('include_mutations', True)
+        export_format = data.get('export_format', 'metadata_migration')
+        
+        if not entities:
+            return JsonResponse(
+                {"success": False, "error": "No entities provided for export"}, 
+                status=400
+            )
+        
+        # Get current environment and mutations
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        
+        # Determine environment name
+        env_name = getattr(current_connection, 'environment', 'dev')
+        
+        mutations = {}
+        if include_mutations and current_connection and MutationStore:
+            try:
+                environment = Environment.objects.filter(name=env_name).first()
+                
+                if environment:
+                    mutation_store = MutationStore(environment)
+                    mutations = mutation_store.get_mutations()
+                    logger.info(f"Loaded {len(mutations)} mutations for environment {env_name}")
+                else:
+                    logger.warning(f"Environment {env_name} not found in database")
+                
+            except Exception as e:
+                logger.error(f"Error loading mutations: {str(e)}")
+                # Continue without mutations
+        elif include_mutations and not MutationStore:
+            logger.warning("MutationStore not available, continuing without mutations")
+        
+        # Use our metadata migration script to process entities properly
+        import subprocess
+        import tempfile
+        
+        # Create temporary file with entities
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+            json.dump({"entities": entities}, temp_file, indent=2)
+            temp_entities_file = temp_file.name
+        
+        try:
+            # Create output directory for the environment
+            # BASE_DIR points to web_ui, so go up one level to get to workspace root
+            web_ui_dir = getattr(settings, 'BASE_DIR', os.getcwd())
+            workspace_root = os.path.dirname(web_ui_dir)
+            env_dir = os.path.join(workspace_root, 'metadata-manager', env_name)
+            editable_entities_dir = os.path.join(env_dir, 'editable_entities')
+            
+            # Create directories if they don't exist
+            os.makedirs(editable_entities_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = f"exported_entities_{timestamp}.json"
+            output_path = os.path.join(editable_entities_dir, output_filename)
+            
+            # Look for mutations file
+            mutations_file = None
+            mutations_paths = [
+                os.path.join(workspace_root, 'params', 'environments', env_name, 'mutations.json'),
+                os.path.join(workspace_root, 'web_ui', 'environments', f'{env_name}_mutations.json'),
+            ]
+            
+            for path in mutations_paths:
+                if os.path.exists(path):
+                    mutations_file = path
+                    break
+            
+            # Build command for our migration script
+            script_path = os.path.join(workspace_root, 'scripts', 'process_metadata_migration.py')
+            cmd = [
+                'python', script_path,
+                '--input', temp_entities_file,
+                '--target-env', env_name,
+                '--output-dir', editable_entities_dir,
+                '--dry-run',  # Generate MCPs but don't emit
+                '--verbose'
+            ]
+            
+            if mutations_file:
+                cmd.extend(['--mutations-file', mutations_file])
+            
+            # Run the script
+            logger.info(f"Running metadata migration script: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=workspace_root)
+            
+            if result.returncode != 0:
+                logger.error(f"Migration script failed: {result.stderr}")
+                return JsonResponse({
+                    "success": False, 
+                    "error": f"Migration processing failed: {result.stderr}"
+                }, status=500)
+            
+            # Also save the original export data as a simple JSON file
+            export_data = {
+                "metadata": {
+                    "export_timestamp": datetime.now().isoformat(),
+                    "export_format": export_format,
+                    "source_environment": env_name,
+                    "entity_count": len(entities),
+                    "mutations_applied": include_mutations,
+                    "mutations_count": len(mutations) if mutations else 0,
+                    "processed_by": "metadata_migration_script"
+                },
+                "entities": entities  # Keep original entities for reference
+            }
+            
+            # Save the export data
+            with open(output_path, 'w') as f:
+                json.dump(export_data, f, indent=2)
+            
+            # Count generated MCP files
+            mcp_files = []
+            for file in os.listdir(editable_entities_dir):
+                if file.endswith('.json') and file != output_filename:
+                    mcp_files.append(file)
+            
+            logger.info(f"Export completed: {output_path}")
+            logger.info(f"Generated {len(mcp_files)} MCP files")
+            
+            return JsonResponse({
+                "success": True,
+                "file_path": output_path,
+                "filename": output_filename,
+                "entity_count": len(entities),
+                "mutations_applied": include_mutations,
+                "environment": env_name,
+                "mcp_files_generated": len(mcp_files),
+                "directory": f"metadata-manager/{env_name}/editable_entities/",
+                "message": f"Exported {len(entities)} entities to {env_name} environment directory with {len(mcp_files)} MCP files generated"
+            })
+            
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_entities_file)
+            except:
+                pass
+        
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"success": False, "error": "Invalid JSON in request body"}, 
+            status=400
+        )
+    except Exception as e:
+        logger.error(f"Error exporting entities with mutations: {str(e)}")
+        return JsonResponse(
+            {"success": False, "error": str(e)}, 
+            status=500
+        )
+
+

@@ -1026,6 +1026,7 @@ function addTestToStagedChanges(testData) {
     const databaseId = getDatabaseId(testData);
     
     if (!databaseId) {
+        console.log('No database ID found, using remote endpoint');
         // This is a remote-only test, use the remote endpoint
         addRemoteTestToStagedChanges(testData);
         return;
@@ -1037,32 +1038,75 @@ function addTestToStagedChanges(testData) {
     const currentEnvironment = window.currentEnvironment || { name: 'dev' };
     const mutationName = currentEnvironment.mutation_name || null;
     
-    console.log('Making API call to:', `/metadata/tests/${databaseId}/stage_changes/`);
+    // Get CSRF token and validate
+    const csrfToken = getCsrfToken();
+    if (!csrfToken) {
+        console.error('CSRF token not found');
+        showNotification('error', 'CSRF token not found. Please refresh the page and try again.');
+        return;
+    }
+    
+    const url = `/metadata/tests/${databaseId}/stage_changes/`;
+    const requestBody = {
+        environment: currentEnvironment.name,
+        mutation_name: mutationName
+    };
+    
+    console.log('Making API call to:', url);
+    console.log('Request body:', requestBody);
+    console.log('CSRF Token:', csrfToken ? 'Present' : 'Missing');
     
     // Make API call to create test files
-    fetch(`/metadata/tests/${databaseId}/stage_changes/`, {
+    fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
+            'X-CSRFToken': csrfToken
         },
-        body: JSON.stringify({
-            environment: currentEnvironment.name,
-            mutation_name: mutationName
-        })
+        body: JSON.stringify(requestBody)
     })
     .then(response => {
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
+        
         if (!response.ok) {
-            throw new Error('Failed to add test to staged changes');
+            // Try to get error details from response
+            return response.text().then(text => {
+                console.error('Response text:', text);
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                
+                // Try to parse JSON error
+                try {
+                    const errorData = JSON.parse(text);
+                    if (errorData.error) {
+                        errorMessage = errorData.error;
+                    } else if (errorData.message) {
+                        errorMessage = errorData.message;
+                    }
+                } catch (e) {
+                    // Not JSON, use text as is if it's not too long
+                    if (text && text.length < 200) {
+                        errorMessage = text;
+                    }
+                }
+                
+                throw new Error(errorMessage);
+            });
         }
         return response.json();
     })
     .then(data => {
+        console.log('Success response:', data);
         // Show success notification
-        showNotification('success', `Test successfully added to staged changes: ${data.files_created.join(', ')}`);
+        if (data.files_created && data.files_created.length > 0) {
+            showNotification('success', `Test successfully added to staged changes: ${data.files_created.join(', ')}`);
+        } else {
+            showNotification('success', `Test successfully added to staged changes`);
+        }
     })
     .catch(error => {
         console.error('Error adding test to staged changes:', error);
+        console.error('Error stack:', error.stack);
         showNotification('error', `Error adding test to staged changes: ${error.message}`);
     });
 }
@@ -1070,42 +1114,34 @@ function addTestToStagedChanges(testData) {
 function addRemoteTestToStagedChanges(testData) {
     console.log('Adding remote test to staged changes:', testData);
     
-    // Get current environment and mutation from global state or settings
-    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
-    const mutationName = currentEnvironment.mutation_name || null;
+    const currentEnvironment = getCurrentEnvironment();
+    const mutationName = getCurrentMutationName();
     
-    // Use the new database intermediate layer pattern
-    // This endpoint will first sync the test to database, then stage it
+    const payload = {
+        item_data: testData,
+        environment: currentEnvironment,
+        mutation_name: mutationName
+    };
+    
     fetch('/metadata/tests/remote/stage_changes/', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken()
+            'X-CSRFToken': getCSRFToken(),
         },
-        body: JSON.stringify({
-            test_urn: testData.urn,
-            environment: currentEnvironment.name,
-            mutation_name: mutationName
-        })
+        body: JSON.stringify(payload)
     })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Failed to add remote test to staged changes');
-        }
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-        // Show success notification
-        showNotification('success', `Remote test successfully added to staged changes: ${data.files_created.join(', ')}`);
-        
-        // Optionally refresh the data to show the test is now synced locally
-        setTimeout(() => {
-            loadTestsData();
-        }, 1000);
+        if (data.status === 'success') {
+            showNotification('success', data.message);
+        } else {
+            showNotification('error', data.error || 'Failed to add remote test to staged changes');
+        }
     })
     .catch(error => {
         console.error('Error adding remote test to staged changes:', error);
-        showNotification('error', `Error adding remote test to staged changes: ${error.message}`);
+        showNotification('error', 'Failed to add remote test to staged changes');
     });
 }
 
@@ -1392,22 +1428,24 @@ function bulkAddToPR(tabType) {
         return;
     }
     
-    // Validate all selected tests have valid IDs and exist in current data
+    // Validate all selected tests have valid identifiers (either ID or URN)
     const validatedTests = [];
     const invalidTests = [];
     
     selectedTests.forEach(test => {
+        // For staged changes, we need either a database ID (for local/synced tests) or URN (for remote tests)
         const testId = getDatabaseId(test);
-        if (!testId) {
+        const testUrn = test.urn;
+        
+        if (!testId && !testUrn) {
+            console.error('Test has neither database ID nor URN:', test);
             invalidTests.push(test);
             return;
         }
         
-        // Check if the test exists in current cached data
-        const cacheKey = test.urn || test.id;
-        const cachedTest = window.testDataCache[cacheKey];
-        if (!cachedTest) {
-            console.warn('Test not found in current cache, may be stale:', test);
+        // Basic validation - test should have a name and be properly structured
+        if (!test.name && !test.urn) {
+            console.error('Test lacks basic identifiers:', test);
             invalidTests.push(test);
             return;
         }
@@ -1417,7 +1455,7 @@ function bulkAddToPR(tabType) {
     
     if (invalidTests.length > 0) {
         console.error('Found invalid or stale tests:', invalidTests);
-        showNotification('error', `${invalidTests.length} selected tests are invalid or from stale data. Please refresh the page and try again.`);
+        showNotification('error', `${invalidTests.length} selected tests are invalid or missing required data. Please refresh the page and try again.`);
         
         // Clear selections to prevent further issues
         clearAllSelections();
@@ -1457,10 +1495,29 @@ function bulkAddToPR(tabType) {
             
             const test = validatedTests[index];
             
-            // We need the ID for the API call - use the validated database ID
+            // Determine the correct endpoint and identifier
             const testId = getDatabaseId(test);
-            if (!testId) {
-                console.error('Cannot add test to staged changes without an ID:', test);
+            const testUrn = test.urn;
+            
+            let endpoint, requestBody;
+            
+            if (testId) {
+                // Local or synced test - use database ID endpoint
+                endpoint = `/metadata/tests/${testId}/stage_changes/`;
+                requestBody = {
+                    environment: currentEnvironment.name,
+                    mutation_name: mutationName
+                };
+            } else if (testUrn) {
+                // Remote-only test - use URN endpoint
+                endpoint = `/metadata/tests/remote/stage_changes/`;
+                requestBody = {
+                    item_data: test,
+                    environment: currentEnvironment.name,
+                    mutation_name: mutationName
+                };
+            } else {
+                console.error('Cannot add test to staged changes without an ID or URN:', test);
                 errorCount++;
                 processedCount++;
                 processNextTest(index + 1);
@@ -1468,16 +1525,13 @@ function bulkAddToPR(tabType) {
             }
             
             // Make the API call to add this test to staged changes
-            fetch(`/metadata/tests/${testId}/stage_changes/`, {
+            fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getCsrfToken()
                 },
-                body: JSON.stringify({
-                    environment: currentEnvironment.name,
-                    mutation_name: mutationName
-                })
+                body: JSON.stringify(requestBody)
             })
             .then(response => {
                 if (!response.ok) {
@@ -1720,6 +1774,38 @@ function getCsrfToken() {
 function getCSRFToken() {
     const token = document.querySelector('[name=csrfmiddlewaretoken]');
     return token ? token.value : document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
+function getCurrentEnvironment() {
+    // Try to get from dropdown first
+    const environmentSelect = document.getElementById('environment-select');
+    if (environmentSelect) {
+        return environmentSelect.value || 'dev';
+    }
+    
+    // Fallback to global state or data attribute
+    if (window.currentEnvironment) {
+        return window.currentEnvironment.name || 'dev';
+    }
+    
+    const container = document.querySelector('[data-environment]');
+    return container ? container.dataset.environment : 'dev';
+}
+
+function getCurrentMutationName() {
+    // Try to get from input first
+    const mutationInput = document.getElementById('mutation-name');
+    if (mutationInput) {
+        return mutationInput.value;
+    }
+    
+    // Fallback to global state or data attribute
+    if (window.currentEnvironment && window.currentEnvironment.mutation_name) {
+        return window.currentEnvironment.mutation_name;
+    }
+    
+    const container = document.querySelector('[data-mutation-name]');
+    return container ? container.dataset.mutationName : null;
 }
 
 function populateTestViewModal(test) {
@@ -2122,20 +2208,35 @@ function addAllTestsToStagedChanges() {
             
             testsData.forEach((test, index) => {
                 const testId = getDatabaseId(test);
-                if (!testId) {
+                const testUrn = test.urn;
+                
+                let endpoint, requestBody;
+                
+                if (testId) {
+                    // Local or synced test - use database ID endpoint
+                    endpoint = `/metadata/tests/${testId}/stage_changes/`;
+                    requestBody = {
+                        environment: currentEnvironment.name
+                    };
+                } else if (testUrn) {
+                    // Remote-only test - use URN endpoint
+                    endpoint = `/metadata/tests/remote/stage_changes/`;
+                    requestBody = {
+                        item_data: test,
+                        environment: currentEnvironment.name
+                    };
+                } else {
                     errorCount++;
                     return;
                 }
                 
-                fetch(`/metadata/tests/${testId}/stage_changes/`, {
+                fetch(endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': getCsrfToken()
                     },
-                    body: JSON.stringify({
-                        environment: currentEnvironment.name
-                    })
+                    body: JSON.stringify(requestBody)
                 })
                 .then(response => {
                     if (response.ok) {
@@ -2279,3 +2380,4 @@ function bulkSyncToDataHub(tabType) {
         });
     }
 }
+

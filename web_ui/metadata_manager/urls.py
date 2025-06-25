@@ -51,6 +51,7 @@ urlpatterns = [
     path("sync/", views.sync_metadata, name="sync_metadata"),
     path("config/datahub-url/", views.get_datahub_url_config, name="get_datahub_url_config"),
     path("structured-properties/", views.get_structured_properties, name="get_structured_properties"),
+    path("entities/editable/export-with-mutations/", views.export_entities_with_mutations, name="export_entities_with_mutations"),
     # Structured Properties
     path(
         "properties/", views_properties.PropertyListView.as_view(), name="property_list"
@@ -679,14 +680,14 @@ urlpatterns = [
     ),
     path("tests/import/", views_tests.TestImportView.as_view(), name="test_import"),
     path(
-        "tests/<str:test_id>/stage_changes/",
-        views_tests.TestStageChangesView.as_view(),
-        name="test_stage_changes",
-    ),
-    path(
         "tests/remote/stage_changes/",
         views_tests.TestRemoteStageChangesView.as_view(),
         name="test_remote_stage_changes",
+    ),
+    path(
+        "tests/<str:test_id>/stage_changes/",
+        views_tests.TestStageChangesView.as_view(),
+        name="test_stage_changes",
     ),
     # API endpoints for test actions
     path(
