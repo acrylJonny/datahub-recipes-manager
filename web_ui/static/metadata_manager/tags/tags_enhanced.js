@@ -73,14 +73,14 @@ function getCurrentConnectionCache() {
 // Function to switch to a specific connection cache
 function switchConnectionCache(connectionId) {
     currentConnectionId = connectionId;
-    console.log(`Switched to cache for connection: ${connectionId}`);
+    // Switched to cached data
 }
 
 // Function to clear cache for a specific connection
 function clearConnectionCache(connectionId) {
     if (usersAndGroupsCacheByConnection[connectionId]) {
         delete usersAndGroupsCacheByConnection[connectionId];
-        console.log(`Cleared cache for connection: ${connectionId}`);
+        // Cache cleared
     }
 }
 
@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
             try {
                 await loadUsersAndGroups();
-                console.log('Tags modal: Users and groups loaded successfully');
+                // Users and groups loaded successfully
             } catch (error) {
                 console.error('Tags modal: Error loading users and groups:', error);
             }
@@ -463,7 +463,7 @@ function loadTagsData(skipSyncValidation = false) {
                 }
             });
             
-            console.log(`Cached ${Object.keys(window.tagDataCache).length} tags for quick access`);
+            // Tags cached for quick access
             
             updateStatistics(data.data.statistics);
             updateTabBadges();
@@ -493,7 +493,7 @@ function clearAllSelections() {
         updateBulkActionVisibility(tab);
     });
     
-    console.log('Cleared all tag selections due to data refresh');
+            // Tag selections cleared due to data refresh
 }
 
 function showError(message) {
@@ -644,7 +644,7 @@ function displayTabContent(tabType) {
             });
         }
 
-        console.log(`Successfully rendered ${tabType} tab with ${items.length} items`);
+        // Tab rendered successfully
         
     } catch (error) {
         console.error(`Error displaying ${tabType} tab:`, error);
@@ -1282,7 +1282,7 @@ function showTagDetails(tag) {
     }
     if (!tagName) tagName = 'Unnamed Tag';
     
-    console.log("Showing tag details for:", tagData);
+    // Showing tag details
     
     // Update modal with tag data - use original descriptions if available
     document.getElementById('modal-tag-name').textContent = tagName;
@@ -1443,7 +1443,7 @@ function showTagDetails(tag) {
     // Add event listener for when modal is hidden
     modalElement.addEventListener('hidden.bs.modal', function() {
         // Clean up any resources
-        console.log('Modal hidden, cleaning up resources');
+        // Modal hidden, cleaning up resources
         // Remove the event listener to prevent memory leaks
         modalElement.removeEventListener('hidden.bs.modal', arguments.callee);
     }, { once: true });
@@ -1457,21 +1457,21 @@ function showTagDetails(tag) {
 function bulkResyncTags(tabType) {
     const selectedTags = getSelectedTags(tabType);
     if (selectedTags.length === 0) {
-        showNotification('error', 'Please select tags to resync.');
+        MetadataNotifications.show('selection', 'none_selected', 'tag');
         return;
     }
     
     if (confirm(`Are you sure you want to resync ${selectedTags.length} tag(s) from DataHub? This will update local data with current remote data.`)) {
-        console.log(`Bulk resync ${selectedTags.length} tags for ${tabType}:`, selectedTags);
+        // Bulk resyncing tags
         
         // Show loading indicator
-        showNotification('success', `Starting resync of ${selectedTags.length} tags from DataHub...`);
+        MetadataNotifications.show('sync', 'resync_bulk_start', 'tag', { count: selectedTags.length });
         
         // Get tag IDs/URNs
         const tagIds = selectedTags.map(tag => getDatabaseId(tag) || tag.urn).filter(id => id);
         
         if (tagIds.length === 0) {
-            showNotification('error', 'No valid tag IDs found for resync.');
+            MetadataNotifications.show('selection', 'no_valid_ids', 'tag');
             return;
         }
         
@@ -1493,7 +1493,7 @@ function bulkResyncTags(tabType) {
             return response.json();
         })
         .then(data => {
-            console.log('Bulk resync response:', data);
+            // Bulk resync completed
             if (data.success) {
                 showNotification('success', data.message);
                 // Add a small delay before refreshing to ensure backend processing is complete
@@ -1519,21 +1519,21 @@ function bulkResyncTags(tabType) {
 function bulkSyncToDataHub(tabType) {
     const selectedTags = getSelectedTags(tabType);
     if (selectedTags.length === 0) {
-        showNotification('error', 'Please select tags to sync to DataHub.');
+        MetadataNotifications.show('selection', 'none_selected', 'tag');
         return;
     }
     
     if (confirm(`Are you sure you want to sync ${selectedTags.length} tag(s) to DataHub?`)) {
-        console.log(`Bulk sync ${selectedTags.length} tags to DataHub for ${tabType}:`, selectedTags);
+        // Bulk syncing tags to DataHub
         
         // Show loading indicator
-        showNotification('success', `Starting sync of ${selectedTags.length} tags to DataHub...`);
+        MetadataNotifications.show('sync', 'sync_to_datahub_bulk_start', 'tag', { count: selectedTags.length });
         
         // Get tag IDs
         const tagIds = selectedTags.map(tag => getDatabaseId(tag)).filter(id => id);
         
         if (tagIds.length === 0) {
-            showNotification('error', 'No valid tag IDs found for sync.');
+            MetadataNotifications.show('selection', 'no_valid_ids', 'tag');
             return;
         }
         
@@ -1555,7 +1555,7 @@ function bulkSyncToDataHub(tabType) {
             return response.json();
         })
         .then(data => {
-            console.log('Bulk sync response:', data);
+            // Bulk sync completed
             if (data.success) {
                 showNotification('success', data.message);
                 // Add a small delay before refreshing to ensure backend processing is complete
@@ -1586,7 +1586,7 @@ function bulkPushTags(tabType) {
 function bulkAddToPR(tabType) {
     const selectedTags = getSelectedTags(tabType);
     if (selectedTags.length === 0) {
-        showNotification('error', 'Please select tags to add to staged changes.');
+        MetadataNotifications.show('selection', 'none_selected', 'tag');
         return;
     }
     
@@ -1615,7 +1615,7 @@ function bulkAddToPR(tabType) {
     
     if (invalidTags.length > 0) {
         console.error('Found invalid or stale tags:', invalidTags);
-        showNotification('error', `${invalidTags.length} selected tags are invalid or from stale data. Please refresh the page and try again.`);
+        MetadataNotifications.show('selection', 'invalid_selection', 'tag', { count: invalidTags.length });
         
         // Clear selections to prevent further issues
         clearAllSelections();
@@ -1623,10 +1623,10 @@ function bulkAddToPR(tabType) {
     }
     
     if (confirm(`Are you sure you want to add ${validatedTags.length} tag(s) to staged changes?`)) {
-        console.log(`Bulk add ${validatedTags.length} validated tags to staged changes for ${tabType}:`, validatedTags);
+        // Bulk adding tags to staged changes
         
         // Show loading indicator
-        showNotification('success', `Starting to add ${validatedTags.length} tags to staged changes...`);
+        MetadataNotifications.show('staged_changes', 'add_to_staged_bulk_start', 'tag', { count: validatedTags.length });
         
         // Get current environment and mutation from global state or settings
         const currentEnvironment = window.currentEnvironment || { name: 'dev' };
@@ -1643,12 +1643,12 @@ function bulkAddToPR(tabType) {
             if (index >= validatedTags.length) {
                 // All tags processed
                 if (successCount > 0) {
-                    showNotification('success', `Completed: ${successCount} tags added to staged changes, ${errorCount} failed.`);
+                    MetadataNotifications.show('staged_changes', 'add_to_staged_bulk_success', 'tag', { successCount, errorCount });
                     if (createdFiles.length > 0) {
-                        console.log('Created files:', createdFiles);
+                        // Files created successfully
                     }
                 } else if (errorCount > 0) {
-                    showNotification('error', `Failed to add any tags to staged changes. ${errorCount} errors occurred.`);
+                    MetadataNotifications.show('staged_changes', 'add_to_staged_failed_all', 'tag', { errorCount });
                 }
                 return;
             }
@@ -1678,7 +1678,7 @@ function bulkAddToPR(tabType) {
                         if (!tagProcessed) {
                             tagProcessed = true;
                             if (type === 'success') {
-                                console.log(`Successfully added tag to staged changes: ${tag.name || tag.urn}`);
+                                // Tag added to staged changes successfully
                                 successCount++;
                             } else {
                                 console.error(`Error adding tag ${tag.name || tag.urn} to staged changes:`, message);
@@ -1727,11 +1727,11 @@ function bulkAddToPR(tabType) {
 function bulkDownloadJson(tabType) {
     const selectedTags = getSelectedTags(tabType);
     if (selectedTags.length === 0) {
-        showNotification('error', 'Please select tags to download.');
+        MetadataNotifications.show('export', 'export_none_selected', 'tag');
         return;
     }
     
-    console.log(`Bulk download ${selectedTags.length} tags for ${tabType}:`, selectedTags);
+    // Bulk downloading tags
     
     // Create a JSON object with the selected tags
     const tagsData = {
@@ -1764,21 +1764,21 @@ function bulkDownloadJson(tabType) {
         URL.revokeObjectURL(url);
     }, 100);
     
-    showNotification('success', `${selectedTags.length} tags exported successfully.`);
+    MetadataNotifications.show('export', 'export_success', 'tag', { count: selectedTags.length });
 }
 
 function bulkDeleteLocal(tabType) {
     const selectedTags = getSelectedTags(tabType);
     if (selectedTags.length === 0) {
-        showNotification('error', 'Please select tags to delete.');
+        MetadataNotifications.show('selection', 'none_selected', 'tag');
         return;
     }
     
     if (confirm(`Are you sure you want to delete ${selectedTags.length} local tag(s)? This action cannot be undone.`)) {
-        console.log(`Bulk delete ${selectedTags.length} local tags for ${tabType}:`, selectedTags);
+        // Bulk deleting local tags
         
         // Show loading indicator
-        showNotification('success', `Starting deletion of ${selectedTags.length} local tags...`);
+        MetadataNotifications.show('delete', 'delete_local_bulk_start', 'tag', { count: selectedTags.length });
         
         // Process each tag sequentially
         let successCount = 0;
@@ -1789,7 +1789,7 @@ function bulkDeleteLocal(tabType) {
         function processNextTag(index) {
             if (index >= selectedTags.length) {
                 // All tags processed
-                showNotification('success', `Completed: ${successCount} tags deleted, ${errorCount} failed.`);
+                MetadataNotifications.show('delete', 'delete_local_bulk_success', 'tag', { successCount, errorCount });
                 if (successCount > 0) {
                     // Refresh the data if any tags were successfully deleted
                     loadTagsData();
@@ -1809,7 +1809,7 @@ function bulkDeleteLocal(tabType) {
                 return;
             }
             
-            console.log('Using database ID for deletion:', tagId);
+            // Using database ID for deletion
             
             // Get a proper name for the tag
             let tagName = tag.name;
@@ -1830,11 +1830,11 @@ function bulkDeleteLocal(tabType) {
             }
             
             // Make the API call to delete this tag
-            console.log(`Deleting tag with ID: ${tagId}, name: ${tagName}`);
+            // Deleting tag
             
             // Format the tag ID as a UUID with dashes if needed
             const formattedTagId = formatTagId(tagId);
-            console.log(`Formatted tag ID for deletion: ${formattedTagId}`);
+            // Formatted tag ID for deletion
             
             const csrfToken = getCsrfToken();
             
@@ -1858,7 +1858,6 @@ function bulkDeleteLocal(tabType) {
                 if (!response.ok) {
                     if (response.status === 404) {
                         // If tag not found, consider it a success (it's already gone)
-                        console.log(`Tag ${tagName} not found (404), considering as successfully deleted`);
                         return { success: true, message: `Tag ${tagName} already deleted` };
                     } else {
                         // For other error statuses, throw an error
@@ -1868,22 +1867,20 @@ function bulkDeleteLocal(tabType) {
                 
                 // Check for non-JSON responses that might be returning HTML error pages
                 const contentType = response.headers.get('content-type');
-                console.log('Delete response content type:', contentType);
                 
                 if (contentType && contentType.indexOf('application/json') !== -1) {
                     // This is a JSON response, proceed normally
                     return response.json();
                 } else {
                     // This is likely an HTML error page or unexpected response
-                    console.error('Received non-JSON response:', contentType);
+                    console.error('Received non-JSON response from delete API:', contentType);
                     return response.text().then(text => {
-                        console.error('Delete response content (first 500 chars):', text.substring(0, 500) + '...');
-                        throw new Error('Server returned an unexpected response format. See console for details.');
+                        throw new Error('Server returned an unexpected response format. Check server logs.');
                     });
                 }
                           })
-              .then(data => {
-                  console.log(`Successfully deleted tag: ${tagName}`);
+                          .then(data => {
+                // Tag deleted successfully
                   successCount++;
                   processedCount++;
                   
@@ -1918,15 +1915,15 @@ function bulkDeleteLocal(tabType) {
 function bulkSyncToLocal(tabType) {
     const selectedTags = getSelectedTags(tabType);
     if (selectedTags.length === 0) {
-        showNotification('error', 'Please select tags to sync to local.');
+        MetadataNotifications.show('selection', 'none_selected', 'tag');
         return;
     }
     
     if (confirm(`Are you sure you want to sync ${selectedTags.length} tag(s) to local?`)) {
-        console.log(`Bulk sync ${selectedTags.length} tags to local for ${tabType}:`, selectedTags);
+        // Bulk syncing tags to local
         
         // Show loading indicator
-        showNotification('success', `Starting sync of ${selectedTags.length} tags to local...`);
+        MetadataNotifications.show('sync', 'sync_to_local_bulk_start', 'tag', { count: selectedTags.length });
         
         // Process each tag sequentially
         let successCount = 0;
@@ -1937,7 +1934,7 @@ function bulkSyncToLocal(tabType) {
         function processNextTag(index) {
             if (index >= selectedTags.length) {
                 // All tags processed
-                showNotification('success', `Completed: ${successCount} tags synced successfully, ${errorCount} failed.`);
+                MetadataNotifications.show('sync', 'sync_to_local_bulk_success', 'tag', { successCount, errorCount });
                 if (successCount > 0) {
                     // Refresh the data if any tags were successfully synced
                     loadTagsData();
@@ -1976,7 +1973,7 @@ function bulkSyncToLocal(tabType) {
                     return;
                 }
                 
-                console.log(`Syncing remote-only tag to local: ${tagName} (${tagUrn})`);
+                // Syncing remote-only tag to local
                 
                 // Use the pull endpoint for remote-only tags
                 fetch('/metadata/tags/pull/', {
@@ -1996,8 +1993,8 @@ function bulkSyncToLocal(tabType) {
                     }
                     return response.json();
                 })
-                .then(data => {
-                    console.log(`Successfully synced remote tag: ${tagName}`);
+                            .then(data => {
+                // Remote tag synced successfully
                     successCount++;
                     processedCount++;
                     
@@ -2031,11 +2028,10 @@ function bulkSyncToLocal(tabType) {
                 return;
             }
             
-            console.log('Using database ID for sync to local:', tagId);
+            // Using database ID for sync to local
             
             // Format the tag ID as a UUID with dashes if needed
             const formattedTagId = formatTagId(tagId);
-            console.log(`Formatted tag ID for sync: ${formattedTagId}`);
             
             // Make the API call to sync this existing tag
             fetch(`/metadata/api/tags/${formattedTagId}/sync_to_local/`, {
@@ -2052,7 +2048,7 @@ function bulkSyncToLocal(tabType) {
                 return response.json();
             })
             .then(data => {
-                console.log(`Successfully synced tag: ${tagName}`);
+                // Tag synced successfully
                 successCount++;
                 processedCount++;
                 
@@ -2087,7 +2083,7 @@ function bulkDeleteRemote(tabType) {
     }
     
     if (confirm(`Are you sure you want to delete ${selectedTags.length} tag(s) from DataHub? This action cannot be undone.`)) {
-        console.log(`Bulk delete ${selectedTags.length} remote tags for ${tabType}:`, selectedTags);
+        // Bulk deleting remote tags
         // TODO: Implement bulk delete remote API call
         alert('Bulk delete remote functionality will be implemented soon.');
     }
@@ -2160,7 +2156,7 @@ function switchToTab(tabType) {
         tabElement.setAttribute('aria-selected', 'true');
         paneElement.classList.add('show', 'active');
         
-        console.log(`Switched to ${tabType} tab`);
+        // Switched to tab
     }
 }
 
@@ -2173,16 +2169,16 @@ async function loadUsersAndGroups() {
     if (connectionCache.lastFetched && 
         (now - connectionCache.lastFetched) < connectionCache.cacheExpiry &&
         connectionCache.users.length > 0) {
-        console.log(`Using cached users and groups for connection: ${currentConnectionId}`);
+        // Using cached users and groups
         return;
     }
     
-    console.log(`Fetching fresh users and groups data for connection: ${currentConnectionId}`);
+            // Fetching fresh users and groups data
     
     try {
         // Fetch users, groups, and ownership types in a single request
         const csrfToken = getCsrfToken();
-        console.log('Using CSRF token for users-groups:', csrfToken);
+        // Using CSRF token for API call
         
         const response = await fetch('/metadata/api/users-groups/', {
             method: 'POST',
@@ -2195,7 +2191,7 @@ async function loadUsersAndGroups() {
         
         const data = await response.json();
         
-        console.log('Users and groups API response:', data);
+                    // Users and groups API response received
         
         if (data.success) {
             // Check if data.data exists before accessing its properties
@@ -2590,35 +2586,16 @@ function showOwnersError() {
 // Helper function to copy text to clipboard
 function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
-        // Show a brief success message
-        const toast = document.createElement('div');
-        toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed';
-        toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999;';
-        toast.innerHTML = `
-            <div class="d-flex">
-                <div class="toast-body">
-                    <i class="fas fa-check me-2"></i>URN copied to clipboard
-                </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        `;
-        document.body.appendChild(toast);
-        const bsToast = new bootstrap.Toast(toast);
-        bsToast.show();
-        
-        // Remove toast after it's hidden
-        toast.addEventListener('hidden.bs.toast', () => {
-            document.body.removeChild(toast);
-        });
+        MetadataNotifications.showCopyResult(true);
     }).catch(err => {
         console.error('Failed to copy text: ', err);
-        alert('Failed to copy URN to clipboard');
+        MetadataNotifications.showCopyResult(false);
     });
 }
 
 // Helper function to filter by owner (placeholder for future implementation)
 function filterByOwner(ownerUrn) {
-    console.log('Filter by owner:', ownerUrn);
+    // Filtering by owner
     // TODO: Implement filtering functionality
     alert('Filter by owner functionality will be implemented soon.');
 }
@@ -2935,13 +2912,13 @@ function setupActionButtonListeners() {
 
         if (clickedElement.classList.contains('edit-tag') || clickedElement.closest('.edit-tag')) {
             // Edit Tag button clicked
-            console.log('Edit Tag clicked for tag:', tagData);
+            // Edit tag action
             editTag(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('sync-to-datahub') || clickedElement.closest('.sync-to-datahub')) {
             // Sync to DataHub button clicked
-            console.log('Sync to DataHub clicked for tag:', tagData);
+            // Sync to DataHub action
             
             // Call the sync function
             syncTagToDataHub(tagData);
@@ -2949,7 +2926,7 @@ function setupActionButtonListeners() {
             e.stopPropagation();
         } else if (clickedElement.classList.contains('sync-to-local') || clickedElement.closest('.sync-to-local')) {
             // Sync to Local button clicked
-            console.log('Sync to Local clicked for tag:', tagData);
+            // Sync to local action
             
             // Call the sync function directly - it will handle remote-only tags internally
             syncTagToLocal(tagData);
@@ -2957,37 +2934,37 @@ function setupActionButtonListeners() {
             e.stopPropagation();
         } else if (clickedElement.classList.contains('download-json') || clickedElement.closest('.download-json')) {
             // Download JSON button clicked
-            console.log('Download JSON clicked for tag:', tagData);
+            // Download JSON action
             downloadTagJson(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('add-to-staged') || clickedElement.closest('.add-to-staged')) {
             // Add to Staged Changes button clicked
-            console.log('Add to Staged Changes clicked for tag:', tagData);
+            // Add to staged changes action
             addTagToStagedChanges(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('view-item') || clickedElement.closest('.view-item')) {
             // View Details button clicked
-            console.log('View Details clicked for tag:', tagData);
+            // View details action
             showTagDetails(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('resync-tag') || clickedElement.closest('.resync-tag')) {
             // Resync Tag button clicked
-            console.log('Resync Tag clicked for tag:', tagData);
+            // Resync tag action
             resyncTag(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('push-to-datahub') || clickedElement.closest('.push-to-datahub')) {
             // Push to DataHub button clicked
-            console.log('Push to DataHub clicked for tag:', tagData);
+            // Push to DataHub action
             pushTagToDataHub(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('delete-remote-tag') || clickedElement.closest('.delete-remote-tag')) {
             // Delete Remote Tag button clicked
-            console.log('Delete Remote Tag clicked for tag:', tagData);
+            // Delete remote tag action
             deleteRemoteTag(tagData);
             e.preventDefault();
             e.stopPropagation();
@@ -3028,7 +3005,6 @@ function formatTagId(id) {
  * @param {Object} tag - The tag object
  */
 function syncTagToDataHub(tag) {
-    console.log('syncTagToDataHub called with:', tag);
     
     // Get tag data
     const tagData = tag.combined || tag;
@@ -3036,12 +3012,12 @@ function syncTagToDataHub(tag) {
     
     if (!tagId) {
         console.error('Cannot sync tag without a database ID:', tagData);
-        showNotification('error', 'Error syncing tag: Missing tag database ID.');
+        MetadataNotifications.show('sync', 'sync_to_datahub_missing_id', 'tag');
         return;
     }
     
     // Show loading notification
-    showNotification('success', `Syncing tag "${tagData.name}" to DataHub...`);
+            MetadataNotifications.show('sync', 'sync_to_datahub_start', 'tag', { name: tagData.name });
     
     // Make the API call to sync this tag to DataHub
     fetch(`/metadata/api/tags/${tagId}/sync_to_datahub/`, {
@@ -3058,7 +3034,6 @@ function syncTagToDataHub(tag) {
         return response.json();
     })
     .then(data => {
-        console.log('Sync to DataHub response:', data);
         if (data.success) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
@@ -3076,7 +3051,7 @@ function syncTagToDataHub(tag) {
     })
     .catch(error => {
         console.error('Error syncing tag to DataHub:', error);
-        showNotification('error', `Error syncing tag: ${error.message}`);
+        MetadataNotifications.show('sync', 'sync_to_datahub_error', 'tag', { error: error.message });
     });
 }
 
@@ -3085,7 +3060,6 @@ function syncTagToDataHub(tag) {
  * @param {Object} tag - The tag object
  */
 function pushTagToDataHub(tag) {
-    console.log('pushTagToDataHub called with:', tag);
     
     // Get tag data
     const tagData = tag.combined || tag;
@@ -3115,7 +3089,6 @@ function pushTagToDataHub(tag) {
         return response.json();
     })
     .then(data => {
-        console.log('Push to DataHub response:', data);
         if (data.success) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
@@ -3142,7 +3115,6 @@ function pushTagToDataHub(tag) {
  * @param {Object} tag - The tag object
  */
 function resyncTag(tag) {
-    console.log('resyncTag called with:', tag);
     
     // Get tag data
     const tagData = tag.combined || tag;
@@ -3176,7 +3148,6 @@ function resyncTag(tag) {
         return response.json();
     })
     .then(data => {
-        console.log('Resync response:', data);
         if (data.success) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
@@ -3203,7 +3174,6 @@ function resyncTag(tag) {
  * @param {Object} tag - The tag object
  */
 function deleteRemoteTag(tag) {
-    console.log('deleteRemoteTag called with:', tag);
     
     // Get tag data
     const tagData = tag.combined || tag;
@@ -3240,7 +3210,6 @@ function deleteRemoteTag(tag) {
         return response.json();
     })
     .then(data => {
-        console.log('Delete remote tag response:', data);
         if (data.success) {
             showNotification('success', data.message);
             // Add a small delay before refreshing to ensure backend processing is complete
@@ -3293,7 +3262,6 @@ function getDatabaseId(tagData) {
  * @param {Object} tag - The tag object to edit
  */
 function editTag(tag) {
-    console.log('editTag called with:', tag);
     
     // Get tag data
     const tagData = tag.combined || tag;
@@ -3323,7 +3291,7 @@ function editTag(tag) {
     // Wait for users/groups to load if not already loaded, then populate ownership data
     const populateOwnership = () => {
         const ownershipData = tagData.ownership_data || tagData.ownership;
-        console.log('Populating ownership for edit mode:', ownershipData);
+        // Populating ownership for edit mode
         
         // Clear existing ownership sections
         const ownershipContainer = document.getElementById('ownership-sections-container');

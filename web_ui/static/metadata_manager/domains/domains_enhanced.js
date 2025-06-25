@@ -364,7 +364,7 @@ function calculateHierarchy() {
 function processTabHierarchy(items, dataAccessType) {
     if (!items || items.length === 0) return;
     
-    console.log(`[DEBUG] Processing hierarchy for ${items.length} items with dataAccessType: ${dataAccessType}`);
+
     
     // Create lookup maps and extract parent URNs
     const domainLookup = new Map();
@@ -389,7 +389,7 @@ function processTabHierarchy(items, dataAccessType) {
         }
     });
     
-    console.log(`[DEBUG] Built URN mapping with ${urnMapping.size} entries`);
+
     
     // First pass: build lookup map and extract parent URNs
     items.forEach(item => {
@@ -413,7 +413,7 @@ function processTabHierarchy(items, dataAccessType) {
         domain.parent_urn = parentUrn;
         
         if (dataAccessType === 'combined') {
-            console.log(`[DEBUG] ${dataAccessType} - Domain: ${domain.name}, URN: ${domain.urn}, Parent URN: ${parentUrn} ${parentUrn !== domain.parent_urn ? `(resolved from ${domain.parent_urn})` : ''}`);
+    
         }
         
         // Build children map and identify roots
@@ -428,7 +428,7 @@ function processTabHierarchy(items, dataAccessType) {
         }
     });
     
-    console.log(`[DEBUG] ${dataAccessType} - Found ${rootDomains.length} root domains and ${childrenMap.size} parent-child relationships`);
+
     
     // Build hierarchy starting from root domains
     const hierarchyOrder = [];
@@ -441,7 +441,7 @@ function processTabHierarchy(items, dataAccessType) {
         domain.is_last_child = isLastChild;
         
         if (dataAccessType === 'combined' && level > 0) {
-            console.log(`[DEBUG] ${dataAccessType} - Setting hierarchy for ${domain.name}: level=${level}, has_children=${domain.has_children}, parent_urn=${domain.parent_urn}`);
+    
         }
         
         // Add to hierarchy order
@@ -461,7 +461,7 @@ function processTabHierarchy(items, dataAccessType) {
         addDomainToHierarchy(rootDomain, 0, isLastRoot);
     });
     
-    console.log(`[DEBUG] ${dataAccessType} - Built hierarchy with ${hierarchyOrder.length} domains`);
+
     
     // Rebuild items array in hierarchy order
     if (hierarchyOrder.length > 0) {
@@ -487,7 +487,7 @@ function processTabHierarchy(items, dataAccessType) {
                         originalItem.combined.parent_urn = domain.parent_urn;
                         
                         if (domain.hierarchy_level > 0) {
-                            console.log(`[DEBUG] Transferred hierarchy to combined data for ${originalItem.combined.name}: level=${originalItem.combined.hierarchy_level}, parent_urn=${originalItem.combined.parent_urn}`);
+                
                         }
                     }
                     items.push(originalItem);
@@ -691,7 +691,7 @@ function renderDomainRow(domain, tabType) {
     
     // Debug logging for synced tab
     if (tabType === 'synced' && (level > 0 || hasChildren)) {
-        console.log(`[DEBUG] Rendering ${tabType} domain: ${name}, level=${level}, hasChildren=${hasChildren}, parentUrn=${parentUrn}`);
+    
     }
     
     const statusBadgeClass = getStatusBadgeClass(status);
@@ -2401,74 +2401,23 @@ function getDatabaseId(domainData) {
     return null;
 }
 
-function showNotification(type, message) {
-    // Check if we have notifications container
-    let container = document.getElementById('notifications-container');
-    
-    // Create it if it doesn't exist
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'notifications-container';
-        container.className = 'position-fixed bottom-0 end-0 p-3';
-        container.style.zIndex = '1050';
-        document.body.appendChild(container);
-    }
-    
-    // Create unique ID
-    const id = 'toast-' + Date.now();
-    
-    // Create toast HTML
-    let bgClass, icon, title;
-    
-    if (type === 'success') {
-        bgClass = 'bg-success';
-        icon = 'fa-check-circle';
-        title = 'Success';
-    } else if (type === 'info') {
-        bgClass = 'bg-info';
-        icon = 'fa-info-circle';
-        title = 'Info';
-    } else {
-        bgClass = 'bg-danger';
-        icon = 'fa-exclamation-circle';
-        title = 'Error';
-    }
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${bgClass} text-white`;
-    toast.id = id;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
-    toast.innerHTML = `
-        <div class="toast-header ${bgClass} text-white">
-            <i class="fas ${icon} me-2"></i>
-            <strong class="me-auto">${title}</strong>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body">${message}</div>
-    `;
-    
-    container.appendChild(toast);
-    
-    // Initialize and show the toast
-    const toastInstance = new bootstrap.Toast(toast, {
-        delay: 5000
-    });
-    toastInstance.show();
-    
-    // Remove toast from DOM after it's hidden
-    toast.addEventListener('hidden.bs.toast', function () {
-        toast.remove();
-    });
-}
+// Note: Duplicate showNotification function removed - using MetadataNotifications.show() instead
+// This ensures consistent, standardized notification messages across all metadata types
 
 function showError(message) {
-    showNotification('error', message);
+    if (typeof showToast === 'function') {
+        showToast('error', message);
+    } else {
+        console.error(message);
+    }
 }
 
 function showSuccess(message) {
-    showNotification('success', message);
+    if (typeof showToast === 'function') {
+        showToast('success', message);
+    } else {
+        console.log(message);
+    }
 }
 
 // Hierarchy functions
@@ -2547,29 +2496,29 @@ function collapseAllDomains() {
 }
 
 function applyCurrentExpansionState() {
-    console.log('[DEBUG] Applying current expansion state...');
+
     
     // Hide all child domains initially (they should be collapsed by default)
     const childRows = document.querySelectorAll('tr[data-level]:not([data-level="0"])');
-    console.log(`[DEBUG] Found ${childRows.length} child rows to hide`);
+    
     
     childRows.forEach(row => {
         const level = row.getAttribute('data-level');
         const urn = row.getAttribute('data-urn');
         const parentUrn = row.getAttribute('data-parent');
-        console.log(`[DEBUG] Hiding child row: level=${level}, urn=${urn}, parent=${parentUrn}`);
+        
         row.style.display = 'none';
     });
     
     // Then show children of expanded domains
     const expandedButtons = document.querySelectorAll('.expand-button .fa-chevron-down');
-    console.log(`[DEBUG] Found ${expandedButtons.length} expanded buttons`);
+    
     
     expandedButtons.forEach(icon => {
         const button = icon.closest('.expand-button');
         const row = button.closest('tr');
         const domainUrn = row.getAttribute('data-urn');
-        console.log(`[DEBUG] Showing children for expanded domain: ${domainUrn}`);
+        
         if (domainUrn) {
             showChildrenDomains(domainUrn);
         }

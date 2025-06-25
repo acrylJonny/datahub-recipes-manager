@@ -1513,8 +1513,8 @@ def add_data_product_to_staged_changes(request, data_product_id):
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         )
         
-        # Import the function
-        from scripts.mcps.data_product_actions import add_data_product_to_staged_changes_legacy as add_data_product_mcps
+        # Import the function (using new approach for single MCP file)
+        from scripts.mcps.data_product_actions import add_data_product_to_staged_changes_new as add_data_product_mcps
         
         # Get the data product from database
         try:
@@ -1525,7 +1525,77 @@ def add_data_product_to_staged_changes(request, data_product_id):
                 "error": f"Data product with id {data_product_id} not found"
             }, status=404)
         
-        # Prepare data product data
+        # Extract custom properties from properties_data if available
+        # Custom properties can be stored in different formats:
+        # 1. As a dictionary in properties_data.customProperties
+        # 2. As an array of {key, value} objects in properties_data.customProperties
+        custom_properties = {}
+        if data_product.properties_data and isinstance(data_product.properties_data, dict):
+            stored_custom_props = data_product.properties_data.get("customProperties")
+            if stored_custom_props:
+                if isinstance(stored_custom_props, dict):
+                    # Format 1: Dictionary
+                    custom_properties = stored_custom_props
+                elif isinstance(stored_custom_props, list):
+                    # Format 2: Array of {key, value} objects
+                    for prop in stored_custom_props:
+                        if isinstance(prop, dict) and 'key' in prop and 'value' in prop:
+                            custom_properties[prop['key']] = prop['value']
+        
+        # Extract other metadata from stored JSON fields
+        owners = []
+        if data_product.ownership_data and isinstance(data_product.ownership_data, dict):
+            ownership_list = data_product.ownership_data.get("owners", [])
+            for owner_info in ownership_list:
+                owner_urn = owner_info.get("owner")
+                if owner_urn:
+                    owners.append(owner_urn)
+        
+        tags = []
+        if data_product.tags_data and isinstance(data_product.tags_data, dict):
+            tag_list = data_product.tags_data.get("tags", [])
+            for tag_info in tag_list:
+                tag_urn = tag_info.get("tag")
+                if tag_urn:
+                    tags.append(tag_urn)
+        
+        terms = []
+        if data_product.glossary_terms_data and isinstance(data_product.glossary_terms_data, dict):
+            terms_list = data_product.glossary_terms_data.get("terms", [])
+            for term_info in terms_list:
+                term_urn = term_info.get("urn")
+                if term_urn:
+                    terms.append(term_urn)
+        
+        structured_properties = []
+        if data_product.structured_properties_data and isinstance(data_product.structured_properties_data, dict):
+            props_list = data_product.structured_properties_data.get("properties", [])
+            for prop in props_list:
+                prop_urn = prop.get("structuredProperty", {}).get("urn")
+                values = prop.get("values", [])
+                if prop_urn and values:
+                    structured_properties.append({
+                        "propertyUrn": prop_urn,
+                        "values": values
+                    })
+        
+        links = []
+        if data_product.institutional_memory_data and isinstance(data_product.institutional_memory_data, dict):
+            elements = data_product.institutional_memory_data.get("elements", [])
+            for element in elements:
+                url = element.get("url")
+                description = element.get("description", "")
+                if url:
+                    links.append({
+                        "url": url,
+                        "description": description
+                    })
+        
+        domains = []
+        if data_product.domain_urn:
+            domains.append(data_product.domain_urn)
+        
+        # Prepare comprehensive data product data
         data_product_data = {
             "id": str(data_product.id),
             "name": data_product.name,
@@ -1536,9 +1606,17 @@ def add_data_product_to_staged_changes(request, data_product_id):
             "entity_urns": data_product.entity_urns or [],
             "entities_count": data_product.entities_count,
             "sync_status": data_product.sync_status,
+            # Add extracted metadata for MCP creation
+            "custom_properties": custom_properties,
+            "owners": owners,
+            "tags": tags,
+            "terms": terms,
+            "domains": domains,
+            "links": links,
+            "structured_properties": structured_properties,
         }
         
-        # Create staged changes
+        # Create staged changes (using new single MCP file approach)
         result = add_data_product_mcps(
             data_product_data=data_product_data,
             environment="dev",
@@ -1580,8 +1658,8 @@ class DataProductRemoteAddToStagedChangesView(View):
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             )
             
-            # Import the function
-            from scripts.mcps.data_product_actions import add_data_product_to_staged_changes as add_data_product_mcps_remote
+            # Import the function (using new approach for single MCP file)
+            from scripts.mcps.data_product_actions import add_data_product_to_staged_changes_new as add_data_product_mcps_remote
             
             data = json.loads(request.body)
             
@@ -1678,12 +1756,12 @@ class DataProductRemoteAddToStagedChangesView(View):
                                 "description": description
                             })
             
-            # Prepare custom properties from raw_data if available
+            # Prepare custom properties from product_data (they come as array of {key, value} objects)
             custom_properties = {}
-            if raw_data and isinstance(raw_data, dict):
-                custom_props = raw_data.get("properties", {})
-                if custom_props:
-                    custom_properties = custom_props
+            if product_data.get('customProperties') and isinstance(product_data['customProperties'], list):
+                for prop in product_data['customProperties']:
+                    if isinstance(prop, dict) and 'key' in prop and 'value' in prop:
+                        custom_properties[prop['key']] = prop['value']
             
             # Get domain URN(s)
             domains = []
@@ -1694,48 +1772,46 @@ class DataProductRemoteAddToStagedChangesView(View):
                 if domain_info and domain_info.get("urn"):
                     domains.append(domain_info["urn"])
             
-            # Add remote data product to staged changes using the comprehensive function
+            # Prepare data for the new function which expects a data_product_data dictionary
+            remote_data_product_data = {
+                "id": product_id,
+                "name": product_data.get('name', 'Unknown'),
+                "description": product_data.get('description', ''),
+                "external_url": product_data.get('external_url'),
+                "owners": owners if owners else [],
+                "tags": tags if tags else [],
+                "terms": terms if terms else [],
+                "domains": domains if domains else [],
+                "links": links if links else [],
+                "custom_properties": custom_properties if custom_properties else {},
+                "structured_properties": structured_properties if structured_properties else [],
+                "sub_types": [],  # TODO: Extract sub_types if stored
+                "deprecated": False,  # TODO: Extract deprecated status if stored
+                "deprecation_note": "",  # TODO: Extract deprecation note if stored
+            }
+            
+            # Add remote data product to staged changes using the new single MCP file function
             result = add_data_product_mcps_remote(
-                data_product_id=product_id,
-                name=product_data.get('name', 'Unknown'),
-                description=product_data.get('description', ''),
-                external_url=product_data.get('external_url'),
-                owners=owners if owners else None,
-                tags=tags if tags else None,
-                terms=terms if terms else None,
-                domains=domains if domains else None,
-                links=links if links else None,
-                custom_properties=custom_properties if custom_properties else None,
-                structured_properties=structured_properties if structured_properties else None,
-                sub_types=None,  # TODO: Extract sub_types if stored
-                deprecated=False,  # TODO: Extract deprecated status if stored
-                deprecation_note="",  # TODO: Extract deprecation note if stored
-                include_all_aspects=True,
+                data_product_data=remote_data_product_data,
                 environment=environment_name,
                 owner=owner,
                 base_dir="metadata-manager"
             )
             
-            # Provide feedback about files created
-            if result.get("success"):
-                files_created = result.get("files_saved", [])
-                files_created_count = len(files_created)
-                
-                message = f"Remote data product added to staged changes: {files_created_count} file(s) created"
-                
-                # Return success response
-                return JsonResponse({
-                    "success": True,
-                    "message": message,
-                    "files_created": files_created,
-                    "files_created_count": files_created_count,
-                    "aspects_included": result.get("aspects_included", [])
-                })
-            else:
-                return JsonResponse({
-                    "success": False,
-                    "error": result.get("message", "Failed to create staged changes")
-                }, status=500)
+            # The new function returns a dictionary with "mcp_file" -> path
+            # Convert this to match the expected response format
+            files_created = list(result.values()) if isinstance(result, dict) else []
+            files_created_count = len(files_created)
+            
+            message = f"Remote data product added to staged changes: {files_created_count} file(s) created"
+            
+            # Return success response
+            return JsonResponse({
+                "success": True,
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count
+            })
                 
         except Exception as e:
             logger.error(f"Error adding remote data product to staged changes: {str(e)}")

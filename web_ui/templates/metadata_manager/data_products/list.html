@@ -827,6 +827,9 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <!-- Data Products Enhanced JavaScript -->
+<!-- Universal Metadata Notifications -->
+<script src="{% static 'metadata_manager/metadata_notifications.js' %}"></script>
+
 <script src="{% static 'metadata_manager/data_products/data_products_enhanced.js' %}"></script>
 
 <!-- Data Products inline functionality -->
@@ -1304,17 +1307,71 @@ async function bulkAddToPR(tabType) {
 }
 
 async function addSingleProductToPR(productId) {
-    const response = await fetch(`/metadata/data-products/${productId}/stage_changes/`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCsrfToken(),
+    // Check if this is a remote product (URN) or local product (UUID)
+    const isRemoteProduct = !productId || (typeof productId === 'string' && productId.startsWith('urn:'));
+    
+    let response;
+    if (isRemoteProduct) {
+        // For remote products, we need to get the product data and use the remote endpoint
+        const row = document.querySelector(`tr[data-product-id="${productId}"]`);
+        let productData = null;
+        
+        if (row && window.productDataStore) {
+            // Try to find the product in the data store
+            for (const [tabType, store] of Object.entries(window.productDataStore)) {
+                if (store && store.get) {
+                    productData = store.get(productId);
+                    if (productData) break;
+                }
+            }
         }
-    });
+        
+        if (!productData) {
+            // Fallback: create minimal product data from the row
+            if (row) {
+                const nameCell = row.querySelector('td:nth-child(2)');
+                const name = nameCell ? nameCell.textContent.trim() : 'Unknown';
+                productData = {
+                    id: productId,
+                    urn: productId,
+                    name: name
+                };
+            } else {
+                throw new Error(`Cannot find product data for ${productId}`);
+            }
+        }
+        
+        // Use remote endpoint
+        response = await fetch('/metadata/data-products/remote/stage_changes/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify({
+                product_data: productData,
+                environment: (window.currentEnvironment || {}).name || 'dev',
+                mutation_name: (window.currentEnvironment || {}).mutation_name || null
+            })
+        });
+    } else {
+        // Use local endpoint for local products
+        response = await fetch(`/metadata/data-products/${productId}/stage_changes/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify({
+                environment: (window.currentEnvironment || {}).name || 'dev',
+                mutation_name: (window.currentEnvironment || {}).mutation_name || null
+            })
+        });
+    }
     
     const data = await response.json();
     
-    if (!data.success) {
+    if (!data.success && !data.status) {
         throw new Error(data.error || 'Unknown error');
     }
     

@@ -2082,75 +2082,21 @@ function sanitizeDataForAttribute(item, maxDescriptionLength = 200) {
     return sanitizedItem;
 }
 
+// Note: Duplicate showNotification function removed - using MetadataNotifications.show() instead
+// This ensures consistent, standardized notification messages across all metadata types
+
 function showNotification(type, message) {
     // Check if notifications are suppressed for bulk operations
     if (window._bulkOperation) {
         return;
     }
     
-    // Check if we have notifications container
-    let container = document.getElementById('notifications-container');
-    
-    // Create it if it doesn't exist
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'notifications-container';
-        container.className = 'position-fixed bottom-0 end-0 p-3';
-        container.style.zIndex = '1050';
-        document.body.appendChild(container);
-    }
-    
-    // Create unique ID
-    const id = 'toast-' + Date.now();
-    
-    // Create toast HTML
-    let bgClass, icon, title;
-    
-    if (type === 'success') {
-        bgClass = 'bg-success';
-        icon = 'fa-check-circle';
-        title = 'Success';
-    } else if (type === 'info') {
-        bgClass = 'bg-info';
-        icon = 'fa-info-circle';
-        title = 'Info';
-    } else if (type === 'warning') {
-        bgClass = 'bg-warning';
-        icon = 'fa-exclamation-triangle';
-        title = 'Warning';
+    // Use global notification system
+    if (typeof showToast === 'function') {
+        showToast(type, message);
     } else {
-        bgClass = 'bg-danger';
-        icon = 'fa-exclamation-circle';
-        title = 'Error';
+        console.log(`${type.toUpperCase()}: ${message}`);
     }
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${bgClass} text-white`;
-    toast.id = id;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
-    toast.innerHTML = `
-        <div class="toast-header ${bgClass} text-white">
-            <i class="fas ${icon} me-2"></i>
-            <strong class="me-auto">${title}</strong>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body">${message}</div>
-    `;
-    
-    container.appendChild(toast);
-    
-    // Initialize and show the toast
-    const toastInstance = new bootstrap.Toast(toast, {
-        delay: 5000
-    });
-    toastInstance.show();
-    
-    // Remove toast from DOM after it's hidden
-    toast.addEventListener('hidden.bs.toast', function () {
-        toast.remove();
-    });
 }
 
 // Global bulk actions for tests

@@ -431,15 +431,6 @@
                 </div>
             {% endif %}
             
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-            
             <!-- Loading indicator -->
             <div id="loading-indicator" class="text-center py-5">
                 <div class="spinner-border text-primary" role="status">
@@ -852,6 +843,9 @@
 <!-- Select2 JavaScript -->
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
+<!-- Universal Metadata Notifications -->
+<script src="{% static 'metadata_manager/metadata_notifications.js' %}"></script>
+
 <!-- Tags Actions JavaScript -->
 <script src="{% static 'metadata_manager/tags/tag_actions.js' %}"></script>
 
@@ -875,6 +869,28 @@
                 // Remove inline styles from body
                 document.body.style.overflow = '';
                 document.body.style.paddingRight = '';
+            });
+        }
+        
+        // Handle Django messages with global notification system
+        if (window.djangoMessages && window.djangoMessages.length > 0) {
+            window.djangoMessages.forEach(function(message) {
+                // Convert Django message types to notification types
+                let notificationType = message.type;
+                if (notificationType === 'error') {
+                    notificationType = 'error';
+                } else if (notificationType === 'success') {
+                    notificationType = 'success';
+                } else if (notificationType === 'warning') {
+                    notificationType = 'warning';
+                } else if (notificationType === 'info') {
+                    notificationType = 'info';
+                } else {
+                    notificationType = 'info'; // Default fallback
+                }
+                
+                // Show the notification using the global system
+                showToast(notificationType, message.text);
             });
         }
     });

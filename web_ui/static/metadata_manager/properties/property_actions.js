@@ -1,21 +1,8 @@
-/**
- * Property Actions - Additional functionality for structured property management
- * Contains functions for downloading property JSON, syncing to local, and adding to staged changes
- */
-
-/**
- * Get the actual database ID from a property object
- * This is needed because the property data might contain datahub_id instead of the actual database id
- * @param {Object} propertyData - The property data object
- * @returns {string|null} - The database ID or null if not found
- */
 function propertyActionsGetDatabaseId(propertyData) {
-    // First, check if we have an explicit database_id field
     if (propertyData.database_id) {
         return propertyData.database_id;
     }
     
-    // For combined objects (synced properties), check if local has database_id or id
     if (propertyData.local) {
         if (propertyData.local.database_id) {
             return propertyData.local.database_id;
@@ -25,66 +12,39 @@ function propertyActionsGetDatabaseId(propertyData) {
         }
     }
     
-    // For remote-only properties or as a fallback, use the id property
     if (propertyData.id) {
         return propertyData.id;
     }
     
-    // Log warning if we couldn't find an ID
     console.warn('Could not find database ID for property:', propertyData);
     return null;
 }
 
-/**
- * Download property JSON data
- * @param {Object} property - The property object
- */
 function propertyActionsDownloadJson(property) {
-    console.log('propertyActionsDownloadJson called with:', property);
-    
-    // Get raw property data
     const propertyData = property.combined || property;
-    
-    // Convert to pretty JSON
     const jsonData = JSON.stringify(propertyData, null, 2);
-    
-    // Create a blob and initiate download
     const blob = new Blob([jsonData], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     
-    // Create temporary link and trigger download
     const link = document.createElement('a');
     link.href = url;
     link.download = `property-${propertyData.name || 'data'}.json`;
     document.body.appendChild(link);
     link.click();
     
-    // Clean up
     setTimeout(() => {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
     }, 100);
 }
 
-/**
- * Sync property to local database
- * @param {Object} property - The property object
- */
 function propertyActionsSyncToLocal(property) {
-    console.log('propertyActionsSyncToLocal called with:', property);
-    
-    // Show loading spinner
     propertyActionsShowActionLoading('sync');
     
-    // Get property data
     const propertyData = property.combined || property;
-    // IMPORTANT: We must use the UUID (id) for the API endpoint, not the URN
     const propertyId = propertyActionsGetDatabaseId(propertyData);
     
-    // Special handling for remote-only properties
     if (propertyData.sync_status === 'REMOTE_ONLY') {
-        console.log('Remote-only property detected:', propertyData);
-        console.log('Property URN:', propertyData.urn);
         
         // For remote-only properties, we need to create them locally first
         // This is done by pulling the property from the remote server
@@ -117,19 +77,17 @@ function propertyActionsSyncToLocal(property) {
                     });
                 }
                 return response.json();
-            } else {
-                // This is likely an HTML error page or unexpected response
-                console.error('Received non-JSON response:', contentType);
-                return response.text().then(text => {
-                    console.error('Pull response content (first 500 chars):', text.substring(0, 500) + '...');
-                    throw new Error('Server returned an unexpected response format. See console for details.');
-                });
-            }
+                          } else {
+                  // This is likely an HTML error page or unexpected response
+                  console.error('Received non-JSON response from pull API:', contentType);
+                  return response.text().then(text => {
+                      throw new Error('Server returned an unexpected response format. Check server logs.');
+                  });
+              }
         })
-        .then(data => {
-            console.log('Pull success response data:', data);
-            if (data.success) {
-                propertyActionsShowNotification('success', 'Property successfully pulled from DataHub');
+                  .then(data => {
+              if (data.success) {
+                MetadataNotifications.show('sync', 'pull_success', 'property', { name: propertyData.name });
                 // Refresh the data to show the newly created property
                 if (typeof loadPropertiesData === 'function') {
                     loadPropertiesData();
@@ -143,7 +101,7 @@ function propertyActionsSyncToLocal(property) {
         })
         .catch(error => {
             console.error('Error pulling remote property:', error);
-            propertyActionsShowNotification('error', `Error syncing property: ${error.message}`);
+            MetadataNotifications.show('sync', 'pull_error', 'property', { error: error.message });
         })
         .finally(() => {
             propertyActionsHideActionLoading('sync');
@@ -155,17 +113,13 @@ function propertyActionsSyncToLocal(property) {
     // Handle missing ID case
     if (!propertyId) {
         console.error('Cannot sync property without a database ID:', propertyData);
-        propertyActionsShowNotification('error', 'Error syncing property: Missing property database ID.');
+        MetadataNotifications.show('sync', 'sync_to_local_missing_id', 'property');
         propertyActionsHideActionLoading('sync');
         return;
     }
     
-    // Debug info
-    console.log('Attempting to sync property with database ID:', propertyId);
-    
     // Format the property ID as a UUID with dashes if needed
     const formattedPropertyId = propertyActionsFormatPropertyId(propertyId);
-    console.log(`Formatted property ID for sync: ${formattedPropertyId}`);
     
     // Make API call to sync property to local
     fetch(`/metadata/api/properties/${formattedPropertyId}/sync_to_local/`, {
@@ -180,12 +134,8 @@ function propertyActionsSyncToLocal(property) {
         })
     })
     .then(response => {
-        console.log('Sync response status:', response.status);
-        console.log('Sync response headers:', Array.from(response.headers.entries()));
-        
         // Check for non-JSON responses that might be returning HTML error pages
         const contentType = response.headers.get('content-type');
-        console.log('Response content type:', contentType);
         
         if (contentType && contentType.indexOf('application/json') !== -1) {
             // This is a JSON response, proceed normally
@@ -197,17 +147,15 @@ function propertyActionsSyncToLocal(property) {
             return response.json();
         } else {
             // This is likely an HTML error page or unexpected response
-            console.error('Received non-JSON response:', contentType);
+            console.error('Received non-JSON response from sync API:', contentType);
             return response.text().then(text => {
-                console.error('Sync response content (first 500 chars):', text.substring(0, 500) + '...');
-                throw new Error('Server returned an unexpected response format. See console for details.');
+                throw new Error('Server returned an unexpected response format. Check server logs.');
             });
         }
     })
     .then(data => {
-        console.log('Sync success response data:', data);
         if (data.success) {
-            propertyActionsShowNotification('success', 'Property successfully synced to local database');
+            MetadataNotifications.show('sync', 'sync_to_local_success', 'property', { name: propertyData.name });
             // Refresh the data to show the updated property
             if (typeof loadPropertiesData === 'function') {
                 loadPropertiesData();
@@ -221,7 +169,7 @@ function propertyActionsSyncToLocal(property) {
     })
     .catch(error => {
         console.error('Error syncing property:', error);
-        propertyActionsShowNotification('error', `Error syncing property: ${error.message}`);
+        MetadataNotifications.show('sync', 'sync_to_local_error', 'property', { error: error.message });
     })
     .finally(() => {
         propertyActionsHideActionLoading('sync');
@@ -258,7 +206,6 @@ function propertyActionsFormatPropertyId(id) {
  * @param {Object} property - The property object
  */
 function propertyActionsAddToStagedChanges(property) {
-    console.log('propertyActionsAddToStagedChanges called with:', property);
     
     // Show loading spinner
     propertyActionsShowActionLoading('staged');
@@ -270,7 +217,7 @@ function propertyActionsAddToStagedChanges(property) {
     // Handle missing ID case
     if (!propertyId) {
         console.error('Cannot add property to staged changes without a database ID:', propertyData);
-        propertyActionsShowNotification('error', 'Error adding property to staged changes: Missing property database ID.');
+        MetadataNotifications.show('staged_changes', 'add_to_staged_missing_id', 'property');
         propertyActionsHideActionLoading('staged');
         return;
     }
@@ -321,7 +268,7 @@ function propertyActionsAddToStagedChanges(property) {
     .then(data => {
         console.log('Staged changes success response data:', data);
         if (data.success) {
-            propertyActionsShowNotification('success', 'Property successfully added to staged changes');
+            MetadataNotifications.show('staged_changes', 'add_to_staged_success', 'property', { name: propertyData.name });
             // Optionally refresh the data to show updated status
             if (typeof loadPropertiesData === 'function') {
                 loadPropertiesData();
@@ -332,7 +279,7 @@ function propertyActionsAddToStagedChanges(property) {
     })
     .catch(error => {
         console.error('Error adding property to staged changes:', error);
-        propertyActionsShowNotification('error', `Error adding property to staged changes: ${error.message}`);
+        MetadataNotifications.show('staged_changes', 'add_to_staged_error', 'property', { error: error.message });
     })
     .finally(() => {
         propertyActionsHideActionLoading('staged');
@@ -379,29 +326,21 @@ function propertyActionsHideActionLoading(actionType) {
     });
 }
 
+// Note: Duplicate notification function removed - using MetadataNotifications.show() instead
+// This ensures consistent, standardized notification messages across all metadata types
+
 /**
  * Show notification message
  * @param {string} type - Type of notification (success, error, warning, info)
  * @param {string} message - Message to display
  */
 function propertyActionsShowNotification(type, message) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show notification`;
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    
-    // Add to page
-    document.body.appendChild(notification);
-    
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.remove();
-        }
-    }, 5000);
+    // Use global notification system
+    if (typeof showToast === 'function') {
+        showToast(type, message);
+    } else {
+        console.log(`${type.toUpperCase()}: ${message}`);
+    }
 }
 
 /**
@@ -421,7 +360,7 @@ function propertyActionsSyncToDataHub(property) {
     // Handle missing ID case
     if (!propertyId) {
         console.error('Cannot sync property to DataHub without a database ID:', propertyData);
-        propertyActionsShowNotification('error', 'Error syncing property to DataHub: Missing property database ID.');
+        MetadataNotifications.show('sync', 'sync_to_datahub_missing_id', 'property');
         propertyActionsHideActionLoading('push');
         return;
     }
@@ -472,7 +411,7 @@ function propertyActionsSyncToDataHub(property) {
     .then(data => {
         console.log('DataHub sync success response data:', data);
         if (data.success) {
-            propertyActionsShowNotification('success', 'Property successfully synced to DataHub');
+            MetadataNotifications.show('sync', 'sync_to_datahub_success', 'property', { name: propertyData.name });
             // Refresh the data to show the updated property
             if (typeof loadPropertiesData === 'function') {
                 loadPropertiesData();

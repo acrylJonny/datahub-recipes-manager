@@ -125,7 +125,7 @@ def add_data_product_to_staged_changes(
                 "files_saved": []
             }
         
-        # Save MCPs to files
+        # Save MCPs to files (single mcp_file.json like tags and structured properties)
         saved_files = save_mcps_to_files(
             mcps=mcps,
             base_directory=base_dir,
@@ -151,6 +151,177 @@ def add_data_product_to_staged_changes(
             "mcps_created": 0,
             "files_saved": []
         }
+
+
+def add_data_product_to_staged_changes_new(
+    data_product_data: Dict[str, Any],
+    environment: str = "dev",
+    owner: str = "admin",
+    base_dir: str = "metadata-manager",
+    mutation_name: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    Add a data product to staged changes by creating a single MCP file (new approach like tags/structured properties)
+    
+    Args:
+        data_product_data: Dictionary containing data product information
+        environment: Environment name for URN generation
+        owner: Owner username
+        base_dir: Base directory for metadata files
+        mutation_name: Optional mutation name for deterministic URN generation
+    
+    Returns:
+        Dictionary mapping "mcp_file" to file path
+    """
+    setup_logging()
+    
+    data_product_id = data_product_data.get("id")
+    if not data_product_id:
+        raise ValueError("data_product_data must contain 'id' field")
+    
+    data_product_name = data_product_data.get("name", data_product_id)
+    description = data_product_data.get("description")
+    external_url = data_product_data.get("external_url")
+    domain_urn = data_product_data.get("domain_urn")
+    
+    # Extract other properties from data_product_data
+    owners = data_product_data.get("owners", [])
+    tags = data_product_data.get("tags", [])
+    terms = data_product_data.get("terms", [])
+    domains = [domain_urn] if domain_urn else []
+    links = data_product_data.get("links", [])
+    
+    # Handle custom properties in different formats
+    custom_properties = {}
+    custom_props_raw = data_product_data.get("custom_properties") or data_product_data.get("customProperties")
+    if custom_props_raw:
+        if isinstance(custom_props_raw, dict):
+            # Already in dictionary format
+            custom_properties = custom_props_raw
+        elif isinstance(custom_props_raw, list):
+            # Array format from DataHub: [{key: "...", value: "..."}, ...]
+            for prop in custom_props_raw:
+                if isinstance(prop, dict) and 'key' in prop and 'value' in prop:
+                    custom_properties[prop['key']] = prop['value']
+    
+    structured_properties = data_product_data.get("structured_properties", [])
+    sub_types = data_product_data.get("sub_types", [])
+    deprecated = data_product_data.get("deprecated", False)
+    deprecation_note = data_product_data.get("deprecation_note", "")
+    
+    # Create comprehensive MCPs
+    mcps = create_data_product_staged_changes(
+        data_product_urn=f"urn:li:dataProduct:{data_product_id}",
+        name=data_product_name,
+        description=description,
+        external_url=external_url,
+        owners=owners,
+        tags=tags,
+        terms=terms,
+        domains=domains,
+        links=links,
+        custom_properties=custom_properties,
+        structured_properties=structured_properties,
+        sub_types=sub_types,
+        deprecated=deprecated,
+        deprecation_note=deprecation_note,
+        include_all_aspects=True
+    )
+    
+    if not mcps:
+        raise Exception("Failed to create data product MCPs")
+    
+    # Determine output directory - use repo root metadata-manager instead of web_ui/metadata-manager
+    current_dir = os.path.abspath(os.getcwd())
+    repo_root = None
+    
+    # Search upwards for the repository root (look for README.md and scripts/ directory)
+    search_dir = current_dir
+    for _ in range(10):  # Limit search to avoid infinite loop
+        if (os.path.exists(os.path.join(search_dir, "README.md")) and 
+            os.path.exists(os.path.join(search_dir, "scripts")) and
+            os.path.exists(os.path.join(search_dir, "web_ui"))):
+            repo_root = search_dir
+            break
+        parent_dir = os.path.dirname(search_dir)
+        if parent_dir == search_dir:  # Reached filesystem root
+            break
+        search_dir = parent_dir
+    
+    # Fallback: try to calculate from __file__ path
+    if not repo_root:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if "scripts/mcps" in script_dir:
+            repo_root = os.path.dirname(os.path.dirname(script_dir))
+        else:
+            # Last resort: assume we're in a subdirectory and go up
+            repo_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+    
+    output_dir = os.path.join(repo_root, base_dir, environment, "data_products")
+    logger.debug(f"Calculated repo root: {repo_root}, output dir: {output_dir}")
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Use constant filename like tags and structured properties
+    mcp_file_path = os.path.join(output_dir, "mcp_file.json")
+    
+    # Load existing MCP file or create new list - should be a simple list of MCPs
+    existing_mcps = []
+    if os.path.exists(mcp_file_path):
+        try:
+            with open(mcp_file_path, "r") as f:
+                file_content = json.load(f)
+                # Handle both old format (with metadata wrapper) and new format (simple list)
+                if isinstance(file_content, list):
+                    existing_mcps = file_content
+                elif isinstance(file_content, dict) and "mcps" in file_content:
+                    # Migrate from old format - extract just the MCPs
+                    existing_mcps = file_content["mcps"]
+                    logger.info(f"Migrating from old format - extracted {len(existing_mcps)} MCPs")
+                else:
+                    logger.warning(f"Unknown MCP file format, starting fresh")
+                    existing_mcps = []
+            logger.info(f"Loaded existing MCP file with {len(existing_mcps)} existing MCPs")
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
+            existing_mcps = []
+    
+    # Convert MCPs to dictionaries if needed
+    new_mcps = []
+    for mcp in mcps:
+        if hasattr(mcp, 'to_obj'):
+            new_mcps.append(mcp.to_obj())
+        elif isinstance(mcp, dict):
+            new_mcps.append(mcp)
+        else:
+            logger.warning(f"Unknown MCP format: {type(mcp)}")
+    
+    # Get data product URN for deduplication
+    data_product_urn = f"urn:li:dataProduct:{data_product_id}"
+    
+    # Remove any existing MCPs for this data product URN to avoid duplicates
+    existing_mcps = [
+        mcp for mcp in existing_mcps 
+        if mcp.get("entityUrn") != data_product_urn
+    ]
+    
+    # Add new MCPs to the list
+    existing_mcps.extend(new_mcps)
+    
+    # Save updated MCP file as a simple list (like tags and structured properties)
+    try:
+        with open(mcp_file_path, 'w') as f:
+            json.dump(existing_mcps, f, indent=2)
+        logger.info(f"Saved MCP file with {len(existing_mcps)} MCPs to: {mcp_file_path}")
+        
+        logger.info(f"Successfully added data product '{data_product_name}' to staged changes with {len(new_mcps)} MCPs. Total MCPs in file: {len(existing_mcps)}")
+        
+        return {"mcp_file": mcp_file_path}
+        
+    except Exception as e:
+        logger.error(f"Failed to save MCP file: {e}")
+        raise Exception(f"Failed to save MCP file: {str(e)}")
 
 
 def add_data_product_to_staged_changes_legacy(

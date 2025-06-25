@@ -114,7 +114,7 @@ const DataUtils = {
 document.addEventListener('DOMContentLoaded', function() {
     // Only initialize if the legacy system is not already loaded
     if (typeof window.legacyCurrentTab === 'undefined') {
-        console.log('Initializing enhanced data products system');
+        // Enhanced data products system initialized
         loadProductsData();
         setupFilterListeners();
         setupSearchHandlers();
@@ -142,7 +142,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     } else {
-        console.log('Legacy data products system detected, skipping enhanced initialization');
+        // Legacy data products system detected, skipping enhanced initialization
     }
 });
 
@@ -755,7 +755,7 @@ function toggleSelectAll(tabType, checkbox) {
 function loadProductsData() {
     // Check if legacy system is loaded first
     if (typeof window.legacyCurrentTab !== 'undefined') {
-        console.log('Legacy system detected, deferring to legacy loadProductsData');
+        // Legacy system detected, deferring to legacy loadProductsData
         return;
     }
     
@@ -813,78 +813,23 @@ function updateStatistics(stats) {
     if (urlElement) urlElement.textContent = stats.with_external_url || 0;
 }
 
-function showNotification(type, message) {
-    // Check if we have notifications container
-    let container = document.getElementById('notifications-container');
-    
-    // Create it if it doesn't exist
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'notifications-container';
-        container.className = 'position-fixed bottom-0 end-0 p-3';
-        container.style.zIndex = '1050';
-        document.body.appendChild(container);
-    }
-    
-    // Create unique ID
-    const id = 'toast-' + Date.now();
-    
-    // Create toast HTML
-    let bgClass, icon, title;
-    
-    if (type === 'success') {
-        bgClass = 'bg-success';
-        icon = 'fa-check-circle';
-        title = 'Success';
-    } else if (type === 'info') {
-        bgClass = 'bg-info';
-        icon = 'fa-info-circle';
-        title = 'Info';
-    } else if (type === 'warning') {
-        bgClass = 'bg-warning';
-        icon = 'fa-exclamation-triangle';
-        title = 'Warning';
-    } else {
-        bgClass = 'bg-danger';
-        icon = 'fa-exclamation-circle';
-        title = 'Error';
-    }
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${bgClass} text-white`;
-    toast.id = id;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
-    toast.innerHTML = `
-        <div class="toast-header ${bgClass} text-white">
-            <i class="fas ${icon} me-2"></i>
-            <strong class="me-auto">${title}</strong>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body">${message}</div>
-    `;
-    
-    container.appendChild(toast);
-    
-    // Initialize and show the toast
-    const toastInstance = new bootstrap.Toast(toast, {
-        delay: 5000
-    });
-    toastInstance.show();
-    
-    // Remove toast from DOM after it's hidden
-    toast.addEventListener('hidden.bs.toast', function () {
-        toast.remove();
-    });
-}
+// Note: Duplicate showNotification function removed - using MetadataNotifications.show() instead
+// This ensures consistent, standardized notification messages across all metadata types
 
 function showError(message) {
-    showNotification('error', message);
+    if (typeof showToast === 'function') {
+        showToast('error', message);
+    } else {
+        console.error(message);
+    }
 }
 
 function showSuccess(message) {
-    showNotification('success', message);
+    if (typeof showToast === 'function') {
+        showToast('success', message);
+    } else {
+        console.log(message);
+    }
 }
 
 function getCsrfToken() {
@@ -970,11 +915,16 @@ function addProductToStagedChanges(product) {
     const productName = product.name || 'Unknown';
     
     // Check if this is a remote-only product that needs to be staged directly
-    if (product.sync_status === 'REMOTE_ONLY' || !product.id) {
-        console.log(`Product "${productName}" is remote-only, staging directly...`);
+    // Remote products have URNs as IDs or no local database ID
+    const isRemoteProduct = product.sync_status === 'REMOTE_ONLY' || 
+                           !product.id || 
+                           (typeof product.id === 'string' && product.id.startsWith('urn:'));
+    
+    if (isRemoteProduct) {
+        // Remote-only product, staging directly
         
         // Show loading notification
-        showNotification('info', `Adding remote product "${productName}" to staged changes...`);
+        MetadataNotifications.show('staged_changes', 'add_to_staged_start', 'data_product', { name: productName });
         
         // Get current environment and mutation from global state or settings
         const currentEnvironment = window.currentEnvironment || { name: 'dev' };
@@ -1000,31 +950,27 @@ function addProductToStagedChanges(product) {
             return response.json();
         })
         .then(data => {
-            console.log('Add remote product to staged changes response:', data);
             if (data.success) {
-                showNotification('success', data.message || `Remote product added to staged changes successfully`);
-                if (data.files_created && data.files_created.length > 0) {
-                    console.log('Created files:', data.files_created);
-                }
+                MetadataNotifications.show('staged_changes', 'add_to_staged_success', 'data_product', { name: productName });
             } else {
                 throw new Error(data.error || 'Unknown error occurred');
             }
         })
         .catch(error => {
             console.error('Error adding remote product to staged changes:', error);
-            showNotification('error', `Error adding remote product to staged changes: ${error.message}`);
+            MetadataNotifications.show('staged_changes', 'add_to_staged_error', 'data_product', { error: error.message });
         });
         return;
     }
     
     if (!product.id) {
         console.error('Cannot add product to staged changes without an ID:', product);
-        showNotification('error', 'Error adding to staged changes: Missing product ID.');
+        MetadataNotifications.show('staged_changes', 'add_to_staged_missing_id', 'data_product');
         return;
     }
     
     // Show loading notification
-    showNotification('info', `Adding product "${productName}" to staged changes...`);
+            MetadataNotifications.show('staged_changes', 'add_to_staged_start', 'data_product', { name: productName });
     
     // Get current environment and mutation from global state or settings
     const currentEnvironment = window.currentEnvironment || { name: 'dev' };
@@ -1049,19 +995,15 @@ function addProductToStagedChanges(product) {
         return response.json();
     })
     .then(data => {
-        console.log('Add product to staged changes response:', data);
         if (data.success) {
-            showNotification('success', data.message || `Product added to staged changes successfully`);
-            if (data.files_created && data.files_created.length > 0) {
-                console.log('Created files:', data.files_created);
-            }
+            MetadataNotifications.show('staged_changes', 'add_to_staged_success', 'data_product', { name: productName });
         } else {
             throw new Error(data.error || 'Unknown error occurred');
         }
     })
     .catch(error => {
         console.error('Error adding product to staged changes:', error);
-        showNotification('error', `Error adding product to staged changes: ${error.message}`);
+        MetadataNotifications.show('staged_changes', 'add_to_staged_error', 'data_product', { error: error.message });
     });
 }
 
@@ -1069,7 +1011,7 @@ function addProductToStagedChanges(product) {
 function bulkResyncProducts(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showNotification('error', 'Please select data products to resync.');
+        MetadataNotifications.show('selection', 'none_selected', 'data_product');
         return;
     }
     
@@ -1077,8 +1019,8 @@ function bulkResyncProducts(tabType) {
         return;
     }
     
-    showNotification('success', `Starting resync of ${selectedProducts.length} data product(s) from DataHub...`);
-    console.log('Bulk resyncing products:', selectedProducts);
+    MetadataNotifications.show('sync', 'resync_bulk_start', 'data_product', { count: selectedProducts.length });
+    // Bulk resyncing products
     // TODO: Implement actual resync logic
     // After implementation, add single refresh: await loadProductsData();
 }
@@ -1086,7 +1028,7 @@ function bulkResyncProducts(tabType) {
 function bulkSyncToDataHub(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showNotification('error', 'Please select data products to sync to DataHub.');
+        MetadataNotifications.show('selection', 'none_selected', 'data_product');
         return;
     }
     
@@ -1094,8 +1036,8 @@ function bulkSyncToDataHub(tabType) {
         return;
     }
     
-    showNotification('success', `Starting sync of ${selectedProducts.length} data product(s) to DataHub...`);
-    console.log('Bulk syncing products to DataHub:', selectedProducts);
+    MetadataNotifications.show('sync', 'sync_to_datahub_bulk_start', 'data_product', { count: selectedProducts.length });
+    // Bulk syncing products to DataHub
     // TODO: Implement actual sync logic
     // After implementation, add single refresh: await loadProductsData();
 }
@@ -1103,7 +1045,7 @@ function bulkSyncToDataHub(tabType) {
 async function bulkSyncToLocal(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showNotification('error', 'Please select data products to sync to local.');
+        MetadataNotifications.show('selection', 'none_selected', 'data_product');
         return;
     }
     
@@ -1111,7 +1053,7 @@ async function bulkSyncToLocal(tabType) {
         return;
     }
     
-    showNotification('success', `Starting sync of ${selectedProducts.length} data product(s) to local...`);
+    MetadataNotifications.show('sync', 'sync_to_local_bulk_start', 'data_product', { count: selectedProducts.length });
     
     let successCount = 0;
     let errorCount = 0;
@@ -1131,9 +1073,9 @@ async function bulkSyncToLocal(tabType) {
     await loadProductsData();
     
     if (errorCount === 0) {
-        showNotification('success', `Successfully synced ${successCount} data product(s) to local`);
+        MetadataNotifications.show('sync', 'sync_to_local_bulk_success', 'data_product', { successCount, errorCount: 0 });
     } else {
-        showNotification('error', `Completed: ${successCount} synced successfully, ${errorCount} failed`);
+        MetadataNotifications.show('sync', 'sync_to_local_bulk_success', 'data_product', { successCount, errorCount });
     }
 }
 
@@ -1161,7 +1103,7 @@ async function syncSingleProductToLocal(productUrn) {
 function bulkDownloadJson(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showNotification('error', 'Please select data products to download.');
+        MetadataNotifications.show('export', 'export_none_selected', 'data_product');
         return;
     }
     
@@ -1180,13 +1122,13 @@ function bulkDownloadJson(tabType) {
         URL.revokeObjectURL(url);
     }, 100);
     
-    showNotification('success', `${selectedProducts.length} data products exported successfully.`);
+    MetadataNotifications.show('export', 'export_success', 'data_product', { count: selectedProducts.length });
 }
 
 function bulkAddToPR(tabType) {
     const selectedProducts = getSelectedProducts(tabType);
     if (selectedProducts.length === 0) {
-        showNotification('error', 'Please select data products to add to staged changes.');
+        MetadataNotifications.show('selection', 'none_selected', 'data_product');
         return;
     }
     
@@ -1194,7 +1136,7 @@ function bulkAddToPR(tabType) {
         return;
     }
     
-    showNotification('info', `Starting to add ${selectedProducts.length} data product(s) to staged changes...`);
+    MetadataNotifications.show('staged_changes', 'add_to_staged_bulk_start', 'data_product', { count: selectedProducts.length });
     
     let successCount = 0;
     let errorCount = 0;
@@ -1210,7 +1152,7 @@ function bulkAddToPR(tabType) {
                 if (index === selectedProducts.length - 1) {
                     setTimeout(() => {
                         if (errorCount === 0) {
-                            showNotification('success', `Successfully added ${successCount} data product(s) to staged changes`);
+                            MetadataNotifications.show('staged_changes', 'add_to_staged_bulk_success', 'data_product', { successCount, errorCount: 0 });
                         } else {
                             showNotification('warning', `Completed: ${successCount} added successfully, ${errorCount} failed`);
                         }
@@ -1399,7 +1341,7 @@ function syncProductToDataHub(productId, button) {
     button.disabled = true;
     
     showNotification('info', 'Syncing data product to DataHub...');
-    console.log('Syncing product to DataHub:', productId);
+    // Syncing product to DataHub
     
     // TODO: Implement actual sync logic
     setTimeout(() => {
@@ -1445,7 +1387,7 @@ function resyncProduct(productId, productUrn, button) {
     button.disabled = true;
     
     showNotification('info', 'Resyncing data product from DataHub...');
-    console.log('Resyncing product:', productId, productUrn);
+    // Resyncing product
     
     // TODO: Implement actual resync logic
     setTimeout(() => {
@@ -1467,7 +1409,7 @@ function pushProductToDataHub(productId, button) {
     button.disabled = true;
     
     showNotification('info', 'Pushing data product to DataHub...');
-    console.log('Pushing product to DataHub:', productId);
+    // Pushing product to DataHub
     
     // TODO: Implement actual push logic
     setTimeout(() => {

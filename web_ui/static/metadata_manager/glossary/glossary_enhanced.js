@@ -1,4 +1,4 @@
-console.log('Glossary script loading...');
+// Glossary script initialized
 // Global variables
 let glossaryData = {
     synced_items: [],
@@ -311,7 +311,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
             try {
                 await loadUsersAndGroups();
-                console.log('Node modal: Users and groups loaded successfully');
+        
             } catch (error) {
                 console.error('Node modal: Error loading users and groups:', error);
             }
@@ -321,7 +321,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!window.glossaryNodesCache || window.glossaryNodesCache.length === 0) {
             try {
                 await loadGlossaryNodes();
-                console.log('Node modal: Glossary nodes loaded successfully');
+        
             } catch (error) {
                 console.error('Node modal: Error loading glossary nodes:', error);
             }
@@ -354,7 +354,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (usersAndGroupsCache.users.length === 0 && usersAndGroupsCache.groups.length === 0) {
             try {
                 await loadUsersAndGroups();
-                console.log('Term modal: Users and groups loaded successfully');
+        
             } catch (error) {
                 console.error('Term modal: Error loading users and groups:', error);
             }
@@ -365,7 +365,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!domainCache.domains || domainCache.domains.length === 0) {
             try {
                 await loadDomains();
-                console.log('Term modal: Domains loaded successfully');
+        
             } catch (error) {
                 console.error('Term modal: Error loading domains:', error);
             }
@@ -375,7 +375,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!window.glossaryNodesCache || window.glossaryNodesCache.length === 0) {
             try {
                 await loadGlossaryNodes();
-                console.log('Term modal: Glossary nodes loaded successfully');
+        
             } catch (error) {
                 console.error('Term modal: Error loading glossary nodes:', error);
             }
@@ -407,12 +407,12 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function loadGlossaryData() {
-    console.log('Loading glossary data...');
+
     showLoading(true);
     
     fetch('/metadata/glossary/data/')
         .then(response => {
-            console.log('Received response:', response.status, response.statusText);
+        
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -427,10 +427,10 @@ function loadGlossaryData() {
             return response.json();
         })
         .then(data => {
-            console.log('Parsed data:', data.success, 'Items:', data.data?.local_only_items?.length || 0);
+        
             if (data.success) {
                 glossaryData = data.data;
-                console.log('DataHub URL:', glossaryData.datahub_url);
+            
                 
                 // Safely update statistics
                 if (data.data && data.data.statistics) {
@@ -4188,75 +4188,21 @@ function deleteLocalItem(item, suppressNotification = false) {
     });
 }
 
+// Note: Duplicate showNotification function removed - using MetadataNotifications.show() instead
+// This ensures consistent, standardized notification messages across all metadata types
+
 /**
  * Show notification to user
  * @param {string} type - The notification type (success, error, info, warning)
  * @param {string} message - The message to display
  */
 function showNotification(type, message) {
-    // Check if we have notifications container
-    let container = document.getElementById('notifications-container');
-    
-    // Create it if it doesn't exist
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'notifications-container';
-        container.className = 'position-fixed bottom-0 end-0 p-3';
-        container.style.zIndex = '1050';
-        document.body.appendChild(container);
-    }
-    
-    // Create unique ID
-    const id = 'toast-' + Date.now();
-    
-    // Create toast HTML
-    let bgClass, icon, title;
-    
-    if (type === 'success') {
-        bgClass = 'bg-success';
-        icon = 'fa-check-circle';
-        title = 'Success';
-    } else if (type === 'info') {
-        bgClass = 'bg-info';
-        icon = 'fa-info-circle';
-        title = 'Info';
-    } else if (type === 'warning') {
-        bgClass = 'bg-warning';
-        icon = 'fa-exclamation-triangle';
-        title = 'Warning';
+    // Use global notification system
+    if (typeof showToast === 'function') {
+        showToast(type, message);
     } else {
-        bgClass = 'bg-danger';
-        icon = 'fa-exclamation-circle';
-        title = 'Error';
+        console.log(`${type.toUpperCase()}: ${message}`);
     }
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${bgClass} text-white`;
-    toast.id = id;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
-    toast.innerHTML = `
-        <div class="toast-header ${bgClass} text-white">
-            <i class="fas ${icon} me-2"></i>
-            <strong class="me-auto">${title}</strong>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body">${message}</div>
-    `;
-    
-    container.appendChild(toast);
-    
-    // Initialize and show the toast
-    const toastInstance = new bootstrap.Toast(toast, {
-        delay: 5000
-    });
-    toastInstance.show();
-    
-    // Remove toast from DOM after it's hidden
-    toast.addEventListener('hidden.bs.toast', function () {
-        toast.remove();
-    });
 }
 
 // Checkbox and bulk action handlers with hierarchical selection

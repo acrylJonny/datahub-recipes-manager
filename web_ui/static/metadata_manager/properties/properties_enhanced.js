@@ -617,7 +617,7 @@ function determineDefaultTab() {
 }
 
 function renderAllTabs() {
-    console.log('=== Rendering all tabs ===');
+
     renderTab('synced-items');
     renderTab('local-items');
     renderTab('remote-items');
@@ -676,7 +676,7 @@ function displayTabContent(tabType) {
     const contentElement = document.getElementById(`${tabType}-content`);
     const searchTerm = currentSearch[tabType] || '';
     
-    console.log(`=== Rendering tab: ${tabType} ===`);
+
     
     if (!contentElement) {
         console.error(`Content element not found for ${tabType}-content`);
@@ -1466,30 +1466,29 @@ function addPropertyToStagedChangesInternal(propertyData) {
  * @returns {string|null} - The database ID or null if not found
  */
 function getDatabaseId(propertyData) {
-    console.log('🔍 getDatabaseId called with property:', propertyData.name);
-    console.log('🔍 Property status:', propertyData.status, 'sync_status:', propertyData.sync_status);
+
     
     // First check if this is a remote-only property
     if (propertyData.status === 'remote_only' || propertyData.sync_status === 'REMOTE_ONLY') {
-        console.log('🔍 Property is remote-only, returning null (no local database ID)');
+
         return null;
     }
     
     // For combined objects (synced properties), check local first
     if (propertyData.local && propertyData.local.id) {
-        console.log('🔍 Found database ID from propertyData.local.id:', propertyData.local.id);
+
         return propertyData.local.id;
     }
     
     // For local-only or synced properties, use the id directly
     if (propertyData.id) {
-        console.log('🔍 Found database ID from propertyData.id:', propertyData.id);
+
         return propertyData.id;
     }
     
     // Check for database_id field (explicitly added by backend)
     if (propertyData.database_id) {
-        console.log('🔍 Found database ID from propertyData.database_id:', propertyData.database_id);
+
         return propertyData.database_id;
     }
     
@@ -1579,7 +1578,7 @@ function sortCurrentTable(content, tabType) {
     // Re-append sorted rows
     rows.forEach(row => tbody.appendChild(row));
     
-    console.log(`✅ Sorted ${rows.length} rows by ${currentSort.column} (${currentSort.direction})`);
+
 }
 
 // Get sort value from a table row for properties
@@ -2111,66 +2110,16 @@ function getCurrentMutationName() {
     return container ? container.dataset.mutationName : null;
 }
 
+// Note: Duplicate showNotification function removed - using MetadataNotifications.show() instead
+// This ensures consistent, standardized notification messages across all metadata types
+
 function showNotification(type, message) {
-    // Check if we have notifications container
-    let container = document.getElementById('notifications-container');
-    
-    // Create it if it doesn't exist
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'notifications-container';
-        container.className = 'position-fixed bottom-0 end-0 p-3';
-        container.style.zIndex = '1050';
-        document.body.appendChild(container);
-    }
-    
-    // Create unique ID
-    const id = 'toast-' + Date.now();
-    
-    // Create toast HTML
-    let bgClass, icon, title;
-    
-    if (type === 'success') {
-        bgClass = 'bg-success';
-        icon = 'fa-check-circle';
-        title = 'Success';
-    } else if (type === 'info') {
-        bgClass = 'bg-info';
-        icon = 'fa-info-circle';
-        title = 'Info';
+    // Use global notification system
+    if (typeof showToast === 'function') {
+        showToast(type, message);
     } else {
-        bgClass = 'bg-danger';
-        icon = 'fa-exclamation-circle';
-        title = 'Error';
+        console.log(`${type.toUpperCase()}: ${message}`);
     }
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${bgClass} text-white`;
-    toast.id = id;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
-    toast.innerHTML = `
-        <div class="toast-header ${bgClass} text-white">
-            <i class="fas ${icon} me-2"></i>
-            <strong class="me-auto">${title}</strong>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body">${message}</div>
-    `;
-    
-    container.appendChild(toast);
-    
-    // Initialize and show the toast
-    const toastInstance = new bootstrap.Toast(toast, {
-        delay: 5000
-    });
-    toastInstance.show();
-    
-    // Remove toast from DOM after it's hidden
-    toast.addEventListener('hidden.bs.toast', function () {
-        toast.remove();
-    });
 }
 
 function escapeHtml(text) {
@@ -2572,7 +2521,7 @@ function resyncAll() {
         return;
     }
     
-    showNotification('info', 'Starting resync of all properties...');
+    MetadataNotifications.show('sync', 'resync_all_start', 'property');
     
     fetch('/metadata/properties/resync_all/', {
         method: 'POST',
@@ -2585,15 +2534,15 @@ function resyncAll() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification('success', `Successfully resynced ${data.count || 0} properties`);
+            MetadataNotifications.show('sync', 'resync_success', 'property', { count: data.count || 0 });
             loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
-            showNotification('error', data.error || 'Failed to resync properties');
+            MetadataNotifications.show('sync', 'resync_error', 'property', { error: data.error || 'Failed to resync properties' });
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        showNotification('error', 'Error resyncing properties');
+        MetadataNotifications.show('sync', 'resync_error', 'property', { error: 'Error resyncing properties' });
     });
 }
 

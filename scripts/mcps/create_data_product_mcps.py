@@ -104,7 +104,12 @@ def create_editable_data_product_properties_mcp(
     description: Optional[str] = None,
     **kwargs
 ) -> Optional[MetadataChangeProposalWrapper]:
-    """Create editable data product properties MCP"""
+    """
+    Create editable data product properties MCP
+    
+    DEPRECATED: This function creates a duplicate dataProductProperties aspect
+    that overwrites custom properties. Use create_data_product_properties_mcp instead.
+    """
     if not DATAHUB_AVAILABLE:
         logger.error("DataHub SDK not available")
         return None
@@ -475,15 +480,8 @@ def create_data_product_staged_changes(
     if properties_mcp:
         mcps.append(properties_mcp)
     
-    # Editable properties (if description provided)
-    if description:
-        editable_mcp = create_editable_data_product_properties_mcp(
-            data_product_urn=data_product_urn,
-            description=description,
-            **kwargs
-        )
-        if editable_mcp:
-            mcps.append(editable_mcp)
+    # Note: Editable properties are now included in the main properties MCP above
+    # to avoid duplicate dataProductProperties aspects that would overwrite custom properties
     
     if include_all_aspects:
         # Ownership
@@ -589,28 +587,70 @@ def save_mcps_to_files(
     base_directory: str = "metadata",
     entity_id: str = "data_product"
 ) -> List[str]:
-    """Save MCPs to individual JSON files"""
+    """Save MCPs to a single mcp_file.json containing all MCPs as a list (following tags/structured properties pattern)"""
     saved_files = []
     
     # Create data_products subdirectory
     data_products_dir = os.path.join(base_directory, "data_products")
     os.makedirs(data_products_dir, exist_ok=True)
     
-    for mcp in mcps:
-        aspect_name = mcp.aspect.__class__.__name__.replace("Class", "").lower()
-        if aspect_name.endswith("properties"):
-            aspect_name = aspect_name.replace("properties", "_properties")
-        
-        filename = f"{entity_id}_{aspect_name}.json"
-        filepath = os.path.join(data_products_dir, filename)
-        
+    # Use constant filename like tags and structured properties
+    mcp_file_path = os.path.join(data_products_dir, "mcp_file.json")
+    
+    # Load existing MCP file or create new list - should be a simple list of MCPs
+    existing_mcps = []
+    if os.path.exists(mcp_file_path):
         try:
-            with open(filepath, "w") as f:
-                json.dump(mcp.to_obj(), f, indent=2)
-            saved_files.append(filepath)
-            logger.info(f"Saved MCP to {filepath}")
-        except Exception as e:
-            logger.error(f"Error saving MCP to {filepath}: {e}")
+            with open(mcp_file_path, "r") as f:
+                file_content = json.load(f)
+                # Handle both old format (separate files) and new format (simple list)
+                if isinstance(file_content, list):
+                    existing_mcps = file_content
+                elif isinstance(file_content, dict) and "mcps" in file_content:
+                    # Migrate from old format - extract just the MCPs
+                    existing_mcps = file_content["mcps"]
+                    logger.info(f"Migrating from old format - extracted {len(existing_mcps)} MCPs")
+                else:
+                    logger.warning(f"Unknown MCP file format, starting fresh")
+                    existing_mcps = []
+            logger.info(f"Loaded existing MCP file with {len(existing_mcps)} existing MCPs")
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
+            existing_mcps = []
+    
+    # Convert MCPs to dictionaries if needed
+    new_mcps = []
+    for mcp in mcps:
+        if hasattr(mcp, 'to_obj'):
+            new_mcps.append(mcp.to_obj())
+        elif isinstance(mcp, dict):
+            new_mcps.append(mcp)
+        else:
+            logger.warning(f"Unknown MCP format: {type(mcp)}")
+    
+    # Get entity URN from first MCP for deduplication
+    entity_urn = None
+    if new_mcps:
+        entity_urn = new_mcps[0].get("entityUrn")
+    
+    # Remove any existing MCPs for this entity URN to avoid duplicates
+    if entity_urn:
+        existing_mcps = [
+            mcp for mcp in existing_mcps 
+            if mcp.get("entityUrn") != entity_urn
+        ]
+    
+    # Add new MCPs to the list
+    existing_mcps.extend(new_mcps)
+    
+    # Save updated MCP file as a simple list (like tags and structured properties)
+    try:
+        with open(mcp_file_path, 'w') as f:
+            json.dump(existing_mcps, f, indent=2)
+        logger.info(f"Saved MCP file with {len(existing_mcps)} MCPs to: {mcp_file_path}")
+        saved_files.append(mcp_file_path)
+    except Exception as e:
+        logger.error(f"Failed to save MCP file: {e}")
     
     return saved_files
 
