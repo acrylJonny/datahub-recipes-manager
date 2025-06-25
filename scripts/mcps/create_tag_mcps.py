@@ -32,6 +32,14 @@ except ImportError:
 
 from utils.urn_utils import generate_deterministic_urn
 
+# Try to import the new URN generation utilities
+try:
+    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
+    from utils.urn_utils import generate_tag_urn, get_mutation_config_for_environment
+    HAS_NEW_URN_UTILS = True
+except ImportError:
+    HAS_NEW_URN_UTILS = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +122,7 @@ def create_tag_properties_mcp(
     color_hex: Optional[str] = None,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for tag properties
@@ -126,6 +135,7 @@ def create_tag_properties_mcp(
         color_hex: Hex color code for the tag (optional)
         environment: Environment name (deprecated, use mutation_name instead)
         mutation_name: Mutation name for deterministic URN (optional)
+        custom_urn: Custom URN to use instead of generating one (optional)
 
     Returns:
         Dictionary representation of the MCP
@@ -134,10 +144,13 @@ def create_tag_properties_mcp(
     if tag_name is None:
         tag_name = tag_id
 
-    # Create tag URN using deterministic generation
-    tag_urn = generate_deterministic_urn(
-        "tag", tag_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create tag URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        tag_urn = custom_urn
+    else:
+        tag_urn = generate_deterministic_urn(
+            "tag", tag_id, environment=environment, mutation_name=mutation_name
+        )
 
     # Create audit stamp
     current_time = int(time.time() * 1000)  # Current time in milliseconds
@@ -166,11 +179,13 @@ def create_tag_properties_mcp(
     return mcp.to_obj()
 
 
+
 def create_tag_ownership_mcp(
     tag_id: str,
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for tag ownership
@@ -180,14 +195,18 @@ def create_tag_ownership_mcp(
         owner: The owner of the tag
         environment: Environment name (deprecated, use mutation_name instead)
         mutation_name: Mutation name for deterministic URN (optional)
+        custom_urn: Custom URN to use instead of generating one (optional)
 
     Returns:
         Dictionary representation of the MCP
     """
-    # Create tag URN using deterministic generation
-    tag_urn = generate_deterministic_urn(
-        "tag", tag_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create tag URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        tag_urn = custom_urn
+    else:
+        tag_urn = generate_deterministic_urn(
+            "tag", tag_id, environment=environment, mutation_name=mutation_name
+        )
 
     # Create audit stamp
     current_time = int(time.time() * 1000)
@@ -220,25 +239,113 @@ def create_tag_ownership_mcp(
     return mcp.to_obj()
 
 
-def save_mcp_to_file(mcp: Dict[str, Any], output_path: str) -> None:
+def save_mcp_to_file(mcp: Dict[str, Any], output_path: str, enable_dedup: bool = True) -> bool:
     """
-    Save an MCP dictionary to a JSON file
+    Save an MCP dictionary to a JSON file with optional deduplication
 
     Args:
         mcp: The MCP dictionary
         output_path: File path to save to
+        enable_dedup: Whether to enable deduplication (default: True)
+
+    Returns:
+        True if file was saved, False if skipped due to deduplication
     """
     try:
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Check for deduplication if enabled
+        if enable_dedup and os.path.exists(output_path):
+            try:
+                with open(output_path, 'r') as f:
+                    existing_mcp = json.load(f)
+                
+                # Compare the MCPs for equality
+                if _mcps_are_equal(existing_mcp, mcp):
+                    logger.info(f"MCP file unchanged, skipping: {output_path}")
+                    return False
+                else:
+                    logger.info(f"MCP file changed, updating: {output_path}")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not read existing MCP file for comparison: {e}")
+                # Continue with saving if we can't read the existing file
         
         # Write to file
         with open(output_path, 'w') as f:
             json.dump(mcp, f, indent=2, default=str)
             
         logger.info(f"Saved MCP to: {output_path}")
+        return True
     except Exception as e:
         logger.error(f"Failed to save MCP: {str(e)}")
+        raise
+
+
+def _mcps_are_equal(mcp1: Dict[str, Any], mcp2: Dict[str, Any]) -> bool:
+    """
+    Compare two MCP dictionaries for equality, ignoring timestamp fields
+    
+    Args:
+        mcp1: First MCP dictionary
+        mcp2: Second MCP dictionary
+    
+    Returns:
+        True if MCPs are functionally equivalent, False otherwise
+    """
+    try:
+        # Create deep copies to avoid modifying originals
+        import copy
+        mcp1_copy = copy.deepcopy(mcp1)
+        mcp2_copy = copy.deepcopy(mcp2)
+        
+        # Remove timestamp fields that change on every run
+        _remove_timestamp_fields(mcp1_copy)
+        _remove_timestamp_fields(mcp2_copy)
+        
+        # Compare the sanitized MCPs
+        return mcp1_copy == mcp2_copy
+    except Exception as e:
+        logger.warning(f"Error comparing MCPs: {e}")
+        return False
+
+
+def _remove_timestamp_fields(mcp: Dict[str, Any]) -> None:
+    """
+    Remove timestamp fields from MCP dictionary (modifies in place)
+    
+    Args:
+        mcp: MCP dictionary to modify
+    """
+    try:
+        # Remove common timestamp fields
+        if isinstance(mcp, dict):
+            # Remove auditStamp timestamps
+            if "aspect" in mcp and isinstance(mcp["aspect"], dict):
+                aspect = mcp["aspect"]
+                
+                # Remove timestamps from ownership aspect
+                if "lastModified" in aspect and isinstance(aspect["lastModified"], dict):
+                    if "time" in aspect["lastModified"]:
+                        del aspect["lastModified"]["time"]
+                
+                # Remove timestamps from any other audit stamps
+                for key, value in aspect.items():
+                    if isinstance(value, dict) and "time" in value:
+                        del value["time"]
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, dict) and "time" in item:
+                                del item["time"]
+            
+            # Remove any top-level timestamp fields
+            if "systemMetadata" in mcp and isinstance(mcp["systemMetadata"], dict):
+                if "lastObserved" in mcp["systemMetadata"]:
+                    del mcp["systemMetadata"]["lastObserved"]
+                if "runId" in mcp["systemMetadata"]:
+                    del mcp["systemMetadata"]["runId"]
+    except Exception as e:
+        logger.warning(f"Error removing timestamp fields: {e}")
 
 
 def main():
@@ -269,6 +376,22 @@ def main():
     # Generate a filename-safe version of the tag_id
     safe_tag_id = tag_id.replace(" ", "_").lower()
     
+    # Get mutation configuration for environment-based URN generation
+    mutation_config = None
+    custom_urn = None
+    if HAS_NEW_URN_UTILS and env_name != "default":
+        try:
+            mutation_config = get_mutation_config_for_environment(env_name)
+            if mutation_config:
+                # Generate a temporary URN to test mutation
+                temp_urn = f"urn:li:tag:{tag_id}"
+                mutated_urn = generate_tag_urn(temp_urn, env_name, mutation_config)
+                if mutated_urn != temp_urn:
+                    custom_urn = mutated_urn
+                    logger.info(f"Using mutated URN for tag: {temp_urn} -> {mutated_urn}")
+        except Exception as e:
+            logger.warning(f"Could not get mutation config for environment '{env_name}': {e}")
+
     # Create properties MCP
     logger.info(f"Creating properties MCP for tag '{tag_id}'...")
     properties_mcp = create_tag_properties_mcp(
@@ -278,12 +401,13 @@ def main():
         description=args.description,
         color_hex=args.color_hex,
         environment=args.environment,
-        mutation_name=args.mutation_name
+        mutation_name=args.mutation_name,
+        custom_urn=custom_urn
     )
     
     # Save properties MCP
     properties_file = os.path.join(output_dir, f"{safe_tag_id}_properties.json")
-    save_mcp_to_file(properties_mcp, properties_file)
+    properties_saved = save_mcp_to_file(properties_mcp, properties_file)
     
     # Create ownership MCP
     logger.info(f"Creating ownership MCP for tag '{tag_id}'...")
@@ -291,14 +415,33 @@ def main():
         tag_id=tag_id,
         owner=args.owner,
         environment=args.environment,
-        mutation_name=args.mutation_name
+        mutation_name=args.mutation_name,
+        custom_urn=custom_urn
     )
     
     # Save ownership MCP
     ownership_file = os.path.join(output_dir, f"{safe_tag_id}_ownership.json")
-    save_mcp_to_file(ownership_mcp, ownership_file)
+    ownership_saved = save_mcp_to_file(ownership_mcp, ownership_file)
     
-    logger.info(f"Successfully created MCP files for tag '{tag_id}'")
+    # Log deduplication results
+    files_created = []
+    files_skipped = []
+    
+    if properties_saved:
+        files_created.append("properties")
+    else:
+        files_skipped.append("properties")
+        
+    if ownership_saved:
+        files_created.append("ownership")
+    else:
+        files_skipped.append("ownership")
+    
+    if files_created:
+        logger.info(f"Created MCP files for tag '{tag_id}': {', '.join(files_created)}")
+    if files_skipped:
+        logger.info(f"Skipped unchanged MCP files for tag '{tag_id}': {', '.join(files_skipped)}")
+    
     logger.info(f"Tag URN: {generate_deterministic_urn('tag', tag_id, environment=args.environment, mutation_name=args.mutation_name)}")
 
 

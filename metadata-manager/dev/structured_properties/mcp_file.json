@@ -1,0 +1,102 @@
+[
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:test.property7",
+    "changeType": "UPSERT",
+    "aspectName": "propertyDefinition",
+    "aspect": {
+      "value": "{\"qualifiedName\": \"Unknown Property\", \"displayName\": \"Unknown Property\", \"valueType\": \"urn:li:dataType:datahub.string\", \"cardinality\": \"SINGLE\", \"entityTypes\": [\"urn:li:entityType:datahub.dataset\"], \"description\": \"\", \"immutable\": false, \"lastModified\": {\"time\": 1750768393267, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:test.property7",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:test.property7",
+    "changeType": "UPSERT",
+    "aspectName": "propertyDefinition",
+    "aspect": {
+      "value": "{\"qualifiedName\": \"Unknown Property\", \"displayName\": \"Unknown Property\", \"valueType\": \"urn:li:dataType:datahub.string\", \"cardinality\": \"SINGLE\", \"entityTypes\": [\"urn:li:entityType:datahub.dataset\"], \"description\": \"\", \"immutable\": false, \"lastModified\": {\"time\": 1750768922717, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:test.property7",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:io.acryl.datamanagement.deprecationdate",
+    "changeType": "UPSERT",
+    "aspectName": "propertyDefinition",
+    "aspect": {
+      "value": "{\"qualifiedName\": \"Unknown Property\", \"displayName\": \"Unknown Property\", \"valueType\": \"urn:li:dataType:datahub.string\", \"cardinality\": \"SINGLE\", \"entityTypes\": [\"urn:li:entityType:datahub.dataset\"], \"description\": \"\", \"immutable\": false, \"lastModified\": {\"time\": 1750769017429, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:io.acryl.datamanagement.deprecationdate",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:test.property2",
+    "changeType": "UPSERT",
+    "aspectName": "propertyDefinition",
+    "aspect": {
+      "value": "{\"qualifiedName\": \"Unknown Property\", \"displayName\": \"Unknown Property\", \"valueType\": \"urn:li:dataType:datahub.string\", \"cardinality\": \"SINGLE\", \"entityTypes\": [\"urn:li:entityType:datahub.dataset\"], \"description\": \"\", \"immutable\": false, \"lastModified\": {\"time\": 1750770118394, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:test.property2",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:io.acryl.datamanagement.deprecationdate",
+    "changeType": "UPSERT",
+    "aspectName": "propertyDefinition",
+    "aspect": {
+      "value": "{\"qualifiedName\": \"Unknown Property\", \"displayName\": \"Unknown Property\", \"valueType\": \"urn:li:dataType:datahub.string\", \"cardinality\": \"SINGLE\", \"entityTypes\": [\"urn:li:entityType:datahub.dataset\"], \"description\": \"\", \"immutable\": false, \"lastModified\": {\"time\": 1750812502654, \"actor\": \"urn:li:corpuser:admin\"}}",
+      "contentType": "application/json"
+    }
+  },
+  {
+    "entityType": "structuredProperty",
+    "entityUrn": "urn:li:structuredProperty:io.acryl.datamanagement.deprecationdate",
+    "changeType": "UPSERT",
+    "aspectName": "status",
+    "aspect": {
+      "value": "{\"removed\": false}",
+      "contentType": "application/json"
+    }
+  }
+]

@@ -12,12 +12,15 @@ services:
       - app-data:/app/data
       - app-recipes:/app/recipes
       - app-templates:/app/templates
+      - app-metadata:/app/metadata-manager
+      - app-static:/app/web_ui/staticfiles
     environment:
       - DEBUG=False
       - DATABASE_URL=sqlite:////app/data/recipes_manager.db
       - SECRET_KEY=${SECRET_KEY}
       - DATAHUB_URL=${DATAHUB_URL}
       - DATAHUB_TOKEN=${DATAHUB_TOKEN}
+      - DJANGO_SETTINGS_MODULE=web_ui.settings
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
@@ -38,6 +41,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/ssl:/etc/nginx/ssl
       - ./nginx/logs:/var/log/nginx
+      - app-static:/app/web_ui/staticfiles:ro
     restart: unless-stopped
     depends_on:
       - app
@@ -48,4 +52,8 @@ volumes:
   app-recipes:
     driver: local
   app-templates:
+    driver: local
+  app-metadata:
+    driver: local
+  app-static:
     driver: local 

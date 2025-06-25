@@ -62,11 +62,11 @@ resources:
   # resources, such as Minikube. If you do want to specify resources, uncomment the following
   # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
   limits:
-    cpu: 500m
-    memory: 512Mi
+    cpu: 1000m
+    memory: 1Gi
   requests:
-    cpu: 100m
-    memory: 256Mi
+    cpu: 200m
+    memory: 512Mi
 
 autoscaling:
   enabled: false
@@ -85,18 +85,21 @@ persistence:
   enabled: true
   # storageClass: ""
   accessMode: ReadWriteOnce
-  size: 1Gi
+  size: 10Gi
   annotations: {}
   # Define additional persistent volumes
   volumes:
     data:
-      size: 1Gi
+      size: 10Gi  # Increased for SQLite database
       accessMode: ReadWriteOnce
     recipes:
-      size: 1Gi
+      size: 2Gi
       accessMode: ReadWriteOnce
     templates:
       size: 1Gi
+      accessMode: ReadWriteOnce
+    metadata:
+      size: 5Gi  # New volume for metadata-manager staged changes
       accessMode: ReadWriteOnce
 
 # Application configuration
@@ -108,12 +111,18 @@ config:
   # and mounted into the container
   secretKey: ""
   datahubToken: ""
+  # ASGI/Uvicorn settings
+  uvicorn:
+    workers: 4
+    host: "0.0.0.0"
+    port: 8000
+    logLevel: "info"
 
 # Run database migrations job on chart install/upgrade
 initJob:
   enabled: true
   backoffLimit: 3
-  activeDeadlineSeconds: 300
+  activeDeadlineSeconds: 600  # Increased timeout for migrations
   restartPolicy: OnFailure
 
 # Database and file backup configuration
@@ -123,12 +132,12 @@ backup:
   retention:
     days: 90  # Default retention period in days
   storage:
-    size: 5Gi  # Size of the persistent volume for backups
+    size: 20Gi  # Increased size for backups including metadata
     storageClass: ""  # Storage class to use for backups (use default if empty)
   resources:
     limits:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 500m
+      memory: 512Mi
     requests:
-      cpu: 100m
-      memory: 128Mi 
+      cpu: 200m
+      memory: 256Mi 

@@ -5,4 +5,4 @@ python-dotenv==1.0.0
 jsonschema==4.19.0
 pytest==7.4.2
 black==23.9.1
-acryl-datahub
+acryl-datahub>=1.0.0.3

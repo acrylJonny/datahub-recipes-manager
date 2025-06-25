@@ -201,10 +201,48 @@
         display: block;
     }
     
-    /* Action buttons styling - consistent with data products */
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Action buttons styling - consistent with tags page */
     .btn-group .btn {
         padding: 0.25rem 0.5rem;
         font-size: 0.75rem;
+    }
+    
+    .action-buttons {
+        white-space: nowrap;
     }
     
     /* Status badges */
@@ -408,9 +446,29 @@
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTestModal">
                         <i class="fas fa-plus me-1"></i> Create Test
                     </button>
-                    <a href="{% url 'metadata_manager:test_import' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-file-import me-1"></i> Import/Export
-                    </a>
+                    
+                    <!-- Global Actions Dropdown -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sync-alt me-1"></i> Bulk Actions
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAllTests()">
+                                <i class="fas fa-sync-alt me-2"></i> Resync All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAllTests()">
+                                <i class="fas fa-file-export me-2"></i> Export All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllTestsToStagedChanges()">
+                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportTestsModal()">
+                                <i class="fas fa-file-import me-2"></i> Import from JSON
+                            </a></li>
+                        </ul>
+                    </div>
+                    
                     <button type="button" class="btn btn-outline-info" id="refreshTests">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
@@ -552,14 +610,20 @@
                                         <strong><span id="synced-selected-count">0</span></strong> test(s) selected
                                     </div>
                                     <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncTests('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
                                         <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTests('synced')">
                                             <i class="fas fa-upload me-1"></i> Bulk Push
                                         </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download  
+                                        </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Remove Local
+                                            <i class="fas fa-trash me-1"></i> Delete Local
                                         </button>
                                     </div>
                                 </div>
@@ -594,14 +658,17 @@
                                         <strong><span id="local-selected-count">0</span></strong> test(s) selected
                                     </div>
                                     <div class="btn-group" role="group" aria-label="Bulk actions">
-                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkPushTests('local')">
-                                            <i class="fas fa-upload me-1"></i> Bulk Push to DataHub
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkSyncToDataHub('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Sync to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete Local
+                                            <i class="fas fa-trash me-1"></i> Delete Local
                                         </button>
                                     </div>
                                 </div>
@@ -639,11 +706,14 @@
                                         <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
                                             <i class="fas fa-download me-1"></i> Bulk Sync to Local
                                         </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
                                         <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
-                                            <i class="fab fa-github me-1"></i> Bulk Add to PR
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteRemote('remote')">
-                                            <i class="fas fa-trash me-1"></i> Bulk Delete from DataHub
+                                            <i class="fas fa-trash me-1"></i> Delete Remote
                                         </button>
                                     </div>
                                 </div>
@@ -863,6 +933,48 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save me-1"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Import Tests Modal -->
+<div class="modal fade" id="importTestsModal" tabindex="-1" aria-labelledby="importTestsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importTestsModalLabel">Import Tests from JSON</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="import-tests-form" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="import-tests-file" class="form-label">JSON File <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="import-tests-file" name="import_file" accept=".json" required>
+                        <div class="form-text">Select a JSON file containing test data to import</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="overwrite-existing-tests" name="overwrite_existing" checked>
+                            <label class="form-check-label" for="overwrite-existing-tests">
+                                Overwrite existing tests
+                            </label>
+                            <div class="form-text">If unchecked, existing tests will be skipped</div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> Imported tests will be associated with the current connection and marked as synced.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-file-import me-1"></i> Import Tests
                     </button>
                 </div>
             </form>

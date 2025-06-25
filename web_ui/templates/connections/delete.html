@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-6 col-lg-4 mx-auto">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        {{ page_title }}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <strong>Warning:</strong> This action cannot be undone.
+                    </div>
+                    
+                    <p>Are you sure you want to delete the following connection?</p>
+                    
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                {{ connection.name }}
+                                {% if connection.is_default %}
+                                    <span class="badge badge-success">Default</span>
+                                {% endif %}
+                            </h5>
+                            
+                            {% if connection.description %}
+                                <p class="card-text">{{ connection.description }}</p>
+                            {% endif %}
+                            
+                            <p class="card-text">
+                                <strong>URL:</strong> <code>{{ connection.datahub_url }}</code>
+                            </p>
+                            
+                            <p class="card-text">
+                                <strong>Status:</strong>
+                                <span class="badge badge-{% if connection.connection_status == 'connected' %}success{% elif connection.connection_status == 'failed' %}danger{% else %}warning{% endif %}">
+                                    {{ connection.get_connection_status_display }}
+                                </span>
+                            </p>
+                            
+                            <small class="text-muted">
+                                Created: {{ connection.created_at|date:"M d, Y H:i" }}
+                            </small>
+                        </div>
+                    </div>
+                    
+                    {% if connection.is_default %}
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Note:</strong> This is the default connection. If you delete it and other connections exist, another connection will automatically be made the default.
+                        </div>
+                    {% endif %}
+                    
+                    <form method="post" class="mt-4">
+                        {% csrf_token %}
+                        <div class="btn-group" role="group">
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-trash"></i> Yes, Delete Connection
+                            </button>
+                            <a href="{% url 'connections_list' %}" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

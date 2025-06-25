@@ -57,6 +57,9 @@ web_ui/staticfiles/
 web_ui/media/
 web_ui/logs/
 
+# Cache busting
+web_ui/.cache_version
+
 # Local Workflow Analysis
 workflow_analysis.md
 

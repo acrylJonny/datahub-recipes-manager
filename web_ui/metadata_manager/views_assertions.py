@@ -5,6 +5,7 @@ from django.views import View
 from django.contrib import messages
 from django.utils import timezone
 from django.views.decorators.http import require_POST, require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import yaml
 import subprocess
@@ -21,7 +22,7 @@ sys.path.append(project_root)
 
 # Import the deterministic URN utilities
 from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import test_datahub_connection, get_datahub_client
+from utils.datahub_utils import test_datahub_connection, get_datahub_client, get_datahub_client_from_request
 from utils.datahub_rest_client import DataHubRestClient
 from .models import Assertion, AssertionResult, Domain, Environment
 from web_ui.models import Environment as DjangoEnvironment
@@ -58,7 +59,7 @@ class AssertionListView(View):
 
             # Get DataHub connection info (quick test only)
             logger.debug("Testing DataHub connection from AssertionListView")
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             logger.debug(f"DataHub connection test result: {connected}")
             
             # Initialize context with local data only
@@ -115,7 +116,7 @@ class AssertionListView(View):
                     config = {
                         "domain_id": str(domain.id),
                         "domain_name": domain.name,
-                        "domain_urn": domain.deterministic_urn,
+                        "domain_urn": domain.urn,
                     }
                 except Domain.DoesNotExist:
                     messages.error(request, "Domain not found")
@@ -201,7 +202,7 @@ class AssertionRunView(View):
             assertion = get_object_or_404(Assertion, id=assertion_id)
             
             # Get DataHub connection
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             if not connected or not client:
                 messages.error(
@@ -410,7 +411,7 @@ class AssertionListView(View):
             assertions = Assertion.objects.all().order_by("-updated_at")
             
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             return render(
                 request,
@@ -484,7 +485,7 @@ class AssertionDetailView(View):
             )[:10]
             
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             
             return render(
                 request,
@@ -580,7 +581,7 @@ class AssertionRunView(View):
             assertion = get_object_or_404(Assertion, id=assertion_id)
             
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             if not connected or not client:
                 return JsonResponse(
                     {"success": False, "message": "Not connected to DataHub"}
@@ -774,7 +775,7 @@ def get_datahub_assertions(request):
         )
 
         # Get client using standard configuration
-        client = get_datahub_client()
+        client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse(
                 {"success": False, "error": "Not connected to DataHub"}, status=400
@@ -829,9 +830,14 @@ def get_remote_assertions_data(request):
         logger.info("Loading enhanced remote assertions data via AJAX")
 
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+
+        # Get current connection to filter assertions by connection (consistent with tags/properties)
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
 
         # Get all local assertions
         local_assertions = Assertion.objects.all().order_by("name")
@@ -922,14 +928,14 @@ def get_remote_assertions_data(request):
                             enhanced_remote_assertions[assertion_urn] = enhanced_assertion
 
             # Extract assertion URNs that exist locally and map them
-            local_assertion_urns = {}  # Map original_urn -> local assertion
+            local_assertion_urns = {}  # Map urn -> local assertion  
             local_assertion_ids = {}   # Map assertion_id -> local assertion
             
             try:
                 for assertion in local_assertions:
-                    # Map by original URN if it exists (synced assertions)
-                    if assertion.original_urn:
-                        local_assertion_urns[assertion.original_urn] = assertion
+                    # Map by URN if it exists (synced assertions)
+                    if hasattr(assertion, 'urn') and assertion.urn:
+                        local_assertion_urns[assertion.urn] = assertion
                     # Also map by ID for local-only assertions - handle UUID safely
                     try:
                         assertion_id = str(assertion.id)  # Convert to string to avoid UUID issues
@@ -950,7 +956,7 @@ def get_remote_assertions_data(request):
                         # Create enhanced local assertion data
                         local_assertion_data = {
                             "id": str(assertion.id),  # Convert to string to avoid UUID issues
-                            "urn": assertion.original_urn or f"urn:li:assertion:local:{assertion.id}",
+                            "urn": getattr(assertion, 'urn', None) or f"urn:li:assertion:local:{assertion.id}",
                             "name": assertion.name,
                             "description": assertion.description or "",
                             "type": assertion.assertion_type or assertion.type,
@@ -959,11 +965,11 @@ def get_remote_assertions_data(request):
                             
                             # Use stored ownership and relationship data
                             "ownership": getattr(assertion, 'ownership_data', None),
-                            "owners_count": getattr(assertion, 'owners_count', 0),
+                            "owners_count": len(getattr(assertion, 'ownership_data', {}).get('owners', [])) if getattr(assertion, 'ownership_data', None) else 0,
                             "owner_names": [],
                             
                             "relationships": getattr(assertion, 'relationships_data', None),
-                            "relationships_count": getattr(assertion, 'relationships_count', 0),
+                            "relationships_count": len(getattr(assertion, 'relationships_data', {}).get('relationships', [])) if getattr(assertion, 'relationships_data', None) else 0,
                             
                             # Assertion-specific data
                             "entity_urn": getattr(assertion, 'entity_urn', None),
@@ -997,27 +1003,44 @@ def get_remote_assertions_data(request):
                                 owner_names.append(name)
                             local_assertion_data["owner_names"] = owner_names
 
-                        # Categorize based on sync status
+                        # Determine connection context for this assertion
+                        connection_context = "none"  # Default
+                        if assertion.connection is None:
+                            connection_context = "none"  # No connection
+                        elif current_connection and assertion.connection == current_connection:
+                            connection_context = "current"  # Current connection
+                        else:
+                            connection_context = "different"  # Different connection
+
+                        # Categorize based on sync status AND connection context (like tags/properties)
                         sync_status = getattr(assertion, 'sync_status', 'LOCAL_ONLY')
-                        if sync_status == "SYNCED":
-                            # This is a synced assertion
-                            if assertion.original_urn and assertion.original_urn in enhanced_remote_assertions:
+                        assertion_urn = getattr(assertion, 'urn', None)
+                        
+                        # Check if this assertion has a remote match
+                        remote_match = enhanced_remote_assertions.get(assertion_urn) if assertion_urn else None
+                        
+                        # Apply the same logic as tags/properties for proper categorization
+                        if (sync_status == "SYNCED" and 
+                            connection_context == "current" and 
+                            current_connection):
+                            # This is a synced assertion for the current connection
+                            if remote_match:
                                 # Found in remote results - perfect sync
-                                remote_data = enhanced_remote_assertions[assertion.original_urn]
                                 synced_items.append({
                                     "local": local_assertion_data,
-                                    "remote": remote_data,
+                                    "remote": remote_match,
                                     "combined": {
                                         **local_assertion_data,
                                         "sync_status": "SYNCED",
                                         "sync_status_display": "Synced",
+                                        "connection_context": connection_context,
+                                        "has_remote_match": True,
                                     }
                                 })
                                 # Remove from remote-only list since it's synced
-                                del enhanced_remote_assertions[assertion.original_urn]
-                            elif assertion.original_urn:
+                                del enhanced_remote_assertions[assertion_urn]
+                            else:
                                 # Synced but not found in current remote search (could be indexing delay)
-                                # Still treat as synced since we have the sync_status
                                 synced_items.append({
                                     "local": local_assertion_data,
                                     "remote": None,  # Not found in current search
@@ -1025,15 +1048,17 @@ def get_remote_assertions_data(request):
                                         **local_assertion_data,
                                         "sync_status": "SYNCED",
                                         "sync_status_display": "Synced (Remote Pending Index)",
+                                        "connection_context": connection_context,
+                                        "has_remote_match": False,
                                     }
                                 })
-                            else:
-                                # Marked as synced but no original_urn - data inconsistency
-                                local_assertion_data["sync_status"] = "LOCAL_ONLY"
-                                local_assertion_data["sync_status_display"] = "Local Only (Sync Error)"
-                                local_only_items.append(local_assertion_data)
                         else:
-                            # Local-only, modified, or pending push
+                            # Local-only relative to current connection
+                            # This includes: different connection, no connection, or not synced
+                            local_assertion_data.update({
+                                "connection_context": connection_context,
+                                "has_remote_match": bool(remote_match),
+                            })
                             local_only_items.append(local_assertion_data)
                     except Exception as e:
                         logger.error(f"Error processing assertion {assertion.name}: {str(e)}")
@@ -1110,7 +1135,7 @@ def run_remote_assertion(request):
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1153,10 +1178,18 @@ def sync_assertion_to_local(request):
         if not assertion_urn:
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
-        # Get DataHub connection
-        connected, client = test_datahub_connection()
+        # Get DataHub connection and current connection context
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Get current connection context - essential for proper sync status determination
+        from web_ui.views import get_current_connection
+        current_connection = None
+        try:
+            current_connection = get_current_connection(request)
+        except Exception as e:
+            logger.warning(f"Could not get current connection: {str(e)}")
         
         # Get the assertion data from DataHub
         result = client.get_assertions(query=f'urn:"{assertion_urn}"', count=1)
@@ -1212,9 +1245,33 @@ def sync_assertion_to_local(request):
                                 if custom_assertion and isinstance(custom_assertion, dict) and "entityUrn" in custom_assertion:
                                     entity_urn = custom_assertion["entityUrn"]
         
-        # Extract assertion type
+        # Extract platform instance and browse path from entity URN if available
+        platform_instance = None
+        browse_path = None
+        if entity_urn:
+            try:
+                # Get entity details to extract platform instance and browse path
+                entity_details_result = client.get_datasets_by_urns([entity_urn])
+                if entity_details_result.get("success") and entity_details_result.get("data", {}).get("searchResults"):
+                    entity_data = entity_details_result["data"]["searchResults"][0].get("entity", {})
+                    
+                    # Extract platform instance
+                    platform_instance_data = entity_data.get("dataPlatformInstance", {})
+                    if platform_instance_data and platform_instance_data.get("properties"):
+                        platform_instance = platform_instance_data["properties"].get("name")
+                    
+                    # Extract browse path
+                    browse_path = entity_data.get("computed_browse_path", "")
+                    
+                    logger.debug(f"Extracted platform instance: {platform_instance}, browse path: {browse_path} for entity: {entity_urn}")
+            except Exception as e:
+                logger.warning(f"Failed to extract platform instance and browse path for entity {entity_urn}: {str(e)}")
+        
+        # Extract assertion type and handle $UNKNOWN enum case
         assertion_type = info.get("type", "UNKNOWN")
-        if assertion_type == "UNKNOWN":
+        
+        # Handle the $UNKNOWN enum case from DataHub GraphQL
+        if assertion_type == "$UNKNOWN" or assertion_type == "UNKNOWN" or not assertion_type:
             # Try to determine type from the info structure
             if info.get("datasetAssertion"):
                 assertion_type = "DATASET"
@@ -1230,6 +1287,37 @@ def sync_assertion_to_local(request):
                 assertion_type = "SCHEMA"
             elif info.get("customAssertion"):
                 assertion_type = "CUSTOM"
+            else:
+                # Fallback to SQL if we can't determine type
+                assertion_type = "SQL"
+                logger.warning(f"Could not determine assertion type for {assertion_urn}, defaulting to SQL")
+        
+        # Clean up any remaining enum artifacts
+        if assertion_type.startswith("$"):
+            assertion_type = "SQL"  # Safe fallback
+        
+        # Extract additional comprehensive data from assertion
+        run_events_data = assertion_data.get("runEvents", {})
+        monitor_data = assertion_data.get("monitor", {})
+        tags_data = assertion_data.get("tags", {})
+        
+        # Extract schedule information from monitor data
+        schedule_info = None
+        if monitor_data and isinstance(monitor_data, dict):
+            schedule_info = monitor_data.get("schedule", {})
+        
+        # Extract latest run status from run events
+        latest_run_status = None
+        if run_events_data and isinstance(run_events_data, dict):
+            run_events = run_events_data.get("runEvents", [])
+            if run_events and len(run_events) > 0:
+                latest_run = run_events[0]  # Assume first is most recent
+                latest_run_status = latest_run.get("result", {}).get("type")
+        
+        logger.debug(f"Extracted comprehensive data for {assertion_urn}: type={assertion_type}, "
+                   f"schedule={bool(schedule_info)}, latest_status={latest_run_status}, "
+                   f"run_events={len(run_events_data.get('runEvents', []) if run_events_data else [])}, "
+                   f"tags={len(tags_data.get('tags', []) if tags_data else [])}")
         
         # Extract platform information
         platform_name = None
@@ -1265,13 +1353,14 @@ def sync_assertion_to_local(request):
         if status_data and isinstance(status_data, dict):
             removed = status_data.get("removed", False)
         
-        # Check if assertion already exists (by deterministic_urn or original_urn)
+        # Check if assertion already exists (by urn)
         existing_assertion = None
         try:
-            existing_assertion = Assertion.objects.get(deterministic_urn=deterministic_urn)
+            existing_assertion = Assertion.objects.get(urn=deterministic_urn)
         except Assertion.DoesNotExist:
+            # Check if we have an assertion with this urn already
             try:
-                existing_assertion = Assertion.objects.get(original_urn=assertion_urn)
+                existing_assertion = Assertion.objects.get(urn=assertion_urn)
             except Assertion.DoesNotExist:
                 pass
         
@@ -1281,30 +1370,35 @@ def sync_assertion_to_local(request):
             existing_assertion.description = description
             existing_assertion.type = assertion_type  # Legacy field
             existing_assertion.assertion_type = assertion_type
-            existing_assertion.deterministic_urn = deterministic_urn
-            existing_assertion.original_urn = assertion_urn
+            existing_assertion.urn = assertion_urn  # Use the actual DataHub URN
             existing_assertion.entity_urn = entity_urn
             existing_assertion.platform_name = platform_name
+            existing_assertion.platform_instance = platform_instance  # Store extracted platform instance
             existing_assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
             existing_assertion.removed = removed
             existing_assertion.sync_status = "SYNCED"
             existing_assertion.last_synced = timezone.now()
             
-            # Update comprehensive data
+            # Update connection tracking - essential for proper sync/local determination
+            existing_assertion.connection = current_connection
+            
+            # Update comprehensive data with all extracted information
             existing_assertion.info_data = info
             existing_assertion.ownership_data = ownership_data
-            existing_assertion.owners_count = owners_count
             existing_assertion.relationships_data = relationships_data
-            existing_assertion.relationships_count = relationships_count
-            existing_assertion.run_events_data = assertion_data.get("runEvents")
-            existing_assertion.tags_data = assertion_data.get("tags")
-            existing_assertion.monitor_data = assertion_data.get("monitor")
+            existing_assertion.run_events_data = run_events_data
+            existing_assertion.tags_data = tags_data
+            existing_assertion.monitor_data = monitor_data
+            
+            # Update legacy fields for backward compatibility 
+            if latest_run_status:
+                existing_assertion.last_status = latest_run_status
             
             # Update config
             existing_assertion.config = existing_assertion.config or {}
             existing_assertion.config.update({
                 "synced_from_datahub": True,
-                "original_urn": assertion_urn,
+                "datahub_urn": assertion_urn,
                 "raw_data": assertion_data
             })
             
@@ -1320,17 +1414,17 @@ def sync_assertion_to_local(request):
                 assertion_type=assertion_type,
                 config={
                     "synced_from_datahub": True,
-                    "original_urn": assertion_urn,
+                    "datahub_urn": assertion_urn,
                     "raw_data": assertion_data
                 },
                 
                 # URN tracking
-                deterministic_urn=deterministic_urn,
-                original_urn=assertion_urn,
+                urn=assertion_urn,  # Use the actual DataHub URN
                 
                 # Entity and platform info
                 entity_urn=entity_urn,
                 platform_name=platform_name,
+                platform_instance=platform_instance,  # Store extracted platform instance
                 external_url=info.get("externalUrl") if isinstance(info, dict) else None,
                 
                 # Status
@@ -1338,15 +1432,19 @@ def sync_assertion_to_local(request):
                 sync_status="SYNCED",  # Mark as synced since we just synced it
                 last_synced=timezone.now(),
                 
-                # Comprehensive data storage
+                # Connection tracking - essential for proper sync/local determination
+                connection=current_connection,
+                
+                # Comprehensive data storage - using extracted variables
                 info_data=info,
                 ownership_data=ownership_data,
-                owners_count=owners_count,
                 relationships_data=relationships_data,
-                relationships_count=relationships_count,
-                run_events_data=assertion_data.get("runEvents"),
-                tags_data=assertion_data.get("tags"),
-                monitor_data=assertion_data.get("monitor"),
+                run_events_data=run_events_data,
+                tags_data=tags_data,
+                monitor_data=monitor_data,
+                
+                # Legacy fields for backward compatibility
+                last_status=latest_run_status,
             )
             action = "created"
         
@@ -1371,7 +1469,7 @@ def push_assertion_to_datahub(request, assertion_id):
         assertion = get_object_or_404(Assertion, id=assertion_id)
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
@@ -1435,10 +1533,14 @@ def resync_assertion(request, assertion_id):
         if not assertion_urn:
             return JsonResponse({"success": False, "error": "Assertion URN is required"})
         
-        # Get DataHub connection
-        connected, client = test_datahub_connection()
+        # Get DataHub connection and current connection context
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
+        
+        # Get current connection context for proper sync handling
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
         
         # Get the latest assertion data from DataHub
         result = client.get_assertions(query=f'urn:"{assertion_urn}"', count=1)
@@ -1496,9 +1598,11 @@ def resync_assertion(request, assertion_id):
                                 if custom_assertion and isinstance(custom_assertion, dict) and "entityUrn" in custom_assertion:
                                     entity_urn = custom_assertion["entityUrn"]
         
-        # Update assertion type
+        # Update assertion type and handle $UNKNOWN enum case
         assertion_type = info.get("type", "UNKNOWN")
-        if assertion_type == "UNKNOWN":
+        
+        # Handle the $UNKNOWN enum case from DataHub GraphQL
+        if assertion_type == "$UNKNOWN" or assertion_type == "UNKNOWN" or not assertion_type:
             # Try to determine type from the info structure
             if info.get("datasetAssertion"):
                 assertion_type = "DATASET"
@@ -1514,6 +1618,14 @@ def resync_assertion(request, assertion_id):
                 assertion_type = "SCHEMA"
             elif info.get("customAssertion"):
                 assertion_type = "CUSTOM"
+            else:
+                # Fallback to SQL if we can't determine type
+                assertion_type = "SQL"
+                logger.warning(f"Could not determine assertion type for {assertion_urn}, defaulting to SQL")
+        
+        # Clean up any remaining enum artifacts
+        if assertion_type.startswith("$"):
+            assertion_type = "SQL"  # Safe fallback
         
         # Update platform information
         platform_name = None
@@ -1548,21 +1660,35 @@ def resync_assertion(request, assertion_id):
         # Update all fields
         assertion.type = assertion_type  # Legacy field
         assertion.assertion_type = assertion_type
-        assertion.original_urn = assertion_urn
+        assertion.urn = assertion_urn  # Use the actual DataHub URN
         assertion.entity_urn = entity_urn
         assertion.platform_name = platform_name
         assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
         assertion.removed = removed
         
-        # Update comprehensive data
+        # Extract comprehensive data like in sync_assertion_to_local
+        run_events_data = assertion_data.get("runEvents", {})
+        monitor_data = assertion_data.get("monitor", {})
+        tags_data = assertion_data.get("tags", {})
+        
+        # Extract latest run status from run events
+        latest_run_status = None
+        if run_events_data and isinstance(run_events_data, dict):
+            run_events = run_events_data.get("runEvents", [])
+            if run_events and len(run_events) > 0:
+                latest_run = run_events[0]  # Assume first is most recent
+                latest_run_status = latest_run.get("result", {}).get("type")
+        
+        # Update comprehensive data with all extracted information
         assertion.info_data = info
         assertion.ownership_data = ownership_data
-        assertion.owners_count = owners_count
         assertion.relationships_data = relationships_data
-        assertion.relationships_count = relationships_count
-        assertion.run_events_data = assertion_data.get("runEvents")
-        assertion.tags_data = assertion_data.get("tags")
-        assertion.monitor_data = assertion_data.get("monitor")
+        assertion.run_events_data = run_events_data
+        assertion.tags_data = tags_data
+        assertion.monitor_data = monitor_data
+        
+        # Update connection tracking - essential for proper sync/local determination
+        assertion.connection = current_connection
         
         # Update config and sync status
         assertion.config = assertion.config or {}
@@ -1570,6 +1696,10 @@ def resync_assertion(request, assertion_id):
         assertion.config["last_synced"] = timezone.now().isoformat()
         assertion.sync_status = "SYNCED"
         assertion.last_synced = timezone.now()
+        
+        # Update legacy fields for backward compatibility
+        if latest_run_status:
+            assertion.last_status = latest_run_status
         
         assertion.save()
         
@@ -1625,7 +1755,7 @@ def create_datahub_assertion(request):
             })
         
         # Get DataHub connection
-        connected, client = test_datahub_connection()
+        connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({
                 "success": False,
@@ -2145,7 +2275,7 @@ def generate_custom_assertion_input(assertion):
     """Generate UpsertCustomAssertionInput from assertion config"""
     config = assertion.config
     return {
-        "urn": config.get("original_urn"),
+        "urn": config.get("datahub_urn") or assertion.urn,
         "input": {
             "entityUrn": config.get("entity_urn", config.get("dataset_urn", "")),
             "type": config.get("custom_type", "CUSTOM"),
@@ -2274,20 +2404,20 @@ def create_local_assertion(request):
             description=description,
             assertion_type=assertion_type,  # Use the new field
             entity_urn=dataset_urn,  # Store the assertee URN in the entity_urn field  
-            deterministic_urn=deterministic_urn,
+            urn=deterministic_urn,
             type=assertion_type,  # Keep for backward compatibility
             config=config,
             sync_status="LOCAL_ONLY"  # Mark as local-only
         )
         
-        logger.info(f"Successfully created local assertion: {assertion.name} with URN: {assertion.deterministic_urn}")
+        logger.info(f"Successfully created local assertion: {assertion.name} with URN: {assertion.urn}")
         
         return JsonResponse({
             "success": True,
             "message": f"Local assertion '{name}' created successfully",
             "assertion_id": assertion.id,
             "assertion_type": assertion_type,
-            "urn": assertion.deterministic_urn
+            "urn": assertion.urn
         })
         
     except Exception as e:
@@ -2405,3 +2535,183 @@ def edit_assertion(request, assertion_id):
             "success": False,
             "error": str(e)
         })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AssertionAddToStagedChangesView(View):
+    """API endpoint to add a local/synced assertion to staged changes"""
+    
+    def post(self, request, assertion_id):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.assertion_actions import add_assertion_to_staged_changes
+            
+            # Get the assertion
+            assertion = get_object_or_404(Assertion, id=assertion_id)
+            
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            logger.info(f"Adding assertion '{assertion.name}' to staged changes...")
+            
+            # Add assertion to staged changes using the MCP pattern
+            result = add_assertion_to_staged_changes(
+                assertion_id=str(assertion.id),
+                assertion_urn=assertion.urn,
+                assertion_name=assertion.name,
+                assertion_type=assertion.assertion_type,
+                description=assertion.description,
+                entity_urn=assertion.entity_urn,
+                config=assertion.config or {},
+                environment=environment_name,
+                owner=owner,
+                mutation_name=mutation_name
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "success": False,
+                    "error": result.get("message", "Failed to add assertion to staged changes")
+                }, status=500)
+            
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
+            
+            message = f"Assertion added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'files_created': files_created,
+                'files_created_count': files_created_count,
+                'mcps_created': mcps_created,
+                'assertion_id': str(assertion.id),
+                'assertion_urn': assertion.urn
+            })
+            
+        except Assertion.DoesNotExist:
+            logger.error(f"Assertion with ID {assertion_id} not found")
+            return JsonResponse({
+                'success': False,
+                'error': 'Assertion data not found. Please refresh the page and try again.'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"Error adding assertion to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AssertionRemoteAddToStagedChangesView(View):
+    """API endpoint to add a remote assertion to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.assertion_actions import add_assertion_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            assertion_data = data.get('item_data')
+            
+            if not assertion_data:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Assertion data is required"
+                }, status=400)
+            
+            assertion_urn = assertion_data.get('urn')
+            if not assertion_urn:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Assertion URN is required"
+                }, status=400)
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Extract assertion ID from URN (last part after colon)
+            assertion_id = assertion_urn.split(':')[-1] if assertion_urn else None
+            if not assertion_id:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Could not extract assertion ID from URN"
+                }, status=400)
+            
+            # Extract assertion information from remote data
+            assertion_name = assertion_data.get('name', 'Unknown Assertion')
+            assertion_type = assertion_data.get('type', 'CUSTOM')
+            description = assertion_data.get('description', '')
+            entity_urn = assertion_data.get('entity_urn', '')
+            config = assertion_data.get('config') or assertion_data.get('definition', {})
+            
+            logger.info(f"Adding remote assertion '{assertion_name}' to staged changes...")
+            
+            # Add remote assertion to staged changes using the MCP pattern
+            result = add_assertion_to_staged_changes(
+                assertion_id=assertion_id,
+                assertion_urn=assertion_urn,
+                assertion_name=assertion_name,
+                assertion_type=assertion_type,
+                description=description,
+                entity_urn=entity_urn,
+                config=config,
+                environment=environment_name,
+                owner=owner,
+                mutation_name=mutation_name
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "status": "error",
+                    "error": result.get("message", "Failed to add remote assertion to staged changes")
+                }, status=500)
+            
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
+            
+            message = f"Remote assertion added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
+            
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "mcps_created": mcps_created,
+                "assertion_urn": assertion_urn
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding remote assertion to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)

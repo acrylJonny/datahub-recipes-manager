@@ -191,7 +191,7 @@ def create_update_definition(args, existing_domain: Dict[str, Any]) -> Dict[str,
             if "icon" not in domain["displayProperties"]:
                 domain["displayProperties"]["icon"] = {
                     "style": "solid",
-                    "iconLibrary": "font-awesome",
+                    "iconLibrary": "MATERIAL",
                 }
             domain["displayProperties"]["icon"]["name"] = args.icon
 

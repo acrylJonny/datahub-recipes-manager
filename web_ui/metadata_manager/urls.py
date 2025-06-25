@@ -51,6 +51,7 @@ urlpatterns = [
     path("sync/", views.sync_metadata, name="sync_metadata"),
     path("config/datahub-url/", views.get_datahub_url_config, name="get_datahub_url_config"),
     path("structured-properties/", views.get_structured_properties, name="get_structured_properties"),
+    path("entities/editable/export-with-mutations/", views.export_entities_with_mutations, name="export_entities_with_mutations"),
     # Structured Properties
     path(
         "properties/", views_properties.PropertyListView.as_view(), name="property_list"
@@ -109,10 +110,53 @@ urlpatterns = [
         views_properties.delete_remote_property,
         name="property_delete_remote",
     ),
+    path(
+        "properties/<uuid:property_id>/stage_changes/",
+        views_properties.PropertyAddToStagedChangesView.as_view(),
+        name="property_add_to_staged_changes",
+    ),
+    path(
+        "properties/remote/stage_changes/",
+        views_properties.PropertyRemoteAddToStagedChangesView.as_view(),
+        name="property_remote_add_to_staged_changes",
+    ),
+    path(
+        "properties/<uuid:property_id>/download/",
+        views_properties.PropertyDownloadJsonView.as_view(),
+        name="property_download_json",
+    ),
+    # Global property action endpoints
+    path(
+        "properties/resync_all/",
+        views_properties.resync_all_properties,
+        name="property_resync_all",
+    ),
+    path(
+        "properties/export_all/",
+        views_properties.export_all_properties,
+        name="property_export_all",
+    ),
+    path(
+        "properties/add_all_to_staged_changes/",
+        views_properties.PropertyAddAllToStagedChangesView.as_view(),
+        name="property_add_all_to_staged_changes",
+    ),
+    path(
+        "properties/import/",
+        views_properties.import_properties,
+        name="property_import",
+    ),
     # Tags
     path("tags/", views_tags.TagListView.as_view(), name="tag_list"),
     path("tags/remote-data/", views_tags.get_remote_tags_data, name="get_remote_tags_data"),
     path("tags/users-groups/", views_tags.get_users_and_groups, name="get_users_and_groups"),
+    
+    # Common API endpoints for users, groups, and ownership types (used across multiple pages)
+    path("api/users/", views_tags.get_users_and_groups, name="api_users"),
+    path("api/groups/", views_tags.get_users_and_groups, name="api_groups"), 
+    path("api/ownership-types/", views_tags.get_users_and_groups, name="api_ownership_types"),
+    path("api/users-groups/", views_tags.get_users_and_groups, name="api_users_and_groups"),
+    
     path("tags/<uuid:tag_id>/", views_tags.TagDetailView.as_view(), name="tag_detail"),
     path(
         "tags/<uuid:tag_id>/edit/", views_tags.TagDetailView.as_view(), name="tag_edit"
@@ -133,10 +177,11 @@ urlpatterns = [
         name="tag_push_github",
     ),
     path(
-        "tags/import-export/",
-        views_tags.TagImportExportView.as_view(),
-        name="tag_import_export",
+        "tags/<uuid:tag_id>/sync_to_local/",
+        views_tags.TagSyncToLocalView.as_view(),
+        name="tag_sync_to_local_direct"
     ),
+
     path(
         "tags/pull/", views_tags.TagPullView.as_view(), name="tag_pull"
     ),  # Support both GET and POST for pulling tags
@@ -145,19 +190,80 @@ urlpatterns = [
     ),  # New endpoint for applying tags to entities
     # API endpoints for tag actions
     path(
-        "api/metadata_manager/tags/<uuid:tag_id>/sync_to_local/",
+        "api/tags/<str:tag_id>/sync_to_local/",
         views_tags.TagSyncToLocalView.as_view(),
         name="tag_sync_to_local_api"
     ),
     path(
-        "api/metadata_manager/tags/<uuid:tag_id>/download/",
+        "api/tags/<str:tag_id>/download/",
         views_tags.TagDownloadJsonView.as_view(),
         name="tag_download_json_api"
     ),
     path(
-        "api/metadata_manager/tags/<uuid:tag_id>/stage_changes/",
+        "api/tags/<str:tag_id>/stage_changes/",
         views_tags.TagAddToStagedChangesView.as_view(),
         name="tag_add_to_staged_changes_api"
+    ),
+    path(
+        "api/tags/<str:tag_id>/delete/",
+        views_tags.TagDeleteView.as_view(),
+        name="tag_delete_api"
+    ),
+    path(
+        "api/tags/<str:tag_id>/sync_to_datahub/",
+        views_tags.TagSyncToDataHubView.as_view(),
+        name="tag_sync_to_datahub_api"
+    ),
+    path(
+        "api/tags/<str:tag_id>/push_to_datahub/",
+        views_tags.TagPushToDataHubView.as_view(),
+        name="tag_push_to_datahub_api"
+    ),
+    path(
+        "api/tags/<str:tag_id>/resync/",
+        views_tags.TagResyncView.as_view(),
+        name="tag_resync_api"
+    ),
+    path(
+        "api/tags/bulk_sync_to_datahub/",
+        views_tags.TagBulkSyncToDataHubView.as_view(),
+        name="tag_bulk_sync_to_datahub_api"
+    ),
+    # New bulk operation endpoints
+    path(
+        "api/tags/bulk_resync/",
+        views_tags.TagBulkResyncView.as_view(),
+        name="tag_bulk_resync_api"
+    ),
+    path(
+        "api/tags/resync_all/",
+        views_tags.TagResyncAllView.as_view(),
+        name="tag_resync_all_api"
+    ),
+    path(
+        "api/tags/export_all/",
+        views_tags.TagExportAllView.as_view(),
+        name="tag_export_all_api"
+    ),
+    path(
+        "api/tags/import_json/",
+        views_tags.TagImportJsonView.as_view(),
+        name="tag_import_json_api"
+    ),
+    path(
+        "api/tags/add_all_to_staged_changes/",
+        views_tags.TagAddAllToStagedChangesView.as_view(),
+        name="tag_add_all_to_staged_changes_api"
+    ),
+    path(
+        "api/tags/delete_remote/",
+        views_tags.TagDeleteRemoteView.as_view(),
+        name="tag_delete_remote_api"
+    ),
+    path(
+        "tags/remote/stage_changes/",
+        views_tags.TagRemoteAddToStagedChangesView.as_view(),
+        name="tag_remote_add_to_staged_changes"
     ),
     # Glossary
     path("glossary/", views_glossary.GlossaryListView.as_view(), name="glossary_list"),
@@ -171,16 +277,18 @@ urlpatterns = [
         views_glossary.glossary_csv_upload,
         name="glossary_csv_upload",
     ),
+    # API endpoint for domain search
+    path(
+        "api/search-domains/",
+        views_glossary.search_domains,
+        name="search_domains",
+    ),
     path(
         "glossary/pull/",
         views_glossary.GlossaryPullView.as_view(),
         name="glossary_pull",
     ),
-    path(
-        "glossary/import-export/",
-        views_glossary.GlossaryImportExportView.as_view(),
-        name="glossary_import_export",
-    ),
+
     # Glossary Nodes
     path(
         "glossary/nodes/create/",
@@ -211,6 +319,11 @@ urlpatterns = [
         "glossary/nodes/<uuid:node_id>/push-github/",
         views_glossary.GlossaryNodeGitPushView.as_view(),
         name="glossary_node_push_github",
+    ),
+    path(
+        "glossary/nodes/<uuid:node_id>/resync/",
+        views_glossary.GlossaryNodeResyncView.as_view(),
+        name="glossary_node_resync",
     ),
     # Glossary Terms
     path(
@@ -243,6 +356,29 @@ urlpatterns = [
         views_glossary.GlossaryTermGitPushView.as_view(),
         name="glossary_term_push_github",
     ),
+    path(
+        "glossary/terms/<uuid:term_id>/resync/",
+        views_glossary.GlossaryTermResyncView.as_view(),
+        name="glossary_term_resync",
+    ),
+    
+    # Glossary Staged Changes API endpoints
+    path(
+        "glossary/nodes/<uuid:node_id>/stage_changes/",
+        views_glossary.GlossaryNodeAddToStagedChangesView.as_view(),
+        name="glossary_node_add_to_staged_changes",
+    ),
+    path(
+        "glossary/terms/<uuid:term_id>/stage_changes/",
+        views_glossary.GlossaryTermAddToStagedChangesView.as_view(),
+        name="glossary_term_add_to_staged_changes",
+    ),
+    path(
+        "glossary/remote/stage_changes/",
+        views_glossary.GlossaryRemoteAddToStagedChangesView.as_view(),
+        name="glossary_remote_add_to_staged_changes",
+    ),
+
     # Domains
     path("domains/", views_domains.DomainListView.as_view(), name="domain_list"),
     path(
@@ -315,6 +451,27 @@ urlpatterns = [
         views_domains.add_remote_domain_to_pr,
         name="domain_add_remote_to_pr",
     ),
+    path(
+        "domains/<uuid:domain_id>/stage_changes/",
+        views_domains.add_domain_to_staged_changes,
+        name="domain_add_to_staged_changes",
+    ),
+    path(
+        "domains/remote/stage_changes/",
+        views_domains.DomainRemoteAddToStagedChangesView.as_view(),
+        name="domain_remote_add_to_staged_changes",
+    ),
+    # Bulk domain operations
+    path(
+        "domains/bulk/sync-to-local/",
+        views_domains.bulk_sync_domains_to_local,
+        name="domain_bulk_sync_to_local",
+    ),
+    path(
+        "domains/bulk/add-to-staged-changes/",
+        views_domains.bulk_add_domains_to_staged_changes,
+        name="domain_bulk_add_to_staged_changes",
+    ),
     # Data Contracts
     path(
         "data-contracts/",
@@ -325,6 +482,26 @@ urlpatterns = [
         "data-contracts/data/",
         views_data_contracts.get_remote_data_contracts_data,
         name="get_remote_data_contracts_data",
+    ),
+    path(
+        "data-contracts/sync-to-local/",
+        views_data_contracts.sync_data_contract_to_local,
+        name="sync_data_contract_to_local",
+    ),
+    path(
+        "data-contracts/<uuid:contract_id>/resync/",
+        views_data_contracts.resync_data_contract,
+        name="resync_data_contract",
+    ),
+    path(
+        "data-contracts/stage_changes/",
+        views_data_contracts.add_data_contract_to_staged_changes,
+        name="data_contract_add_to_staged_changes",
+    ),
+    path(
+        "data-contracts/add_all_to_staged_changes/",
+        views_data_contracts.DataContractAddAllToStagedChangesView.as_view(),
+        name="data_contract_add_all_to_staged_changes",
     ),
     # Data Products
     path(
@@ -392,6 +569,16 @@ urlpatterns = [
         "data-products/add-remote-to-pr/",
         views_data_products.add_remote_data_product_to_pr,
         name="add_remote_data_product_to_pr",
+    ),
+    path(
+        "data-products/<uuid:data_product_id>/stage_changes/",
+        views_data_products.add_data_product_to_staged_changes,
+        name="data_product_add_to_staged_changes",
+    ),
+    path(
+        "data-products/remote/stage_changes/",
+        views_data_products.DataProductRemoteAddToStagedChangesView.as_view(),
+        name="data_product_remote_add_to_staged_changes",
     ),
     # Assertions
     path(
@@ -470,9 +657,21 @@ urlpatterns = [
         views_assertions.edit_assertion,
         name="edit_assertion",
     ),
+    path(
+        "assertions/<uuid:assertion_id>/stage_changes/",
+        views_assertions.AssertionAddToStagedChangesView.as_view(),
+        name="assertion_add_to_staged_changes",
+    ),
+    path(
+        "assertions/remote/stage_changes/",
+        views_assertions.AssertionRemoteAddToStagedChangesView.as_view(),
+        name="assertion_remote_add_to_staged_changes",
+    ),
     # Metadata Tests
     path("tests/", views_tests.TestListView.as_view(), name="tests_list"),
     path("tests/data/", views_tests.TestListView.as_view(), name="tests_data"),
+    path("tests/remote-data/", views_tests.get_remote_tests_data, name="get_remote_tests_data"),
+    path("tests/pull/", views_tests.TestPullView.as_view(), name="test_pull"),
     path("tests/create/", views_tests.TestDetailView.as_view(), name="test_create"),
     path(
         "tests/<str:test_urn>/",
@@ -495,6 +694,37 @@ urlpatterns = [
         name="test_push_github",
     ),
     path("tests/import/", views_tests.TestImportView.as_view(), name="test_import"),
+    path(
+        "tests/remote/stage_changes/",
+        views_tests.TestRemoteStageChangesView.as_view(),
+        name="test_remote_stage_changes",
+    ),
+    path(
+        "tests/<str:test_id>/stage_changes/",
+        views_tests.TestStageChangesView.as_view(),
+        name="test_stage_changes",
+    ),
+    # API endpoints for test actions
+    path(
+        "api/tests/<str:test_urn>/sync_to_local/",
+        views_tests.TestSyncToLocalView.as_view(),
+        name="test_sync_to_local_api"
+    ),
+    path(
+        "tests/<str:test_id>/sync_to_datahub/",
+        views_tests.TestSyncToDataHubView.as_view(),
+        name="test_sync_to_datahub"
+    ),
+    path(
+        "tests/<str:test_id>/resync/",
+        views_tests.TestResyncView.as_view(),
+        name="test_resync"
+    ),
+    path(
+        "tests/<str:test_id>/push_to_datahub/",
+        views_tests.TestPushToDataHubView.as_view(),
+        name="test_push_to_datahub"
+    ),
     # Sync
     path("sync/", views_sync.SyncConfigListView.as_view(), name="sync_config_list"),
     path(

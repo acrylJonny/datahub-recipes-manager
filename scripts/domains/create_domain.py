@@ -158,7 +158,7 @@ def create_domain_definition(args) -> Dict[str, Any]:
             display_props["icon"] = {
                 "name": args.icon,
                 "style": "solid",
-                "iconLibrary": "font-awesome",
+                "iconLibrary": "MATERIAL",
             }
 
         domain["displayProperties"] = display_props

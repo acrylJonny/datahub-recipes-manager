@@ -12,6 +12,7 @@ from .models import (
 # Define friendly names for common recipe types
 FRIENDLY_NAMES = {
     "bigquery": "Google BigQuery",
+    "file": "File",
     "mysql": "MySQL",
     "postgres": "PostgreSQL",
     "mssql": "Microsoft SQL Server",
@@ -30,7 +31,7 @@ FRIENDLY_NAMES = {
     "elasticsearch": "Elasticsearch",
     "mongodb": "MongoDB",
     "neo4j": "Neo4j",
-    "oracle": "Oracle Database",
+    "oracle": "Oracle",
     "databricks": "Databricks",
     "clickhouse": "ClickHouse",
     "druid": "Apache Druid",
@@ -50,13 +51,28 @@ FRIENDLY_NAMES = {
     "datahub": "DataHub",
     "ldap": "LDAP",
     "okta": "Okta",
-    "mode": "Mode Analytics",
+    "mode": "Mode",
     "azure_ad": "Azure Active Directory",
     "salesforce": "Salesforce",
     "dagster": "Dagster",
     "prefect": "Prefect",
     "sagemaker": "AWS SageMaker",
-    "mlflow": "MLflow",
+    "mlflow": "MLFlow",
+    "vertexai": "Vertex AI",
+    "abs": "Azure Blob Storage",
+    "datahub": "DataHub",
+    "datahub-gc": "DataHub Garbage Collection",
+    "sac": "SAP Analytics Cloud",
+    "apply": "DataHub Apply",
+    "other": "Other",
+}
+
+# Define generic DataHub components to exclude from recipe types
+GENERIC_COMPONENTS = {
+    "common", "data lake common", "git", "identity", "metadata", 
+    "profiling", "schema-inference", "sql", "state-provider",
+    "sagemaker-processors", "schema",  "state",
+    "usage", "aws" , "azure", "gc"
 }
 
 
@@ -401,7 +417,7 @@ class RecipeTemplateForm(forms.Form):
                 for item in os.listdir(datahub_path):
                     if not item.startswith("_") and os.path.isdir(
                         os.path.join(datahub_path, item)
-                    ):
+                    ) and item not in GENERIC_COMPONENTS:  # Filter out generic components
                         # Use friendly name if available, otherwise convert to title case
                         if item in FRIENDLY_NAMES:
                             display_name = FRIENDLY_NAMES[item]
@@ -564,7 +580,7 @@ class EnvVarsTemplateForm(forms.ModelForm):
                 for item in os.listdir(datahub_path):
                     if not item.startswith("_") and os.path.isdir(
                         os.path.join(datahub_path, item)
-                    ):
+                    ) and item not in GENERIC_COMPONENTS:  # Filter out generic components
                         # Use friendly name if available, otherwise convert to title case
                         if item in FRIENDLY_NAMES:
                             display_name = FRIENDLY_NAMES[item]
@@ -683,7 +699,7 @@ class EnvVarsInstanceForm(forms.Form):
                 for item in os.listdir(datahub_path):
                     if not item.startswith("_") and os.path.isdir(
                         os.path.join(datahub_path, item)
-                    ):
+                    ) and item not in GENERIC_COMPONENTS:  # Filter out generic components
                         # Use friendly name if available, otherwise convert to title case
                         if item in FRIENDLY_NAMES:
                             display_name = FRIENDLY_NAMES[item]

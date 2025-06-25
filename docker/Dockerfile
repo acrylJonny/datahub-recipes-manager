@@ -13,12 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     git \
+    curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-web.txt .
+RUN pip install --no-cache-dir -r requirements-web.txt
 
 # Copy the application code
 COPY . .
@@ -29,11 +30,18 @@ RUN chown -R appuser:appuser /app
 USER appuser
 
 # Set up data directories with proper permissions
-RUN mkdir -p /app/data /app/recipes /app/templates
-VOLUME ["/app/data", "/app/recipes", "/app/templates"]
+RUN mkdir -p /app/data /app/recipes /app/templates /app/metadata-manager
+VOLUME ["/app/data", "/app/recipes", "/app/templates", "/app/metadata-manager"]
 
 # Expose the application port
 EXPOSE 8000
 
-# Start the application with database initialization
-CMD ["sh", "-c", "python scripts/upgrade_db.py && python web_ui/manage.py runserver 0.0.0.0:8000"] 
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ || exit 1
+
+# Make the startup script executable and use it
+RUN chmod +x run_web_ui.sh
+
+# Start the application using the unified startup script
+CMD ["./run_web_ui.sh", "production", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"] 

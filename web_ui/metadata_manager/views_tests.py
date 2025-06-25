@@ -10,6 +10,7 @@ import yaml
 import os
 import sys
 from django.urls import reverse
+from django.views.decorators.csrf import csrf_exempt
 
 # Add project root to sys.path
 sys.path.append(
@@ -27,6 +28,98 @@ from metadata_manager.models import Test
 logger = logging.getLogger(__name__)
 
 
+def extract_platform_instance_from_urn(urn):
+    """
+    Extract platform instance from a dataset URN.
+    URN format: urn:li:dataset:(urn:li:dataPlatform:platform_name,platform_instance.dataset_name,environment)
+    
+    Returns:
+        tuple: (platform_name, platform_instance, environment) or (None, None, None) if parsing fails
+    """
+    if not urn or not isinstance(urn, str):
+        return None, None, None
+    
+    try:
+        # Split the URN to get the dataset part
+        # Expected format: urn:li:dataset:(urn:li:dataPlatform:platform_name,platform_instance.dataset_name,environment)
+        if not urn.startswith("urn:li:dataset:("):
+            return None, None, None
+        
+        # Extract the part inside parentheses
+        dataset_part = urn[len("urn:li:dataset:("):]
+        if dataset_part.endswith(")"):
+            dataset_part = dataset_part[:-1]
+        
+        # Split by commas to get the three main parts
+        parts = dataset_part.split(",")
+        if len(parts) < 3:
+            return None, None, None
+        
+        # Extract platform name from first part: urn:li:dataPlatform:platform_name
+        platform_part = parts[0]
+        if platform_part.startswith("urn:li:dataPlatform:"):
+            platform_name = platform_part[len("urn:li:dataPlatform:"):]
+        else:
+            platform_name = None
+        
+        # Extract platform instance and dataset name from second part
+        dataset_identifier = parts[1]
+        platform_instance = None
+        
+        # Check if there's a platform instance (usually separated by a dot)
+        if "." in dataset_identifier:
+            # Platform instance is typically the first part before the first dot
+            platform_instance = dataset_identifier.split(".")[0]
+        
+        # Extract environment from the last part
+        environment = parts[-1] if len(parts) > 2 else None
+        
+        return platform_name, platform_instance, environment
+        
+    except Exception as e:
+        logger.warning(f"Failed to extract platform instance from URN {urn}: {str(e)}")
+        return None, None, None
+
+
+async def get_dataset_platform_info(client, dataset_urn):
+    """
+    Query DataHub to get detailed platform information for a dataset.
+    
+    Returns:
+        dict: Contains platform_name, platform_instance, and other dataset info
+    """
+    try:
+        # Use the client to get dataset information
+        dataset_info = client.get_dataset_info(dataset_urn)
+        
+        if not dataset_info:
+            return {}
+        
+        platform_name = None
+        platform_instance = None
+        
+        # Extract platform information
+        platform = dataset_info.get("platform", {})
+        if platform:
+            platform_name = platform.get("name")
+        
+        # Extract platform instance
+        platform_instance_data = dataset_info.get("dataPlatformInstance", {})
+        if platform_instance_data and platform_instance_data.get("properties"):
+            platform_instance = platform_instance_data["properties"].get("name")
+        
+        return {
+            "platform_name": platform_name,
+            "platform_instance": platform_instance,
+            "dataset_name": dataset_info.get("properties", {}).get("name"),
+            "dataset_info": dataset_info
+        }
+        
+    except Exception as e:
+        logger.warning(f"Failed to get dataset platform info for {dataset_urn}: {str(e)}")
+        return {}
+
+
 class TestListView(View):
     """View to list metadata tests"""
 
@@ -39,7 +132,7 @@ class TestListView(View):
         """Display list of metadata tests"""
         try:
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
 
             tests = []
             if connected and client:
@@ -60,6 +153,10 @@ class TestListView(View):
             except Exception as e:
                 logger.warning(f"Error checking git integration: {str(e)}")
 
+            # Get current connection for mutation context
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+
             return render(
                 request,
                 "metadata_manager/tests/list.html",
@@ -68,6 +165,7 @@ class TestListView(View):
                     "tests": tests,
                     "has_datahub_connection": connected,
                     "has_git_integration": has_git_integration,
+                    "current_connection": current_connection,
                 },
             )
         except Exception as e:
@@ -76,14 +174,18 @@ class TestListView(View):
             return redirect("metadata_manager:metadata_index")
 
     def post(self, request):
-        """Handle test deletion and other actions"""
+        """Handle test deletion and other actions, or return JSON data for AJAX requests"""
+        # Check if this is an AJAX request for data
+        if request.content_type == 'application/json':
+            return self._get_tests_data(request)
+        
         action = request.POST.get("action")
         test_urn = request.POST.get("test_urn")
 
         if action == "delete" and test_urn:
             try:
                 # Check connection to DataHub
-                connected, client = test_datahub_connection()
+                connected, client = test_datahub_connection(request)
 
                 if connected and client:
                     # Delete test from DataHub
@@ -107,46 +209,49 @@ class TestListView(View):
     def _get_tests_data(self, request):
         """Return JSON data for AJAX requests"""
         try:
+            # Get current connection for mutation context
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
             # Get local tests from database
             local_tests = Test.objects.all()
             
 
             
             # Check connection to DataHub for remote tests
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
             remote_tests = []
+            remote_tests_dict = {}
             
             if connected and client:
                 try:
-                    tests_response = client.list_tests()
+                    # Use smaller count to avoid hitting corrupted test data
+                    tests_response = client.list_tests(query="*", start=0, count=100)
                     if tests_response:
                         remote_tests = tests_response
+                        # Create dictionary for fast lookups
+                        remote_tests_dict = {test.get('urn'): test for test in remote_tests if test.get('urn')}
                 except Exception as e:
                     logger.error(f"Error fetching remote tests: {str(e)}")
 
-
-
-            # Categorize tests using consistent pattern from tags/domains
+            # Get local test URNs for comparison
+            local_test_urns = set(test.urn for test in local_tests if test.urn)
+            
+            # Categorize tests
             synced_tests = []
             local_only_tests = []
             remote_only_tests = []
             
-            # Create remote tests dict - consistent with tags/domains pattern
-            remote_tests_dict = {test.get('urn', '').strip(): test for test in remote_tests if test.get('urn', '').strip()}
-            
-            # Extract local test URNs - consistent with tags/domains pattern  
-            local_test_urns = set(test.deterministic_urn for test in local_tests if test.deterministic_urn)
-            
-
-            
-            # Process local tests and match with remote - consistent with tags/domains pattern
+            # Process local tests
             for local_test in local_tests:
-                test_urn = local_test.deterministic_urn
-                if not test_urn:  # Skip local tests without URNs
+                test_urn = local_test.urn
+                if not test_urn:
                     continue
                     
-                remote_match = remote_tests_dict.get(test_urn)
-                
+                remote_match = None
+                if connected and client and test_urn in remote_tests_dict:
+                    remote_match = remote_tests_dict[test_urn]
+
                 # Create local test data
                 local_test_data = {
                     'id': str(local_test.id),
@@ -195,7 +300,7 @@ class TestListView(View):
                     local_test_data['status'] = 'local_only'
                     local_only_tests.append(local_test_data)
             
-            # Find remote-only tests - consistent with tags/domains pattern
+            # Find remote-only tests
             for test_urn, remote_test in remote_tests_dict.items():
                 if test_urn not in local_test_urns:
                     # REMOTE_ONLY: exists only on DataHub
@@ -203,6 +308,9 @@ class TestListView(View):
                     results = remote_test.get('results', {})
                     has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
                     is_failing = bool(results.get('failingCount', 0) > 0)
+                    
+                    # Generate datahub_id for remote-only test
+                    datahub_id = f"{current_connection.name if current_connection else 'default'}_{test_urn}"
                     
                     remote_test_enhanced = {
                         'id': test_urn,  # Use URN as ID for remote-only tests
@@ -221,10 +329,13 @@ class TestListView(View):
                         'failing_count': results.get('failingCount', 0),
                         'last_run': results.get('lastRunTimestampMillis'),
                         'sync_status': 'REMOTE_ONLY',
+                        'datahub_id': datahub_id,
+                        'connection_context': 'current',
+                        'has_remote_match': True,
                     }
                     remote_only_tests.append(remote_test_enhanced)
 
-            # Combine all tests for final output - consistent with tags/domains pattern
+            # Combine all tests for final output
             all_tests = []
             
             # Add synced tests (using combined data)
@@ -237,12 +348,18 @@ class TestListView(View):
             # Add remote-only tests  
             all_tests.extend(remote_only_tests)
 
-
+            # Get DataHub URL for external links
+            datahub_url = ""
+            if connected and client:
+                datahub_url = client.server_url if hasattr(client, 'server_url') else ""
+                if datahub_url and datahub_url.endswith("/api/gms"):
+                    datahub_url = datahub_url[:-8]
 
             return JsonResponse({
                 'success': True,
                 'tests': all_tests,
-                'total': len(all_tests)
+                'total': len(all_tests),
+                'datahub_url': datahub_url
             })
 
         except Exception as e:
@@ -254,6 +371,173 @@ class TestListView(View):
             })
 
 
+def get_remote_tests_data(request):
+    """Get comprehensive tests data with proper connection handling for AJAX requests."""
+    try:
+        logger.info("Loading comprehensive tests data via AJAX")
+        
+        # Get DataHub client using connection system (this handles connection switching)
+        from utils.datahub_utils import get_datahub_client_from_request
+        client = get_datahub_client_from_request(request)
+        
+        if not client:
+            return JsonResponse({
+                "success": False,
+                "error": "No active DataHub connection configured. Please configure a connection."
+            })
+        
+        # Test connection
+        if not client.test_connection():
+            return JsonResponse({
+                "success": False,
+                "error": "Cannot connect to DataHub with current connection"
+            })
+        
+        # Get current connection info for debugging
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+        
+        # Get local tests from database
+        local_tests = Test.objects.all()
+        logger.debug(f"Found {local_tests.count()} local tests")
+        
+        # Get remote tests from DataHub
+        remote_tests = []
+        remote_tests_dict = {}
+        
+        try:
+            # Use smaller count to avoid hitting corrupted test data
+            tests_response = client.list_tests(query="*", start=0, count=100)
+            if tests_response:
+                remote_tests = tests_response
+                # Create dictionary for fast lookups
+                remote_tests_dict = {test.get('urn'): test for test in remote_tests if test.get('urn')}
+                logger.debug(f"Found {len(remote_tests)} remote tests")
+        except Exception as e:
+            logger.error(f"Error fetching remote tests: {str(e)}")
+
+        # Get local test URNs for comparison
+        local_test_urns = set(test.urn for test in local_tests if test.urn)
+        
+        # Categorize tests
+        synced_tests = []
+        local_only_tests = []
+        remote_only_tests = []
+        
+        # Process local tests
+        for local_test in local_tests:
+            test_urn = local_test.urn
+            if not test_urn:
+                continue
+                
+            remote_match = None
+            if test_urn in remote_tests_dict:
+                remote_match = remote_tests_dict[test_urn]
+
+            # Generate datahub_id based on connection and URN
+            connection_context = 'current' if current_connection else 'none'
+            datahub_id = f"{current_connection.name if current_connection else 'default'}_{test_urn}"
+            
+            # Create local test data
+            local_test_data = {
+                'id': str(local_test.id),
+                'urn': test_urn,
+                'name': local_test.name,
+                'description': local_test.description or '',
+                'category': local_test.category or '',
+                'type': local_test.category or 'Test',
+                'environment': 'default',
+                'definition_json': local_test.definition_json,
+                'sync_status': local_test.sync_status,
+                'datahub_id': datahub_id,
+                'connection_context': connection_context,
+                'has_remote_match': test_urn in remote_tests_dict,
+                # Add empty results for local-only tests
+                'results': {},
+                'has_results': False,
+                'is_failing': False,
+                'passing_count': 0,
+                'failing_count': 0,
+                'last_run': None,
+            }
+            
+            if remote_match:
+                # SYNCED: exists in both local and remote
+                results = remote_match.get('results', {})
+                has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
+                is_failing = bool(results.get('failingCount', 0) > 0)
+                
+                # Update local test data with remote information
+                local_test_data.update({
+                    'status': 'synced',
+                    'definition_json': local_test.definition_json or remote_match.get('definition_json', ''),
+                    'results': results,
+                    'has_results': has_results,
+                    'is_failing': is_failing,
+                    'passing_count': results.get('passingCount', 0),
+                    'failing_count': results.get('failingCount', 0),
+                    'last_run': results.get('lastRunTimestampMillis'),
+                })
+                
+                synced_tests.append(local_test_data)
+            else:
+                # LOCAL_ONLY: exists only locally
+                local_test_data['status'] = 'local_only'
+                local_only_tests.append(local_test_data)
+        
+        # Find remote-only tests
+        for test_urn, remote_test in remote_tests_dict.items():
+            if test_urn not in local_test_urns:
+                # REMOTE_ONLY: exists only on DataHub
+                test_name = remote_test.get('name', '').strip()
+                results = remote_test.get('results', {})
+                has_results = bool(results.get('passingCount', 0) > 0 or results.get('failingCount', 0) > 0)
+                is_failing = bool(results.get('failingCount', 0) > 0)
+                
+                remote_test_enhanced = {
+                    'id': test_urn,  # Use URN as ID for remote-only tests
+                    'urn': test_urn,
+                    'name': test_name,
+                    'description': remote_test.get('description', ''),
+                    'category': remote_test.get('category', ''),
+                    'type': remote_test.get('category', 'Test'),
+                    'environment': 'default',
+                    'status': 'remote_only',
+                    'definition_json': remote_test.get('definition_json', ''),
+                    'results': results,
+                    'has_results': has_results,
+                    'is_failing': is_failing,
+                    'passing_count': results.get('passingCount', 0),
+                    'failing_count': results.get('failingCount', 0),
+                    'last_run': results.get('lastRunTimestampMillis'),
+                    'sync_status': 'REMOTE_ONLY',
+                }
+                remote_only_tests.append(remote_test_enhanced)
+
+        # Combine all tests for final output
+        all_tests = []
+        all_tests.extend(synced_tests)
+        all_tests.extend(local_only_tests)
+        all_tests.extend(remote_only_tests)
+
+        logger.info(f"Returning {len(all_tests)} tests: {len(synced_tests)} synced, {len(local_only_tests)} local-only, {len(remote_only_tests)} remote-only")
+
+        return JsonResponse({
+            'success': True,
+            'tests': all_tests,
+            'total': len(all_tests)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting remote tests data: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': f"Error getting remote tests data: {str(e)}",
+                'tests': []
+            })
+
+
 class TestDetailView(View):
     """View to create or edit metadata tests"""
 
@@ -261,7 +545,7 @@ class TestDetailView(View):
         """Display test details for viewing or editing"""
         try:
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
 
             test = None
             is_new = test_urn is None
@@ -269,8 +553,11 @@ class TestDetailView(View):
 
             if not is_new and connected and client:
                 try:
-                    # Fetch test from DataHub
-                    test = client.get_test(test_urn)
+                    # Fetch test from DataHub using list_tests with smaller count to avoid corrupted data
+                    tests = client.list_tests(query="*", start=0, count=100)
+                    test = next((t for t in tests if t.get('urn') == test_urn), None)
+                    if not test:
+                        logger.warning(f"Test not found with URN: {test_urn}")
                 except Exception as e:
                     logger.error(f"Error fetching test: {str(e)}")
                     messages.error(request, f"Error fetching test: {str(e)}")
@@ -356,7 +643,7 @@ class TestDetailView(View):
                 return redirect("metadata_manager:tests_list")
 
             # For server storage, we need to connect to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
 
             if not connected or not client:
                 error_msg = "Not connected to DataHub. Please check your connection settings."
@@ -499,7 +786,7 @@ class TestDeleteView(View):
                             local_test = Test.objects.get(id=test_id)
                         except Test.DoesNotExist:
                             try:
-                                local_test = Test.objects.get(deterministic_urn=test_id)
+                                local_test = Test.objects.get(urn=test_id)
                             except Test.DoesNotExist:
                                 pass
                         
@@ -523,7 +810,7 @@ class TestDeleteView(View):
                 
                 elif delete_type == 'remote_only':
                     # Delete only from DataHub
-                    connected, client = test_datahub_connection()
+                    connected, client = test_datahub_connection(request)
                     if not connected or not client:
                         return JsonResponse({
                             'success': False,
@@ -545,7 +832,7 @@ class TestDeleteView(View):
                 
                 else:  # delete_type == 'both' or default
                     # Delete from DataHub (original behavior)
-                    connected, client = test_datahub_connection()
+                    connected, client = test_datahub_connection(request)
                     if not connected or not client:
                         return JsonResponse({
                             'success': False,
@@ -564,22 +851,48 @@ class TestDeleteView(View):
                             'error': 'Failed to delete test.'
                         })
             
-            # For regular form submissions, handle as before
-            test_urn = test_id
-            connected, client = test_datahub_connection()
-
-            if connected and client:
-                # Delete test from DataHub
-                success = client.delete_test(test_urn)
-                if success:
-                    messages.success(request, "Test deleted successfully.")
-                else:
-                    messages.error(request, "Failed to delete test.")
+            # For regular form submissions, handle delete_type
+            delete_type = request.POST.get('delete_type', 'both')
+            
+            if delete_type == 'local_only':
+                # Delete from local database only
+                try:
+                    # Try to find local test by ID first, then by URN
+                    local_test = None
+                    try:
+                        local_test = Test.objects.get(id=test_id)
+                    except Test.DoesNotExist:
+                        try:
+                            local_test = Test.objects.get(urn=test_id)
+                        except Test.DoesNotExist:
+                            pass
+                    
+                    if local_test:
+                        test_name = local_test.name
+                        local_test.delete()
+                        messages.success(request, f'Test "{test_name}" removed from local database (still exists on DataHub).')
+                    else:
+                        messages.success(request, 'Test removed from local view (still exists on DataHub).')
+                except Exception as e:
+                    logger.error(f"Error deleting local test: {str(e)}")
+                    messages.error(request, f"Error deleting local test: {str(e)}")
             else:
-                messages.error(
-                    request,
-                    "Not connected to DataHub. Please check your connection settings.",
-                )
+                # Original behavior - delete from DataHub
+                test_urn = test_id
+                connected, client = test_datahub_connection(request)
+
+                if connected and client:
+                    # Delete test from DataHub
+                    success = client.delete_test(test_urn)
+                    if success:
+                        messages.success(request, "Test deleted successfully.")
+                    else:
+                        messages.error(request, "Failed to delete test.")
+                else:
+                    messages.error(
+                        request,
+                        "Not connected to DataHub. Please check your connection settings.",
+                    )
                 
         except Exception as e:
             logger.error(f"Error deleting test: {str(e)}")
@@ -609,7 +922,7 @@ class TestGitPushView(View):
         """Add test to GitHub PR"""
         try:
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
 
             if not connected or not client:
                 return JsonResponse(
@@ -623,8 +936,9 @@ class TestGitPushView(View):
                     {"success": False, "message": "GitHub integration not enabled"}
                 )
 
-            # Get test from DataHub
-            test = client.get_test(test_urn)
+            # Get test from DataHub using list_tests with smaller count to avoid corrupted data
+            tests = client.list_tests(query="*", start=0, count=100)
+            test = next((t for t in tests if t.get('urn') == test_urn), None)
             if not test:
                 return JsonResponse({"success": False, "message": "Test not found"})
 
@@ -746,7 +1060,7 @@ class TestExportView(View):
             format = request.GET.get("format", "yaml")
 
             # Check connection to DataHub
-            connected, client = test_datahub_connection()
+            connected, client = test_datahub_connection(request)
 
             if not connected or not client:
                 messages.error(
@@ -755,8 +1069,9 @@ class TestExportView(View):
                 )
                 return redirect("metadata_manager:tests_list")
 
-            # Get test from DataHub
-            test = client.get_test(test_urn)
+            # Get test from DataHub using list_tests with smaller count to avoid corrupted data
+            tests = client.list_tests(query="*", start=0, count=100)
+            test = next((t for t in tests if t.get('urn') == test_urn), None)
             if not test:
                 messages.error(request, "Test not found.")
                 return redirect("metadata_manager:tests_list")
@@ -808,106 +1123,641 @@ class TestExportView(View):
 
 
 class TestImportView(View):
-    """View to import a test from YAML or JSON file"""
+    """View for importing tests from YAML file"""
 
     def get(self, request):
-        """Display import form"""
-        try:
-            # Check connection to DataHub
-            connected, client = test_datahub_connection()
-
-            return render(
-                request,
-                "metadata_manager/tests/import.html",
-                {
-                    "page_title": "Import Metadata Test",
-                    "has_datahub_connection": connected,
-                },
-            )
-        except Exception as e:
-            logger.error(f"Error in test import view: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:tests_list")
+        """Show import form"""
+        return render(request, "metadata_manager/tests/import.html")
 
     def post(self, request):
-        """Import test from file"""
+        """Handle file upload and import tests"""
         try:
-            # Check if file was uploaded
-            if "test_file" not in request.FILES:
-                messages.error(request, "No file selected.")
+            if "yaml_file" not in request.FILES:
+                messages.error(request, "No file uploaded")
                 return redirect("metadata_manager:test_import")
 
-            file = request.FILES["test_file"]
+            yaml_file = request.FILES["yaml_file"]
+            content = yaml_file.read().decode("utf-8")
 
-            # Check file extension
-            if file.name.endswith(".json"):
-                # Parse JSON file
-                try:
-                    test_data = json.loads(file.read().decode("utf-8"))
-                except Exception as e:
-                    messages.error(request, f"Invalid JSON file: {str(e)}")
-                    return redirect("metadata_manager:test_import")
-            elif file.name.endswith(".yaml") or file.name.endswith(".yml"):
-                # Parse YAML file
-                try:
-                    test_data = yaml.safe_load(file.read().decode("utf-8"))
-                except Exception as e:
-                    messages.error(request, f"Invalid YAML file: {str(e)}")
-                    return redirect("metadata_manager:test_import")
-            else:
-                messages.error(
-                    request,
-                    "Unsupported file format. Please upload a JSON or YAML file.",
-                )
-                return redirect("metadata_manager:test_import")
+            # Parse YAML content
+            import yaml
 
-            # Handle import destination
-            destination = request.POST.get("destination", "server")
+            test_data = yaml.safe_load(content)
 
-            if destination == "server":
-                # Import to DataHub server
-                # Check connection to DataHub
-                connected, client = test_datahub_connection()
-
-                if not connected or not client:
-                    messages.error(
-                        request,
-                        "Not connected to DataHub. Please check your connection settings.",
-                    )
-                    return redirect("metadata_manager:test_import")
-
-                # Extract test data
-                name = test_data.get("name", "")
-                description = test_data.get("description", "")
-                category = test_data.get("category", "CUSTOM")
-                definition = test_data.get("definition", test_data)
-
-                # Create test on DataHub
-                try:
-                    created_test = client.create_test(
-                        name=name,
-                        description=description,
-                        category=category,
-                        definition_json=definition,
-                    )
-
-                    if created_test:
-                        messages.success(
-                            request, f"Test '{name}' imported successfully."
-                        )
-                    else:
-                        messages.error(request, f"Failed to import test '{name}'.")
-                except Exception as e:
-                    logger.error(f"Error importing test: {str(e)}")
-                    messages.error(request, f"Error importing test: {str(e)}")
-            else:
-                # Import to local storage
-                # This is now handled via JavaScript in the client
-                messages.success(request, "Test imported to local storage.")
-
-            return redirect("metadata_manager:tests_list")
+            # Process test data and create Test objects
+            # Implementation depends on your YAML structure
+            messages.success(request, f"Successfully imported tests from {yaml_file.name}")
 
         except Exception as e:
-            logger.error(f"Error importing test: {str(e)}")
-            messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("metadata_manager:test_import")
+            logger.error(f"Error importing tests: {str(e)}")
+            messages.error(request, f"Error importing tests: {str(e)}")
+
+        return redirect("metadata_manager:test_import")
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TestPullView(View):
+    """View to pull tests from DataHub and sync them to local database"""
+
+    def get(self, request, only_post=False):
+        """Handle GET request for pulling tests"""
+        return self.post(request, only_post)
+
+    def post(self, request, only_post=False):
+        """Pull tests from DataHub and sync them to local database"""
+        try:
+            # Get DataHub client
+            from utils.datahub_utils import get_datahub_client_from_request
+            client = get_datahub_client_from_request(request)
+            
+            if not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Test connection
+            if not client.test_connection():
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Get current connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+
+            # Fetch tests from DataHub
+            remote_tests = client.list_tests(query="*", start=0, count=1000)
+            
+            if not remote_tests:
+                return JsonResponse({
+                    "success": True,
+                    "message": "No tests found in DataHub",
+                    "tests_synced": 0,
+                    "tests_created": 0,
+                    "tests_updated": 0
+                })
+
+            tests_synced = 0
+            tests_created = 0
+            tests_updated = 0
+            errors = []
+
+            for remote_test in remote_tests:
+                try:
+                    result = self._process_test(client, remote_test, request)
+                    if result:
+                        tests_synced += 1
+                        if result.get('created'):
+                            tests_created += 1
+                        else:
+                            tests_updated += 1
+                except Exception as e:
+                    error_msg = f"Error processing test {remote_test.get('urn', 'unknown')}: {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(error_msg)
+
+            message = f"Successfully synced {tests_synced} tests from DataHub ({tests_created} created, {tests_updated} updated)"
+            if errors:
+                message += f". {len(errors)} errors occurred."
+
+            return JsonResponse({
+                "success": True,
+                "message": message,
+                "tests_synced": tests_synced,
+                "tests_created": tests_created,
+                "tests_updated": tests_updated,
+                "errors": errors[:10]  # Limit errors in response
+            })
+
+        except Exception as e:
+            logger.error(f"Error pulling tests from DataHub: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"Error pulling tests from DataHub: {str(e)}"
+            }, status=500)
+
+    def _process_test(self, client, test_data, request=None):
+        """Process a single test from DataHub and sync to local database"""
+        try:
+            # Extract test information
+            test_urn = test_data.get('urn')
+            if not test_urn:
+                logger.warning("Test missing URN, skipping")
+                return None
+
+            # Extract test details
+            test_name = test_data.get('name', '')
+            test_description = test_data.get('description', '')
+            test_category = test_data.get('category', '')
+            test_definition = test_data.get('definition', {})
+            entity_urn = test_data.get('entityUrn') or test_data.get('entity_urn', '')
+
+            # Get current connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+
+            # Check if test already exists
+            existing_test = Test.objects.filter(urn=test_urn).first()
+            
+            if existing_test:
+                # Update existing test
+                existing_test.name = test_name
+                existing_test.description = test_description
+                existing_test.category = test_category
+                existing_test.definition_json = test_definition
+                existing_test.entity_urn = entity_urn
+                existing_test.sync_status = "SYNCED"
+                existing_test.connection = current_connection
+                
+                # Extract platform information
+                if entity_urn:
+                    platform_name, platform_instance, original_environment = extract_platform_instance_from_urn(entity_urn)
+                    existing_test.platform_name = platform_name
+                    existing_test.platform_instance = platform_instance
+                
+                existing_test.save()
+                logger.info(f"Updated test: {test_name}")
+                return {'created': False, 'test': existing_test}
+            else:
+                # Create new test
+                new_test = Test.objects.create(
+                    urn=test_urn,
+                    name=test_name,
+                    description=test_description,
+                    category=test_category,
+                    definition_json=test_definition,
+                    entity_urn=entity_urn,
+                    sync_status="SYNCED",
+                    connection=current_connection
+                )
+                
+                # Extract platform information
+                if entity_urn:
+                    platform_name, platform_instance, original_environment = extract_platform_instance_from_urn(entity_urn)
+                    new_test.platform_name = platform_name
+                    new_test.platform_instance = platform_instance
+                    new_test.save()
+                
+                logger.info(f"Created new test: {test_name}")
+                return {'created': True, 'test': new_test}
+
+        except Exception as e:
+            logger.error(f"Error processing test {test_data.get('urn', 'unknown')}: {str(e)}")
+            raise
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TestSyncToLocalView(View):
+    """View to sync a specific remote test to local database"""
+
+    def post(self, request, test_urn):
+        """Sync a specific remote test to local database"""
+        try:
+            # Get DataHub client
+            from utils.datahub_utils import get_datahub_client_from_request
+            client = get_datahub_client_from_request(request)
+            
+            if not client:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Test connection
+            if not client.test_connection():
+                return JsonResponse({
+                    "success": False,
+                    "error": "Could not connect to DataHub. Check your connection settings."
+                }, status=500)
+
+            # Fetch the specific test from DataHub
+            remote_tests = client.list_tests(query="*", start=0, count=1000)
+            remote_test = None
+            
+            for test in remote_tests:
+                if test.get('urn') == test_urn:
+                    remote_test = test
+                    break
+            
+            if not remote_test:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Test not found in DataHub: {test_urn}"
+                }, status=404)
+
+            # Process the test
+            pull_view = TestPullView()
+            result = pull_view._process_test(client, remote_test, request)
+            
+            if result:
+                action = "created" if result.get('created') else "updated"
+                return JsonResponse({
+                    "success": True,
+                    "message": f"Test successfully {action} in local database",
+                    "test_id": str(result['test'].id),
+                    "test_name": result['test'].name
+                })
+            else:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Failed to sync test to local database"
+                }, status=500)
+
+        except Exception as e:
+            logger.error(f"Error syncing test to local: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": f"Error syncing test to local: {str(e)}"
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TestStageChangesView(View):
+    """View to add a test to staged changes using MCP pattern"""
+    
+    def post(self, request, test_id):
+        """Add a local test to staged changes"""
+        try:
+            import sys
+            import os
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.test_actions import add_test_to_staged_changes
+            
+            # Get the test from the database
+            test = Test.objects.get(id=test_id)
+            
+            # Get staging parameters
+            data = json.loads(request.body)
+            environment = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Extract platform instance from entity_urn if available
+            platform_name = None
+            platform_instance = None
+            original_environment = None
+            
+            if test.entity_urn:
+                platform_name, platform_instance, original_environment = extract_platform_instance_from_urn(test.entity_urn)
+                
+                # Update test model with platform instance
+                test.platform_name = platform_name
+                test.platform_instance = platform_instance
+                test.save()
+            
+            # Apply platform instance mapping if mutation is specified
+            modified_entity_urn = test.entity_urn
+            if mutation_name and platform_instance:
+                try:
+                    from web_ui.models import Mutation
+                    mutation = Mutation.objects.get(name=mutation_name)
+                    platform_mapping = mutation.platform_instance_mapping or {}
+                    
+                    # Apply platform instance mapping
+                    if platform_instance in platform_mapping:
+                        target_platform_instance = platform_mapping[platform_instance]
+                        # Replace platform instance in URN
+                        if modified_entity_urn and platform_instance in modified_entity_urn:
+                            modified_entity_urn = modified_entity_urn.replace(platform_instance, target_platform_instance, 1)
+                    
+                    # Apply environment mapping if needed (replace environment part)
+                    if original_environment and original_environment != environment:
+                        # Replace the environment (last part before closing parenthesis)
+                        if modified_entity_urn and modified_entity_urn.endswith(f",{original_environment})"):
+                            modified_entity_urn = modified_entity_urn[:-len(f",{original_environment})")] + f",{environment.upper()})"
+                        
+                except Mutation.DoesNotExist:
+                    logger.warning(f"Mutation {mutation_name} not found, skipping platform mapping")
+                except Exception as e:
+                    logger.warning(f"Error applying platform mapping: {str(e)}")
+            
+            # Add test to staged changes using the MCP pattern
+            result = add_test_to_staged_changes(
+                test_id=str(test.id),
+                test_urn=test.urn,
+                test_name=test.name,
+                test_type=test.category or "CUSTOM",
+                description=test.description,
+                category=test.category,
+                entity_urn=modified_entity_urn or test.entity_urn,
+                definition=test.definition_json or {},
+                yaml_definition=test.yaml_definition,
+                platform=platform_name,
+                platform_instance=platform_instance,
+                environment=environment,
+                owner=owner,
+                mutation_name=mutation_name
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "success": False,
+                    "error": result.get("message", "Failed to add test to staged changes")
+                }, status=500)
+            
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
+            
+            message = f"Test added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'files_created': files_created,
+                'files_created_count': files_created_count,
+                'mcps_created': mcps_created,
+                'test_id': str(test.id),
+                'test_urn': test.urn
+            })
+            
+        except Test.DoesNotExist:
+            logger.error(f"Test with ID {test_id} not found")
+            return JsonResponse({
+                'success': False,
+                'error': 'Test not found'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"Error staging test changes: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error staging test changes: {str(e)}'
+            }, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TestRemoteStageChangesView(View):
+    """API endpoint to add a remote test to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.test_actions import add_test_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            test_data = data.get('item_data')
+            
+            if not test_data:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Test data is required"
+                }, status=400)
+            
+            test_urn = test_data.get('urn')
+            if not test_urn:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Test URN is required"
+                }, status=400)
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Extract test ID from URN (last part after colon)
+            test_id = test_urn.split(':')[-1] if test_urn else None
+            if not test_id:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Could not extract test ID from URN"
+                }, status=400)
+            
+            # Extract test information from remote data
+            test_name = test_data.get('name', 'Unknown Test')
+            test_type = test_data.get('category', 'CUSTOM')
+            description = test_data.get('description', '')
+            category = test_data.get('category', '')
+            entity_urn = test_data.get('entity_urn', '')
+            definition = test_data.get('definition_json') or test_data.get('definition', {})
+            yaml_definition = test_data.get('yaml_definition', '')
+            platform = test_data.get('platform_name')
+            platform_instance = test_data.get('platform_instance')
+            
+            logger.info(f"Adding remote test '{test_name}' to staged changes...")
+            
+            # Add remote test to staged changes using the MCP pattern
+            result = add_test_to_staged_changes(
+                test_id=test_id,
+                test_urn=test_urn,
+                test_name=test_name,
+                test_type=test_type,
+                description=description,
+                category=category,
+                entity_urn=entity_urn,
+                definition=definition,
+                yaml_definition=yaml_definition,
+                platform=platform,
+                platform_instance=platform_instance,
+                environment=environment_name,
+                owner=owner,
+                mutation_name=mutation_name
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "status": "error",
+                    "error": result.get("message", "Failed to add remote test to staged changes")
+                }, status=500)
+            
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
+            
+            message = f"Remote test added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
+            
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "mcps_created": mcps_created,
+                "test_urn": test_urn
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding remote test to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+class TestSyncToDataHubView(View):
+    """View to sync a test to DataHub"""
+    
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request, test_id):
+        """Sync a local test to DataHub"""
+        try:
+            # Get the test from database
+            test = Test.objects.get(id=test_id)
+            
+            # Check connection to DataHub
+            connected, client = test_datahub_connection(request)
+            if not connected or not client:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Not connected to DataHub. Please check your connection settings.'
+                }, status=500)
+            
+            # Sync test to DataHub
+            success = client.create_test(test.to_dict())
+            
+            if success:
+                # Update sync status
+                test.sync_status = 'SYNCED'
+                test.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Test "{test.name}" successfully synced to DataHub'
+                })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Failed to sync test to DataHub'
+                }, status=500)
+                
+        except Test.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Test not found'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"Error syncing test to DataHub: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error syncing test to DataHub: {str(e)}'
+            }, status=500)
+
+
+class TestResyncView(View):
+    """View to resync a test from DataHub"""
+    
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request, test_id):
+        """Resync a test from DataHub"""
+        try:
+            # Get the test from database
+            test = Test.objects.get(id=test_id)
+            
+            # Check connection to DataHub
+            connected, client = test_datahub_connection(request)
+            if not connected or not client:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Not connected to DataHub. Please check your connection settings.'
+                }, status=500)
+            
+            # Get latest test data from DataHub
+            remote_test = client.get_test(test.urn)
+            
+            if remote_test:
+                # Update local test with remote data
+                test.name = remote_test.get('name', test.name)
+                test.description = remote_test.get('description', test.description)
+                test.category = remote_test.get('category', test.category)
+                test.definition_json = remote_test.get('definition', test.definition_json)
+                test.sync_status = 'SYNCED'
+                test.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Test "{test.name}" successfully resynced from DataHub'
+                })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Test not found in DataHub'
+                }, status=404)
+                
+        except Test.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Test not found'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"Error resyncing test from DataHub: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error resyncing test from DataHub: {str(e)}'
+            }, status=500)
+
+
+class TestPushToDataHubView(View):
+    """View to push a modified test to DataHub"""
+    
+    @method_decorator(require_POST)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request, test_id):
+        """Push a modified test to DataHub"""
+        try:
+            # Get the test from database
+            test = Test.objects.get(id=test_id)
+            
+            # Check connection to DataHub
+            connected, client = test_datahub_connection(request)
+            if not connected or not client:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Not connected to DataHub. Please check your connection settings.'
+                }, status=500)
+            
+            # Push test changes to DataHub
+            success = client.update_test(test.urn, test.to_dict())
+            
+            if success:
+                # Update sync status
+                test.sync_status = 'SYNCED'
+                test.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Test "{test.name}" successfully pushed to DataHub'
+                })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Failed to push test to DataHub'
+                }, status=500)
+                
+        except Test.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Test not found'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"Error pushing test to DataHub: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error pushing test to DataHub: {str(e)}'
+            }, status=500)

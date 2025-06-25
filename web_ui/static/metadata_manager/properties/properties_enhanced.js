@@ -5,17 +5,47 @@ let filterData = {
     entity_types: {}
 };
 let currentFilters = new Set();
+let currentOverviewFilter = null;
+let currentSearch = {
+    synced: '',
+    local: '',
+    remote: ''
+};
 
-// Pagination settings
+// Pagination variables - enhanced to match tags page
+let currentPagination = {
+    synced: { page: 1, itemsPerPage: 25 },
+    local: { page: 1, itemsPerPage: 25 },
+    remote: { page: 1, itemsPerPage: 25 }
+};
+
+// Sorting variables
+let currentSort = {
+    column: null,
+    direction: 'asc',
+    tabType: null
+};
+
+// Pagination settings (deprecated - now using currentPagination object)
 const ITEMS_PER_PAGE = 25;
-let currentSyncedPage = 1;
-let currentLocalPage = 1;
-let currentRemotePage = 1;
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
+    // Initial load
+    loadPropertiesData(true); // Skip sync validation on initial load
+
+    // Setup tab switching
+    setupTabSwitchHandlers();
+    
+    // Setup other event listeners
     setupEventListeners();
-    loadPropertiesData();
+    setupSearchListeners();
+    setupFilterListeners();
+    setupBulkActions();
+    setupImportFormHandler();
+    setupEditFormHandler();
+    setupOverviewClickHandlers();
+    
 });
 
 function setupEventListeners() {
@@ -23,7 +53,7 @@ function setupEventListeners() {
     const refreshBtn = document.getElementById('refreshProperties');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function() {
-            loadPropertiesData();
+            loadPropertiesData(); // Don't skip sync validation on manual refresh
         });
     }
 
@@ -38,6 +68,15 @@ function setupEventListeners() {
     
     // Tab switching handlers
     setupTabSwitchHandlers();
+    
+    // Filter listeners
+    setupFilterListeners();
+    
+    // Bulk actions
+    setupBulkActions();
+    
+    // Import form handler
+    setupImportFormHandler();
 }
 
 function setupSearchListeners() {
@@ -47,6 +86,7 @@ function setupSearchListeners() {
         
         if (searchInput) {
             searchInput.addEventListener('input', function() {
+                currentSearch[tabType] = this.value.toLowerCase();
                 filterAndRenderProperties(tabType);
             });
         }
@@ -54,10 +94,127 @@ function setupSearchListeners() {
         if (clearButton) {
             clearButton.addEventListener('click', function() {
                 searchInput.value = '';
+                currentSearch[tabType] = '';
                 filterAndRenderProperties(tabType);
             });
         }
     });
+}
+
+function setupFilterListeners() {
+    // Overview filters - switch tabs instead of filtering
+    document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(stat => {
+        stat.addEventListener('click', function() {
+            const filter = this.getAttribute('data-filter');
+            
+            // Switch to appropriate tab
+            let targetTab = null;
+            switch (filter) {
+                case 'synced':
+                    targetTab = 'synced-tab';
+                    break;
+                case 'local-only':
+                    targetTab = 'local-tab';
+                    break;
+                case 'remote-only':
+                    targetTab = 'remote-tab';
+                    break;
+                default:
+                    return; // Don't switch for total
+            }
+            
+            if (targetTab) {
+                // Clear overview active states
+                document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(s => {
+                    s.classList.remove('active');
+                });
+                
+                // Set this one as active
+                this.classList.add('active');
+                
+                // Switch to the tab
+                const tabButton = document.getElementById(targetTab);
+                if (tabButton) {
+                    tabButton.click();
+                }
+            }
+        });
+    });
+    
+    // Value type and entity type filters - multi-select functionality
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('#value-type-filters .filter-stat') || e.target.closest('#entity-type-filters .filter-stat')) {
+            const stat = e.target.closest('.filter-stat');
+            const filterType = stat.closest('#value-type-filters') ? 'valueType' : 'entityType';
+            const filterValue = stat.getAttribute('data-filter');
+            
+            // Toggle the filter
+            toggleFilter(filterType, filterValue);
+            
+            // Toggle active state
+            stat.classList.toggle('active');
+            
+            // Refresh current tab
+            refreshCurrentTab();
+        }
+    });
+}
+
+function setupBulkActions() {
+    // Setup bulk selection checkboxes
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        setupBulkSelectionForTab(tabType);
+    });
+}
+
+function setupImportFormHandler() {
+    const importForm = document.getElementById('import-json-form');
+    if (importForm) {
+        importForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            // Show loading state
+            const submitButton = this.querySelector('button[type="submit"]');
+            const originalText = submitButton.innerHTML;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Importing...';
+            submitButton.disabled = true;
+            
+            fetch('/metadata/properties/import/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('success', 'Properties imported successfully');
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('importJsonModal'));
+                    modal.hide();
+                    
+                    // Refresh properties data
+                    loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+                } else {
+                    showNotification('error', data.error || 'Failed to import properties');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('error', 'Error importing properties');
+            })
+            .finally(() => {
+                // Restore button state
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            });
+        });
+    }
 }
 
 function setupEditFormHandler() {
@@ -86,21 +243,21 @@ function setupEditFormHandler() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showNotification('Property updated successfully', 'success');
+                    showNotification('success', 'Property updated successfully');
                     
                     // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('editPropertyModal'));
                     modal.hide();
                     
                     // Refresh properties data
-                    loadPropertiesData();
+                    loadPropertiesData(true); // Skip sync validation to prevent mass status updates
                 } else {
-                    showNotification(data.error || 'Failed to update property', 'error');
+                    showNotification('error', data.error || 'Failed to update property');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showNotification('Error updating property', 'error');
+                showNotification('error', 'Error updating property');
             })
             .finally(() => {
                 // Restore button state
@@ -148,6 +305,17 @@ function setupOverviewClickHandlers() {
                     tabButton.click();
                 }
             }
+        });
+    });
+    
+    // Content filters - toggle selection for filtering
+    document.querySelectorAll('.clickable-stat[data-category="content"]').forEach(stat => {
+        stat.addEventListener('click', function() {
+            this.classList.toggle('active');
+            const filter = this.getAttribute('data-filter');
+            console.log('Content filter toggled:', filter, this.classList.contains('active'));
+            
+            // Add future filtering logic here if needed
         });
     });
 }
@@ -198,7 +366,7 @@ function updateOverviewActiveState(tabType) {
     }
 }
 
-function loadPropertiesData() {
+function loadPropertiesData(skipSyncValidation = false) {
     // Show loading indicator
     const loadingIndicator = document.getElementById('loading-indicator');
     const propertiesContent = document.getElementById('properties-content');
@@ -206,7 +374,13 @@ function loadPropertiesData() {
     if (loadingIndicator) loadingIndicator.style.display = 'block';
     if (propertiesContent) propertiesContent.style.display = 'none';
     
-    fetch('/metadata/properties/data/', {
+    // Build URL with optional skip_sync_validation parameter
+    let url = '/metadata/properties/data/';
+    if (skipSyncValidation) {
+        url += '?skip_sync_validation=true';
+    }
+    
+    fetch(url, {
         method: 'GET',
         headers: {
             'X-Requested-With': 'XMLHttpRequest',
@@ -224,13 +398,11 @@ function loadPropertiesData() {
                 filters: data.filters || { value_types: {}, entity_types: {} }
             };
             
-            console.log('=== PROPERTIES DATA CATEGORIZATION ===');
             console.log('Raw data from server:', data.data.length, 'properties');
             console.log('Raw data sample:', data.data.slice(0, 3));
             console.log('Synced items:', propertiesData.synced_items.length, propertiesData.synced_items);
             console.log('Local only items:', propertiesData.local_only_items.length, propertiesData.local_only_items);
             console.log('Remote only items:', propertiesData.remote_only_items.length, propertiesData.remote_only_items);
-            console.log('=== END CATEGORIZATION ===');
             
             updateStatistics(data.statistics);
             updateFilterRows();
@@ -245,12 +417,12 @@ function loadPropertiesData() {
             if (loadingIndicator) loadingIndicator.style.display = 'none';
             if (propertiesContent) propertiesContent.style.display = 'block';
         } else {
-            showNotification(data.error || 'Failed to load properties data', 'error');
+            showNotification('error', data.error || 'Failed to load properties data');
         }
     })
     .catch(error => {
         console.error('Error loading properties:', error);
-        showNotification('Failed to load properties data', 'error');
+        showNotification('error', 'Failed to load properties data');
         if (loadingIndicator) loadingIndicator.style.display = 'none';
     });
 }
@@ -271,16 +443,18 @@ function updateStatistics(statistics) {
         totalCount = propertiesData.length;
     }
     
-    // Update overview statistics
+    // Update overview statistics (both top filter bar and tab stats)
+    const totalPropertiesEl = document.getElementById('total-properties');
     const totalEl = document.getElementById('total-items');
-    const syncedEl = document.getElementById('synced-count');
-    const localEl = document.getElementById('local-only-count');
-    const remoteEl = document.getElementById('remote-only-count');
+    const syncedCountEl = document.getElementById('synced-count');
+    const localOnlyCountEl = document.getElementById('local-only-count');
+    const remoteOnlyCountEl = document.getElementById('remote-only-count');
     
+    if (totalPropertiesEl) totalPropertiesEl.textContent = totalCount;
     if (totalEl) totalEl.textContent = totalCount;
-    if (syncedEl) syncedEl.textContent = syncedCount;
-    if (localEl) localEl.textContent = localCount;
-    if (remoteEl) remoteEl.textContent = remoteCount;
+    if (syncedCountEl) syncedCountEl.textContent = syncedCount;
+    if (localOnlyCountEl) localOnlyCountEl.textContent = localCount;
+    if (remoteOnlyCountEl) remoteOnlyCountEl.textContent = remoteCount;
     
     // Update tab badges
     const syncedBadge = document.getElementById('synced-badge');
@@ -290,10 +464,40 @@ function updateStatistics(statistics) {
     if (syncedBadge) syncedBadge.textContent = syncedCount;
     if (localBadge) localBadge.textContent = localCount;
     if (remoteBadge) remoteBadge.textContent = remoteCount;
+    
+    // Update content filter statistics
+    updateContentFilterStats();
+}
+
+function updateContentFilterStats() {
+    if (!propertiesData) return;
+    
+    // Combine all property types to get full data set
+    const allProperties = [
+        ...(propertiesData.synced_items || []),
+        ...(propertiesData.local_only_items || []), 
+        ...(propertiesData.remote_only_items || [])
+    ];
+    
+    // Calculate content filter statistics
+    const hasAllowedValues = allProperties.filter(p => p.allowedValues && p.allowedValues.length > 0).length;
+    const hasEntityTypes = allProperties.filter(p => p.entity_types && p.entity_types.length > 0).length;
+    const isSearchable = allProperties.filter(p => p.show_in_search_filters === true).length;
+    const isImmutable = allProperties.filter(p => p.immutable === true).length;
+    
+    // Update elements
+    const hasAllowedValuesEl = document.getElementById('has-allowedValues-count');
+    const hasEntityTypesEl = document.getElementById('has-entityTypes-count');
+    const isSearchableEl = document.getElementById('is-searchable-count');
+    const isImmutableEl = document.getElementById('is-immutable-count');
+    
+    if (hasAllowedValuesEl) hasAllowedValuesEl.textContent = hasAllowedValues;
+    if (hasEntityTypesEl) hasEntityTypesEl.textContent = hasEntityTypes;
+    if (isSearchableEl) isSearchableEl.textContent = isSearchable;
+    if (isImmutableEl) isImmutableEl.textContent = isImmutable;
 }
 
 function updateFilterRows() {
-    console.log('=== UPDATING FILTER ROWS ===');
     console.log('propertiesData.filters:', propertiesData.filters);
     
     // Update value type filters
@@ -318,12 +522,6 @@ function updateFilterRows() {
                 <div class="h5 mb-0">${count}</div>
                 <div class="text-muted">${displayValueType}</div>
             `;
-            
-            filterDiv.addEventListener('click', function() {
-                toggleFilter('valueType', valueType);
-                this.classList.toggle('active');
-                refreshCurrentTab();
-            });
             
             valueTypeContainer.appendChild(filterDiv);
         });
@@ -351,12 +549,6 @@ function updateFilterRows() {
                 <div class="h5 mb-0">${count}</div>
                 <div class="text-muted">${displayEntityType}</div>
             `;
-            
-            filterDiv.addEventListener('click', function() {
-                toggleFilter('entityType', entityType);
-                this.classList.toggle('active');
-                refreshCurrentTab();
-            });
             
             entityTypeContainer.appendChild(filterDiv);
         });
@@ -460,16 +652,31 @@ function refreshCurrentTab() {
         const tabType = activeTab.id.replace('-tab', '');
         console.log('Refreshing current tab:', tabType);
         renderTab(`${tabType}-items`);
+        updateFilterDisplay();
     }
+}
+
+function filterAndRenderProperties(tabType) {
+    // Update current search term
+    const searchInput = document.getElementById(`${tabType}-search`);
+    if (searchInput) {
+        currentSearch[tabType] = searchInput.value.toLowerCase();
+    }
+    
+    // Re-render the tab with current filters and search
+    displayTabContent(tabType);
 }
 
 function renderTab(tabId) {
     const tabType = tabId.replace('-items', '');
+    displayTabContent(tabType);
+}
+
+function displayTabContent(tabType) {
     const contentElement = document.getElementById(`${tabType}-content`);
-    const searchInput = document.getElementById(`${tabType}-search`);
-    const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+    const searchTerm = currentSearch[tabType] || '';
     
-    console.log(`=== Rendering tab: ${tabId} (type: ${tabType}) ===`);
+    console.log(`=== Rendering tab: ${tabType} ===`);
     
     if (!contentElement) {
         console.error(`Content element not found for ${tabType}-content`);
@@ -499,20 +706,14 @@ function renderTab(tabId) {
     }
     
     console.log(`Tab ${tabType} should show ${items.length} items`);
-    console.log(`PropertiesData structure:`, {
-        synced: propertiesData.synced_items?.length || 0,
-        local: propertiesData.local_only_items?.length || 0,
-        remote: propertiesData.remote_only_items?.length || 0
-    });
-    
-    console.log(`Raw items for ${tabType}:`, items.length, items);
     
     // Apply search
     if (searchTerm) {
         items = items.filter(property => 
             (property.name || '').toLowerCase().includes(searchTerm) ||
             (property.description || '').toLowerCase().includes(searchTerm) ||
-            (property.qualified_name || '').toLowerCase().includes(searchTerm)
+            (property.qualified_name || '').toLowerCase().includes(searchTerm) ||
+            (property.urn || '').toLowerCase().includes(searchTerm)
         );
         console.log(`After search filter: ${items.length} items`);
     }
@@ -521,57 +722,212 @@ function renderTab(tabId) {
     items = applyFilters(items);
     console.log(`After applying filters: ${items.length} items`);
     
-    // Render table directly like domains does
-    let html = `
+    // Apply sorting if active for this tab
+    if (currentSort.column && currentSort.tabType === tabType) {
+        items = sortItems(items, currentSort.column, currentSort.direction);
+    }
+    
+    // Generate table HTML with pagination
+    const tableHTML = generateTableHTML(items, tabType);
+    
+    // Update content
+    contentElement.innerHTML = tableHTML;
+    
+    // Setup event handlers
+    setupBulkSelectionForTab(tabType);
+    attachSortingHandlers(contentElement, tabType);
+    restoreSortState(contentElement, tabType);
+    attachPaginationHandlers(contentElement, tabType);
+    attachViewButtonHandlers(contentElement);
+    
+    console.log(`Tab ${tabType} rendered successfully with ${items.length} items`);
+}
+
+function generateTableHTML(items, tabType) {
+    const pagination = currentPagination[tabType];
+    const startIndex = (pagination.page - 1) * pagination.itemsPerPage;
+    const endIndex = startIndex + pagination.itemsPerPage;
+    const paginatedItems = items.slice(startIndex, endIndex);
+    
+    // Determine if we should show the sync status column
+    const showSyncStatus = tabType === 'synced';
+    
+    // Adjust column widths based on table type
+    const nameWidth = showSyncStatus ? '140' : '180';
+    const descriptionWidth = showSyncStatus ? '200' : '250';
+    const urnWidth = showSyncStatus ? '120' : '150';
+    const actionsWidth = showSyncStatus ? '150' : '180';
+    
+    return `
         <div class="table-responsive">
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        <th width="40px"><input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}"></th>
-                        <th class="sortable-header" data-sort="name">Name</th>
-                        <th>Description</th>
-                        <th class="sortable-header" data-sort="entity_types">Entity Types</th>
-                        <th class="sortable-header" data-sort="value_type">Value Type</th>
-                        <th class="sortable-header" data-sort="cardinality">Cardinality</th>
-                        <th width="200px" class="sortable-header" data-sort="urn">URN</th>
-                        <th width="200px">Actions</th>
+                        <th width="40">
+                            <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
+                        </th>
+                        <th class="sortable-header" data-sort="name" width="${nameWidth}">Name</th>
+                        <th width="${descriptionWidth}">Description</th>
+                        <th class="sortable-header" data-sort="entity_types" width="200">Entity Types</th>
+                        <th class="sortable-header" data-sort="value_type" width="120">Value Type</th>
+                        <th class="sortable-header" data-sort="cardinality" width="100">Cardinality</th>
+                        <th class="sortable-header" data-sort="allowedValues" width="100">Allowed Values</th>
+                        <th width="${urnWidth}">URN</th>
+                        ${showSyncStatus ? '<th class="sortable-header" data-sort="sync_status" width="100">Sync Status</th>' : ''}
+                        <th width="${actionsWidth}">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-    `;
-    
-    if (items.length === 0) {
-        console.log(`No items to render for ${tabType}`);
-        html += `
-                    <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">
-                            <i class="fas fa-inbox fa-2x mb-2"></i><br>
-                            No ${tabType} properties found
-                        </td>
-                    </tr>
-        `;
-    } else {
-        console.log(`Rendering ${items.length} rows for ${tabType}`);
-        items.forEach((property, index) => {
-            console.log(`Rendering property ${index}:`, property.name);
-            html += renderPropertyRow(property, tabType);
-        });
-    }
-    
-    html += `
+                    ${paginatedItems.length === 0 ? getEmptyStateHTML(tabType, currentSearch[tabType]) : 
+                      paginatedItems.map(item => renderPropertyRow(item, tabType)).join('')}
                 </tbody>
             </table>
         </div>
+        ${items.length > pagination.itemsPerPage ? generatePaginationHTML(items.length, tabType) : ''}
+    `;
+}
+
+function getEmptyStateHTML(tabType, hasSearch) {
+    const colSpan = tabType === 'synced' ? '10' : '9';
+    return `
+        <tr>
+            <td colspan="${colSpan}" class="text-center py-4 text-muted">
+                <i class="fas fa-inbox fa-2x mb-2"></i><br>
+                ${hasSearch ? `No ${tabType} properties found matching your search` : `No ${tabType} properties found`}
+            </td>
+        </tr>
+    `;
+}
+
+function generatePaginationHTML(totalItems, tabType) {
+    const pagination = currentPagination[tabType];
+    const totalPages = Math.ceil(totalItems / pagination.itemsPerPage);
+    const currentPage = pagination.page;
+    
+    if (totalPages <= 1) return '';
+    
+    const startItem = (currentPage - 1) * pagination.itemsPerPage + 1;
+    const endItem = Math.min(currentPage * pagination.itemsPerPage, totalItems);
+    
+    let paginationHTML = `
+        <div class="pagination-container">
+            <div class="pagination-info">
+                Showing ${startItem}-${endItem} of ${totalItems} properties
+            </div>
+            <nav aria-label="Table pagination">
+                <ul class="pagination mb-0">
     `;
     
-    console.log(`Setting innerHTML for ${tabType}-content`);
-    contentElement.innerHTML = html;
-    console.log(`Tab ${tabType} rendered successfully with HTML length:`, html.length);
+    // Previous button
+    paginationHTML += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage - 1}" data-tab="${tabType}">Previous</a>
+        </li>
+    `;
     
-    // Setup bulk selection and sorting after rendering
-    setupBulkSelectionForTab(tabType);
-    attachSortingHandlers(contentElement, tabType);
-    attachViewButtonHandlers(contentElement);
+    // Page numbers
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="1" data-tab="${tabType}">1</a></li>`;
+        if (startPage > 2) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        paginationHTML += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" data-page="${i}" data-tab="${tabType}">${i}</a>
+            </li>
+        `;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}" data-tab="${tabType}">${totalPages}</a></li>`;
+    }
+    
+    // Next button
+    paginationHTML += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage + 1}" data-tab="${tabType}">Next</a>
+        </li>
+    `;
+    
+    paginationHTML += `
+                </ul>
+            </nav>
+            <div class="d-flex align-items-center">
+                <label for="itemsPerPage-${tabType}" class="form-label me-2 mb-0">Items per page:</label>
+                <select class="form-select form-select-sm" id="itemsPerPage-${tabType}" style="width: auto;">
+                    <option value="10" ${pagination.itemsPerPage === 10 ? 'selected' : ''}>10</option>
+                    <option value="25" ${pagination.itemsPerPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${pagination.itemsPerPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${pagination.itemsPerPage === 100 ? 'selected' : ''}>100</option>
+                </select>
+            </div>
+        </div>
+    `;
+    
+    return paginationHTML;
+}
+
+function sortItems(items, column, direction) {
+    return items.sort((a, b) => {
+        const aVal = getSortValue(a, column);
+        const bVal = getSortValue(b, column);
+        
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return direction === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        
+        if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+function getSortValue(property, column) {
+    switch(column) {
+        case 'name':
+            return (property.name || '').toLowerCase();
+        case 'entity_types':
+            return (property.entity_types || []).join(',').toLowerCase();
+        case 'value_type':
+            return (property.value_type || '').toLowerCase();
+        case 'cardinality':
+            return (property.cardinality || '').toLowerCase();
+        case 'allowedValues':
+            return (property.allowed_values || []).length;
+        case 'sync_status':
+            const syncStatus = property.sync_status || 'UNKNOWN';
+            const statusOrder = {
+                'SYNCED': 1,
+                'MODIFIED': 2,
+                'LOCAL_ONLY': 3,
+                'REMOTE_ONLY': 4,
+                'UNKNOWN': 5
+            };
+            return statusOrder[syncStatus] || 5;
+        default:
+            return '';
+    }
+}
+
+function restoreSortState(content, tabType) {
+    if (currentSort.column && currentSort.tabType === tabType) {
+        const tableHeaders = content.querySelectorAll('.sortable-header');
+        tableHeaders.forEach(h => {
+            h.classList.remove('sort-asc', 'sort-desc');
+            if (h.dataset.sort === currentSort.column) {
+                h.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        });
+    }
 }
 
 // Tab content is rendered by renderAllTabs(), no need for individual loading
@@ -581,19 +937,16 @@ function renderPropertiesTable(properties, tabType, container) {
     console.log('Properties data:', properties);
     console.log('Container:', container);
     
-    // Get current page for this tab
-    let currentPage;
-    switch (tabType) {
-        case 'synced': currentPage = currentSyncedPage; break;
-        case 'local': currentPage = currentLocalPage; break;
-        case 'remote': currentPage = currentRemotePage; break;
-    }
+    // Get current page and items per page for this tab
+    const pagination = currentPagination[tabType];
+    const currentPage = pagination.page;
+    const itemsPerPage = pagination.itemsPerPage;
     
     // Calculate pagination
     const totalItems = properties.length;
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
     const paginatedProperties = properties.slice(startIndex, endIndex);
     
     if (totalItems === 0) {
@@ -608,6 +961,15 @@ function renderPropertiesTable(properties, tabType, container) {
         return;
     }
     
+    // Determine if we should show the sync status column (only for synced tab)
+    const showSyncStatus = tabType === 'synced';
+    
+    // Adjust column widths based on whether sync status is shown
+    const nameWidth = showSyncStatus ? '140' : '180';
+    const descriptionWidth = showSyncStatus ? '200' : '250';
+    const urnWidth = showSyncStatus ? '120' : '150';
+    const actionsWidth = showSyncStatus ? '150' : '180';
+    
     console.log('Generating table HTML...');
     const tableHtml = `
         <div class="table-responsive">
@@ -617,13 +979,15 @@ function renderPropertiesTable(properties, tabType, container) {
                         <th width="40px">
                             <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}">
                         </th>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Entity Types</th>
-                        <th>Value Type</th>
-                        <th>Cardinality</th>
-                        <th width="200px">URN</th>
-                        <th width="200px">Actions</th>
+                        <th width="${nameWidth}px">Name</th>
+                        <th width="${descriptionWidth}px">Description</th>
+                        <th width="200px">Entity Types</th>
+                        <th width="120px">Value Type</th>
+                        <th width="100px">Cardinality</th>
+                        <th width="100px">Allowed Values</th>
+                        <th width="${urnWidth}px">URN</th>
+                        ${showSyncStatus ? '<th class="sortable-header" data-sort="sync_status" width="100px">Sync Status</th>' : ''}
+                        <th width="${actionsWidth}px">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -639,66 +1003,122 @@ function renderPropertiesTable(properties, tabType, container) {
     console.log('Table rendered successfully');
     
     // Setup bulk selection
-    setupBulkSelection(tabType);
+    setupBulkSelectionForTab(tabType);
+    
+    // Setup pagination handlers
+    attachPaginationHandlers(container, tabType);
+    
+    // Setup sorting handlers
+    attachSortingHandlers(container, tabType);
 }
 
 function renderPagination(currentPage, totalPages, totalItems, startItem, endItem, tabType) {
     if (totalPages <= 1) return '';
     
-    const prevDisabled = currentPage <= 1 ? 'disabled' : '';
-    const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+    const pagination = currentPagination[tabType];
     
     let paginationHTML = `
-        <div class="pagination-container mt-3">
+        <div class="pagination-container">
             <div class="pagination-info">
                 Showing ${startItem}-${endItem} of ${totalItems} properties
             </div>
-            <nav aria-label="Properties pagination">
+            <nav aria-label="Table pagination">
                 <ul class="pagination mb-0">
-                    <li class="page-item ${prevDisabled}">
-                        <a class="page-link" href="#" onclick="changePage('${tabType}', ${currentPage - 1})">
-                            <i class="fas fa-chevron-left"></i>
-                        </a>
-                    </li>
+    `;
+    
+    // Previous button
+    paginationHTML += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage - 1}" data-tab="${tabType}">Previous</a>
+        </li>
     `;
     
     // Page numbers
-    const maxVisiblePages = 5;
-    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
     
-    if (endPage - startPage < maxVisiblePages - 1) {
-        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    if (startPage > 1) {
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="1" data-tab="${tabType}">1</a></li>`;
+        if (startPage > 2) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
     }
     
     for (let i = startPage; i <= endPage; i++) {
-        const activeClass = i === currentPage ? 'active' : '';
         paginationHTML += `
-            <li class="page-item ${activeClass}">
-                <a class="page-link" href="#" onclick="changePage('${tabType}', ${i})">${i}</a>
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" data-page="${i}" data-tab="${tabType}">${i}</a>
             </li>
         `;
     }
     
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        paginationHTML += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}" data-tab="${tabType}">${totalPages}</a></li>`;
+    }
+    
+    // Next button
     paginationHTML += `
-                    <li class="page-item ${nextDisabled}">
-                        <a class="page-link" href="#" onclick="changePage('${tabType}', ${currentPage + 1})">
-                            <i class="fas fa-chevron-right"></i>
-                        </a>
-                    </li>
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage + 1}" data-tab="${tabType}">Next</a>
+        </li>
+    `;
+    
+    paginationHTML += `
                 </ul>
             </nav>
+            <div class="d-flex align-items-center">
+                <label for="itemsPerPage-${tabType}" class="form-label me-2 mb-0">Items per page:</label>
+                <select class="form-select form-select-sm" id="itemsPerPage-${tabType}" style="width: auto;">
+                    <option value="10" ${pagination.itemsPerPage === 10 ? 'selected' : ''}>10</option>
+                    <option value="25" ${pagination.itemsPerPage === 25 ? 'selected' : ''}>25</option>
+                    <option value="50" ${pagination.itemsPerPage === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${pagination.itemsPerPage === 100 ? 'selected' : ''}>100</option>
+                </select>
+            </div>
         </div>
     `;
     
     return paginationHTML;
 }
 
+function attachPaginationHandlers(content, tabType) {
+    // Attach pagination click handlers
+    content.querySelectorAll('.page-link[data-page]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const page = parseInt(this.dataset.page);
+            const tab = this.dataset.tab;
+            if (page && tab && currentPagination[tab]) {
+                currentPagination[tab].page = page;
+                displayTabContent(tab);
+            }
+        });
+    });
+    
+    // Attach items per page change handler
+    const itemsPerPageSelect = content.querySelector(`#itemsPerPage-${tabType}`);
+    if (itemsPerPageSelect) {
+        itemsPerPageSelect.addEventListener('change', function() {
+            currentPagination[tabType].itemsPerPage = parseInt(this.value);
+            currentPagination[tabType].page = 1; // Reset to first page
+            displayTabContent(tabType);
+        });
+    }
+}
+
 function changePage(tabType, page) {
-    switch (tabType) {
-        case 'synced': currentSyncedPage = page; break;
-        case 'local': currentLocalPage = page; break;
-        case 'remote': currentRemotePage = page; break;
+    if (currentPagination[tabType]) {
+        currentPagination[tabType].page = page;
+    } else {
+        // Fallback for old structure
+        switch (tabType) {
+            case 'synced': currentSyncedPage = page; break;
+            case 'local': currentLocalPage = page; break;
+            case 'remote': currentRemotePage = page; break;
+        }
     }
     renderTab(`${tabType}-items`);
 }
@@ -709,18 +1129,32 @@ function renderPropertyRow(property, tabType) {
     console.log('Entity types:', property.entity_types);
     console.log('Value type:', property.value_type);
     
-    const actionButtons = getActionButtons(property, tabType);
+    // Get property data
+    const propertyData = property.combined || property;
+    const customActionButtons = getActionButtons(property, tabType);
     
     // Handle missing name gracefully
     const propertyName = property.name || property.qualified_name || 'Unnamed Property';
     const propertyUrn = property.urn || '';
     
-    console.log('URN for truncation:', propertyUrn, 'truncated:', truncateUrn(propertyUrn, 40));
+    console.log('URN for truncation:', propertyUrn, 'truncated:', truncateUrn(propertyUrn, 30));
+    
+    // Escape the property data for the data attribute
+    const propertyDataAttr = JSON.stringify(property).replace(/"/g, '&quot;');
+    
+    // Get the proper database ID for this property
+    const databaseId = getDatabaseId(propertyData);
+    
+    // Get sync status information (for synced tab)
+    const showSyncStatus = tabType === 'synced';
+    const syncStatus = propertyData.sync_status || 'UNKNOWN';
+    const syncStatusClass = getStatusBadgeClass(syncStatus);
+    const syncStatusText = syncStatus.replace('_', ' ');
     
     return `
         <tr>
             <td>
-                <input type="checkbox" class="form-check-input item-checkbox" value="${property.id || property.urn}">
+                <input type="checkbox" class="form-check-input item-checkbox" value="${databaseId || property.urn}" data-property="${propertyDataAttr}">
             </td>
             <td>
                 <strong>${escapeHtml(propertyName)}</strong>
@@ -736,17 +1170,40 @@ function renderPropertyRow(property, tabType) {
                 </div>
             </td>
             <td>
-                <span class="badge bg-info">${escapeHtml((property.value_type || 'STRING').toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</span>
+                <span class="badge bg-info">${escapeHtml(getValueTypeDisplayName(property.value_type))}</span>
             </td>
             <td>
                 <span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>
             </td>
-            <td class="urn-cell">
-                <code class="small text-muted" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;" title="${escapeHtml(propertyUrn)}">${escapeHtml(truncateUrn(propertyUrn, 40))}</code>
-            </td>
             <td>
-                <div class="btn-group" role="group">
-                    ${actionButtons}
+                <span class="badge bg-secondary">${property.allowedValuesCount || 0}</span>
+            </td>
+            <td title="${escapeHtml(propertyUrn)}">
+                <code class="small">${escapeHtml(truncateUrn(propertyUrn, 30))}</code>
+            </td>
+            ${showSyncStatus ? `
+            <td>
+                <span class="badge ${syncStatusClass}">${syncStatusText}</span>
+            </td>
+            ` : ''}
+            <td>
+                <div class="btn-group action-buttons" role="group">
+                    <!-- View entity button -->
+                    <button type="button" class="btn btn-sm btn-outline-primary view-property" 
+                            data-property-urn="${propertyUrn || databaseId}" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    
+                    <!-- View in DataHub button if property exists in DataHub for current connection -->
+                    ${shouldShowDataHubViewButton(propertyData, tabType) ? `
+                        <button type="button" class="btn btn-sm btn-outline-info view-in-datahub" 
+                                onclick="viewInDataHub('${propertyUrn}')" title="View in DataHub">
+                            <i class="fas fa-external-link-alt"></i>
+                        </button>
+                    ` : ''}
+                    
+                    <!-- Custom action buttons -->
+                    ${customActionButtons}
                 </div>
             </td>
         </tr>
@@ -754,114 +1211,332 @@ function renderPropertyRow(property, tabType) {
 }
 
 function getActionButtons(property, tabType) {
-    const buttons = [];
-    const propertyId = property.id;
-    const propertyUrn = property.urn;
-    const status = property.status;
+    // Get property data
+    const propertyData = property.combined || property;
+    const urn = propertyData.urn || '';
     
-    console.log(`Getting action buttons for property: ${property.name}, id: ${propertyId}, status: ${status}`);
+    // Get connection context information
+    const connectionContext = propertyData.connection_context || 'none'; // "current", "different", "none"
+    const hasRemoteMatch = propertyData.has_remote_match || false;
     
-    // View button - always available
-    buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary view-property" data-property-urn="${propertyUrn || propertyId}" title="View Details">
-        <i class="fas fa-eye"></i>
-    </button>`);
+    // Get the proper database ID for this property
+    const databaseId = getDatabaseId(propertyData);
     
+    let actionButtons = '';
+    
+    // 1. Edit Property - For local and synced properties
+    if (tabType === 'local' || tabType === 'synced') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-warning edit-property" 
+                    onclick="editProperty('${urn || databaseId}')" title="Edit Property">
+                <i class="fas fa-edit"></i>
+            </button>
+        `;
+    }
+
+    // 2. Sync to DataHub - For properties in local tab
+    // Show for ALL properties in local tab regardless of their connection or sync status
+    if (tabType === 'local') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success push-property" 
+                    onclick="pushPropertyToDataHub('${databaseId}')" title="Push to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
+    }
+    
+    // 2b. Resync - Only for synced properties (properties that belong to current connection and have remote match)
+    if (tabType === 'synced' && connectionContext === 'current' && hasRemoteMatch) {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-info resync-property" 
+                    onclick="resyncProperty('${databaseId}')" title="Resync from DataHub">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        `;
+    }
+    
+    // 2c. Push to DataHub - Only for synced properties that are modified
+    if (tabType === 'synced' && connectionContext === 'current' && propertyData.sync_status === 'MODIFIED') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-success push-property" 
+                    onclick="pushPropertyToDataHub('${databaseId}')" title="Push to DataHub">
+                <i class="fas fa-upload"></i>
+            </button>
+        `;
+    }
+    
+    // 3. Sync to Local - Only for remote-only properties
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-primary sync-property-to-local" 
+                    onclick="syncPropertyToLocal(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Sync to Local">
+                <i class="fas fa-download"></i>
+            </button>
+        `;
+    }
+    
+    // 4. Download JSON - Available for all properties
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-secondary download-json"
+                onclick="downloadPropertyJson('${databaseId}')" title="Download JSON">
+            <i class="fas fa-file-download"></i>
+        </button>
+    `;
+
+    // 5. Add to Staged Changes - Available for all properties
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
+                onclick="addPropertyToStagedChanges(${JSON.stringify(property).replace(/"/g, '&quot;')})" title="Add to Staged Changes">
+            <i class="fab fa-github"></i>
+        </button>
+    `;
+
+    // 6. Delete Local Property - Only for synced and local properties
+    if (tabType === 'synced' || tabType === 'local') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-danger delete-local-property" 
+                    onclick="deleteLocalProperty('${databaseId}')" title="Delete Local Property">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    }
+    
+    // 7. Delete Remote Property - Only for remote-only properties
+    if (tabType === 'remote') {
+        actionButtons += `
+            <button type="button" class="btn btn-sm btn-outline-danger delete-remote-property" 
+                    onclick="deleteRemoteProperty('${urn}')" title="Delete from DataHub">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    }
+    
+    return actionButtons;
+}
+
+function shouldShowDataHubViewButton(propertyData, tabType) {
+    const urn = propertyData.urn || '';
+    const connectionContext = propertyData.connection_context || 'none';
+    const hasRemoteMatch = propertyData.has_remote_match || false;
+    
+    // Don't show for local URNs or empty URNs
+    if (!urn || urn.includes('local:')) {
+        return false;
+    }
+    
+    // Show for remote-only properties (they definitely exist in DataHub)
+    if (tabType === 'remote') {
+        return true;
+    }
+    
+    // For synced tab: show only if property belongs to current connection AND has remote match
     if (tabType === 'synced') {
-        // Edit button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
-            <i class="fas fa-edit"></i>
-        </button>`);
-        // Add to PR button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-property-to-pr" onclick="addPropertyToPR('${propertyId}')" title="Add to PR">
-            <i class="fab fa-github"></i>
-        </button>`);
-        // Sync/Resync button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-info resync-property" onclick="resyncProperty('${propertyId}')" title="Resync">
-            <i class="fas fa-sync-alt"></i>
-        </button>`);
-        // Push to DataHub button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
-            <i class="fas fa-upload"></i>
-        </button>`);
-        // Delete local button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-local-property" onclick="deleteLocalProperty('${propertyId}')" title="Delete Local">
-            <i class="fas fa-trash"></i>
-        </button>`);
-    } else if (tabType === 'local') {
-        // Edit button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary edit-property" onclick="editProperty('${propertyUrn || propertyId}')" title="Edit">
-            <i class="fas fa-edit"></i>
-        </button>`);
-        // Add to PR button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-property-to-pr" onclick="addPropertyToPR('${propertyId}')" title="Add to PR">
-            <i class="fab fa-github"></i>
-        </button>`);
-        // Push to DataHub button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-success push-property" onclick="pushPropertyToDataHub('${propertyId}')" title="Push to DataHub">
-            <i class="fas fa-upload"></i>
-        </button>`);
-        // Delete button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-local-property" onclick="deleteLocalProperty('${propertyId}')" title="Delete">
-            <i class="fas fa-trash"></i>
-        </button>`);
-    } else if (tabType === 'remote') {
-        // Sync to Local button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-primary sync-property-to-local" onclick="syncPropertyToLocal('${propertyUrn}')" title="Sync to Local">
-            <i class="fas fa-download"></i>
-        </button>`);
-        // Add to PR button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-warning add-remote-property-to-pr" onclick="addRemotePropertyToPR('${propertyUrn}')" title="Add to PR">
-            <i class="fab fa-github"></i>
-        </button>`);
-        // Delete remote button
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger delete-remote-property" onclick="deleteRemoteProperty('${propertyUrn}')" title="Delete Remote">
-            <i class="fas fa-trash"></i>
-        </button>`);
+        return connectionContext === 'current' && hasRemoteMatch;
     }
     
-    return buttons.join(' ');
+    // For local tab: don't show View in DataHub button
+    // These properties either don't exist in DataHub or belong to different connections
+    if (tabType === 'local') {
+        return false;
+    }
+    
+    return false;
 }
 
+/**
+ * Setup bulk selection for a specific tab
+ */
 function setupBulkSelectionForTab(tabType) {
-    const selectAllCheckbox = document.getElementById(`selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}`);
-    const tabContent = document.getElementById(`${tabType}-content`);
+    const container = document.getElementById(`${tabType}-content`);
+    if (!container) return;
     
-    if (selectAllCheckbox && tabContent) {
-        // Remove existing listeners to avoid duplicates
-        selectAllCheckbox.replaceWith(selectAllCheckbox.cloneNode(true));
-        const newSelectAllCheckbox = document.getElementById(`selectAll${tabType.charAt(0).toUpperCase() + tabType.slice(1)}`);
-        
-        newSelectAllCheckbox.addEventListener('change', function() {
-            const itemCheckboxes = tabContent.querySelectorAll('.item-checkbox');
-            itemCheckboxes.forEach(cb => {
-                cb.checked = this.checked;
+    // Handle select all checkbox
+    container.addEventListener('change', function(e) {
+        if (e.target.classList.contains('select-all-checkbox')) {
+            const checkboxes = container.querySelectorAll('input[type="checkbox"]:not(.select-all-checkbox)');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = e.target.checked;
             });
-            updateBulkActionsVisibility();
-        });
-        
-        // Setup individual checkbox listeners
-        const itemCheckboxes = tabContent.querySelectorAll('.item-checkbox');
-        itemCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', function() {
-                updateBulkActionsVisibility();
-                
-                // Update select all checkbox state
-                const allCheckboxes = tabContent.querySelectorAll('.item-checkbox');
-                const checkedCheckboxes = tabContent.querySelectorAll('.item-checkbox:checked');
-                
-                if (newSelectAllCheckbox) {
-                    newSelectAllCheckbox.checked = allCheckboxes.length > 0 && allCheckboxes.length === checkedCheckboxes.length;
-                    newSelectAllCheckbox.indeterminate = checkedCheckboxes.length > 0 && checkedCheckboxes.length < allCheckboxes.length;
-                }
-            });
-        });
+            updateBulkActionsVisibility(tabType);
+        } else if (e.target.type === 'checkbox') {
+            updateBulkActionsVisibility(tabType);
+            
+            // Update select all checkbox state
+            const checkboxes = container.querySelectorAll('input[type="checkbox"]:not(.select-all-checkbox)');
+            const checkedCheckboxes = container.querySelectorAll('input[type="checkbox"]:checked:not(.select-all-checkbox)');
+            const selectAllCheckbox = container.querySelector('.select-all-checkbox');
+            
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = checkedCheckboxes.length === checkboxes.length;
+                selectAllCheckbox.indeterminate = checkedCheckboxes.length > 0 && checkedCheckboxes.length < checkboxes.length;
+            }
+        }
+    });
+}
+
+/**
+ * Add property to staged changes (MCP)
+ * @param {Object} property - The property object
+ */
+function addPropertyToStagedChanges(property) {
+    
+    // Get property data
+    const propertyData = property.combined || property;
+    const databaseId = getDatabaseId(propertyData);
+    
+    // Check if this is already a local/synced property or a remote-only property
+    if (databaseId) {
+        // Property already exists locally (synced or local-only), add directly to staged changes
+        showNotification('info', 'Adding property to staged changes...');
+        addPropertyToStagedChangesInternal(propertyData);
+    } else {
+        // Remote-only property - add directly to staged changes using remote endpoint
+        showNotification('info', 'Adding remote property to staged changes...');
+        addRemotePropertyToStagedChanges(property);
     }
 }
 
-// Global sorting state for properties
-let currentSort = { column: null, direction: null, tabType: null };
+function addPropertyToStagedChangesInternal(propertyData) {
+    const propertyId = getDatabaseId(propertyData);
+    
+    if (!propertyId) {
+        showNotification('error', 'Cannot add property to staged changes: No database ID found');
+        return;
+    }
+    
+    // Get current environment and mutation name
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = window.mutationName || null;
+    
+    // Find the button to show loading state
+    const button = event?.target || document.querySelector(`[onclick*="addPropertyToStagedChanges"]`);
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+    
+    // Make API call to add property to staged changes
+    const url = `/metadata/properties/${propertyId}/stage_changes/`;
+    console.log('🔗 Making request to URL:', url);
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            showNotification('success', data.message || 'Property added to staged changes successfully');
+            // Refresh the data
+            if (typeof loadPropertiesData === 'function') {
+                loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+            }
+        } else {
+            throw new Error(data.error || 'Failed to add property to staged changes');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding property to staged changes:', error);
+        showNotification('error', `Error adding property to staged changes: ${error.message}`);
+    })
+    .finally(() => {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = '<i class="fab fa-github"></i>';
+        }
+    });
+}
 
-// Attach sorting handlers to table headers - matching assertions implementation
+/**
+ * Get the actual database ID from a property object
+ * This is needed because the property data might contain datahub_id instead of the actual database id
+ * @param {Object} propertyData - The property data object
+ * @returns {string|null} - The database ID or null if not found
+ */
+function getDatabaseId(propertyData) {
+    console.log('🔍 getDatabaseId called with property:', propertyData.name);
+    console.log('🔍 Property status:', propertyData.status, 'sync_status:', propertyData.sync_status);
+    
+    // First check if this is a remote-only property
+    if (propertyData.status === 'remote_only' || propertyData.sync_status === 'REMOTE_ONLY') {
+        console.log('🔍 Property is remote-only, returning null (no local database ID)');
+        return null;
+    }
+    
+    // For combined objects (synced properties), check local first
+    if (propertyData.local && propertyData.local.id) {
+        console.log('🔍 Found database ID from propertyData.local.id:', propertyData.local.id);
+        return propertyData.local.id;
+    }
+    
+    // For local-only or synced properties, use the id directly
+    if (propertyData.id) {
+        console.log('🔍 Found database ID from propertyData.id:', propertyData.id);
+        return propertyData.id;
+    }
+    
+    // Check for database_id field (explicitly added by backend)
+    if (propertyData.database_id) {
+        console.log('🔍 Found database ID from propertyData.database_id:', propertyData.database_id);
+        return propertyData.database_id;
+    }
+    
+    // Log warning if we couldn't find an ID
+    console.warn('🔍 Could not find database ID for property:', propertyData.name);
+    return null;
+}
+
+/**
+ * View property in DataHub
+ * @param {string} propertyUrn - The property URN
+ */
+function viewInDataHub(propertyUrn) {
+    // Get DataHub URL from the page data
+    const datahubUrl = window.propertiesData?.datahub_url;
+    if (!datahubUrl) {
+        showNotification('error', 'DataHub URL not available');
+        return;
+    }
+    
+    // Construct the URL for structured properties
+    const baseUrl = datahubUrl.replace(/\/+$/, ''); // Remove trailing slashes
+    const propertyUrl = `${baseUrl}/structured-properties/${propertyUrn}`;
+    
+    // Open in new tab
+    window.open(propertyUrl, '_blank');
+}
+
+/**
+ * Download property JSON
+ * @param {string} propertyId - The property ID
+ */
+function downloadPropertyJson(propertyId) {
+    console.log(`Downloading property JSON for ID: ${propertyId}`);
+    
+    // Create a temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = `/metadata/properties/${propertyId}/download/`;
+    link.download = `property_${propertyId}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showNotification('success', 'Property JSON download started');
+}
+
+// Attach sorting handlers to table headers - matching tags implementation
 function attachSortingHandlers(content, tabType) {
     const sortableHeaders = content.querySelectorAll('.sortable-header');
     
@@ -878,15 +1553,8 @@ function attachSortingHandlers(content, tabType) {
                 currentSort.tabType = tabType;
             }
             
-            // Update header classes in this table only
-            const tableHeaders = content.querySelectorAll('.sortable-header');
-            tableHeaders.forEach(h => {
-                h.classList.remove('sort-asc', 'sort-desc');
-            });
-            this.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
-            
-            // Sort the current table
-            sortCurrentTable(content, tabType);
+            // Re-render the table with sorting
+            displayTabContent(tabType);
         });
     });
 }
@@ -918,25 +1586,29 @@ function sortCurrentTable(content, tabType) {
 function getSortValueFromRow(row, column) {
     const cells = row.querySelectorAll('td');
     
+    // Check if this is a synced table (has sync status column)
+    const hasSyncStatus = cells.length > 9; // More than 9 columns means sync status is present
+    
     switch(column) {
         case 'name':
             return cells[1]?.textContent?.trim().toLowerCase() || ''; // Skip checkbox column
-        case 'urn':
+        case 'description':
             return cells[2]?.textContent?.trim().toLowerCase() || '';
-        case 'value_type':
-            return cells[3]?.textContent?.trim().toLowerCase() || '';
-        case 'cardinality':
-            return cells[4]?.textContent?.trim().toLowerCase() || '';
         case 'entity_types':
+            return cells[3]?.textContent?.trim().toLowerCase() || '';
+        case 'value_type':
+            return cells[4]?.textContent?.trim().toLowerCase() || '';
+        case 'cardinality':
             return cells[5]?.textContent?.trim().toLowerCase() || '';
+        case 'allowedValues':
+            return cells[6]?.textContent?.trim().toLowerCase() || '';
+        case 'sync_status':
+            // Sync status column is at index 8 (after URN)
+            return hasSyncStatus ? (cells[8]?.textContent?.trim().toLowerCase() || '') : '';
         default:
             return '';
     }
 }
-
-
-
-
 
 function attachViewButtonHandlers(container) {
     container.querySelectorAll('.view-property').forEach(button => {
@@ -960,7 +1632,7 @@ function viewProperty(propertyUrn) {
     property = allProperties.find(p => p.urn === propertyUrn || p.id === propertyUrn);
     
     if (!property) {
-        showNotification('Property not found', 'error');
+        showNotification('error', 'Property not found');
         return;
     }
     
@@ -980,7 +1652,7 @@ function showPropertyDetails(property) {
         ? property.entity_types.map(type => `<span class="badge bg-light text-dark me-1">${escapeHtml(type)}</span>`).join('')
         : '<span class="text-muted">None specified</span>';
     
-    document.getElementById('modal-property-value-type').innerHTML = `<span class="badge bg-info">${escapeHtml(property.value_type || 'STRING')}</span>`;
+    document.getElementById('modal-property-value-type').innerHTML = `<span class="badge bg-info">${escapeHtml(getValueTypeDisplayName(property.value_type))}</span>`;
     document.getElementById('modal-property-cardinality').innerHTML = `<span class="badge bg-secondary">${escapeHtml(property.cardinality || 'SINGLE')}</span>`;
     
     // Raw JSON data
@@ -1003,7 +1675,7 @@ function editProperty(propertyUrn) {
     property = allProperties.find(p => p.urn === propertyUrn || p.id === propertyUrn);
     
     if (!property) {
-        showNotification('Property not found', 'error');
+        showNotification('error', 'Property not found');
         return;
     }
     
@@ -1020,27 +1692,32 @@ function populateEditPropertyModal(property) {
     const form = document.getElementById('editPropertyForm');
     form.action = `/metadata/properties/${property.id}/`;
     
-    // Populate form fields
-    document.getElementById('editPropertyId').value = property.id;
-    document.getElementById('editPropertyName').value = property.name || '';
-    document.getElementById('editPropertyDescription').value = property.description || '';
-    document.getElementById('editPropertyQualifiedName').value = property.qualified_name || '';
-    document.getElementById('editPropertyValueType').value = property.value_type || 'STRING';
-    document.getElementById('editPropertyCardinality').value = property.cardinality || 'SINGLE';
-    
-    // Handle entity types
-    const entityTypeCheckboxes = document.querySelectorAll('input[name="entity_types"]');
-    entityTypeCheckboxes.forEach(checkbox => {
-        checkbox.checked = (property.entity_types || []).includes(checkbox.value);
-    });
-    
-    // Handle display settings
-    document.getElementById('editShowInSearchFilters').checked = property.show_in_search_filters || false;
-    document.getElementById('editShowAsAssetBadge').checked = property.show_as_asset_badge || false;
-    document.getElementById('editShowInAssetSummary').checked = property.show_in_asset_summary || false;
-    document.getElementById('editShowInColumnsTable').checked = property.show_in_columns_table || false;
-    document.getElementById('editIsHidden').checked = property.is_hidden || false;
-    document.getElementById('editImmutable').checked = property.immutable || false;
+    // Use the new comprehensive modal population function
+    if (window.propertyModal && window.propertyModal.populateEditModal) {
+        window.propertyModal.populateEditModal(property);
+    } else {
+        // Fallback to basic population if new modal system is not available
+        document.getElementById('editPropertyId').value = property.id;
+        document.getElementById('editPropertyName').value = property.name || '';
+        document.getElementById('editPropertyDescription').value = property.description || '';
+        document.getElementById('editPropertyQualifiedName').value = property.qualified_name || '';
+        document.getElementById('editPropertyValueType').value = property.value_type || 'string';
+        document.getElementById('editPropertyCardinality').value = property.cardinality || 'SINGLE';
+        
+        // Handle entity types
+        const entityTypeCheckboxes = document.querySelectorAll('input[name="entity_types"]');
+        entityTypeCheckboxes.forEach(checkbox => {
+            checkbox.checked = (property.entity_types || []).includes(checkbox.value);
+        });
+        
+        // Handle display settings
+        document.getElementById('editShowInSearchFilters').checked = property.show_in_search_filters || false;
+        document.getElementById('editShowAsAssetBadge').checked = property.show_as_asset_badge || false;
+        document.getElementById('editShowInAssetSummary').checked = property.show_in_asset_summary || false;
+        document.getElementById('editShowInColumnsTable').checked = property.show_in_columns_table || false;
+        document.getElementById('editIsHidden').checked = property.is_hidden || false;
+        document.getElementById('editPropertyImmutable').checked = property.immutable || false;
+    }
 }
 
 function populatePropertyViewModal(property) {
@@ -1091,16 +1768,16 @@ function addPropertyToPR(propertyId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Optionally reload the data to reflect any status changes
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
-            showNotification(data.error || 'Failed to add property to PR', 'error');
+            showNotification('error', data.error || 'Failed to add property to PR');
         }
     })
     .catch(error => {
         console.error('Error adding property to PR:', error);
-        showNotification('Failed to add property to PR', 'error');
+        showNotification('error', 'Failed to add property to PR');
     })
     .finally(() => {
         if (button) {
@@ -1111,7 +1788,7 @@ function addPropertyToPR(propertyId) {
 }
 
 function addRemotePropertyToPR(propertyUrn) {
-    console.log('Adding remote property to PR:', propertyUrn);
+    console.log('Adding remote property to staged changes:', propertyUrn);
     
     fetch('/metadata/properties/add-remote-to-pr/', {
         method: 'POST',
@@ -1124,14 +1801,48 @@ function addRemotePropertyToPR(propertyUrn) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
-        console.error('Error adding property to PR:', error);
-        showNotification('Failed to add property to PR', 'error');
+        console.error('Error adding property to staged changes:', error);
+        showNotification('error', 'Failed to add property to staged changes');
+    });
+}
+
+function addRemotePropertyToStagedChanges(property) {
+    console.log('Adding remote property to staged changes:', property);
+    
+    const currentEnvironment = getCurrentEnvironment();
+    const mutationName = getCurrentMutationName();
+    
+    const payload = {
+        item_data: property,
+        environment: currentEnvironment,
+        mutation_name: mutationName
+    };
+    
+    fetch('/metadata/properties/remote/stage_changes/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showNotification('success', data.message);
+        } else {
+            showNotification('error', data.error || 'Failed to add remote property to staged changes');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding remote property to staged changes:', error);
+        showNotification('error', 'Failed to add remote property to staged changes');
     });
 }
 
@@ -1154,16 +1865,16 @@ function resyncProperty(propertyId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error resyncing property:', error);
-        showNotification('Failed to resync property', 'error');
+        showNotification('error', 'Failed to resync property');
     })
     .finally(() => {
         if (button) {
@@ -1187,21 +1898,22 @@ function pushPropertyToDataHub(propertyId) {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         }
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error pushing property to DataHub:', error);
-        showNotification('Failed to push property to DataHub', 'error');
+        showNotification('error', 'Failed to push property to DataHub');
     })
     .finally(() => {
         if (button) {
@@ -1229,21 +1941,22 @@ function deleteLocalProperty(propertyId) {
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         }
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message || 'Property deleted successfully', 'success');
+            showNotification('success', data.message || 'Property deleted successfully');
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error deleting property:', error);
-        showNotification('Failed to delete property', 'error');
+        showNotification('error', 'Failed to delete property');
     })
     .finally(() => {
         if (button) {
@@ -1253,10 +1966,24 @@ function deleteLocalProperty(propertyId) {
     });
 }
 
-function syncPropertyToLocal(propertyUrn) {
+function syncPropertyToLocal(property, callback = null) {
+    // Handle both property object and URN string for backward compatibility
+    const propertyUrn = typeof property === 'string' ? property : property.urn;
+    const propertyData = typeof property === 'object' ? property : null;
+    
     console.log(`Syncing property to local: ${propertyUrn}`);
     
-    const button = document.querySelector(`button[onclick="syncPropertyToLocal('${propertyUrn}')"]`);
+    // For property objects, extract the URN
+    const urnToSync = propertyUrn || (propertyData && propertyData.urn) || (propertyData && propertyData.deterministic_urn);
+    
+    if (!urnToSync) {
+        console.error('No URN found for property:', property);
+        showNotification('error', 'Error: No URN found for property');
+        if (callback) callback(null);
+        return;
+    }
+    
+    const button = document.querySelector(`button[onclick*="syncPropertyToLocal"]`);
     if (button) {
         button.disabled = true;
         button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -1267,22 +1994,42 @@ function syncPropertyToLocal(propertyUrn) {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         },
-        body: `property_urn=${encodeURIComponent(propertyUrn)}`
+        body: `property_urn=${encodeURIComponent(urnToSync)}`
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+            
+            // If callback provided, call it with the synced property data
+            if (callback && data.property) {
+                callback(data.property);
+            } else if (callback) {
+                // If no property data returned, try to find it in the updated data
+                // This is a fallback - ideally the backend should return the synced property
+                setTimeout(() => {
+                    // Try to find the synced property by URN
+                    const allProperties = [
+                        ...(window.propertiesData?.synced_items || []),
+                        ...(window.propertiesData?.local_only_items || [])
+                    ];
+                    const syncedProperty = allProperties.find(p => p.urn === urnToSync);
+                    callback(syncedProperty);
+                }, 1000);
+            }
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
+            if (callback) callback(null);
         }
     })
     .catch(error => {
         console.error('Error syncing property:', error);
-        showNotification('Failed to sync property to local', 'error');
+        showNotification('error', 'Failed to sync property to local');
+        if (callback) callback(null);
     })
     .finally(() => {
         if (button) {
@@ -1310,22 +2057,23 @@ function deleteRemoteProperty(propertyUrn) {
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
         },
         body: `property_urn=${encodeURIComponent(propertyUrn)}`
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(data.message, 'success');
+            showNotification('success', data.message);
             // Reload data to refresh the view
-            loadPropertiesData();
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
         } else {
-            showNotification(data.error, 'error');
+            showNotification('error', data.error);
         }
     })
     .catch(error => {
         console.error('Error deleting remote property:', error);
-        showNotification('Failed to delete remote property', 'error');
+        showNotification('error', 'Failed to delete remote property');
     })
     .finally(() => {
         if (button) {
@@ -1339,24 +2087,90 @@ function getCSRFToken() {
     return document.querySelector('[name=csrfmiddlewaretoken]').value;
 }
 
-function showNotification(message, type = 'info') {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show notification`;
-    notification.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+function getCurrentEnvironment() {
+    // Try to get from dropdown first
+    const environmentSelect = document.getElementById('environment-select');
+    if (environmentSelect) {
+        return environmentSelect.value || 'dev';
+    }
+    
+    // Fallback to data attribute or default
+    const container = document.querySelector('[data-environment]');
+    return container ? container.dataset.environment : 'dev';
+}
+
+function getCurrentMutationName() {
+    // Try to get from input first
+    const mutationInput = document.getElementById('mutation-name');
+    if (mutationInput) {
+        return mutationInput.value;
+    }
+    
+    // Fallback to data attribute
+    const container = document.querySelector('[data-mutation-name]');
+    return container ? container.dataset.mutationName : null;
+}
+
+function showNotification(type, message) {
+    // Check if we have notifications container
+    let container = document.getElementById('notifications-container');
+    
+    // Create it if it doesn't exist
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notifications-container';
+        container.className = 'position-fixed bottom-0 end-0 p-3';
+        container.style.zIndex = '1050';
+        document.body.appendChild(container);
+    }
+    
+    // Create unique ID
+    const id = 'toast-' + Date.now();
+    
+    // Create toast HTML
+    let bgClass, icon, title;
+    
+    if (type === 'success') {
+        bgClass = 'bg-success';
+        icon = 'fa-check-circle';
+        title = 'Success';
+    } else if (type === 'info') {
+        bgClass = 'bg-info';
+        icon = 'fa-info-circle';
+        title = 'Info';
+    } else {
+        bgClass = 'bg-danger';
+        icon = 'fa-exclamation-circle';
+        title = 'Error';
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${bgClass} text-white`;
+    toast.id = id;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.innerHTML = `
+        <div class="toast-header ${bgClass} text-white">
+            <i class="fas ${icon} me-2"></i>
+            <strong class="me-auto">${title}</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">${message}</div>
     `;
     
-    // Add to page
-    document.body.appendChild(notification);
+    container.appendChild(toast);
     
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.remove();
-        }
-    }, 5000);
+    // Initialize and show the toast
+    const toastInstance = new bootstrap.Toast(toast, {
+        delay: 5000
+    });
+    toastInstance.show();
+    
+    // Remove toast from DOM after it's hidden
+    toast.addEventListener('hidden.bs.toast', function () {
+        toast.remove();
+    });
 }
 
 function escapeHtml(text) {
@@ -1392,10 +2206,33 @@ function renderEntityTypes(entityTypes, valueType) {
     if (validTypes.length === 0) {
         return '<span class="text-muted">-</span>';
     }
-    
+
     return validTypes.map(type => {
-        // Convert to title case and replace underscores with spaces
-        const displayType = type.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        // Parse URN format: urn:li:entityType:datahub.dataset -> Dataset
+        let displayType = type;
+        
+        if (type.startsWith('urn:li:entityType:')) {
+            // Extract the entity type from URN
+            const entityType = type.replace('urn:li:entityType:', '');
+            
+            // Handle datahub.* format
+            if (entityType.startsWith('datahub.')) {
+                displayType = entityType.replace('datahub.', '');
+            } else {
+                displayType = entityType;
+            }
+            
+            // Convert to proper case
+            displayType = displayType.toLowerCase()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+        } else {
+            // For non-URN formats, just clean up the display
+            displayType = type.toLowerCase()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+        }
+        
         return `<span class="badge bg-light text-dark entity-type-badge">${escapeHtml(displayType)}</span>`;
     }).join('');
 }
@@ -1445,10 +2282,78 @@ function bulkPushProperties(tabType) {
     if (checkedBoxes.length === 0) return;
     
     if (confirm(`Are you sure you want to push ${checkedBoxes.length} properties to DataHub?`)) {
-        checkedBoxes.forEach(checkbox => {
+        // Disable all checkboxes and show progress
+        const allCheckboxes = document.querySelectorAll(`#${tabType}-content .item-checkbox`);
+        allCheckboxes.forEach(cb => cb.disabled = true);
+        
+        // Show initial progress notification
+        showNotification('info', `Starting bulk push of ${checkedBoxes.length} properties...`);
+        
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+        
+        // Process properties sequentially
+        async function processNext(index) {
+            if (index >= checkedBoxes.length) {
+                // All done - show final result
+                allCheckboxes.forEach(cb => cb.disabled = false);
+                
+                if (errorCount === 0) {
+                    showNotification('success', `Successfully pushed ${successCount} properties to DataHub`);
+                } else if (successCount === 0) {
+                    showNotification('error', `Failed to push all ${errorCount} properties. First few errors: ${errors.slice(0, 2).join('; ')}`);
+                } else {
+                    showNotification('info', `Bulk push completed: ${successCount} successful, ${errorCount} failed. First few errors: ${errors.slice(0, 2).join('; ')}`);
+                }
+                
+                // Reload data to refresh the view
+                loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+                return;
+            }
+            
+            const checkbox = checkedBoxes[index];
             const propertyId = checkbox.value;
-            pushPropertyToDataHub(propertyId);
-        });
+            
+            // Show progress for every 5th property or the last one
+            if (index % 5 === 0 || index === checkedBoxes.length - 1) {
+                showNotification('info', `Pushing property ${index + 1} of ${checkedBoxes.length}...`);
+            }
+            
+            try {
+                const response = await fetch(`/metadata/properties/${propertyId}/deploy/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': getCSRFToken(),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    successCount++;
+                    console.log(`Successfully pushed property ${propertyId}`);
+                } else {
+                    errorCount++;
+                    const errorMsg = data.error || 'Unknown error';
+                    errors.push(`Property ${propertyId}: ${errorMsg}`);
+                    console.error(`Failed to push property ${propertyId}:`, errorMsg);
+                }
+            } catch (error) {
+                errorCount++;
+                const errorMsg = error.message || 'Network error';
+                errors.push(`Property ${propertyId}: ${errorMsg}`);
+                console.error(`Error pushing property ${propertyId}:`, error);
+            }
+            
+            // Wait a bit before processing next property to avoid overwhelming the server
+            setTimeout(() => processNext(index + 1), 500);
+        }
+        
+        // Start processing
+        processNext(0);
     }
 }
 
@@ -1458,33 +2363,160 @@ function bulkSyncToLocal(tabType) {
     
     if (confirm(`Are you sure you want to sync ${checkedBoxes.length} properties to local?`)) {
         checkedBoxes.forEach(checkbox => {
-            const propertyUrn = checkbox.value;
-            syncPropertyToLocal(propertyUrn);
+            const propertyData = JSON.parse(checkbox.getAttribute('data-property') || '{}');
+            syncPropertyToLocal(propertyData);
         });
     }
 }
 
 function bulkDeleteLocalProperties(tabType) {
     const checkedBoxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
-    if (checkedBoxes.length === 0) return;
+    if (checkedBoxes.length === 0) {
+        showNotification('error', 'Please select properties to delete.');
+        return;
+    }
     
     if (confirm(`Are you sure you want to delete ${checkedBoxes.length} local properties? This action cannot be undone.`)) {
-        checkedBoxes.forEach(checkbox => {
+        console.log(`Bulk delete ${checkedBoxes.length} local properties for ${tabType}`);
+        
+        // Show loading indicator
+        showNotification('success', `Starting deletion of ${checkedBoxes.length} local properties...`);
+        
+        // Process each property sequentially
+        let successCount = 0;
+        let errorCount = 0;
+        let processedCount = 0;
+        
+        // Create a function to process properties one by one
+        function processNextProperty(index) {
+            if (index >= checkedBoxes.length) {
+                // All properties processed
+                showNotification('success', `Completed: ${successCount} properties deleted, ${errorCount} failed.`);
+                if (successCount > 0) {
+                    // Refresh the data if any properties were successfully deleted
+                    loadPropertiesData();
+                }
+                return;
+            }
+            
+            const checkbox = checkedBoxes[index];
             const propertyId = checkbox.value;
-            deleteLocalProperty(propertyId);
-        });
+            
+            // Make the API call to delete this property
+            fetch(`/metadata/properties/${propertyId}/delete/`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                }
+                processedCount++;
+                
+                // Update progress
+                if (processedCount % 5 === 0 || processedCount === checkedBoxes.length) {
+                    showNotification('success', `Progress: ${processedCount}/${checkedBoxes.length} properties processed`);
+                }
+                
+                // Process the next property
+                processNextProperty(index + 1);
+            })
+            .catch(error => {
+                console.error(`Error deleting property ${propertyId}:`, error);
+                errorCount++;
+                processedCount++;
+                
+                // Process the next property despite the error
+                processNextProperty(index + 1);
+            });
+        }
+        
+        // Start processing properties
+        processNextProperty(0);
     }
 }
 
 function bulkDeleteRemoteProperties(tabType) {
     const checkedBoxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
-    if (checkedBoxes.length === 0) return;
+    if (checkedBoxes.length === 0) {
+        showNotification('error', 'Please select properties to delete.');
+        return;
+    }
     
     if (confirm(`Are you sure you want to delete ${checkedBoxes.length} remote properties? This action cannot be undone.`)) {
-        checkedBoxes.forEach(checkbox => {
+        console.log(`Bulk delete ${checkedBoxes.length} remote properties for ${tabType}`);
+        
+        // Show loading indicator
+        showNotification('success', `Starting deletion of ${checkedBoxes.length} remote properties...`);
+        
+        // Process each property sequentially
+        let successCount = 0;
+        let errorCount = 0;
+        let processedCount = 0;
+        
+        // Create a function to process properties one by one
+        function processNextProperty(index) {
+            if (index >= checkedBoxes.length) {
+                // All properties processed
+                showNotification('success', `Completed: ${successCount} properties deleted, ${errorCount} failed.`);
+                if (successCount > 0) {
+                    // Refresh the data if any properties were successfully deleted
+                    loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+                }
+                return;
+            }
+            
+            const checkbox = checkedBoxes[index];
             const propertyUrn = checkbox.value;
-            deleteRemoteProperty(propertyUrn);
-        });
+            
+            // Make the API call to delete this remote property
+            fetch('/metadata/properties/delete_remote/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({
+                    property_urn: propertyUrn
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                }
+                processedCount++;
+                
+                // Update progress
+                if (processedCount % 5 === 0 || processedCount === checkedBoxes.length) {
+                    showNotification('success', `Progress: ${processedCount}/${checkedBoxes.length} properties processed`);
+                }
+                
+                // Process the next property
+                processNextProperty(index + 1);
+            })
+            .catch(error => {
+                console.error(`Error deleting remote property ${propertyUrn}:`, error);
+                errorCount++;
+                processedCount++;
+                
+                // Process the next property despite the error
+                processNextProperty(index + 1);
+            });
+        }
+        
+        // Start processing properties
+        processNextProperty(0);
     }
 }
 
@@ -1492,16 +2524,314 @@ function bulkAddToPR(tabType) {
     const checkedBoxes = document.querySelectorAll(`#${tabType}-content .item-checkbox:checked`);
     if (checkedBoxes.length === 0) return;
     
-    if (confirm(`Are you sure you want to add ${checkedBoxes.length} properties to PR?`)) {
-        checkedBoxes.forEach(checkbox => {
-            const propertyId = checkbox.value;
-            const propertyUrn = checkbox.value;
+    if (confirm(`Are you sure you want to add ${checkedBoxes.length} properties to staged changes?`)) {
+        const properties = Array.from(checkedBoxes).map(checkbox => 
+            JSON.parse(checkbox.getAttribute('data-property') || '{}')
+        );
+        
+        let processedCount = 0;
+        const totalCount = properties.length;
+        
+        // Function to update progress
+        const updateProgress = () => {
+            processedCount++;
+            if (processedCount === totalCount) {
+                showNotification('success', `Successfully processed ${totalCount} properties for staged changes`);
+                loadPropertiesData(true); // Refresh data
+            }
+        };
+        
+        // Process properties based on their type
+        showNotification('info', `Processing ${totalCount} properties for staged changes...`);
+        properties.forEach(property => {
+            const propertyData = property.combined || property;
+            const databaseId = getDatabaseId(propertyData);
             
-            if (tabType === 'remote') {
-                addRemotePropertyToPR(propertyUrn);
+            if (databaseId) {
+                // Property already exists locally (synced or local-only), add directly to staged changes
+                addPropertyToStagedChangesInternal(propertyData);
+                updateProgress();
             } else {
-                addPropertyToPR(propertyId);
+                // Remote-only property - add directly to staged changes using remote endpoint
+                addRemotePropertyToStagedChanges(property);
+                updateProgress();
             }
         });
+    }
+}
+
+/**
+ * Global Actions Functions
+ */
+
+/**
+ * Resync all properties
+ */
+function resyncAll() {
+    if (!confirm('Are you sure you want to resync all properties? This will update all properties from DataHub.')) {
+        return;
+    }
+    
+    showNotification('info', 'Starting resync of all properties...');
+    
+    fetch('/metadata/properties/resync_all/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('success', `Successfully resynced ${data.count || 0} properties`);
+            loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+        } else {
+            showNotification('error', data.error || 'Failed to resync properties');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('error', 'Error resyncing properties');
+    });
+}
+
+/**
+ * Export all properties to JSON
+ */
+function exportAll() {
+    showNotification('info', 'Preparing export...');
+    
+    // Collect all properties from all tabs
+    const allProperties = [
+        ...(propertiesData.synced_items || []),
+        ...(propertiesData.local_only_items || []),
+        ...(propertiesData.remote_only_items || [])
+    ];
+    
+    if (allProperties.length === 0) {
+        showNotification('warning', 'No properties to export');
+        return;
+    }
+    
+    // Create a JSON object with all properties
+    const exportData = {
+        properties: allProperties,
+        metadata: {
+            exported_at: new Date().toISOString(),
+            total_count: allProperties.length,
+            synced_count: propertiesData.synced_items?.length || 0,
+            local_only_count: propertiesData.local_only_items?.length || 0,
+            remote_only_count: propertiesData.remote_only_items?.length || 0,
+            source: window.location.origin,
+            export_type: 'all_properties'
+        }
+    };
+    
+    // Convert to pretty JSON
+    const jsonData = JSON.stringify(exportData, null, 2);
+    
+    // Create a blob and initiate download
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `properties-export-all-${allProperties.length}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+    
+    showNotification('success', `${allProperties.length} properties exported successfully`);
+}
+
+/**
+ * Add all properties to staged changes
+ */
+function addAllToStagedChanges() {
+    if (!confirm('Are you sure you want to add ALL properties to staged changes? This will create MCP files for all properties in the current environment.')) {
+        return;
+    }
+    
+    // Get current environment and mutation name
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = window.mutationName || null;
+    
+    showNotification('info', 'Starting to add all properties to staged changes...');
+    
+    fetch('/metadata/properties/add_all_to_staged_changes/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Add all to staged changes response:', data);
+        if (data.success) {
+            showNotification('success', data.message || `Successfully added ${data.success_count || 0} properties to staged changes`);
+            if (data.success_count > 0) {
+                loadPropertiesData(true); // Skip sync validation to prevent mass status updates
+            }
+        } else {
+            showNotification('error', data.error || 'Failed to add properties to staged changes');
+        }
+    })
+    .catch(error => {
+        console.error('Error adding all properties to staged changes:', error);
+        showNotification('error', `Error adding properties to staged changes: ${error.message}`);
+    });
+}
+
+/**
+ * Show import modal
+ */
+function showImportModal() {
+    const modal = new bootstrap.Modal(document.getElementById('importJsonModal'));
+    modal.show();
+}
+
+/**
+ * Bulk download JSON for a specific tab
+ */
+function bulkDownloadJson(tabType) {
+    const selectedProperties = getSelectedProperties(tabType);
+    
+    if (selectedProperties.length === 0) {
+        showNotification('warning', 'Please select properties to download');
+        return;
+    }
+    
+    // Create JSON data
+    const jsonData = JSON.stringify(selectedProperties, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create download link
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `properties_${tabType}_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    showNotification('success', `Downloaded ${selectedProperties.length} properties`);
+}
+
+/**
+ * Get selected properties for a specific tab
+ */
+function getSelectedProperties(tabType) {
+    const checkboxes = document.querySelectorAll(`#${tabType}-content input[type="checkbox"]:checked:not(.select-all-checkbox)`);
+    const selectedProperties = [];
+    
+    checkboxes.forEach(checkbox => {
+        const propertyData = JSON.parse(checkbox.getAttribute('data-property') || '{}');
+        if (propertyData.id) {
+            selectedProperties.push(propertyData);
+        }
+    });
+    
+    return selectedProperties;
+}
+
+/**
+ * Update bulk actions visibility
+ */
+function updateBulkActionsVisibility(tabType) {
+    const selectedCount = document.querySelectorAll(`#${tabType}-content input[type="checkbox"]:checked:not(.select-all-checkbox)`).length;
+    const bulkActions = document.getElementById(`${tabType}-bulk-actions`);
+    const selectedCountElement = document.getElementById(`${tabType}-selected-count`);
+    
+    if (bulkActions) {
+        if (selectedCount > 0) {
+            bulkActions.classList.add('show');
+        } else {
+            bulkActions.classList.remove('show');
+        }
+    }
+    
+    if (selectedCountElement) {
+        selectedCountElement.textContent = selectedCount;
+    }
+}
+
+function clearAllFilters() {
+    currentFilters.clear();
+    
+    // Remove active states from all filter stats
+    document.querySelectorAll('.clickable-stat.multi-select').forEach(stat => {
+        stat.classList.remove('active');
+    });
+    
+    // Refresh current tab
+    refreshCurrentTab();
+}
+
+function updateFilterDisplay() {
+    // Update active states based on current filters
+    document.querySelectorAll('.clickable-stat.multi-select').forEach(stat => {
+        const filterType = stat.closest('#value-type-filters') ? 'valueType' : 'entityType';
+        const filterValue = stat.getAttribute('data-filter');
+        const filterKey = `${filterType}:${filterValue}`;
+        
+        if (currentFilters.has(filterKey)) {
+            stat.classList.add('active');
+        } else {
+            stat.classList.remove('active');
+        }
+    });
+}
+
+function getValueTypeDisplayName(valueType) {
+    if (valueType && typeof valueType === 'object') {
+        if (valueType.info && valueType.info.displayName) {
+            return valueType.info.displayName;
+        }
+        if (valueType.displayName) {
+            return valueType.displayName;
+        }
+        if (valueType.type) {
+            return valueType.type.charAt(0).toUpperCase() + valueType.type.slice(1).toLowerCase();
+        }
+        if (valueType.urn) {
+            // Try to extract from URN
+            const match = valueType.urn.match(/datahub\\.(\\w+)/);
+            if (match) return match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+        }
+    }
+    if (typeof valueType === 'string') {
+        return valueType.charAt(0).toUpperCase() + valueType.slice(1).toLowerCase();
+    }
+    return 'String';
+}
+
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'SYNCED':
+            return 'bg-success';
+        case 'MODIFIED':
+            return 'bg-warning';
+        case 'LOCAL_ONLY':
+            return 'bg-secondary';
+        case 'REMOTE_ONLY':
+            return 'bg-info';
+        default:
+            return 'bg-secondary';
     }
 }

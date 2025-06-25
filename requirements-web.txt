@@ -7,3 +7,6 @@ django>=4.0.0
 jinja2>=3.0.0
 pynacl>=1.5.0  # Required for GitHub secret encryption
 uvicorn[standard]>=0.24.0  # ASGI server for production
+django_extensions>=3.2.0
+djangorestframework>=3.14.0  # REST framework for API endpoints
+drf-spectacular>=0.26.0  # OpenAPI 3.0 schema generation for Swagger docs

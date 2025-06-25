@@ -3,6 +3,7 @@ from django.utils import timezone
 import uuid
 from django.contrib.sessions.models import Session
 import json
+import logging
 
 
 class BaseMetadataModel(models.Model):
@@ -15,15 +16,15 @@ class BaseMetadataModel(models.Model):
         ("REMOTE_ONLY", "Remote Only"),
         ("MODIFIED", "Modified"),
         ("PENDING_PUSH", "Pending Push"),
+        ("REMOTE_DELETED", "Remote Deleted"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
 
-    # URN handling
-    deterministic_urn = models.CharField(max_length=255, unique=True)
-    original_urn = models.CharField(max_length=255, blank=True, null=True)
+    # URN handling - NULL for local items not yet deployed
+    urn = models.CharField(max_length=255, null=True, blank=True)
 
     # Status tracking
     datahub_id = models.CharField(
@@ -34,9 +35,9 @@ class BaseMetadataModel(models.Model):
     )
     last_synced = models.DateTimeField(null=True, blank=True)
 
-    # Environmental context
-    environment = models.ForeignKey(
-        "Environment", on_delete=models.SET_NULL, null=True, blank=True
+    # Connection context - links this entity to a specific DataHub connection
+    connection = models.ForeignKey(
+        "web_ui.Connection", on_delete=models.SET_NULL, null=True, blank=True
     )
 
     # Metadata
@@ -45,6 +46,13 @@ class BaseMetadataModel(models.Model):
 
     class Meta:
         abstract = True
+        constraints = [
+            models.UniqueConstraint(
+                fields=['urn'],
+                condition=models.Q(urn__isnull=False),
+                name='unique_urn_when_not_null'
+            )
+        ]
 
     def __str__(self):
         return self.name
@@ -73,7 +81,6 @@ class Tag(BaseMetadataModel):
     
     # Store ownership data
     ownership_data = models.JSONField(blank=True, null=True)
-    owners_count = models.IntegerField(default=0)
 
     class Meta:
         ordering = ["name"]
@@ -86,14 +93,12 @@ class Tag(BaseMetadataModel):
             "name": self.name,
             "description": self.description,
             "color": self.color,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
         }
         
         # Add ownership information if available
         if self.ownership_data:
             data["ownership_data"] = self.ownership_data
-            data["owners_count"] = self.owners_count
         
         return data
 
@@ -128,12 +133,17 @@ class GlossaryNode(BaseMetadataModel):
     parent = models.ForeignKey(
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children"
     )
+    
     color_hex = models.CharField(
         max_length=20,
         blank=True,
         null=True,
         help_text="Color in hex format (e.g. #FF5733)",
     )
+    deprecated = models.BooleanField(default=False, help_text="Whether this node is deprecated")
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
 
     class Meta:
         verbose_name = "Glossary Node"
@@ -144,8 +154,7 @@ class GlossaryNode(BaseMetadataModel):
         data = {
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
         }
 
         # Add color_hex if it exists
@@ -156,7 +165,11 @@ class GlossaryNode(BaseMetadataModel):
             pass
 
         if self.parent:
-            data["parent_urn"] = self.parent.deterministic_urn
+            data["parent_urn"] = self.parent.urn
+            
+        # Add ownership information if available
+        if self.ownership_data:
+            data["ownership_data"] = self.ownership_data
 
         return data
 
@@ -164,6 +177,98 @@ class GlossaryNode(BaseMetadataModel):
     def can_deploy(self):
         """Check if this node can be deployed to DataHub"""
         return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @classmethod
+    def create_from_datahub(cls, node_data, connection=None):
+        """Create or update a glossary node from DataHub data"""
+        import json
+        from django.utils import timezone
+        
+        # Extract basic properties - use the already processed fields first, fallback to properties
+        name = node_data.get("name") or node_data.get("properties", {}).get("name", "Unknown")
+        description = node_data.get("description") or node_data.get("properties", {}).get("description", "")
+        urn = node_data.get("urn", "")
+        
+        if not urn:
+            raise ValueError("Node URN is required")
+        
+        # Convert empty string to None for proper NULL handling
+        urn = urn if urn else None
+        
+        # Extract datahub_id from URN (last part after colon)
+        datahub_id = urn.split(":")[-1] if urn and ":" in urn else None
+        
+        # Handle parent node
+        parent = None
+        parent_nodes = node_data.get("parentNodes", [])
+        if parent_nodes and len(parent_nodes) > 0:
+            parent_urn = parent_nodes[0].get("urn")
+            if parent_urn:
+                try:
+                    parent = cls.objects.get(urn=parent_urn)
+                except cls.DoesNotExist:
+                    # Parent doesn't exist locally yet, we'll handle this later
+                    pass
+        
+        # Extract ownership data
+        ownership_data = None
+        if "ownership" in node_data and "owners" in node_data["ownership"]:
+            ownership_data = node_data["ownership"]["owners"]
+        
+        # Create or update the node
+        node, created = cls.objects.update_or_create(
+            urn=urn,
+            defaults={
+                "name": name,
+                "description": description,
+                "datahub_id": datahub_id,
+                "parent": parent,
+                "ownership_data": ownership_data,
+                "connection": connection,
+                "sync_status": "SYNCED",
+                "last_synced": timezone.now(),
+            }
+        )
+        
+        return node
+
+    def deploy_to_datahub(self, client):
+        """Deploy this glossary node to DataHub"""
+        try:
+            # Prepare node data for deployment
+            node_data = {
+                "properties": {
+                    "name": self.name,
+                    "description": self.description or "",
+                }
+            }
+            
+            # Add parent node if exists
+            if self.parent and self.parent.urn:
+                node_data["parentNode"] = {"urn": self.parent.urn}
+            
+            # Add ownership data if exists
+            if self.ownership_data:
+                node_data["ownership"] = {"owners": self.ownership_data}
+            
+            # Deploy using the client
+            success = client.import_glossary_node(node_data)
+            
+            if success:
+                # Update sync status
+                from django.utils import timezone
+                self.sync_status = "SYNCED"
+                self.last_synced = timezone.now()
+                self.save()
+                return True
+            
+            return False
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error deploying glossary node {self.name}: {str(e)}")
+            return False
 
 
 class GlossaryTerm(BaseMetadataModel):
@@ -176,8 +281,25 @@ class GlossaryTerm(BaseMetadataModel):
         blank=True,
         related_name="terms",
     )
+    
+    # Domain relationship - only terms can be associated with domains
+    domain = models.ForeignKey(
+        "Domain", 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name="glossary_terms"
+    )
+    
     domain_urn = models.CharField(max_length=255, blank=True, null=True)
     term_source = models.CharField(max_length=255, blank=True, null=True)
+    deprecated = models.BooleanField(default=False, help_text="Whether this term is deprecated")
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
+    
+    # Store relationships data
+    relationships_data = models.JSONField(blank=True, null=True)
 
     class Meta:
         verbose_name = "Glossary Term"
@@ -188,18 +310,140 @@ class GlossaryTerm(BaseMetadataModel):
         data = {
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "term_source": self.term_source,
         }
 
         if self.parent_node:
-            data["parent_node_urn"] = self.parent_node.deterministic_urn
-
-        if self.domain_urn:
+            data["parent_node_urn"] = self.parent_node.urn
+            data["parent_node_id"] = str(self.parent_node.id)
+            
+        if self.domain:
+            data["domain_urn"] = self.domain.urn
+            data["domain_id"] = str(self.domain.id)
+            data["domain_name"] = self.domain.name
+        elif self.domain_urn:
             data["domain_urn"] = self.domain_urn
+            
+        # Add ownership information if available
+        if self.ownership_data:
+            data["ownership_data"] = self.ownership_data
+            
+        # Add relationships information if available
+        if self.relationships_data:
+            data["relationships_data"] = self.relationships_data
 
         return data
+
+    @property
+    def can_deploy(self):
+        """Check if this term can be deployed to DataHub"""
+        return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @classmethod
+    def create_from_datahub(cls, term_data, connection=None):
+        """Create or update a glossary term from DataHub data"""
+        import json
+        from django.utils import timezone
+        
+        # Extract basic properties - use the already processed fields first, fallback to properties
+        name = term_data.get("name") or term_data.get("properties", {}).get("name", "Unknown")
+        description = term_data.get("description") or term_data.get("properties", {}).get("description", "")
+        urn = term_data.get("urn", "")
+        term_source = term_data.get("term_source") or term_data.get("properties", {}).get("termSource", "INTERNAL")
+        
+        if not urn:
+            raise ValueError("Term URN is required")
+        
+        # Convert empty string to None for proper NULL handling
+        urn = urn if urn else None
+        
+        # Extract datahub_id from URN (last part after colon)
+        datahub_id = urn.split(":")[-1] if urn and ":" in urn else None
+        
+        # Handle parent node
+        parent_node = None
+        parent_nodes = term_data.get("parentNodes", [])
+        if parent_nodes and len(parent_nodes) > 0:
+            parent_urn = parent_nodes[0].get("urn")
+            if parent_urn:
+                try:
+                    # Import here to avoid circular import
+                    parent_node = GlossaryNode.objects.get(urn=parent_urn)
+                except GlossaryNode.DoesNotExist:
+                    # Parent doesn't exist locally yet, we'll handle this later
+                    pass
+        
+        # Extract ownership data
+        ownership_data = None
+        if "ownership" in term_data and "owners" in term_data["ownership"]:
+            ownership_data = term_data["ownership"]["owners"]
+        
+        # Extract relationships data
+        relationships_data = None
+        if "relationships" in term_data:
+            relationships_data = term_data["relationships"]
+        
+        # Create or update the term
+        term, created = cls.objects.update_or_create(
+            urn=urn,
+            defaults={
+                "name": name,
+                "description": description,
+                "datahub_id": datahub_id,
+                "parent_node": parent_node,
+                "term_source": term_source,
+                "ownership_data": ownership_data,
+                "relationships_data": relationships_data,
+                "connection": connection,
+                "sync_status": "SYNCED",
+                "last_synced": timezone.now(),
+            }
+        )
+        
+        return term
+
+    def deploy_to_datahub(self, client):
+        """Deploy this glossary term to DataHub"""
+        try:
+            # Prepare term data for deployment
+            term_data = {
+                "properties": {
+                    "name": self.name,
+                    "description": self.description or "",
+                }
+            }
+            
+            # Add term source if exists
+            if self.term_source:
+                term_data["properties"]["termSource"] = self.term_source
+            
+            # Add parent node if exists
+            if self.parent_node and self.parent_node.urn:
+                term_data["parentNode"] = {"urn": self.parent_node.urn}
+            
+            # Add ownership data if exists
+            if self.ownership_data:
+                term_data["ownership"] = {"owners": self.ownership_data}
+            
+            # Deploy using the client
+            success = client.import_glossary_term(term_data)
+            
+            if success:
+                # Update sync status
+                from django.utils import timezone
+                self.sync_status = "SYNCED"
+                self.last_synced = timezone.now()
+                self.save()
+                return True
+            
+            return False
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error deploying glossary term {self.name}: {str(e)}")
+            return False
 
 
 class Domain(BaseMetadataModel):
@@ -217,12 +461,14 @@ class Domain(BaseMetadataModel):
     )
     icon_name = models.CharField(max_length=100, blank=True, null=True)
     icon_style = models.CharField(max_length=50, blank=True, null=True, default="solid")
-    icon_library = models.CharField(max_length=50, blank=True, null=True, default="font-awesome")
+    icon_library = models.CharField(max_length=50, blank=True, null=True, default="MATERIAL")
     
     # Ownership and relationship counts for quick access
-    owners_count = models.IntegerField(default=0)
     relationships_count = models.IntegerField(default=0)
     entities_count = models.IntegerField(default=0)
+    
+    # Store ownership data
+    ownership_data = models.JSONField(blank=True, null=True)
     
     # Store raw GraphQL data for comprehensive details
     raw_data = models.JSONField(blank=True, null=True)
@@ -237,13 +483,16 @@ class Domain(BaseMetadataModel):
             "id": str(self.id),  # Include the ID for frontend action buttons
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
         }
         
         # Add parent domain if exists
         if self.parent_domain_urn:
             data["parentDomains"] = {"domains": [{"urn": self.parent_domain_urn}]}
+        
+        # Add ownership data if exists
+        if self.ownership_data:
+            data["ownership"] = self.ownership_data
         
         # Add display properties if they exist
         if self.color_hex or self.icon_name:
@@ -254,7 +503,7 @@ class Domain(BaseMetadataModel):
                 display_props["icon"] = {
                     "name": self.icon_name,
                     "style": self.icon_style or "solid",
-                    "iconLibrary": self.icon_library or "font-awesome",
+                    "iconLibrary": self.icon_library or "MATERIAL",
                 }
             data["displayProperties"] = display_props
         
@@ -269,8 +518,9 @@ class Domain(BaseMetadataModel):
     def display_icon_html(self):
         """Get HTML for displaying the icon"""
         if self.icon_name:
-            library_prefix = "fas" if self.icon_library == "font-awesome" else ""
-            return f'<i class="{library_prefix} fa-{self.icon_name}"></i>'
+            # Use Font Awesome icons for UI display
+            library_prefix = ""
+            return f'<i class="{library_prefix} {self.icon_name}"></i>'
         return ""
 
     @property
@@ -292,6 +542,7 @@ class Assertion(BaseMetadataModel):
     
     # Platform information
     platform_name = models.CharField(max_length=100, blank=True, null=True)
+    platform_instance = models.CharField(max_length=100, blank=True, null=True, help_text="Platform instance of the dataset")
     
     # External URL for assertion
     external_url = models.URLField(blank=True, null=True)
@@ -304,11 +555,9 @@ class Assertion(BaseMetadataModel):
     
     # Store ownership data
     ownership_data = models.JSONField(blank=True, null=True)
-    owners_count = models.IntegerField(default=0)
     
     # Store relationships data
     relationships_data = models.JSONField(blank=True, null=True)
-    relationships_count = models.IntegerField(default=0)
     
     # Store run events data
     run_events_data = models.JSONField(blank=True, null=True)
@@ -336,11 +585,11 @@ class Assertion(BaseMetadataModel):
             "id": str(self.id),  # Include the ID for frontend action buttons
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "assertion_type": self.assertion_type,
             "entity_urn": self.entity_urn,
             "platform_name": self.platform_name,
+            "platform_instance": self.platform_instance,
             "external_url": self.external_url,
             "removed": self.removed,
             "sync_status": self.sync_status,
@@ -432,6 +681,7 @@ class StructuredProperty(BaseMetadataModel):
     immutable = models.BooleanField(default=False)
     entity_types = models.JSONField(default=list)
     allowed_values = models.JSONField(default=list, blank=True, null=True)
+    allowed_entity_types = models.JSONField(default=list, blank=True, null=True, help_text="Entity types allowed as values for URN properties")
 
     # Display settings
     show_in_search_filters = models.BooleanField(default=True)
@@ -450,14 +700,14 @@ class StructuredProperty(BaseMetadataModel):
         return {
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "qualified_name": self.qualified_name,
             "value_type": self.value_type,
             "cardinality": self.cardinality,
             "immutable": self.immutable,
             "entity_types": self.entity_types,
             "allowed_values": self.allowed_values,
+            "allowed_entity_types": self.allowed_entity_types,
             "settings": {
                 "show_in_search_filters": self.show_in_search_filters,
                 "show_as_asset_badge": self.show_as_asset_badge,
@@ -496,15 +746,12 @@ class DataProduct(BaseMetadataModel):
     
     # Store ownership data
     ownership_data = models.JSONField(blank=True, null=True)
-    owners_count = models.IntegerField(default=0)
     
     # Store relationships data
     relationships_data = models.JSONField(blank=True, null=True)
-    relationships_count = models.IntegerField(default=0)
     
     # Store entities data
     entities_data = models.JSONField(blank=True, null=True)
-    entities_count = models.IntegerField(default=0)
     
     # Store tags data
     tags_data = models.JSONField(blank=True, null=True)
@@ -529,8 +776,7 @@ class DataProduct(BaseMetadataModel):
             "id": str(self.id),  # Include the ID for frontend action buttons
             "name": self.name,
             "description": self.description,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
             "external_url": self.external_url,
             "entity_urns": self.entity_urns,
             "domain_urn": self.domain_urn,
@@ -553,6 +799,62 @@ class DataProduct(BaseMetadataModel):
     def can_deploy(self):
         """Check if this data product can be deployed to DataHub"""
         return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+    
+    @classmethod
+    def create_from_datahub(cls, product_data, connection=None):
+        """Create or update a data product from DataHub data"""
+        from django.utils import timezone
+        from utils.urn_utils import get_full_urn_from_name
+        
+        # Extract basic properties
+        properties = product_data.get('properties', {}) or {}
+        name = properties.get('name', 'Unnamed Data Product')
+        description = properties.get('description') or None
+        external_url = properties.get('externalUrl') or None
+        
+        # Extract URN
+        urn = product_data.get('urn')
+        if not urn:
+            # Generate deterministic URN if not provided
+            urn = get_full_urn_from_name("dataProduct", name)
+        
+        # Extract domain information
+        domain_urn = None
+        domain_data = product_data.get('domain', {}) or {}
+        if domain_data and domain_data.get('domain'):
+            domain_urn = domain_data['domain'].get('urn')
+        
+        # Extract entity URNs
+        entity_urns = []
+        entities_data = product_data.get('entities', {}) or {}
+        # This would need to be populated from a separate API call in practice
+        
+        # Extract ownership data
+        ownership_data = product_data.get('ownership')
+        
+        # Create or update the data product
+        data_product, created = cls.objects.update_or_create(
+            urn=urn,
+            defaults={
+                "name": name,
+                "description": description,
+                "external_url": external_url,
+                "domain_urn": domain_urn,
+                "entity_urns": entity_urns,
+                "properties_data": properties,
+                "ownership_data": ownership_data,
+                "entities_data": product_data.get('entities'),
+                "tags_data": product_data.get('tags'),
+                "glossary_terms_data": product_data.get('glossaryTerms'),
+                "structured_properties_data": product_data.get('structuredProperties'),
+                "institutional_memory_data": product_data.get('institutionalMemory'),
+                "connection": connection,
+                "sync_status": "SYNCED",
+                "last_synced": timezone.now(),
+            }
+        )
+        
+        return data_product
 
     @property 
     def display_domain(self):
@@ -653,6 +955,13 @@ class Test(BaseMetadataModel):
     # Test specific fields
     category = models.CharField(max_length=100, blank=True, null=True)
     
+    # Entity that this test is attached to
+    entity_urn = models.CharField(max_length=500, blank=True, null=True)
+    
+    # Platform information
+    platform_name = models.CharField(max_length=100, blank=True, null=True)
+    platform_instance = models.CharField(max_length=100, blank=True, null=True, help_text="Platform instance of the dataset")
+    
     # Test definition
     definition_json = models.JSONField(blank=True, null=True, help_text="Test definition in JSON format")
     yaml_definition = models.TextField(blank=True, null=True, help_text="Test definition in YAML format")
@@ -678,8 +987,10 @@ class Test(BaseMetadataModel):
             "name": self.name,
             "description": self.description,
             "category": self.category,
-            "urn": self.deterministic_urn,
-            "original_urn": self.original_urn if self.original_urn else None,
+            "urn": self.urn,
+            "entity_urn": self.entity_urn,
+            "platform_name": self.platform_name,
+            "platform_instance": self.platform_instance,
             "definition_json": self.definition_json,
             "yaml_definition": self.yaml_definition,
             "results": {
@@ -767,6 +1078,202 @@ class SearchResultCache(models.Model):
         if cache_key:
             query = query.filter(cache_key=cache_key)
         return query.delete()[0]
+
+
+class DataContract(BaseMetadataModel):
+    """Represents a DataHub data contract"""
+
+    # Entity that this contract is attached to
+    entity_urn = models.CharField(max_length=500, blank=True, null=True)
+    
+    # Contract state
+    state = models.CharField(max_length=50, default="ACTIVE", help_text="Contract state (ACTIVE, PENDING, etc.)")
+    
+    # Contract result
+    result_type = models.CharField(max_length=50, blank=True, null=True, help_text="Result type (PASSING, FAILING, etc.)")
+    
+    # Platform information
+    platform_name = models.CharField(max_length=100, blank=True, null=True)
+    
+    # External URL for contract
+    external_url = models.URLField(blank=True, null=True)
+    
+    # Status information
+    removed = models.BooleanField(default=False)
+    
+    # Dataset information fields
+    dataset_name = models.CharField(max_length=500, blank=True, null=True, help_text="Name of the dataset this contract is for")
+    dataset_platform = models.CharField(max_length=100, blank=True, null=True, help_text="Platform of the dataset")
+    dataset_platform_instance = models.CharField(max_length=100, blank=True, null=True, help_text="Platform instance of the dataset")
+    dataset_browse_path = models.CharField(max_length=1000, blank=True, null=True, help_text="Computed browse path for the dataset")
+    
+    # Store comprehensive contract data structure from DataHub
+    properties_data = models.JSONField(blank=True, null=True, help_text="Complete properties structure from DataHub")
+    
+    # Store status data
+    status_data = models.JSONField(blank=True, null=True, help_text="Contract status information")
+    
+    # Store structured properties data
+    structured_properties_data = models.JSONField(blank=True, null=True)
+    
+    # Store result data
+    result_data = models.JSONField(blank=True, null=True, help_text="Contract result information")
+    
+    # Store complete dataset information
+    dataset_info_data = models.JSONField(blank=True, null=True, help_text="Complete dataset information from DataHub")
+
+    class Meta:
+        verbose_name = "Data Contract"
+        verbose_name_plural = "Data Contracts"
+        ordering = ["name"]
+
+    def to_dict(self):
+        """Convert data contract to dictionary for export/syncing purposes"""
+        data = {
+            "name": self.name,
+            "description": self.description,
+            "urn": self.urn,
+            "entity_urn": self.entity_urn,
+            "state": self.state,
+            "result_type": self.result_type,
+            "dataset_name": self.dataset_name,
+            "dataset_platform": self.dataset_platform,
+            "dataset_platform_instance": self.dataset_platform_instance,
+            "dataset_browse_path": self.dataset_browse_path,
+        }
+        
+        # Add properties data if available
+        if self.properties_data:
+            data["properties_data"] = self.properties_data
+            
+        # Add status data if available
+        if self.status_data:
+            data["status_data"] = self.status_data
+            
+        # Add result data if available
+        if self.result_data:
+            data["result_data"] = self.result_data
+            
+        # Add dataset info if available
+        if self.dataset_info_data:
+            data["dataset_info"] = self.dataset_info_data
+            
+        return data
+
+    @property
+    def can_deploy(self):
+        """Check if this contract can be deployed to DataHub"""
+        return self.sync_status in ["LOCAL_ONLY", "MODIFIED"]
+
+    @classmethod
+    def create_from_datahub(cls, contract_data, connection=None):
+        """Create or update a data contract from DataHub data"""
+        from django.utils import timezone
+        
+        # Extract basic properties
+        urn = contract_data.get("urn", "")
+        if not urn:
+            raise ValueError("Contract URN is required")
+        
+        # Extract entity URN from properties
+        entity_urn = ""
+        if contract_data.get("properties") and contract_data["properties"].get("entityUrn"):
+            entity_urn = contract_data["properties"]["entityUrn"]
+        
+        # Extract name from URN if not provided
+        name = contract_data.get("name") or urn.split(":")[-1] if urn else "Unknown Contract"
+        
+        # Extract state and result
+        state = "ACTIVE"
+        result_type = None
+        
+        if contract_data.get("status") and contract_data["status"].get("state"):
+            state = contract_data["status"]["state"]
+            
+        if contract_data.get("result") and contract_data["result"].get("type"):
+            result_type = contract_data["result"]["type"]
+        
+        # Extract dataset information if available
+        dataset_name = None
+        dataset_platform = None
+        dataset_platform_instance = None
+        dataset_browse_path = None
+        dataset_info_data = None
+        
+        if contract_data.get("dataset_info"):
+            dataset_info = contract_data["dataset_info"]
+            dataset_info_data = dataset_info  # Store complete dataset info
+            
+            # Extract dataset properties
+            properties = dataset_info.get("properties", {})
+            dataset_name = properties.get("name")
+            
+            # Extract platform information
+            platform = dataset_info.get("platform", {})
+            if platform:
+                dataset_platform = platform.get("name")
+            
+            # Extract platform instance
+            platform_instance = dataset_info.get("dataPlatformInstance", {})
+            if platform_instance and platform_instance.get("properties"):
+                dataset_platform_instance = platform_instance["properties"].get("name")
+            
+            # Get computed browse path
+            dataset_browse_path = dataset_info.get("computed_browse_path")
+        
+        # Try to find existing contract
+        try:
+            contract = cls.objects.get(urn=urn, connection=connection)
+            # Update existing
+            contract.name = name
+            contract.entity_urn = entity_urn
+            contract.state = state
+            contract.result_type = result_type
+            contract.dataset_name = dataset_name
+            contract.dataset_platform = dataset_platform
+            contract.dataset_platform_instance = dataset_platform_instance
+            contract.dataset_browse_path = dataset_browse_path
+            contract.properties_data = contract_data.get("properties")
+            contract.status_data = contract_data.get("status")
+            contract.result_data = contract_data.get("result")
+            contract.structured_properties_data = contract_data.get("structuredProperties")
+            contract.dataset_info_data = dataset_info_data
+            contract.sync_status = "SYNCED"
+            contract.last_synced = timezone.now()
+            contract.save()
+        except cls.DoesNotExist:
+            # Create new
+            contract = cls.objects.create(
+                name=name,
+                urn=urn,
+                entity_urn=entity_urn,
+                state=state,
+                result_type=result_type,
+                dataset_name=dataset_name,
+                dataset_platform=dataset_platform,
+                dataset_platform_instance=dataset_platform_instance,
+                dataset_browse_path=dataset_browse_path,
+                properties_data=contract_data.get("properties"),
+                status_data=contract_data.get("status"),
+                result_data=contract_data.get("result"),
+                structured_properties_data=contract_data.get("structuredProperties"),
+                dataset_info_data=dataset_info_data,
+                connection=connection,
+                sync_status="SYNCED",
+                last_synced=timezone.now()
+            )
+        
+        return contract
+
+    @property 
+    def display_entity(self):
+        """Get a display-friendly entity name"""
+        if self.entity_urn:
+            # Try to extract a readable name from the URN
+            parts = self.entity_urn.split(":")
+            if len(parts) >= 3:
+                return parts[-1]  # Last part is usually the name
+        return self.entity_urn or "Unknown Entity"
 
 
 class SearchProgress(models.Model):

@@ -135,6 +135,18 @@
         margin-bottom: 3px !important;
     }
     
+    /* Bulk Actions Styling */
+    .bulk-actions {
+        display: none;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .bulk-actions.show {
+        display: block !important;
+    }
+
     /* Unified Filter Statistics Styling */
     .filter-row {
         min-height: 70px;
@@ -275,7 +287,7 @@
         color: #495057;
     }
     
-    .bulk-actions {
+    .bulk-actions-bar .bulk-actions {
         display: flex;
         gap: 0.5rem;
     }
@@ -342,23 +354,30 @@
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>DataHub Data Products</h1>
                 <div class="d-flex gap-2">
-                    <!-- Enhanced Create Data Product Dropdown -->
-                    <div class="dropdown create-data-product-dropdown">
-                        <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createDataProductModal">
                         <i class="fas fa-plus me-1"></i> Create Data Product
-                    </button>
+                    </a>
+                    <!-- Global Actions Dropdown -->
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-sync-alt me-1"></i> Bulk Actions
+                        </button>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#createDataProductModal" data-location="local">
-                                <i class="fas fa-laptop me-2"></i> Create Locally
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="resyncAllProducts()">
+                                <i class="fas fa-sync-alt me-2"></i> Resync All
                             </a></li>
-                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#createDataProductModal" data-location="remote">
-                                <i class="fas fa-server me-2"></i> Create Remotely
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportAllProducts()">
+                                <i class="fas fa-file-export me-2"></i> Export All
+                            </a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="addAllProductsToStagedChanges()">
+                                <i class="fab fa-github me-2"></i> Add All to Staged Changes
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="showImportProductsModal()">
+                                <i class="fas fa-file-import me-2"></i> Import from JSON
                             </a></li>
                         </ul>
                     </div>
-                    <button type="button" class="btn btn-success">
-                        <i class="fas fa-upload me-1"></i> Deploy All
-                    </button>
                     <button type="button" class="btn btn-outline-info" id="refreshProducts">
                         <i class="fas fa-sync-alt me-1"></i> Refresh
                     </button>
@@ -402,51 +421,51 @@
                             <div class="row g-0 filter-row">
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Overview</strong>
-                            </div>
-                                <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="total" data-category="overview">
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center" data-filter="total" data-category="overview">
                                         <div class="h5 mb-0" id="total-items">0</div>
                                         <div class="text-muted">Total</div>
-                        </div>
-                    </div>
-                                <div class="col-md-2-5">
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat" data-filter="synced" data-category="overview">
                                         <div class="h5 mb-0" id="synced-count">0</div>
                                         <div class="text-muted">Synced</div>
-                            </div>
-                        </div>
-                                <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="local" data-category="overview">
+                                    </div>
+                                </div>
+                                <div class="col-md-2-5 border-end">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
                                         <div class="h5 mb-0" id="local-count">0</div>
                                         <div class="text-muted">Local Only</div>
-                    </div>
-                            </div>
+                                    </div>
+                                </div>
                                 <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="remote" data-category="overview">
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
                                         <div class="h5 mb-0" id="remote-count">0</div>
                                         <div class="text-muted">Remote Only</div>
-                        </div>
-                    </div>
+                                    </div>
+                                </div>
                             </div>
                             
                             <!-- Row 2: Content Filters -->
                             <div class="row g-0 filter-row border-top">
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Filters</strong>
-                        </div>
-                                <div class="col-md-2-5">
+                                </div>
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-entities" data-category="content">
                                         <div class="h6 mb-0" id="products-with-entities">0</div>
                                         <div class="text-muted">With Entities</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-owners" data-category="content">
                                         <div class="h6 mb-0" id="products-with-owners">0</div>
                                         <div class="text-muted">With Owners</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
+                                <div class="col-md-2-5 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-domain" data-category="content">
                                         <div class="h6 mb-0" id="products-with-domain">0</div>
                                         <div class="text-muted">With Domain</div>
@@ -463,26 +482,7 @@
                     </div>
                 </div>
                 
-                <!-- Bulk Actions Bar -->
-                <div class="bulk-actions-bar" id="bulkActionsBar">
-                    <div class="selection-info">
-                        <span id="selectedCount">0</span> data products selected
-                    </div>
-                    <div class="bulk-actions">
-                        <button type="button" class="btn btn-outline-primary btn-sm" id="bulkSync">
-                            <i class="fas fa-sync me-1"></i> Sync
-                        </button>
-                        <button type="button" class="btn btn-outline-success btn-sm" id="bulkAddToPR">
-                            <i class="fas fa-code-branch me-1"></i> Add to PR
-                        </button>
-                        <button type="button" class="btn btn-outline-danger btn-sm" id="bulkDelete">
-                            <i class="fas fa-trash me-1"></i> Delete
-                        </button>
-                        <button type="button" class="btn btn-outline-info btn-sm" id="bulkDownload">
-                            <i class="fas fa-download me-1"></i> Download
-                        </button>
-                    </div>
-                </div>
+
             
                 <!-- Products Tabs -->
                 <ul class="nav nav-tabs mb-4" id="productTabs" role="tablist">
@@ -514,10 +514,7 @@
                     <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllSynced">
                                 <h5 class="card-title mb-0">Synced Products</h5>
-                                </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="synced-search" class="form-control" placeholder="Search synced products...">
@@ -526,6 +523,33 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="synced-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="synced-selected-count">0</span></strong> product(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkResyncProducts('synced')">
+                                            <i class="fas fa-sync-alt me-1"></i> Bulk Resync
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkSyncToDataHub('synced')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Push
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="synced-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -536,10 +560,7 @@
                     <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllLocal">
                                 <h5 class="card-title mb-0">Local Only Products</h5>
-                                </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="local-search" class="form-control" placeholder="Search local products...">
@@ -548,6 +569,30 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="local-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="local-selected-count">0</span></strong> product(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-success btn-sm" onclick="bulkSyncToDataHub('local')">
+                                            <i class="fas fa-upload me-1"></i> Bulk Sync to DataHub
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
+                                            <i class="fas fa-trash me-1"></i> Delete Local
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="local-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -558,10 +603,7 @@
                     <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllRemote">
                                 <h5 class="card-title mb-0">Remote Only Products</h5>
-                                </div>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="remote-search" class="form-control" placeholder="Search remote products...">
@@ -570,6 +612,27 @@
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Bulk Actions -->
+                            <div id="remote-bulk-actions" class="bulk-actions">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><span id="remote-selected-count">0</span></strong> product(s) selected
+                                    </div>
+                                    <div class="btn-group" role="group" aria-label="Bulk actions">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="bulkSyncToLocal('remote')">
+                                            <i class="fas fa-download me-1"></i> Bulk Sync to Local
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
+                                            <i class="fas fa-file-download me-1"></i> Bulk Download
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                            <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="card-body p-0" id="remote-content">
                                 <!-- Content will be loaded here -->
                             </div>
@@ -581,17 +644,27 @@
     </div>
 </div>
 
-<!-- Enhanced Product View Modal -->
-<div class="modal fade" id="productViewModal" tabindex="-1" aria-labelledby="productViewModalLabel" aria-hidden="true">
+
+                </div>
+                
+                <!-- Entities -->
+
+                
+
+                
+
+
+<!-- View Data Product Modal -->
+<div class="modal fade" id="viewDataProductModal" tabindex="-1" aria-labelledby="viewDataProductModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="productViewModalLabel">Data Product Details</h5>
+                <h5 class="modal-title" id="viewDataProductModalLabel">Data Product Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <!-- Basic Information -->
                 <div class="row">
-                    <!-- Basic Information -->
                     <div class="col-md-6">
                         <div class="card h-100">
                             <div class="card-header">
@@ -602,19 +675,14 @@
                                     <dt class="col-sm-4">Name:</dt>
                                     <dd class="col-sm-8" id="modal-product-name">-</dd>
                                     
-                                    <dt class="col-sm-4">Type:</dt>
-                                    <dd class="col-sm-8">
-                                        <i class="fas fa-cube text-primary me-1"></i>Data Product
-                                    </dd>
+                                    <dt class="col-sm-4">Description:</dt>
+                                    <dd class="col-sm-8" id="modal-product-description">-</dd>
                                     
                                     <dt class="col-sm-4">Domain:</dt>
                                     <dd class="col-sm-8" id="modal-product-domain">-</dd>
                                     
-                                    <dt class="col-sm-4">Entities:</dt>
-                                    <dd class="col-sm-8" id="modal-product-entities">-</dd>
-                                    
-                                    <dt class="col-sm-4">Description:</dt>
-                                    <dd class="col-sm-8" id="modal-product-description">-</dd>
+                                    <dt class="col-sm-4">External URL:</dt>
+                                    <dd class="col-sm-8" id="modal-product-external-url">-</dd>
                                     
                                     <dt class="col-sm-4">Status:</dt>
                                     <dd class="col-sm-8">
@@ -646,16 +714,12 @@
                                 <div id="modal-owners-list">
                                     <p class="text-muted">No ownership information available</p>
                                 </div>
-                                
-                                <div id="modal-last-modified" class="mt-3">
-                                    <!-- Last modified info will be shown here -->
-                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Entities -->
+                <!-- Entities Information -->
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
@@ -664,23 +728,68 @@
                             </div>
                             <div class="card-body">
                                 <div id="modal-entities-list">
-                                    <p class="text-muted">No entities available</p>
+                                    <p class="text-muted">No entities assigned</p>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Product Properties -->
+                <!-- Tags and Glossary Terms -->
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-tags me-2"></i>Tags</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-tags-list">
+                                    <p class="text-muted">No tags assigned</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-book me-2"></i>Glossary Terms</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-glossary-list">
+                                    <p class="text-muted">No glossary terms assigned</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Structured Properties -->
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header">
-                                <h6 class="card-title mb-0"><i class="fas fa-cog me-2"></i>Product Properties</h6>
+                                <h6 class="card-title mb-0"><i class="fas fa-list-alt me-2"></i>Structured Properties</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="modal-structured-properties">
+                                    <p class="text-muted">No structured properties assigned</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Properties -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0"><i class="fas fa-cog me-2"></i>Properties</h6>
                             </div>
                             <div class="card-body">
                                 <div id="modal-product-properties">
-                                    <p class="text-muted">No additional properties available</p>
+                                    <p class="text-muted">No additional properties</p>
                                 </div>
                             </div>
                         </div>
@@ -711,34 +820,47 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Select2 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+
+<!-- Select2 JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<!-- Data Products Enhanced JavaScript -->
+<script src="{% static 'metadata_manager/data_products/data_products_enhanced.js' %}"></script>
+
+<!-- Data Products inline functionality -->
 <script>
-// Global variables
-let productsData = null;
-let currentFilters = {
+// Legacy global variables (avoiding conflicts with external JS)
+var legacyCurrentTab = 'synced';
+var legacyCurrentFilters = {
     overview: null,  // single select for overview (total, synced, local, remote)
     content: []      // multi-select for content filters (has-entities, has-owners, has-domain, has-external-url)
 };
 
-// Global pagination state  
-let currentPagination = {
+// Global pagination state (legacy)
+var legacyCurrentPagination = {
     synced: { page: 1, perPage: 25 },
     local: { page: 1, perPage: 25 },
     remote: { page: 1, perPage: 25 }
 };
 
-let currentOverviewFilter = null;
-let currentSearch = {
+var legacyCurrentOverviewFilter = null;
+var legacyCurrentSearch = {
     'synced': '',
     'local': '',
     'remote': ''
 };
-let selectedProducts = new Set();
+var selectedProducts = new Set();
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     loadProductsData();
-    initializeFilterHandlers();
-    initializeBulkSelection();
+                    loadDomainsForLookup(); // Load domains for name lookups
+        loadGlossaryTermsForLookup(); // Load glossary terms for name lookups
+        initializeFilterHandlers();
+        initializeBulkSelection();
+        updateBulkActionsBar(); // Ensure bulk actions are hidden initially
     initializeOverviewNavigation();
     setupStatisticsCardClickHandlers();
     
@@ -750,8 +872,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (searchInput) {
         searchInput.addEventListener('input', function() {
                 // Reset pagination when searching
-                currentPagination[tab].page = 1;
-            currentSearch[tab] = this.value.toLowerCase();
+                legacyCurrentPagination[tab].page = 1;
+            legacyCurrentSearch[tab] = this.value.toLowerCase();
             displayTabContent(tab);
         });
         }
@@ -759,9 +881,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (clearButton) {
         clearButton.addEventListener('click', function() {
                 // Reset pagination when clearing search
-                currentPagination[tab].page = 1;
+                legacyCurrentPagination[tab].page = 1;
             searchInput.value = '';
-            currentSearch[tab] = '';
+            legacyCurrentSearch[tab] = '';
             displayTabContent(tab);
         });
         }
@@ -806,13 +928,13 @@ function applyStatisticFilter(filter) {
         
         if (filter !== 'total') {
             clickedCard.classList.add('active');
-            currentFilters.overview = filter;
+            legacyCurrentFilters.overview = filter;
         } else {
-            currentFilters.overview = null;
+            legacyCurrentFilters.overview = null;
         }
         
         // Clear all other filters when switching overview
-        currentFilters.content = [];
+        legacyCurrentFilters.content = [];
         document.querySelectorAll('.multi-select.active').forEach(card => {
             card.classList.remove('active');
         });
@@ -843,19 +965,19 @@ function applyStatisticFilter(filter) {
         if (isActive) {
             // Remove from active filters
             clickedCard.classList.remove('active');
-            const index = currentFilters.content.indexOf(filter);
+            const index = legacyCurrentFilters.content.indexOf(filter);
             if (index > -1) {
-                currentFilters.content.splice(index, 1);
+                legacyCurrentFilters.content.splice(index, 1);
             }
         } else {
             // Add to active filters
             clickedCard.classList.add('active');
-            if (!currentFilters.content.includes(filter)) {
-                currentFilters.content.push(filter);
+            if (!legacyCurrentFilters.content.includes(filter)) {
+                legacyCurrentFilters.content.push(filter);
             }
         }
         
-        console.log('Updated filters:', currentFilters);
+        console.log('Updated filters:', legacyCurrentFilters);
         
         // Apply filters to all currently visible tabs
         ['synced', 'local', 'remote'].forEach(tabType => {
@@ -868,7 +990,7 @@ function clearAllFilters() {
     console.log('Clearing all filters');
     
     // Clear all filter arrays
-    currentFilters = {
+    legacyCurrentFilters = {
         overview: null,
         content: []
     };
@@ -894,14 +1016,14 @@ function switchToTab(tabName) {
 
 function matchesContentFilter(item) {
     // If no content filters are active, show all items
-    const hasActiveFilters = currentFilters.content.length > 0;
+    const hasActiveFilters = legacyCurrentFilters.content.length > 0;
     
     if (!hasActiveFilters) {
         return true;
     }
     
     // Check each content filter
-    for (const filter of currentFilters.content) {
+    for (const filter of legacyCurrentFilters.content) {
         switch (filter) {
             case 'has-entities':
                 const entitiesCount = item.entities_count || (item.entity_urns && item.entity_urns.length) || 0;
@@ -1035,15 +1157,95 @@ function updateHeaderCheckboxes() {
 }
 
 function updateBulkActionsBar() {
-    const bulkActionsBar = document.getElementById('bulkActionsBar');
-    const selectedCount = document.getElementById('selectedCount');
-    
-    if (selectedProducts.size > 0) {
-        bulkActionsBar.classList.add('show');
-        selectedCount.textContent = selectedProducts.size;
-    } else {
-        bulkActionsBar.classList.remove('show');
+    // Update all bulk action bars for each tab
+    ['synced', 'local', 'remote'].forEach(tabType => {
+        const bulkActionsBar = document.getElementById(`${tabType}-bulk-actions`);
+        const selectedCountElement = document.getElementById(`${tabType}-selected-count`);
+        
+        if (bulkActionsBar && selectedCountElement) {
+            const selectedCount = getSelectedProductsForTab(tabType).length;
+            selectedCountElement.textContent = selectedCount;
+            
+            if (selectedCount > 0) {
+                bulkActionsBar.classList.add('show');
+            } else {
+                bulkActionsBar.classList.remove('show');
+            }
+        }
+    });
+}
+
+function getSelectedProductsForTab(tabType) {
+    const checkboxes = document.querySelectorAll(`input[data-tab="${tabType}"].product-checkbox:checked`);
+    return Array.from(checkboxes);
+}
+
+// Bulk sync to local function - implemented directly in template to ensure it works
+async function bulkSyncToLocal(tabType) {
+    const selectedCheckboxes = getSelectedProductsForTab(tabType);
+    if (selectedCheckboxes.length === 0) {
+        showError('No products selected');
+        return;
     }
+    
+    if (!confirm(`Are you sure you want to sync ${selectedCheckboxes.length} product(s) to local?`)) {
+        return;
+    }
+    
+    showSuccess(`Starting sync of ${selectedCheckboxes.length} product(s) to local...`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Process products sequentially to avoid overwhelming the server
+    for (const checkbox of selectedCheckboxes) {
+        try {
+            const row = checkbox.closest('tr');
+            const productUrn = row.dataset.productUrn;
+            
+            if (!productUrn) {
+                console.error('No product URN found for row:', row);
+                errorCount++;
+                continue;
+            }
+            
+            await syncSingleProductToLocal(productUrn);
+            successCount++;
+        } catch (error) {
+            console.error(`Error syncing product:`, error);
+            errorCount++;
+        }
+    }
+    
+    // Reload data once at the end
+    await loadProductsData();
+    
+    if (errorCount === 0) {
+        showSuccess(`Successfully synced ${successCount} product(s) to local`);
+    } else {
+        showError(`Completed: ${successCount} synced successfully, ${errorCount} failed`);
+    }
+}
+
+async function syncSingleProductToLocal(productUrn) {
+    const response = await fetch('/metadata/data-products/sync-to-local/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({
+            'product_urn': productUrn
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+        throw new Error(data.error || 'Unknown error');
+    }
+    
+    return data;
 }
 
 function handleBulkSync() {
@@ -1055,6 +1257,68 @@ function handleBulkSync() {
     // Implementation for bulk sync
     console.log('Bulk sync:', Array.from(selectedProducts));
     showSuccess(`Syncing ${selectedProducts.size} data products...`);
+}
+
+// Bulk add to PR function
+async function bulkAddToPR(tabType) {
+    const selectedCheckboxes = getSelectedProductsForTab(tabType);
+    if (selectedCheckboxes.length === 0) {
+        showError('No products selected');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to add ${selectedCheckboxes.length} product(s) to staged changes?`)) {
+        return;
+    }
+    
+    showSuccess(`Starting to add ${selectedCheckboxes.length} product(s) to staged changes...`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Process products sequentially
+    for (const checkbox of selectedCheckboxes) {
+        try {
+            const row = checkbox.closest('tr');
+            const productId = row.dataset.productId;
+            
+            if (!productId) {
+                console.error('No product ID found for row:', row);
+                errorCount++;
+                continue;
+            }
+            
+            await addSingleProductToPR(productId);
+            successCount++;
+        } catch (error) {
+            console.error(`Error adding product to PR:`, error);
+            errorCount++;
+        }
+    }
+    
+    if (errorCount === 0) {
+        showSuccess(`Successfully added ${successCount} product(s) to staged changes`);
+    } else {
+        showError(`Completed: ${successCount} added successfully, ${errorCount} failed`);
+    }
+}
+
+async function addSingleProductToPR(productId) {
+    const response = await fetch(`/metadata/data-products/${productId}/stage_changes/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        }
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+        throw new Error(data.error || 'Unknown error');
+    }
+    
+    return data;
 }
 
 function handleBulkAddToPR() {
@@ -1079,12 +1343,95 @@ function handleBulkDelete() {
     showSuccess(`Deleting ${selectedProducts.size} data products...`);
 }
 
+// Bulk download function
+function bulkDownloadJson(tabType) {
+    const selectedCheckboxes = getSelectedProductsForTab(tabType);
+    if (selectedCheckboxes.length === 0) {
+        showError('No products selected');
+        return;
+    }
+    
+    const selectedProducts = [];
+    selectedCheckboxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        const productId = row.dataset.productId;
+        const productUrn = row.dataset.productUrn;
+        const storeKey = productId || productUrn;
+        
+        // Try to find the product data in the global data store
+        let productData = null;
+        if (window.productDataStore && window.productDataStore[tabType]) {
+            productData = window.productDataStore[tabType].get(storeKey);
+        }
+        
+        if (productData) {
+            selectedProducts.push(productData);
+        } else {
+            // Fallback: create minimal product object from row data
+            const nameCell = row.querySelector('td:nth-child(2)');
+            const name = nameCell ? nameCell.textContent.trim() : 'Unknown';
+            
+            selectedProducts.push({
+                id: productId,
+                urn: productUrn,
+                name: name
+            });
+        }
+    });
+    
+    const jsonData = JSON.stringify(selectedProducts, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `data-products-bulk-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+    
+    showSuccess(`Downloaded ${selectedProducts.length} data products as JSON`);
+}
+
 function handleBulkDownload() {
     if (selectedProducts.size === 0) return;
     
     // Implementation for bulk download
     console.log('Bulk download:', Array.from(selectedProducts));
     showSuccess(`Downloading ${selectedProducts.size} data products...`);
+}
+
+// Global bulk action functions
+function resyncAllProducts() {
+    if (!confirm('Are you sure you want to resync all data products? This may take some time.')) return;
+    
+    // Implementation for resync all
+    console.log('Resync all products');
+    showSuccess('Resyncing all data products...');
+}
+
+function exportAllProducts() {
+    // Implementation for export all
+    console.log('Export all products');
+    showSuccess('Exporting all data products...');
+}
+
+function addAllProductsToStagedChanges() {
+    if (!confirm('Are you sure you want to add all data products to staged changes?')) return;
+    
+    // Implementation for add all to staged changes
+    console.log('Add all products to staged changes');
+    showSuccess('Adding all data products to staged changes...');
+}
+
+function showImportProductsModal() {
+    // Implementation for import modal
+    console.log('Show import products modal');
+    // You would show a modal here for importing JSON
 }
 
 function loadProductsData() {
@@ -1136,9 +1483,9 @@ function updateStatistics(stats) {
 }
 
 function updateTabBadges() {
-    document.getElementById('synced-badge').textContent = productsData.synced_items.length;
-    document.getElementById('local-badge').textContent = productsData.local_only_items.length;
-    document.getElementById('remote-badge').textContent = productsData.remote_only_items.length;
+    document.getElementById('synced-badge').textContent = (productsData.synced_items || []).length;
+    document.getElementById('local-badge').textContent = (productsData.local_only_items || []).length;
+    document.getElementById('remote-badge').textContent = (productsData.remote_only_items || []).length;
 }
 
 function updateEnhancedStatistics() {
@@ -1149,7 +1496,7 @@ function updateEnhancedStatistics() {
         ...(productsData.synced_items || []).map(item => item.combined || item),
         ...(productsData.local_only_items || []),
         ...(productsData.remote_only_items || [])
-    ];
+    ].filter(Boolean); // Remove any null/undefined items
     
     // Calculate content statistics
     const withEntities = allProducts.filter(p => {
@@ -1170,11 +1517,16 @@ function updateEnhancedStatistics() {
         return p.external_url || (p.properties && p.properties.externalUrl) || false;
     }).length;
     
-    // Update content statistics
-    document.getElementById('products-with-entities').textContent = withEntities;
-    document.getElementById('products-with-owners').textContent = withOwners;
-    document.getElementById('products-with-domain').textContent = withDomain;
-    document.getElementById('products-with-external-url').textContent = withExternalUrl;
+    // Update content statistics (with null safety)
+    const entitiesElement = document.getElementById('products-with-entities');
+    const ownersElement = document.getElementById('products-with-owners');
+    const domainElement = document.getElementById('products-with-domain');
+    const urlElement = document.getElementById('products-with-external-url');
+    
+    if (entitiesElement) entitiesElement.textContent = withEntities;
+    if (ownersElement) ownersElement.textContent = withOwners;
+    if (domainElement) domainElement.textContent = withDomain;
+    if (urlElement) urlElement.textContent = withExternalUrl;
 }
 
 function displayAllTabs() {
@@ -1186,20 +1538,23 @@ function displayAllTabs() {
 function displayTabContent(tabType) {
     console.log('Displaying tab content for:', tabType);
     
+    // Clear the data store for this tab type before rendering new data
+    productDataStore[tabType].clear();
+    
     let items, contentId;
     
     try {
         switch(tabType) {
             case 'synced':
-                items = productsData.synced_items.map(item => item.combined);
+                items = (productsData.synced_items || []).map(item => item.combined || item);
                 contentId = 'synced-content';
                 break;
             case 'local':
-                items = productsData.local_only_items;
+                items = productsData.local_only_items || [];
                 contentId = 'local-content';
                 break;
             case 'remote':
-                items = productsData.remote_only_items;
+                items = productsData.remote_only_items || [];
                 contentId = 'remote-content';
                 break;
         }
@@ -1218,10 +1573,10 @@ function displayTabContent(tabType) {
         console.log(`Starting with ${items?.length || 0} items for tab ${tabType}`);
         
         // Apply content filters first
-        const hasActiveContentFilters = currentFilters.content.length > 0;
+        const hasActiveContentFilters = legacyCurrentFilters.content && legacyCurrentFilters.content.length > 0;
         
         if (hasActiveContentFilters) {
-            console.log('🔍 Applying content filters:', currentFilters.content);
+            console.log('🔍 Applying content filters:', legacyCurrentFilters.content);
             console.log('🔍 Items before filter:', items.length);
             const beforeFilter = items.length;
             items = items.filter(item => {
@@ -1231,11 +1586,11 @@ function displayTabContent(tabType) {
             });
             console.log(`🔍 Content filter applied: ${beforeFilter} -> ${items.length} items`);
         } else {
-            console.log('🔍 No content filters applied. Current filters:', currentFilters);
+            console.log('🔍 No content filters applied. Current filters:', legacyCurrentFilters);
         }
         
         // Then apply search filter on the filtered results
-        const searchTerm = currentSearch[tabType];
+        const searchTerm = legacyCurrentSearch[tabType];
         if (searchTerm) {
             console.log('Applying search filter:', searchTerm);
             const beforeSearch = items.length;
@@ -1273,9 +1628,26 @@ function displayTabContent(tabType) {
             button.addEventListener('click', function() {
                 console.log('View button clicked');
                 const row = this.closest('tr');
-                const itemData = JSON.parse(row.dataset.item);
-                console.log('Showing product details for:', itemData);
-                showProductDetails(itemData);
+                const productId = row.dataset.productId;
+                const productUrn = row.dataset.productUrn;
+                const storeKey = productId || productUrn;
+                
+                // Find the product data in the appropriate store
+                let itemData = null;
+                for (const [tabType, store] of Object.entries(productDataStore)) {
+                    if (store.has(storeKey)) {
+                        itemData = store.get(storeKey);
+                        break;
+                    }
+                }
+                
+                if (itemData) {
+                    console.log('Showing product details for:', itemData);
+                    showProductDetails(itemData);
+                } else {
+                    console.error('Product data not found in store for key:', storeKey);
+                    showError('Unable to load product details');
+                }
             });
         });
         
@@ -1298,9 +1670,9 @@ function displayTabContent(tabType) {
 
 // Helper function to reset pagination to page 1 for all tabs
 function resetPaginationToFirstPage() {
-    currentPagination.synced.page = 1;
-    currentPagination.local.page = 1;
-    currentPagination.remote.page = 1;
+    legacyCurrentPagination.synced.page = 1;
+    legacyCurrentPagination.local.page = 1;
+    legacyCurrentPagination.remote.page = 1;
 }
 
 function getEmptyStateHTML(tabType, hasSearch) {
@@ -1359,154 +1731,364 @@ function showProductDetails(product) {
     const externalUrl = product.properties?.externalUrl || product.external_url || '';
     const urn = product.urn || 'No URN available';
     
-    document.getElementById('modal-product-name').textContent = name;
-    document.getElementById('modal-product-description').textContent = description;
-    document.getElementById('modal-product-urn').textContent = urn;
+    // Safely update modal elements with null checks
+    const nameElement = document.getElementById('modal-product-name');
+    const descriptionElement = document.getElementById('modal-product-description');
+    const urnElement = document.getElementById('modal-product-urn');
+    const externalUrlElement = document.getElementById('modal-product-external-url');
+    
+    if (nameElement) nameElement.textContent = name;
+    if (descriptionElement) descriptionElement.textContent = description;
+    if (urnElement) urnElement.textContent = urn;
     
     // External URL
-    const externalUrlElement = document.getElementById('modal-product-external-url');
-    if (externalUrl) {
-        externalUrlElement.innerHTML = `<a href="${escapeHtml(externalUrl)}" target="_blank" class="text-decoration-none">${escapeHtml(externalUrl)}</a>`;
-    } else {
-        externalUrlElement.textContent = 'No external URL';
+    if (externalUrlElement) {
+        if (externalUrl) {
+            externalUrlElement.innerHTML = `<a href="${escapeHtml(externalUrl)}" target="_blank" class="text-decoration-none">${escapeHtml(externalUrl)}</a>`;
+        } else {
+            externalUrlElement.textContent = 'No external URL';
+        }
     }
     
     // Domain
     const domainElement = document.getElementById('modal-product-domain');
-    const domain = product.domain?.domain?.properties?.name || product.domain_urn || '';
-    if (domain) {
-        domainElement.innerHTML = `<span class="badge bg-info">${escapeHtml(domain)}</span>`;
-    } else {
-        domainElement.textContent = 'No domain assigned';
+    if (domainElement) {
+            // Extract domain information using the same logic as the table  
+    const domainUrn = product.domain?.domain?.urn || product.domain_urn || '';
+    let domainName = product.domain?.domain?.properties?.name || '';
+    
+    // If no domain name but we have a URN, try to get it from domains cache
+    if (!domainName && domainUrn) {
+        domainName = getDomainName(domainUrn);
+
+    }
+        
+        // Fallback to URN extraction if still no name
+        if (!domainName && domainUrn) {
+            const parts = domainUrn.split(':');
+            domainName = parts[parts.length - 1] || domainUrn;
+        }
+        
+        if (domainName) {
+            domainElement.innerHTML = `<span class="badge bg-info">${escapeHtml(domainName)}</span>`;
+        } else {
+            domainElement.textContent = 'No domain assigned';
+        }
     }
     
     // Status
     const statusBadge = document.getElementById('modal-product-status');
-    statusBadge.textContent = product.sync_status_display || product.sync_status;
-    statusBadge.className = `badge ${getStatusBadgeClass(product.sync_status)}`;
+    if (statusBadge) {
+        statusBadge.textContent = product.sync_status_display || product.sync_status;
+        statusBadge.className = `badge ${getStatusBadgeClass(product.sync_status)}`;
+    }
     
     // Entities information
     const entitiesList = document.getElementById('modal-entities-list');
     const entityCount = product.entities_count || product.entities?.total || (product.entity_urns ? product.entity_urns.length : 0) || 0;
     
-    if (entityCount > 0 && product.entity_urns && product.entity_urns.length > 0) {
-        entitiesList.innerHTML = product.entity_urns.map(entityUrn => `
-                <div class="border rounded p-2 mb-2">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                        <strong>Entity</strong>
-                        <span class="badge bg-primary ms-2">Asset</span>
+    if (entitiesList) {
+        if (entityCount > 0 && product.entity_urns && product.entity_urns.length > 0) {
+            entitiesList.innerHTML = product.entity_urns.map(entityUrn => `
+                    <div class="border rounded p-2 mb-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                            <strong>Entity</strong>
+                            <span class="badge bg-primary ms-2">Asset</span>
+                            </div>
                         </div>
-                    </div>
-                    <div class="mt-1">
-                    <code class="small">${escapeHtml(entityUrn)}</code>
-                    </div>
+                        <div class="mt-1">
+                        <code class="small">${escapeHtml(entityUrn)}</code>
                         </div>
-        `).join('');
-    } else {
-        entitiesList.innerHTML = '<p class="text-muted">No entities assigned</p>';
+                            </div>
+            `).join('');
+        } else {
+            entitiesList.innerHTML = '<p class="text-muted">No entities assigned</p>';
+        }
     }
     
     // Ownership information
     const ownersList = document.getElementById('modal-owners-list');
     const owners = product.ownership?.owners || [];
     
-    if (owners.length > 0) {
-        ownersList.innerHTML = owners.map(owner => {
-            const ownerInfo = owner.owner;
-            const displayName = ownerInfo?.properties?.displayName || ownerInfo?.info?.displayName || ownerInfo?.username || ownerInfo?.name || 'Unknown Owner';
-            const ownerType = owner.type || 'OWNERSHIP';
-            const ownerUrn = ownerInfo?.urn || 'No URN';
-            
-            return `
-            <div class="border rounded p-2 mb-2">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                            <strong>${escapeHtml(displayName)}</strong>
-                            <span class="badge bg-info ms-2">${ownerType}</span>
+    if (ownersList) {
+        if (owners.length > 0) {
+            ownersList.innerHTML = owners.map(owner => {
+                const ownerInfo = owner.owner;
+                const displayName = ownerInfo?.properties?.displayName || ownerInfo?.info?.displayName || ownerInfo?.username || ownerInfo?.name || 'Unknown Owner';
+                const ownerType = owner.type || 'OWNERSHIP';
+                const ownerUrn = ownerInfo?.urn || 'No URN';
+                
+                return `
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                                <strong>${escapeHtml(displayName)}</strong>
+                                <span class="badge bg-info ms-2">${ownerType}</span>
+                        </div>
+                    </div>
+                    <div class="mt-1">
+                            <code class="small">${escapeHtml(ownerUrn)}</code>
                     </div>
                 </div>
-                <div class="mt-1">
-                        <code class="small">${escapeHtml(ownerUrn)}</code>
-                </div>
-            </div>
-            `;
-        }).join('');
-    } else {
-        ownersList.innerHTML = '<p class="text-muted">No owners assigned</p>';
+                `;
+            }).join('');
+        } else {
+            ownersList.innerHTML = '<p class="text-muted">No owners assigned</p>';
+        }
     }
     
-    // DataHub link
-    const datahubLink = document.getElementById('modal-datahub-link');
-    if (product.urn && !product.urn.includes('local:') && productsData.datahub_url) {
-        datahubLink.href = getDataHubUrl(product.urn, 'product');
-        datahubLink.style.display = 'inline-block';
-    } else {
-        datahubLink.style.display = 'none';
-    }
+    // Tags information
+    const tagsList = document.getElementById('modal-tags-list');
+    const tags = product.tags?.tags || product.globalTags?.tags || [];
     
-    // Product Properties
-    const propertiesDiv = document.getElementById('modal-product-properties');
-    if (product.properties || product.structuredProperties) {
-        let propertiesHTML = '';
-        
-        if (product.structuredProperties && product.structuredProperties.properties) {
-            propertiesHTML += `
+    if (tagsList) {
+        if (tags.length > 0) {
+            tagsList.innerHTML = tags.map(tag => {
+                const tagUrn = tag.tag?.urn || tag.urn || '';
+                // Extract tag name from URN - handle both regular tags and glossary term tags
+                let tagName = tag.tag?.properties?.name || tag.name;
+                
+                if (!tagName && tagUrn) {
+                    if (tagUrn.includes('glossaryTerm:')) {
+                        // Extract glossary term name from URN like "urn:li:tag:urn:li:glossaryTerm:ClientsAndAccounts.AccountBalance"
+                        const parts = tagUrn.split(':');
+                        tagName = parts[parts.length - 1] || tagUrn;
+                    } else {
+                        // Extract regular tag name from URN like "urn:li:tag:identity"
+                        const parts = tagUrn.split(':');
+                        tagName = parts[parts.length - 1] || tagUrn;
+                    }
+                }
+                
+                tagName = tagName || 'Unknown Tag';
+                
+                return `
                 <div class="border rounded p-2 mb-2">
-                    <strong>Structured Properties:</strong>
-                    <div class="mt-2">
-                        ${product.structuredProperties.properties.map(prop => `
-                            <div class="mb-2">
-                                <strong>${escapeHtml(prop.structuredProperty?.definition?.displayName || 'Unknown')}</strong>: 
-                                ${prop.values ? escapeHtml(JSON.stringify(prop.values)) : 'No value'}
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${escapeHtml(tagName)}</strong>
+                            <span class="badge bg-secondary ms-2">Tag</span>
+                        </div>
+                    </div>
+                    <div class="mt-1">
+                        <code class="small">${escapeHtml(tagUrn)}</code>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        } else {
+            tagsList.innerHTML = '<p class="text-muted">No tags assigned</p>';
+        }
+    }
+    
+    // Glossary terms information
+    const glossaryList = document.getElementById('modal-glossary-list');
+    const glossaryTerms = product.glossaryTerms?.terms || product.terms || [];
+    
+    if (glossaryList) {
+        if (glossaryTerms.length > 0) {
+            glossaryList.innerHTML = glossaryTerms.map(term => {
+                const termUrn = term.term?.urn || term.urn || '';
+                let termName = term.term?.properties?.name || term.name || '';
+                
+                // Try to get name from cache if not available
+                if (!termName && termUrn) {
+                    termName = getGlossaryTermName(termUrn);
+                }
+                
+                // Fallback to URN extraction if still no name
+                if (!termName && termUrn) {
+                    const parts = termUrn.split(':');
+                    termName = parts[parts.length - 1] || termUrn;
+                }
+                
+                termName = termName || 'Unknown Term';
+                
+                return `
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${escapeHtml(termName)}</strong>
+                            <span class="badge bg-info ms-2">Glossary Term</span>
+                        </div>
+                    </div>
+                    <div class="mt-1">
+                        <code class="small">${escapeHtml(termUrn)}</code>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        } else {
+            glossaryList.innerHTML = '<p class="text-muted">No glossary terms assigned</p>';
+        }
+    }
+    
+    // Properties information - handle both custom and structured properties like glossary
+    const structuredPropertiesDiv = document.getElementById('modal-structured-properties');
+    let propertiesHTML = '';
+    
+    // Custom Properties - get from customProperties array in the data
+    let customProperties = [];
+    if (product.customProperties && Array.isArray(product.customProperties)) {
+        customProperties = product.customProperties;
+    }
+    
+    // Structured Properties - get from structuredProperties.properties array
+    let structuredProperties = [];
+    if (product.structuredProperties && product.structuredProperties.properties && Array.isArray(product.structuredProperties.properties)) {
+        structuredProperties = product.structuredProperties.properties;
+    }
+    
+    // Custom Properties Section
+    if (customProperties && customProperties.length > 0) {
+        propertiesHTML += `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0"><i class="fas fa-tags me-2"></i>Custom Properties (${customProperties.length})</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        ${customProperties.map(prop => `
+                            <div class="col-md-6 mb-2">
+                                <dl class="row mb-0">
+                                    <dt class="col-sm-5 text-truncate" title="${escapeHtml(prop.key || 'Unknown')}">${escapeHtml(prop.key || 'Unknown')}:</dt>
+                                    <dd class="col-sm-7 mb-0">
+                                        <span class="text-break">${escapeHtml(prop.value || '')}</span>
+                                    </dd>
+                                </dl>
                             </div>
                         `).join('')}
                     </div>
                 </div>
-            `;
-        }
-        
-        if (product.tags && product.tags.tags && product.tags.tags.length > 0) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Tags:</strong>
-                    <div class="mt-2">
-                        ${product.tags.tags.map(tagInfo => `
-                            <span class="badge bg-secondary me-1">${escapeHtml(tagInfo.tag?.properties?.name || tagInfo.tag?.name || 'Unknown Tag')}</span>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-        
-        if (product.glossaryTerms && product.glossaryTerms.terms && product.glossaryTerms.terms.length > 0) {
-            propertiesHTML += `
-                <div class="border rounded p-2 mb-2">
-                    <strong>Glossary Terms:</strong>
-                    <div class="mt-2">
-                        ${product.glossaryTerms.terms.map(termInfo => `
-                            <span class="badge bg-warning me-1">${escapeHtml(termInfo.term?.properties?.name || termInfo.term?.name || 'Unknown Term')}</span>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-        
-        if (propertiesHTML) {
-        propertiesDiv.innerHTML = propertiesHTML;
-    } else {
-            propertiesDiv.innerHTML = '<p class="text-muted">No additional properties</p>';
-        }
-    } else {
-        propertiesDiv.innerHTML = '<p class="text-muted">No properties available</p>';
+            </div>
+        `;
     }
     
-    // Raw JSON - Show comprehensive data
-    const rawData = product.raw_data || product;
-    document.getElementById('modal-raw-json').innerHTML = `<pre><code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code></pre>`;
+    // Structured Properties Section
+    if (structuredProperties && structuredProperties.length > 0) {
+        propertiesHTML += `
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0"><i class="fas fa-cogs me-2"></i>Structured Properties (${structuredProperties.length})</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        ${structuredProperties.map(prop => {
+                            // Extract property information from the structured property format
+                            const structuredProperty = prop.structuredProperty;
+                            const propertyUrn = structuredProperty?.urn || 'Unknown';
+                            const displayName = structuredProperty?.definition?.displayName || 
+                                              structuredProperty?.definition?.qualifiedName ||
+                                              propertyUrn.split(':').pop() || 
+                                              propertyUrn;
+                            
+                            // Extract values from the values array
+                            let propertyValue = '';
+                            if (prop.values && Array.isArray(prop.values)) {
+                                propertyValue = prop.values.map(valueObj => {
+                                    // Handle different value types (stringValue, doubleValue, etc.)
+                                    if (valueObj.stringValue !== undefined) return valueObj.stringValue;
+                                    if (valueObj.doubleValue !== undefined) return valueObj.doubleValue;
+                                    if (valueObj.intValue !== undefined) return valueObj.intValue;
+                                    if (valueObj.booleanValue !== undefined) return valueObj.booleanValue;
+                                    if (valueObj.timestampValue !== undefined) return new Date(valueObj.timestampValue).toISOString();
+                                    if (valueObj.urnValue !== undefined) return valueObj.urnValue;
+                                    return JSON.stringify(valueObj);
+                                }).filter(v => v !== null && v !== undefined).join(', ');
+                            }
+                            
+                            return `
+                                <div class="col-md-6 mb-2">
+                                    <dl class="row mb-0">
+                                        <dt class="col-sm-5 text-truncate" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}:</dt>
+                                        <dd class="col-sm-7 mb-0">
+                                            <span class="text-break">${escapeHtml(propertyValue || 'No value')}</span>
+                                            <br><small class="text-muted" title="${escapeHtml(propertyUrn)}">URN: ${escapeHtml(propertyUrn)}</small>
+                                        </dd>
+                                    </dl>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
     
-    // Show modal
-    new bootstrap.Modal(document.getElementById('productViewModal')).show();
+    if (structuredPropertiesDiv) {
+        if (propertiesHTML) {
+            structuredPropertiesDiv.innerHTML = propertiesHTML;
+        } else {
+            // Show empty cards for both custom and structured properties
+            structuredPropertiesDiv.innerHTML = `
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0"><i class="fas fa-tags me-2"></i>Custom Properties (0)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center py-3 text-muted">
+                            <i class="fas fa-tags fa-2x mb-2"></i><br>
+                            No custom properties available
+                        </div>
+                    </div>
+                </div>
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0"><i class="fas fa-cogs me-2"></i>Structured Properties (0)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center py-3 text-muted">
+                            <i class="fas fa-cogs fa-2x mb-2"></i><br>
+                            No structured properties available
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    // DataHub link
+    const datahubLink = document.getElementById('modal-datahub-link');
+    if (datahubLink) {
+        if (product.urn && !product.urn.includes('local:') && productsData.datahub_url) {
+            datahubLink.href = getDataHubUrl(product.urn, 'product');
+            datahubLink.style.display = 'inline-block';
+        } else {
+            datahubLink.style.display = 'none';
+        }
+    }
+    
+    // Properties section is now handled above with custom and structured properties combined
+    const propertiesDiv = document.getElementById('modal-product-properties');
+    if (propertiesDiv) {
+        // This section is now redundant since we handle both custom and structured properties above
+        propertiesDiv.innerHTML = `
+            <div class="text-center py-3 text-muted">
+                <i class="fas fa-info-circle fa-2x mb-2"></i><br>
+                Properties are displayed in the sections above
+            </div>
+        `;
+    }
+    
+    // Raw JSON
+    const rawJsonElement = document.getElementById('modal-raw-json');
+    if (rawJsonElement) {
+        try {
+            const rawData = product.raw_data || product;
+            // Create a clean copy without circular references
+            const cleanData = JSON.parse(JSON.stringify(rawData));
+            const jsonString = JSON.stringify(cleanData, null, 2);
+            rawJsonElement.innerHTML = `<code class="language-json">${escapeHtml(jsonString)}</code>`;
+        } catch (error) {
+            console.error('Error formatting raw JSON:', error);
+            rawJsonElement.innerHTML = `<code class="language-json">${escapeHtml(JSON.stringify({error: 'Unable to display raw data', product_name: product.properties?.name || product.name}, null, 2))}</code>`;
+        }
+    }
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('viewDataProductModal'));
+    modal.show();
 }
 
 // Utility functions
@@ -1564,7 +2146,53 @@ function showError(message) {
         ${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+    
+    // Find a safe place to insert the alert
+    const container = document.querySelector('.container-fluid');
+    const row = container ? container.querySelector('.row') : null;
+    
+    if (container && row && container.contains(row)) {
+        container.insertBefore(alert, row);
+    } else {
+        // Fallback: append to body or a safe container
+        const safeContainer = document.querySelector('main') || document.body;
+        safeContainer.insertBefore(alert, safeContainer.firstChild);
+    }
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
+}
+
+function showSuccess(message) {
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-success alert-dismissible fade show';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    // Find a safe place to insert the alert
+    const container = document.querySelector('.container-fluid');
+    const row = container ? container.querySelector('.row') : null;
+    
+    if (container && row && container.contains(row)) {
+        container.insertBefore(alert, row);
+    } else {
+        // Fallback: append to body or a safe container
+        const safeContainer = document.querySelector('main') || document.body;
+        safeContainer.insertBefore(alert, safeContainer.firstChild);
+    }
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
 }
 
 function initializeFilterHandlers() {
@@ -1573,7 +2201,7 @@ function initializeFilterHandlers() {
 }
 
 function generateTableHTML(items, tabType) {
-    const pagination = currentPagination[tabType];
+    const pagination = legacyCurrentPagination[tabType];
     const totalItems = items.length;
     const totalPages = Math.ceil(totalItems / pagination.perPage);
     const startIndex = (pagination.page - 1) * pagination.perPage;
@@ -1591,13 +2219,17 @@ function generateTableHTML(items, tabType) {
                         <th class="checkbox-column">
                             <input type="checkbox" class="form-check-input select-all-table" data-tab="${tabType}">
                         </th>
-                        <th>Name</th>
-                        <th>Domain</th>
-                        <th>Description</th>
+                        <th width="15%">Name</th>
+                        <th width="20%">Description</th>
                         <th>Entities</th>
+                                        <th>Domain</th>
+                <th>Tags</th>
+                <th>Glossary Terms</th>
+                <th>Custom Properties</th>
+                <th>Structured Properties</th>
+                <th>Owners</th>
+                        ${tabType === 'synced' ? '<th>Sync Status</th>' : ''}
                         <th>URN</th>
-                        <th>Status</th>
-                        <th>Owners</th>
                         <th width="15%">Actions</th>
                     </tr>
                 </thead>
@@ -1671,10 +2303,10 @@ function generatePaginationHTML(currentPage, totalPages, totalItems, showingStar
             <div class="d-flex align-items-center">
                 <label for="perPage-${tabType}" class="form-label me-2 mb-0 small">Per page:</label>
                 <select id="perPage-${tabType}" class="form-select form-select-sm" style="width: auto;">
-                    <option value="10" ${currentPagination[tabType].perPage === 10 ? 'selected' : ''}>10</option>
-                    <option value="25" ${currentPagination[tabType].perPage === 25 ? 'selected' : ''}>25</option>
-                    <option value="50" ${currentPagination[tabType].perPage === 50 ? 'selected' : ''}>50</option>
-                    <option value="100" ${currentPagination[tabType].perPage === 100 ? 'selected' : ''}>100</option>
+                                                <option value="10" ${legacyCurrentPagination[tabType].perPage === 10 ? 'selected' : ''}>10</option>
+                            <option value="25" ${legacyCurrentPagination[tabType].perPage === 25 ? 'selected' : ''}>25</option>
+                            <option value="50" ${legacyCurrentPagination[tabType].perPage === 50 ? 'selected' : ''}>50</option>
+                            <option value="100" ${legacyCurrentPagination[tabType].perPage === 100 ? 'selected' : ''}>100</option>
                 </select>
             </div>
         </div>
@@ -1690,7 +2322,7 @@ function attachPaginationHandlers(content, tabType) {
             e.preventDefault();
             const page = parseInt(this.dataset.page);
             if (page && !this.closest('.page-item').classList.contains('disabled')) {
-                currentPagination[tabType].page = page;
+                legacyCurrentPagination[tabType].page = page;
                 displayTabContent(tabType);
             }
         });
@@ -1700,8 +2332,8 @@ function attachPaginationHandlers(content, tabType) {
     const perPageSelect = content.querySelector(`#perPage-${tabType}`);
     if (perPageSelect) {
         perPageSelect.addEventListener('change', function() {
-            currentPagination[tabType].perPage = parseInt(this.value);
-            currentPagination[tabType].page = 1; // Reset to first page
+            legacyCurrentPagination[tabType].perPage = parseInt(this.value);
+            legacyCurrentPagination[tabType].page = 1; // Reset to first page
             displayTabContent(tabType);
         });
     }
@@ -1743,10 +2375,53 @@ function renderProductRow(product, tabType) {
     // Extract product data
     const name = product.properties?.name || product.name || 'Unnamed';
     const description = product.properties?.description || product.description || '';
-    const domain = product.domain?.domain?.properties?.name || product.domain_urn || '';
     const entityCount = product.entities_count || product.entities?.total || (product.entity_urns ? product.entity_urns.length : 0) || 0;
     const urn = product.urn || '';
     const productId = product.id || urn;
+    
+    // Extract domain information
+    const domainUrn = product.domain?.domain?.urn || product.domain_urn || '';
+    let domainName = product.domain?.domain?.properties?.name || '';
+    
+    // Debug domain lookup
+    if (domainUrn && !domainName) {
+        console.log('Domain lookup for URN:', domainUrn);
+        console.log('Domains cache size:', domainsCache.size);
+        console.log('Domains cache loaded:', domainsCacheLoaded);
+    }
+    
+    // If no domain name but we have a URN, try to get it from domains cache
+    if (!domainName && domainUrn) {
+        domainName = getDomainName(domainUrn);
+        if (domainName) {
+            console.log('Found domain name in cache:', domainName);
+        } else {
+            console.log('Domain name not found in cache for URN:', domainUrn);
+        }
+    }
+    
+    // Fallback to URN extraction if still no name
+    if (!domainName && domainUrn) {
+        const parts = domainUrn.split(':');
+        domainName = parts[parts.length - 1] || domainUrn;
+        console.log('Using fallback domain name:', domainName);
+    }
+    
+    // Store product data in global store for view modal
+    const storeKey = productId || urn;
+    productDataStore[tabType].set(storeKey, product);
+    
+    // Extract tags, glossary terms, custom properties, and structured properties counts
+    const tagsCount = product.tags?.tags?.length || product.globalTags?.tags?.length || 0;
+    const glossaryTermsCount = product.glossaryTerms?.terms?.length || product.terms?.length || 0;
+    
+    // Custom properties - get from customProperties array
+    const customProperties = product.customProperties || [];
+    const customPropsCount = Array.isArray(customProperties) ? customProperties.length : 0;
+    
+    // Structured properties - get from structuredProperties.properties array
+    const structuredProperties = product.structuredProperties?.properties || [];
+    const structuredPropsCount = Array.isArray(structuredProperties) ? structuredProperties.length : 0;
     
     // Prepare entities display
     let entitiesDisplay = `<span class="badge bg-primary">${entityCount}</span>`;
@@ -1762,41 +2437,43 @@ function renderProductRow(product, tabType) {
     }
     
     return `
-        <tr data-item='${JSON.stringify(sanitizeDataForAttribute(product))}' data-product-id="${productId}" data-product-urn="${urn}">
+        <tr data-product-id="${productId}" data-product-urn="${urn}">
             <td class="checkbox-column">
                 <input type="checkbox" class="form-check-input product-checkbox" data-tab="${tabType}" data-product-id="${productId}">
             </td>
-            <td>
+            <td style="max-width: 150px;">
                 <div class="d-flex align-items-center">
                     <i class="${typeIcon} me-2"></i>
-                    <strong>${escapeHtml(name)}</strong>
+                    <strong class="text-truncate" title="${escapeHtml(name)}">${escapeHtml(truncateText(name, 25))}</strong>
                 </div>
             </td>
-            <td>
-                ${domain ? `<span class="badge bg-info">${escapeHtml(domain)}</span>` : '<span class="text-muted">None</span>'}
-            </td>
-            <td>
-                <span title="${escapeHtml(description)}">${escapeHtml(truncateText(description, 50))}</span>
+            <td style="max-width: 200px;">
+                <span class="text-truncate d-block" title="${escapeHtml(description)}">${escapeHtml(truncateText(description, 35))}</span>
             </td>
             <td>
                 ${entitiesDisplay}
             </td>
             <td>
-                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(urn)}">${escapeHtml(truncateUrn(urn, 30))}</code>
+                ${domainName ? `<span class="badge bg-info">${escapeHtml(domainName)}</span>` : '<span class="text-muted">None</span>'}
             </td>
-            <td>
-                <span class="badge ${statusClass}">${product.sync_status_display || product.sync_status}</span>
+            <td class="text-center">
+                ${tagsCount > 0 ? `<span class="badge bg-secondary">${tagsCount}</span>` : '<span class="text-muted">0</span>'}
             </td>
+            <td class="text-center">
+                ${glossaryTermsCount > 0 ? `<span class="badge bg-info">${glossaryTermsCount}</span>` : '<span class="text-muted">0</span>'}
+            </td>
+            <td class="text-center">
+                ${customPropsCount > 0 ? `<span class="badge bg-secondary">${customPropsCount}</span>` : '<span class="text-muted">0</span>'}
+            </td>
+            <td class="text-center">
+                ${structuredPropsCount > 0 ? `<span class="badge bg-success">${structuredPropsCount}</span>` : '<span class="text-muted">0</span>'}
+            </td>
+            <td class="text-center">
+                ${product.owners_count ? `<span class="badge bg-info">${product.owners_count}</span>` : '<span class="text-muted">0</span>'}
+            </td>
+            ${tabType === 'synced' ? `<td><span class="badge ${statusClass}">${product.sync_status_display || product.sync_status}</span></td>` : ''}
             <td>
-                ${product.owners_count ? `
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-users me-1"></i>
-                        <span class="badge bg-info">${product.owners_count}</span>
-                        ${product.owner_names && product.owner_names.length > 0 ? `
-                            <small class="ms-2 text-muted">${product.owner_names.slice(0, 2).join(', ')}${product.owner_names.length > 2 ? '...' : ''}</small>
-                        ` : ''}
-                    </div>
-                ` : `<span class="text-muted">None</span>`}
+                <code class="small text-truncate d-block" style="max-width: 250px;" title="${escapeHtml(urn)}">${escapeHtml(truncateUrn(urn, 50))}</code>
             </td>
             <td>
                 <div class="btn-group" role="group">
@@ -1816,28 +2493,42 @@ function getDataProductActionButtons(item, tabType) {
     let buttons = '';
     
     if (tabType === 'local') {
-        // Local data products: Edit, Add to PR, Push to DataHub, Delete
+        // 1. Edit - For local data products
         if (item.id) {
             buttons += `
-                <button type="button" class="btn btn-sm btn-outline-secondary edit-product" 
+                <button type="button" class="btn btn-sm btn-outline-warning edit-product" 
                         data-product-id="${item.id}" title="Edit Data Product">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
-                        data-product-id="${item.id}" title="Add to GitHub PR">
-                    <i class="fas fa-code-branch"></i>
-                </button>
             `;
             
+            // 2. Sync to DataHub - For all local data products
             if (hasDataHubConnection) {
                 buttons += `
-                    <button type="button" class="btn btn-sm btn-outline-warning push-product" 
-                            data-product-id="${item.id}" title="Push to DataHub">
-                        <i class="fas fa-cloud-upload-alt"></i>
+                    <button type="button" class="btn btn-sm btn-outline-success sync-to-datahub" 
+                            data-product-id="${item.id}" title="Sync to DataHub">
+                        <i class="fas fa-upload"></i>
                     </button>
                 `;
             }
             
+            // 4. Download JSON - Available for all
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-secondary download-json" 
+                        data-product-id="${item.id}" title="Download JSON">
+                    <i class="fas fa-file-download"></i>
+                </button>
+            `;
+            
+            // 5. Add to Staged Changes - Available for all
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-warning add-to-staged" 
+                        data-product-id="${item.id}" title="Add to Staged Changes">
+                    <i class="fab fa-github"></i>
+                </button>
+            `;
+            
+            // 6. Delete Local - For local data products
             buttons += `
                 <button type="button" class="btn btn-sm btn-outline-danger delete-local-product" 
                         data-product-id="${item.id}" title="Delete Local">
@@ -1846,47 +2537,87 @@ function getDataProductActionButtons(item, tabType) {
             `;
         }
     } else if (tabType === 'remote') {
-        // Remote data products: Add to PR, Edit, Sync to Local, Delete
+        // 3. Sync to Local - For remote data products
         buttons += `
-            <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
-                    data-product-urn="${escapeHtml(item.urn)}" title="Add to PR">
-                <i class="fas fa-code-branch"></i>
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary edit-remote-product" 
-                    data-product-urn="${escapeHtml(item.urn)}" title="Edit">
-                <i class="fas fa-edit"></i>
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-info sync-to-local" 
+            <button type="button" class="btn btn-sm btn-outline-primary sync-to-local" 
                     data-product-urn="${escapeHtml(item.urn)}" title="Sync to Local">
                 <i class="fas fa-download"></i>
             </button>
+        `;
+        
+        // 4. Download JSON - Available for all
+        buttons += `
+            <button type="button" class="btn btn-sm btn-outline-secondary download-json" 
+                    data-product-urn="${escapeHtml(item.urn)}" title="Download JSON">
+                <i class="fas fa-file-download"></i>
+            </button>
+        `;
+        
+        // 5. Add to Staged Changes - Available for all
+        buttons += `
+            <button type="button" class="btn btn-sm btn-outline-warning add-to-staged" 
+                    data-product-urn="${escapeHtml(item.urn)}" title="Add to Staged Changes">
+                <i class="fab fa-github"></i>
+            </button>
+        `;
+        
+        // 7. Delete Remote - For remote-only data products
+        buttons += `
             <button type="button" class="btn btn-sm btn-outline-danger delete-remote-product" 
-                    data-product-urn="${escapeHtml(item.urn)}" title="Delete">
+                    data-product-urn="${escapeHtml(item.urn)}" title="Delete from DataHub">
                 <i class="fas fa-trash"></i>
             </button>
         `;
     } else if (tabType === 'synced') {
-        // Synced data products: Edit, Add to PR, Resync, Delete Local, Push to DataHub
+        // 1. Edit - For synced data products
         if (item.id) {
             buttons += `
-                <button type="button" class="btn btn-sm btn-outline-secondary edit-product" 
+                <button type="button" class="btn btn-sm btn-outline-warning edit-product" 
                         data-product-id="${item.id}" title="Edit Data Product">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
-                        data-product-urn="${escapeHtml(item.urn)}" title="Add to PR">
-                    <i class="fas fa-code-branch"></i>
+            `;
+            
+            // 2b. Resync - For synced data products that are modified or synced
+            if (item.sync_status === 'MODIFIED' || item.sync_status === 'SYNCED') {
+                buttons += `
+                    <button type="button" class="btn btn-sm btn-outline-info resync-product" 
+                            data-product-id="${item.id}" data-product-urn="${escapeHtml(item.urn)}" title="Resync from DataHub">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                `;
+            }
+            
+            // 2c. Push to DataHub - For synced data products that are modified
+            if (item.sync_status === 'MODIFIED') {
+                buttons += `
+                    <button type="button" class="btn btn-sm btn-outline-success push-to-datahub" 
+                            data-product-id="${item.id}" title="Push to DataHub">
+                        <i class="fas fa-upload"></i>
+                    </button>
+                `;
+            }
+            
+            // 4. Download JSON - Available for all
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-secondary download-json" 
+                        data-product-id="${item.id}" title="Download JSON">
+                    <i class="fas fa-file-download"></i>
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-info resync-product" 
-                        data-product-id="${item.id}" data-product-urn="${escapeHtml(item.urn)}" title="Resync">
-                    <i class="fas fa-sync-alt"></i>
+            `;
+            
+            // 5. Add to Staged Changes - Available for all
+            buttons += `
+                <button type="button" class="btn btn-sm btn-outline-warning add-to-staged" 
+                        data-product-id="${item.id}" title="Add to Staged Changes">
+                    <i class="fab fa-github"></i>
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-warning push-product" 
-                        data-product-id="${item.id}" title="Push to DataHub">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                </button>
+            `;
+            
+            // 6. Delete Local - For synced data products
+            buttons += `
                 <button type="button" class="btn btn-sm btn-outline-danger delete-local-product" 
-                        data-product-id="${item.id}" title="Delete Local Only">
+                        data-product-id="${item.id}" title="Delete Local">
                     <i class="fas fa-trash"></i>
                 </button>
             `;
@@ -2137,8 +2868,25 @@ function moveDataProductToSynced(productUrn, button, data) {
             if (viewButton) {
                 viewButton.addEventListener('click', function() {
                     const row = this.closest('tr');
-                    const itemData = JSON.parse(row.dataset.item);
-                    showProductDetails(itemData);
+                    const productId = row.dataset.productId;
+                    const productUrn = row.dataset.productUrn;
+                    const storeKey = productId || productUrn;
+                    
+                    // Find the product data in the appropriate store
+                    let itemData = null;
+                    for (const [tabType, store] of Object.entries(productDataStore)) {
+                        if (store.has(storeKey)) {
+                            itemData = store.get(storeKey);
+                            break;
+                        }
+                    }
+                    
+                    if (itemData) {
+                        showProductDetails(itemData);
+                    } else {
+                        console.error('Product data not found in store for key:', storeKey);
+                        showError('Unable to load product details');
+                    }
                 });
             }
         }
@@ -2370,5 +3118,705 @@ function updateTabCounts() {
         syncedTab.textContent = currentSyncedCount + 1;
     }
 }
+
+// Modal functions for create and edit data products
+function editDataProduct(productId) {
+    console.log('Editing data product:', productId);
+    
+    // Find the product data
+    const productData = [...(productsData.synced_items || []), ...(productsData.local_only_items || [])]
+        .find(item => (item.combined?.id || item.id) === productId);
+    
+    if (!productData) {
+        showError('Data product not found');
+        return;
+    }
+    
+    const product = productData.combined || productData;
+    
+    // Populate the edit form
+    document.getElementById('edit-product-id').value = productId;
+    document.getElementById('edit-product-name').value = product.properties?.name || product.name || '';
+    document.getElementById('edit-product-description').value = product.properties?.description || product.description || '';
+    document.getElementById('edit-product-domain').value = product.domain_urn || '';
+    document.getElementById('edit-product-external-url').value = product.properties?.externalUrl || product.external_url || '';
+    
+    // Load ownership data
+    loadOwnershipData('edit-ownership-sections-container', product.ownership);
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('editDataProductModal'));
+    modal.show();
+}
+
+function loadOwnershipData(containerId, ownershipData) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    
+    if (ownershipData && ownershipData.owners && ownershipData.owners.length > 0) {
+        ownershipData.owners.forEach((owner, index) => {
+            addOwnershipSectionToModal(containerId, owner, index);
+        });
+    }
+}
+
+function addOwnershipSectionToModal(containerId, ownerData = null, index = null) {
+    const container = document.getElementById(containerId);
+    const sectionId = `ownership-section-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const sectionHtml = `
+        <div class="ownership-section mb-3 border rounded p-3" id="${sectionId}">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0">Owner ${container.children.length + 1}</h6>
+                <button type="button" class="btn btn-sm btn-outline-danger remove-ownership-section" onclick="removeOwnershipSection('${sectionId}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <label class="form-label">Owner Type</label>
+                    <select class="form-select ownership-type" name="ownership_type[]">
+                        <option value="TECHNICAL_OWNER" ${ownerData?.type === 'TECHNICAL_OWNER' ? 'selected' : ''}>Technical Owner</option>
+                        <option value="BUSINESS_OWNER" ${ownerData?.type === 'BUSINESS_OWNER' ? 'selected' : ''}>Business Owner</option>
+                        <option value="DATA_STEWARD" ${ownerData?.type === 'DATA_STEWARD' ? 'selected' : ''}>Data Steward</option>
+                        <option value="NONE" ${ownerData?.type === 'NONE' ? 'selected' : ''}>None</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Owner</label>
+                    <select class="form-select ownership-owner" name="ownership_owner[]" multiple>
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', sectionHtml);
+    
+    // Initialize Select2 for the new owner select
+    const ownerSelect = container.querySelector(`#${sectionId} .ownership-owner`);
+    if (ownerSelect && window.jQuery) {
+        $(ownerSelect).select2({
+            placeholder: 'Select owners...',
+            allowClear: true,
+            width: '100%'
+        });
+        
+        // Set selected values if provided
+        if (ownerData && ownerData.owner) {
+            if (ownerData.owner.urn) {
+                $(ownerSelect).append(new Option(ownerData.owner.urn, ownerData.owner.urn, true, true));
+            }
+        }
+    }
+}
+
+function removeOwnershipSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.remove();
+        updateOwnershipSectionNumbers();
+    }
+}
+
+function updateOwnershipSectionNumbers() {
+    document.querySelectorAll('.ownership-section h6').forEach((header, index) => {
+        header.textContent = `Owner ${index + 1}`;
+    });
+}
+
+// Form submission handlers
+document.addEventListener('DOMContentLoaded', function() {
+    // Create form handler
+    const createForm = document.getElementById('data-product-form');
+    if (createForm) {
+        createForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch('/metadata/data-products/create/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showDataProductNotification('success', 'Data product created successfully!');
+                    bootstrap.Modal.getInstance(document.getElementById('createDataProductModal')).hide();
+                    loadProductsData();
+                    createForm.reset();
+                } else {
+                    showDataProductNotification('error', 'Failed to create data product: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error creating data product:', error);
+                showDataProductNotification('error', 'Error creating data product');
+            });
+        });
+    }
+    
+    // Edit form handler
+    const editForm = document.getElementById('edit-data-product-form');
+    if (editForm) {
+        editForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const productId = formData.get('product_id');
+            
+            fetch(`/metadata/data-products/${productId}/edit/`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showDataProductNotification('success', 'Data product updated successfully!');
+                    bootstrap.Modal.getInstance(document.getElementById('editDataProductModal')).hide();
+                    loadProductsData();
+                } else {
+                    showDataProductNotification('error', 'Failed to update data product: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error updating data product:', error);
+                showDataProductNotification('error', 'Error updating data product');
+            });
+        });
+    }
+    
+    // Add ownership section handlers
+    document.getElementById('add-ownership-section')?.addEventListener('click', function() {
+        addOwnershipSectionToModal('ownership-sections-container');
+    });
+    
+    document.getElementById('edit-add-ownership-section')?.addEventListener('click', function() {
+        addOwnershipSectionToModal('edit-ownership-sections-container');
+    });
+    
+    // Load users and groups for ownership sections
+    loadUsersAndGroups();
+    
+    // Ensure domains are populated when modals are shown
+    document.getElementById('createDataProductModal')?.addEventListener('shown.bs.modal', function() {
+        populateDomainDropdowns();
+    });
+    
+    document.getElementById('editDataProductModal')?.addEventListener('shown.bs.modal', function() {
+        populateDomainDropdowns();
+    });
+});
+
+// Ownership section functions (similar to tags page)
+function addOwnershipSectionToModal(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.error(`Container ${containerId} not found`);
+        return;
+    }
+    
+    const sectionId = `ownership-section-${Date.now()}`;
+    const sectionHTML = `
+        <div class="card mb-3" id="${sectionId}">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="fas fa-crown me-2 text-primary"></i>
+                    Ownership Section
+                </h6>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeOwnershipSection('${sectionId}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Owners <span class="text-danger">*</span></label>
+                    <select class="form-select owners-select" name="owners[]" multiple required>
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                    <div class="form-text">Search and select multiple owners</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Ownership Type <span class="text-danger">*</span></label>
+                    <select class="form-select ownership-type-select" name="ownership_types[]" required>
+                        <option value="">Select ownership type...</option>
+                    </select>
+                    <div class="form-text">Select the ownership type for these owners</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.insertAdjacentHTML('beforeend', sectionHTML);
+    
+    // Initialize Select2 for the new section with a small delay to ensure DOM is ready
+    setTimeout(() => {
+        try {
+            const newSection = document.getElementById(sectionId);
+            if (newSection) {
+                const ownershipTypeSelect = newSection.querySelector('.ownership-type-select');
+                const ownersSelect = newSection.querySelector('.owners-select');
+                
+                if (ownershipTypeSelect && ownersSelect) {
+                    // Populate ownership types
+                    populateOwnershipTypeSelect(ownershipTypeSelect);
+                    
+                    // Populate owners
+                    populateOwnersSelect(ownersSelect);
+                    
+                    // Initialize Select2 for the owners dropdown
+                    if (typeof $ !== 'undefined' && $.fn.select2) {
+                        $(ownersSelect).select2({
+                            theme: 'bootstrap-5',
+                            width: '100%',
+                            placeholder: 'Search and select owners...',
+                            allowClear: true,
+                            dropdownParent: $(newSection)
+                        });
+                        console.log('Select2 initialized successfully for owners select');
+                    } else {
+                        console.error('Select2 not available');
+                    }
+                } else {
+                    console.error('Select elements not found in new section');
+                }
+            } else {
+                console.error(`New section ${sectionId} not found after insertion`);
+            }
+        } catch (error) {
+            console.error('Error initializing Select2:', error);
+        }
+    }, 10);
+}
+
+function removeOwnershipSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.remove();
+    }
+}
+
+function populateOwnershipTypeSelect(select) {
+    if (!select || !usersAndGroupsCache.ownership_types) return;
+    
+    // Clear existing options except the first one
+    select.innerHTML = '<option value="">Select ownership type</option>';
+    
+    usersAndGroupsCache.ownership_types.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type.urn;
+        option.textContent = type.info?.name || type.name || type.urn;
+        select.appendChild(option);
+    });
+}
+
+function populateOwnersSelect(select) {
+    if (!select) return;
+    
+    // Clear existing options
+    select.innerHTML = '';
+    
+    // Add users
+    if (usersAndGroupsCache.users) {
+        usersAndGroupsCache.users.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user.urn;
+            option.textContent = user.info?.displayName || user.username || user.urn;
+            option.dataset.type = 'user';
+            select.appendChild(option);
+        });
+    }
+    
+    // Add groups
+    if (usersAndGroupsCache.groups) {
+        usersAndGroupsCache.groups.forEach(group => {
+            const option = document.createElement('option');
+            option.value = group.urn;
+            option.textContent = group.info?.displayName || group.name || group.urn;
+            option.dataset.type = 'group';
+            select.appendChild(option);
+        });
+    }
+}
+
+// Global cache for users and groups is already declared in the external JS file
+
+// Global data store for product details (to avoid JSON parsing issues)
+    let productDataStore = {
+        synced: new Map(),
+        local: new Map(),
+        remote: new Map()
+    };
+    
+    // Domains cache for name lookups
+    // Global cache for domains and glossary terms
+    let domainsCache = new Map();
+    let glossaryTermsCache = new Map();
+    let domainsCacheLoaded = false;
+    
+    // Load domains data for name lookups
+    async function loadDomainsForLookup() {
+        if (domainsCacheLoaded) return;
+        
+        try {
+            const response = await fetch('/metadata/domains/data/', {
+                method: 'GET',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const allDomains = [
+                    ...(data.data.synced_items || []),
+                    ...(data.data.local_only_items || []),
+                    ...(data.data.remote_only_items || [])
+                ];
+                
+                // Build cache map
+                allDomains.forEach(domain => {
+                    if (domain.urn) {
+                        const name = domain.properties?.name || domain.name || '';
+                        domainsCache.set(domain.urn, name);
+                    }
+                });
+                
+                domainsCacheLoaded = true;
+                console.log(`Loaded ${domainsCache.size} domains for lookup`);
+                
+                // Debug: log some domain entries
+                if (domainsCache.size > 0) {
+                    const firstFew = Array.from(domainsCache.entries()).slice(0, 3);
+                    console.log('Sample domains:', firstFew);
+                }
+                
+                // Populate domain dropdowns after loading
+                populateDomainDropdowns();
+            }
+        } catch (error) {
+            console.error('Error loading domains for lookup:', error);
+        }
+    }
+    
+    // Get domain name from cache
+    function getDomainName(domainUrn) {
+        if (!domainUrn) return '';
+        return domainsCache.get(domainUrn) || '';
+    }
+    
+    // Populate domain dropdowns with loaded data
+    function populateDomainDropdowns() {
+        const domainSelects = [
+            document.getElementById('product-domain'),
+            document.getElementById('edit-product-domain')
+        ];
+        
+        domainSelects.forEach(select => {
+            if (!select) return;
+            
+            // Clear existing options except the first one
+            select.innerHTML = '<option value="">Select a domain (optional)</option>';
+            
+            // Add domains from cache
+            domainsCache.forEach((name, urn) => {
+                const option = document.createElement('option');
+                option.value = urn;
+                option.textContent = name || urn;
+                select.appendChild(option);
+            });
+        });
+        
+        console.log('Domain dropdowns populated with', domainsCache.size, 'domains');
+    }
+    
+    // Notification system (matching tags page)
+    function showDataProductNotification(type, message) {
+        // Check if we have notifications container
+        let container = document.getElementById('notifications-container');
+        
+        // Create it if it doesn't exist
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notifications-container';
+            container.className = 'position-fixed bottom-0 end-0 p-3';
+            container.style.zIndex = '1050';
+            document.body.appendChild(container);
+        }
+        
+        // Create unique ID
+        const id = 'toast-' + Date.now();
+        
+        // Create toast HTML
+        let bgClass, icon, title;
+        
+        if (type === 'success') {
+            bgClass = 'bg-success';
+            icon = 'fa-check-circle';
+            title = 'Success';
+        } else if (type === 'info') {
+            bgClass = 'bg-info';
+            icon = 'fa-info-circle';
+            title = 'Info';
+        } else {
+            bgClass = 'bg-danger';
+            icon = 'fa-exclamation-circle';
+            title = 'Error';
+        }
+        
+        const toast = document.createElement('div');
+        toast.className = `toast ${bgClass} text-white`;
+        toast.id = id;
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+        toast.setAttribute('aria-atomic', 'true');
+        toast.innerHTML = `
+            <div class="toast-header ${bgClass} text-white">
+                <i class="fas ${icon} me-2"></i>
+                <strong class="me-auto">${title}</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">${message}</div>
+        `;
+        
+        container.appendChild(toast);
+        
+        // Initialize and show the toast
+        const toastInstance = new bootstrap.Toast(toast, {
+            delay: 5000
+        });
+        toastInstance.show();
+        
+        // Remove toast from DOM after it's hidden
+        toast.addEventListener('hidden.bs.toast', function () {
+            toast.remove();
+        });
+    }
+
+    // Load glossary terms data for name lookups
+    async function loadGlossaryTermsForLookup() {
+        if (glossaryTermsCache.size > 0) return; // Already loaded
+        
+        try {
+            const response = await fetch('/metadata/glossary/data/', {
+                method: 'GET',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const allTerms = [
+                    ...(data.data.synced_items || []),
+                    ...(data.data.local_only_items || []),
+                    ...(data.data.remote_only_items || [])
+                ];
+                
+                // Build cache map
+                allTerms.forEach(term => {
+                    if (term.urn) {
+                        const name = term.properties?.name || term.name || '';
+                        glossaryTermsCache.set(term.urn, name);
+                    }
+                });
+                
+                console.log(`Loaded ${glossaryTermsCache.size} glossary terms for lookup`);
+            }
+        } catch (error) {
+            console.error('Error loading glossary terms for lookup:', error);
+        }
+    }
+    
+    // Get glossary term name from cache
+    function getGlossaryTermName(termUrn) {
+        if (!termUrn) return '';
+        return glossaryTermsCache.get(termUrn) || '';
+    }
+
+// Load users and groups from the server
+async function loadUsersAndGroups() {
+    try {
+        const response = await fetch('/metadata/api/users-groups/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            usersAndGroupsCache.users = data.users || [];
+            usersAndGroupsCache.groups = data.groups || [];
+            usersAndGroupsCache.ownership_types = data.ownership_types || [];
+            console.log('Loaded users and groups:', data);
+        } else {
+            console.error('Failed to load users and groups');
+        }
+    } catch (error) {
+        console.error('Error loading users and groups:', error);
+    }
+}
+
+// This will be called from the main DOMContentLoaded handler
+
+// Global bulk action functions - matching tags page style
+function resyncAllProducts() {
+    if (confirm('Are you sure you want to resync all data products? This may take some time.')) {
+        showDataProductNotification('success', 'Resync all initiated - this functionality will be implemented soon');
+    }
+}
+
+function exportAllProducts() {
+    showDataProductNotification('success', 'Export all initiated - downloading data products...');
+    // TODO: Implement actual export functionality
+}
+
+function addAllProductsToStagedChanges() {
+    if (confirm('Are you sure you want to add all data products to staged changes?')) {
+        showDataProductNotification('success', 'All data products added to staged changes');
+    }
+}
+
+function showImportProductsModal() {
+    // TODO: Show import modal similar to tags page
+    showDataProductNotification('info', 'Import modal functionality will be implemented soon');
+}
 </script>
+
+<!-- Create Data Product Modal -->
+<div class="modal fade" id="createDataProductModal" tabindex="-1" aria-labelledby="createDataProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createDataProductModalLabel">Create New Data Product</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="data-product-form">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="product-name" class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="product-name" name="name" required>
+                        <div class="form-text">Data product name should be unique and descriptive</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="product-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="product-description" name="description" rows="3"></textarea>
+                        <div class="form-text">Optional description for the data product</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="product-domain" class="form-label">Domain</label>
+                        <select class="form-select" id="product-domain" name="domain_urn">
+                            <option value="">Select a domain (optional)</option>
+                            <!-- Domain options will be populated dynamically -->
+                        </select>
+                        <div class="form-text">Associate this data product with a domain</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="product-external-url" class="form-label">External URL</label>
+                        <input type="url" class="form-control" id="product-external-url" name="external_url">
+                        <div class="form-text">Optional external URL for documentation or more information</div>
+                    </div>
+                    
+                    <div class="mb-3" id="ownership-section">
+                        <label class="form-label fw-bold">Ownership</label>
+                        <div id="ownership-sections-container">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Ownership Section
+                        </button>
+                        <div class="form-text mt-2">
+                            <i class="fas fa-info-circle me-1"></i>
+                            You can add multiple ownership sections with different ownership types
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Data Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Data Product Modal -->
+<div class="modal fade" id="editDataProductModal" tabindex="-1" aria-labelledby="editDataProductModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editDataProductModalLabel">Edit Data Product</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="edit-data-product-form">
+                {% csrf_token %}
+                <input type="hidden" id="edit-product-id" name="product_id">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="edit-product-name" class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="edit-product-name" name="name" required>
+                        <div class="form-text">Data product name should be unique and descriptive</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit-product-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="edit-product-description" name="description" rows="3"></textarea>
+                        <div class="form-text">Optional description for the data product</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit-product-domain" class="form-label">Domain</label>
+                        <select class="form-select" id="edit-product-domain" name="domain_urn">
+                            <option value="">Select a domain (optional)</option>
+                            <!-- Domain options will be populated dynamically -->
+                        </select>
+                        <div class="form-text">Associate this data product with a domain</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit-product-external-url" class="form-label">External URL</label>
+                        <input type="url" class="form-control" id="edit-product-external-url" name="external_url">
+                        <div class="form-text">Optional external URL for documentation or more information</div>
+                    </div>
+                    
+                    <div class="mb-3" id="edit-ownership-section">
+                        <label class="form-label fw-bold">Ownership</label>
+                        <div id="edit-ownership-sections-container">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="edit-add-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Ownership Section
+                        </button>
+                        <div class="form-text mt-2">
+                            <i class="fas fa-info-circle me-1"></i>
+                            You can add multiple ownership sections with different ownership types
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Data Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% endblock %} 

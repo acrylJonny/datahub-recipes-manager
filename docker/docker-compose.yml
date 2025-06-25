@@ -12,6 +12,7 @@ services:
       - app-data:/app/data
       - app-recipes:/app/recipes
       - app-templates:/app/templates
+      - app-metadata:/app/metadata-manager
       - ../:/app  # Mount source code for development
     environment:
       - DEBUG=True
@@ -30,7 +31,17 @@ services:
 volumes:
   app-data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data
   app-recipes:
     driver: local
   app-templates:
-    driver: local 
+    driver: local
+  app-metadata:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/metadata-manager 

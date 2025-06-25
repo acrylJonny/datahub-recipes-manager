@@ -40,6 +40,9 @@ spec:
             - name: templates
               persistentVolumeClaim:
                 claimName: {{ include "datahub-recipes-manager.fullname" . }}-templates
+            - name: metadata
+              persistentVolumeClaim:
+                claimName: {{ include "datahub-recipes-manager.fullname" . }}-metadata
             {{- end }}
           containers:
             - name: backup
@@ -60,14 +63,35 @@ spec:
                   
                   # Backup SQLite database
                   echo "Backing up database..."
-                  cp /data/db.sqlite3 ${BACKUP_DIR}/db.sqlite3
+                  if [ -f /data/recipes_manager.db ]; then
+                    cp /data/recipes_manager.db ${BACKUP_DIR}/recipes_manager.db
+                  elif [ -f /data/db.sqlite3 ]; then
+                    cp /data/db.sqlite3 ${BACKUP_DIR}/db.sqlite3
+                  else
+                    echo "Warning: No database file found"
+                  fi
                   
-                  # Backup mounted volumes (recipes, templates, etc.)
+                  # Backup mounted volumes (recipes, templates, metadata)
                   echo "Backing up recipe files..."
-                  tar -czf ${BACKUP_DIR}/recipes.tar.gz -C /recipes .
+                  if [ -d /recipes ] && [ "$(ls -A /recipes)" ]; then
+                    tar -czf ${BACKUP_DIR}/recipes.tar.gz -C /recipes .
+                  else
+                    echo "Warning: No recipe files found"
+                  fi
                   
                   echo "Backing up template files..."
-                  tar -czf ${BACKUP_DIR}/templates.tar.gz -C /templates .
+                  if [ -d /templates ] && [ "$(ls -A /templates)" ]; then
+                    tar -czf ${BACKUP_DIR}/templates.tar.gz -C /templates .
+                  else
+                    echo "Warning: No template files found"
+                  fi
+                  
+                  echo "Backing up metadata-manager files..."
+                  if [ -d /metadata ] && [ "$(ls -A /metadata)" ]; then
+                    tar -czf ${BACKUP_DIR}/metadata.tar.gz -C /metadata .
+                  else
+                    echo "Warning: No metadata files found"
+                  fi
                   
                   # Create backup info file
                   echo "Creating backup manifest..."
@@ -77,9 +101,10 @@ spec:
                     "application": "datahub-recipes-manager",
                     "version": "{{ .Chart.AppVersion }}",
                     "files": [
-                      "db.sqlite3",
+                      "recipes_manager.db",
                       "recipes.tar.gz",
-                      "templates.tar.gz"
+                      "templates.tar.gz",
+                      "metadata.tar.gz"
                     ],
                     "retention_days": {{ .Values.backup.retention.days }}
                   }
@@ -110,6 +135,9 @@ spec:
                   readOnly: true
                 - name: templates
                   mountPath: /templates
+                  readOnly: true
+                - name: metadata
+                  mountPath: /metadata
                   readOnly: true
                 {{- end }}
           restartPolicy: OnFailure

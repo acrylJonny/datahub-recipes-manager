@@ -29,7 +29,17 @@
                     {% endif %}
                     
                     <!-- New action buttons -->
-                    {% if datahub_url and remote_tag %}
+                    <button type="button" class="btn btn-outline-warning edit-tag-btn" 
+                            data-tag-id="{{ tag.id }}">
+                        <i class="fas fa-edit me-1"></i> Edit Tag
+                    </button>
+                    
+                    {% if tag.sync_status == 'LOCAL_ONLY' and has_datahub_connection %}
+                    <button type="button" class="btn btn-outline-success sync-to-datahub" 
+                            data-tag-id="{{ tag.id }}">
+                        <i class="fas fa-upload me-1"></i> Sync to DataHub
+                    </button>
+                    {% elif datahub_url and remote_tag %}
                     <a href="{{ datahub_url|datahub_url:remote_tag.urn }}" target="_blank" class="btn btn-outline-info">
                         <i class="fas fa-external-link-alt me-1"></i> View in DataHub
                     </a>
@@ -132,7 +142,7 @@
                                     <label for="color" class="form-label">Color</label>
                                     <div class="input-group">
                                         <input type="color" class="form-control form-control-color" id="color" name="color" value="{{ tag.color|default:'#0d6efd' }}" title="Choose tag color" {% if not tag.color %}disabled{% endif %}>
-                                        <input type="text" class="form-control" value="{{ tag.color|default:'' }}" id="colorText" readonly>
+                                        <input type="text" class="form-control" value="{% if tag.color %}{{ tag.color }}{% else %}null{% endif %}" id="colorText" readonly>
                                         <div class="input-group-text">
                                             <div class="form-check">
                                                 <input class="form-check-input" type="checkbox" id="noColorCheck" {% if not tag.color %}checked{% endif %}>
@@ -169,15 +179,18 @@
                                 <label class="form-label">Description</label>
                                 <textarea class="form-control" rows="3" readonly>{{ remote_tag.description }}</textarea>
                             </div>
-                            {% if remote_tag.properties.colorHex %}
                             <div class="mb-3">
                                 <label class="form-label">Color</label>
                                 <div class="input-group">
+                                    {% if remote_tag.properties.colorHex %}
                                     <input type="color" class="form-control form-control-color" value="{{ remote_tag.properties.colorHex }}" disabled>
                                     <input type="text" class="form-control" value="{{ remote_tag.properties.colorHex }}" readonly>
+                                    {% else %}
+                                    <input type="color" class="form-control form-control-color" value="#6c757d" disabled>
+                                    <input type="text" class="form-control" value="null" readonly>
+                                    {% endif %}
                                 </div>
                             </div>
-                            {% endif %}
                             <div class="mb-3">
                                 <label class="form-label">URN</label>
                                 <input type="text" class="form-control" value="{{ remote_tag.urn }}" readonly>
@@ -394,7 +407,15 @@
 {% load static %}
 <script src="{% static 'js/tag_utils.js' %}"></script>
 <script src="{% static 'metadata_manager/tags/tag_actions.js' %}"></script>
+
+<!-- Tag ownership data for JavaScript -->
+{{ tag.ownership_data|json_script:"tag-ownership-data" }}
+
 <script>
+    // Define tag ownership data for JavaScript access
+    const tagOwnershipDataElement = document.getElementById('tag-ownership-data');
+    window.tagOwnershipData = tagOwnershipDataElement ? JSON.parse(tagOwnershipDataElement.textContent) : null;
+    
     document.addEventListener('DOMContentLoaded', function() {
         // Handle main tag color checkbox
         const noColorCheck = document.getElementById('noColorCheck');
@@ -540,8 +561,94 @@
                 addTagToStagedChanges(tagData);
             });
         }
+        
+        const syncToDataHubBtn = document.querySelector('.sync-to-datahub');
+        if (syncToDataHubBtn) {
+            syncToDataHubBtn.addEventListener('click', function() {
+                // Create tag data object from data attributes
+                const tagData = {
+                    id: this.dataset.tagId,
+                    name: '{{ tag.name }}',
+                    sync_status: '{{ tag.sync_status }}'
+                };
+                
+                if (confirm('Are you sure you want to sync this tag to DataHub?')) {
+                    syncTagToDataHub(tagData);
+                }
+            });
+        }
+        
+        // Handle edit tag button
+        const editTagBtn = document.querySelector('.edit-tag-btn');
+        if (editTagBtn) {
+            editTagBtn.addEventListener('click', function() {
+                // Create tag data object for editing
+                const tagData = {
+                    id: this.dataset.tagId,
+                    name: '{{ tag.name|escapejs }}',
+                    description: '{{ tag.description|escapejs }}',
+                    color: '{{ tag.color|default:"#0d6efd" }}',
+                    ownership_data: window.tagOwnershipData
+                };
+                editTag(tagData);
+            });
+        }
     });
 </script>
+
+<!-- Create/Edit Tag Modal -->
+<div class="modal fade" id="createTagModal" tabindex="-1" aria-labelledby="createTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createTagModalLabel">Edit Tag</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" id="tag-form">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="tag-name" class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="tag-name" name="name" required>
+                        <div class="form-text">Tag name should be unique and descriptive</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="tag-description" class="form-label">Description</label>
+                        <textarea class="form-control" id="tag-description" name="description" rows="3"></textarea>
+                        <div class="form-text">Optional description for the tag</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="tag-color" class="form-label">Color</label>
+                        <input type="color" class="form-control form-control-color" id="tag-color" name="color" value="#0d6efd">
+                        <div class="form-text">Color for the tag (optional)</div>
+                    </div>
+                    
+                    <div class="mb-3" id="ownership-section">
+                        <label class="form-label fw-bold" id="ownership-label">Ownership</label>
+                        <div id="ownership-sections-container">
+                            <!-- Ownership sections will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="add-ownership-section">
+                            <i class="fas fa-plus me-1"></i> Add Owner
+                        </button>
+                        <div class="form-text mt-2" id="ownership-help-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            You can add multiple ownership sections with different ownership types
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Tag</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="{% static 'metadata_manager/tags/tags_enhanced.js' %}"></script>
 {% endblock %}
 
 {% endblock %} 

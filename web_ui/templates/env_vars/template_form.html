@@ -249,7 +249,7 @@
                 console.log("Add variable button clicked");
                 const varKey = `VAR_${Date.now()}`;
                 variables[varKey] = {
-                    key: varKey,
+                    key: "",  // Leave blank by default instead of varKey
                     value: "",
                     description: "",
                     required: false,
@@ -292,7 +292,7 @@
                         const varNameInput = $('<input>').addClass('form-control var-key')
                             .attr('type', 'text')
                             .attr('data-key', key)
-                            .attr('value', varData.key || key)
+                            .attr('value', varData.key)
                             .attr('placeholder', 'VARIABLE_NAME');
                         
                         cardHeader.append($('<div>').addClass('flex-grow-1 me-2').append(varNameInput));

@@ -17,21 +17,53 @@ logger = logging.getLogger(__name__)
 CACHE_TIMEOUT = 60
 
 
-def get_datahub_client():
+def get_datahub_client(connection_id=None, request=None):
     """
-    Get a DataHub client instance using centrally configured settings.
+    Get a DataHub client instance using connection-based configuration.
     This function should be used throughout the application for consistent
     DataHub access.
+
+    Args:
+        connection_id (str, optional): ID of the specific connection to use.
+        request (HttpRequest, optional): Request object to get session-based connection.
+                                       If None, uses the default connection.
 
     Returns:
         DataHubRestClient: configured client, or None if connection is not possible
     """
     try:
-        # Always try to get settings from AppSettings first
+        # Try to get from Connection model first (new multi-connection approach)
+        try:
+            from web_ui.models import Connection
+            
+            if connection_id:
+                # Get specific connection
+                connection = Connection.objects.filter(id=connection_id, is_active=True).first()
+                logger.debug(f"Getting DataHub client for connection ID: {connection_id}")
+            elif request and hasattr(request, 'session') and 'current_connection_id' in request.session:
+                # Get connection from session
+                session_connection_id = request.session['current_connection_id']
+                connection = Connection.objects.filter(id=session_connection_id, is_active=True).first()
+                logger.debug(f"Getting DataHub client for session connection ID: {session_connection_id}")
+            else:
+                # Get default connection
+                connection = Connection.get_default()
+                logger.debug("Getting DataHub client for default connection")
+            
+            if connection:
+                logger.info(f"Creating DataHub client with connection: {connection.name}")
+                return connection.get_client()
+                
+        except ImportError:
+            logger.debug("Connection model not available, falling back to AppSettings")
+        except Exception as e:
+            logger.warning(f"Error getting connection: {str(e)}, falling back to AppSettings")
+
+        # Fallback to legacy AppSettings approach
         try:
             from web_ui.models import AppSettings
 
-            logger.debug("Getting DataHub settings from AppSettings")
+            logger.debug("Getting DataHub settings from AppSettings (legacy fallback)")
             datahub_url = AppSettings.get("datahub_url")
             datahub_token = AppSettings.get("datahub_token")
             verify_ssl = AppSettings.get_bool("verify_ssl", True)
@@ -84,16 +116,29 @@ def get_datahub_client():
         return None
 
 
-def test_datahub_connection():
+def get_datahub_client_from_request(request):
+    """
+    Get a DataHub client instance based on the current request session.
+    This is a convenience function for views that need session-aware client access.
+
+    Args:
+        request (HttpRequest): The request object containing session data
+
+    Returns:
+        DataHubRestClient: configured client, or None if connection is not possible
+    """
+    return get_datahub_client(request=request)
+
+
+def test_datahub_connection(request=None):
     """
     Test if the DataHub connection is working (lightweight test).
-    Automatically retrieves and stores client info on successful connection.
 
     Returns:
         tuple: (is_connected, client) - boolean indicating if connection works, and the client instance
     """
     logger.info("Testing DataHub connection...")
-    client = get_datahub_client()
+    client = get_datahub_client(request=request)
 
     if client:
         logger.debug(
@@ -106,13 +151,9 @@ def test_datahub_connection():
                 f"DataHub connection test result: {'Success' if connected else 'Failed'}"
             )
             
-            # If connection is successful, automatically retrieve client info for the default environment
-            if connected:
-                try:
-                    _auto_retrieve_client_info(client)
-                except Exception as e:
-                    logger.warning(f"Failed to auto-retrieve client info: {str(e)}")
-                    # Don't fail the connection test if client info retrieval fails
+            # Note: Removed automatic client info retrieval since Environment objects
+            # don't have DataHub connection fields (datahub_gms_url, datahub_token).
+            # Client info retrieval should be done explicitly for configured connections.
             
             return connected, client
         except Exception as e:
@@ -126,34 +167,15 @@ def test_datahub_connection():
 
 def _auto_retrieve_client_info(client):
     """
-    Automatically retrieve and store client info for the default environment.
-    This is called internally when a successful connection is established.
+    DEPRECATED: Automatically retrieve and store client info for the default environment.
+    This function is no longer used since Environment objects don't have DataHub connection fields.
+    Use explicit client info retrieval for configured DataHub connections instead.
     
     Args:
         client: DataHub client instance
     """
-    try:
-        # Import here to avoid circular imports
-        from web_ui.models import Environment
-        from web_ui.web_ui.datahub_utils import get_datahub_client_info
-        
-        # Get the default environment
-        default_env = Environment.objects.filter(is_default=True).first()
-        
-        if default_env:
-            logger.info(f"Auto-retrieving client info for default environment: {default_env.name}")
-            result = get_datahub_client_info(default_env)
-            
-            if result['success']:
-                logger.info(f"Successfully auto-retrieved client info: {result['client_id']}")
-            else:
-                logger.warning(f"Failed to auto-retrieve client info: {result['error']}")
-        else:
-            logger.debug("No default environment found for auto client info retrieval")
-            
-    except Exception as e:
-        logger.error(f"Error in auto client info retrieval: {str(e)}")
-        # Don't raise the exception - this is a background operation
+    logger.warning("_auto_retrieve_client_info is deprecated and should not be called")
+    # Function kept for backward compatibility but does nothing
 
 
 def test_datahub_connection_with_permissions():

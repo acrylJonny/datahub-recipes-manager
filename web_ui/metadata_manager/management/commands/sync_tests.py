@@ -60,7 +60,7 @@ class Command(BaseCommand):
 
                     # Check if test already exists locally
                     local_test, created = Test.objects.get_or_create(
-                        deterministic_urn=test_urn,
+                        urn=test_urn,
                         defaults={
                             'name': test_name,
                             'description': remote_test.get('description', ''),

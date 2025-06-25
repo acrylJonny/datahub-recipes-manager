@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8 col-lg-6 mx-auto">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">{{ page_title }}</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="form-group">
+                            <label for="name">Connection Name *</label>
+                            <input type="text" class="form-control" id="name" name="name" 
+                                   value="{% if connection %}{{ connection.name }}{% elif form_data %}{{ form_data.name }}{% endif %}" 
+                                   required>
+                            <small class="form-text text-muted">A friendly name to identify this connection.</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="description">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="3">{% if connection %}{{ connection.description }}{% elif form_data %}{{ form_data.description }}{% endif %}</textarea>
+                            <small class="form-text text-muted">Optional description for this connection.</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="datahub_url">DataHub URL *</label>
+                            <input type="url" class="form-control" id="datahub_url" name="datahub_url" 
+                                   value="{% if connection %}{{ connection.datahub_url }}{% elif form_data %}{{ form_data.datahub_url }}{% endif %}" 
+                                   placeholder="https://your-datahub.com" required>
+                            <small class="form-text text-muted">The URL to your DataHub GMS instance.</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="datahub_token">DataHub Token</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="datahub_token" name="datahub_token" 
+                                       value="{% if form_data %}{{ form_data.datahub_token }}{% endif %}"
+                                       placeholder="{% if connection and has_token %}Token is set (leave blank to keep existing){% else %}Enter your DataHub access token{% endif %}">
+                                <div class="input-group-append">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="togglePasswordVisibility('datahub_token')">
+                                        <i class="fas fa-eye" id="datahub_token_eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <small class="form-text text-muted">
+                                {% if connection and has_token %}
+                                    Token is currently set. Leave blank to keep the existing token.
+                                {% else %}
+                                    Your DataHub access token for authentication.
+                                {% endif %}
+                            </small>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="timeout">Timeout (seconds)</label>
+                                    <input type="number" class="form-control" id="timeout" name="timeout" 
+                                           value="{% if connection %}{{ connection.timeout }}{% elif form_data %}{{ form_data.timeout }}{% else %}30{% endif %}" 
+                                           min="5" max="300">
+                                    <small class="form-text text-muted">Connection timeout in seconds (5-300).</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <div class="form-check mt-4">
+                                        <input type="checkbox" class="form-check-input" id="verify_ssl" name="verify_ssl" 
+                                               {% if connection %}{% if connection.verify_ssl %}checked{% endif %}{% elif form_data %}{% if form_data.verify_ssl %}checked{% endif %}{% else %}checked{% endif %}>
+                                        <label class="form-check-label" for="verify_ssl">
+                                            Verify SSL certificates
+                                        </label>
+                                    </div>
+                                    <small class="form-text text-muted">Uncheck only for development environments.</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="is_default" name="is_default" 
+                                       {% if connection %}{% if connection.is_default %}checked{% endif %}{% elif form_data %}{% if form_data.is_default %}checked{% endif %}{% endif %}>
+                                <label class="form-check-label" for="is_default">
+                                    Set as default connection
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">The default connection is used when no specific connection is selected.</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <div class="btn-group" role="group">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> 
+                                    {% if connection %}Update Connection{% else %}Create Connection{% endif %}
+                                </button>
+                                <button type="submit" name="test_connection" class="btn btn-info">
+                                    <i class="fas fa-plug"></i> 
+                                    {% if connection %}Update & Test{% else %}Create & Test{% endif %}
+                                </button>
+                            </div>
+                            <a href="{% url 'connections_list' %}" class="btn btn-secondary ml-2">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            {% if connection %}
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Connection Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Status:</strong>
+                                <span class="badge badge-{% if connection.connection_status == 'connected' %}success{% elif connection.connection_status == 'failed' %}danger{% else %}warning{% endif %}">
+                                    {{ connection.get_connection_status_display }}
+                                </span>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Last Tested:</strong>
+                                {% if connection.last_tested %}
+                                    {{ connection.last_tested|date:"M d, Y H:i" }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        {% if connection.error_message %}
+                            <div class="alert alert-danger mt-3">
+                                <strong>Last Error:</strong><br>
+                                {{ connection.error_message }}
+                            </div>
+                        {% endif %}
+                        
+                        <div class="mt-3">
+                            <strong>Created:</strong> {{ connection.created_at|date:"M d, Y H:i" }}<br>
+                            <strong>Updated:</strong> {{ connection.updated_at|date:"M d, Y H:i" }}
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function togglePasswordVisibility(fieldId) {
+    const field = document.getElementById(fieldId);
+    const eye = document.getElementById(fieldId + '_eye');
+    
+    if (field.type === 'password') {
+        field.type = 'text';
+        eye.className = 'fas fa-eye-slash';
+    } else {
+        field.type = 'password';
+        eye.className = 'fas fa-eye';
+    }
+}
+</script>
+{% endblock %} 

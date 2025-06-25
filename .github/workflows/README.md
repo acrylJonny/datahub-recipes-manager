@@ -1,74 +1,163 @@
 # DataHub Recipes Manager Workflows
 
-This directory contains GitHub Actions workflows for automating the testing, validation, and deployment of DataHub recipes and configurations.
+This directory contains GitHub Actions workflows for managing DataHub metadata and configurations across different environments.
 
-## Workflow Overview
+## 🔄 Core Workflows
 
-### PR Validation (`pr-validation.yml`)
+### Infrastructure & Deployment
+- **`deploy.yml`** - Deploys the web UI application to production
+- **`ci.yml`** - Continuous integration tests and validation
+- **`test-integration.yml`** - Integration tests for DataHub connectivity
 
-This workflow runs whenever a Pull Request is opened, updated, or reopened against the `main` branch. It performs several validation steps:
+### Recipe Management
+- **`run-recipe.yml`** - Execute DataHub ingestion recipes
+- **`run-now.yml`** - Immediately run specific DataHub ingestion sources
+- **`patch-recipe.yml`** - Update existing DataHub recipes
+- **`patch-ingestion-source.yml`** - Patch DataHub ingestion source configurations
+- **`manage-ingestion.yml`** - Comprehensive ingestion source management
 
-1. **Code Validation**:
-   - Runs linting on Python code
-   - Executes the test suite
+### Environment & Configuration
+- **`manage-env-vars.yml`** - Manage environment variables across environments
+- **`manage-secrets.yml`** - Handle DataHub secrets and credentials
 
-2. **Recipe Validation**:
-   - Validates recipe templates and instances
-   - Ensures they follow the correct schema and contain required fields
+### Validation & Quality
+- **`pr-validation.yml`** - Validate pull requests before merge
+- **`validate-metadata-migration.yml`** - Validate metadata migration operations
+- **`update-workflow-docs.yml`** - Automatically update workflow documentation
 
-3. **Secret Validation**:
-   - Extracts all GitHub secrets referenced in workflows and recipe templates
-   - Checks for the existence of these secrets in the GitHub environment
-   - Warns if any required secrets are missing
+## 📊 Metadata Entity Workflows
 
-4. **Deployment Preview**:
-   - Identifies which recipes would be deployed when the PR is merged
-   - Generates a report and adds it as a comment to the PR
-   - This helps reviewers understand the impact of changes before approving
+These workflows process `mcp_file.json` files using DataHub's [metadata-file source](https://docs.datahub.com/docs/generated/ingestion/sources/metadata-file) to ingest MetaChange Proposals (MCPs) directly into DataHub.
 
-### Recipe Deployment (`deploy.yml`)
+### Entity Type Workflows
+- **`manage-tags.yml`** - Process tag metadata from `metadata-manager/**/tags/mcp_file.json`
+- **`manage-glossary.yml`** - Process glossary terms from `metadata-manager/**/glossary/mcp_file.json`
+- **`manage-domains.yml`** - Process domain metadata from `metadata-manager/**/domains/mcp_file.json`
+- **`manage-structured-properties.yml`** - Process structured properties from `metadata-manager/**/structured_properties/mcp_file.json`
+- **`manage-metadata-tests.yml`** - Process metadata tests from `metadata-manager/**/metadata_tests/mcp_file.json`
+- **`manage-data-products.yml`** - Process data products from `metadata-manager/**/data_products/mcp_file.json`
+- **`manage-assertions.yml`** - Process individual assertion JSON files from `metadata-manager/**/assertions/`
 
-This workflow handles the actual deployment of recipes to DataHub environments. It runs in two scenarios:
+### How MCP File Workflows Work
 
-1. **Automatic** - When changes are pushed to the `main` branch (typically through PR merges)
-2. **Manual** - When triggered manually through the GitHub UI with specific parameters
+1. **Trigger Conditions:**
+   - Automatic: When `mcp_file.json` is modified in the respective entity directory
+   - Manual: Via workflow dispatch with environment selection
 
-Deployment options include:
+2. **Processing Steps:**
+   - Install `acryl-datahub[base]` package
+   - Validate JSON format of the MCP file
+   - Create DataHub ingestion recipe using the file source
+   - Run ingestion with dry-run for PRs, actual ingestion for main/develop branches
 
-- **Environment**: `dev`, `staging`, or `prod`
-- **Deployment Type**:
-  - `all`: Deploy all recipes for the selected environment
-  - `selected`: Deploy specific recipes (comma-separated list)
-  - `recent`: Deploy recipes modified in the last N hours
-- **Create Secrets**: Optionally create secrets in DataHub during deployment
+3. **Environment Support:**
+   - Processes files for `dev`, `staging`, and `prod` environments
+   - Uses environment-specific secrets: `DATAHUB_GMS_URL_<ENV>` and `DATAHUB_GMS_TOKEN_<ENV>`
+   - Falls back to default secrets if environment-specific ones don't exist
 
-All deployments generate detailed reports that are stored as workflow artifacts.
+4. **Output:**
+   - PR comments with processing results and entity counts
+   - Artifact uploads with ingestion recipes and summaries
+   - Dry-run validation for pull requests
 
-## Best Practices
+## 🎯 Specialized Workflows
 
-1. **Always use Pull Requests**:
-   - Never push directly to `main`
-   - All changes should go through PR validation
+### Metadata Migration
+- **`migrate-metadata.yml`** - Migrate metadata between DataHub environments
+- **`validate-metadata-migration.yml`** - Validate metadata migration operations
 
-2. **Review Deployment Previews**:
-   - Check the deployment preview comment on PRs
-   - Understand which recipes will be affected before approving
+### Policy Management  
+- **`manage-policy.yml`** - Manage DataHub access policies
 
-3. **Phased Deployments**:
-   - Use the manual workflow trigger for controlled deployments
-   - Deploy to `dev` first, then `staging`, and finally `prod`
+## 🔧 Environment Variables & Secrets
 
-4. **Manage Secrets Carefully**:
-   - Keep all referenced secrets up to date in GitHub
-   - Use separate secrets for different environments when appropriate
+### Required Secrets
+Each workflow requires DataHub connection credentials:
 
-## Troubleshooting
+```yaml
+# Global defaults
+DATAHUB_GMS_URL: "https://your-datahub-instance.com:8080"
+DATAHUB_GMS_TOKEN: "your-datahub-token"
 
-If deployments fail:
+# Environment-specific (optional, falls back to global)
+DATAHUB_GMS_URL_DEV: "https://dev-datahub.com:8080"
+DATAHUB_GMS_TOKEN_DEV: "dev-token"
+DATAHUB_GMS_URL_STAGING: "https://staging-datahub.com:8080"  
+DATAHUB_GMS_TOKEN_STAGING: "staging-token"
+DATAHUB_GMS_URL_PROD: "https://prod-datahub.com:8080"
+DATAHUB_GMS_TOKEN_PROD: "prod-token"
+```
 
-1. Check the workflow logs for detailed error messages
-2. Verify that all required secrets are properly configured
-3. Ensure recipes are valid and follow the correct schema
-4. Test the connection to DataHub before deploying
+### Additional Secrets
+- **Database connections:** `PG_HOST_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`
+- **Snowflake:** `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, etc.
 
-For more information, see the DataHub documentation and project README. 
+## 📁 Directory Structure
+
+```
+metadata-manager/
+├── dev/
+│   ├── tags/mcp_file.json
+│   ├── glossary/mcp_file.json  
+│   ├── domains/mcp_file.json
+│   ├── structured_properties/mcp_file.json
+│   ├── metadata_tests/mcp_file.json
+│   ├── data_products/mcp_file.json
+│   └── assertions/
+│       ├── assertion_id_1.json
+│       └── assertion_id_2.json
+├── staging/
+│   └── [same structure]
+└── prod/
+    └── [same structure]
+```
+
+## 🚀 Usage Examples
+
+### Manual Workflow Execution
+```bash
+# Process tags for dev environment (dry run)
+gh workflow run manage-tags.yml -f environment=dev -f dry_run=true
+
+# Process glossary for production
+gh workflow run manage-glossary.yml -f environment=prod -f dry_run=false
+
+# Run specific ingestion source
+gh workflow run run-now.yml -f environment=dev -f source_id=postgres-source
+```
+
+### Automatic Triggers
+- Push to `main` or `develop` branches with changes to MCP files
+- Pull requests modifying MCP files (runs in dry-run mode)
+
+## 📋 MCP File Format
+
+MCP files contain MetaChange Proposals in JSON format:
+
+```json
+[
+  {
+    "entityType": "tag",
+    "entityUrn": "urn:li:tag:example",
+    "changeType": "UPSERT", 
+    "aspectName": "tagProperties",
+    "aspect": {
+      "value": "{\"name\": \"Example\", \"description\": \"Example tag\"}",
+      "contentType": "application/json"
+    }
+  }
+]
+```
+
+## 🔍 Monitoring & Debugging
+
+- **Workflow Runs:** Check the Actions tab in GitHub
+- **PR Comments:** Automated comments show processing results
+- **Artifacts:** Download ingestion recipes and summaries from workflow runs
+- **Logs:** Detailed logs available in each workflow step
+
+## 📚 References
+
+- [DataHub Metadata File Source Documentation](https://docs.datahub.com/docs/generated/ingestion/sources/metadata-file)
+- [DataHub CLI Documentation](https://datahubproject.io/docs/cli/)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions) 

@@ -3715,6 +3715,22 @@ class DataHubRestClient:
                 error_messages = [
                     e.get("message", "") for e in result.get("errors", [])
                 ]
+                
+                # Check if the error is that the tag already exists
+                if any("This Tag already exists!" in msg for msg in error_messages):
+                    self.logger.info(f"Tag with ID {tag_id} already exists, attempting to retrieve existing tag")
+                    
+                    # Construct the expected URN and try to get the existing tag
+                    expected_urn = f"urn:li:tag:{tag_id}"
+                    existing_tag = self.get_tag(expected_urn)
+                    
+                    if existing_tag and existing_tag.get("urn"):
+                        self.logger.info(f"Successfully found existing tag: {existing_tag['urn']}")
+                        # Update the description if it's different
+                        if description and existing_tag.get("description") != description:
+                            self.update_tag_description(existing_tag["urn"], description)
+                        return existing_tag["urn"]
+                
                 self.logger.error(
                     f"GraphQL errors when creating tag: {', '.join(error_messages)}"
                 )
@@ -3723,6 +3739,23 @@ class DataHubRestClient:
         except Exception as e:
             self.logger.error(f"Error creating tag: {str(e)}")
             return None
+
+    def create_or_update_tag(
+        self, tag_id: str, name: str, description: str = ""
+    ) -> Optional[str]:
+        """
+        Create a new tag or return existing tag if it already exists.
+        This is a convenience method that wraps create_tag with better error handling.
+
+        Args:
+            tag_id (str): Tag ID
+            name (str): Tag name
+            description (str): Tag description
+
+        Returns:
+            str: URN of the created or existing tag, or None if unsuccessful
+        """
+        return self.create_tag(tag_id, name, description)
 
     def set_tag_color(self, tag_urn: str, color_hex: str) -> bool:
         """
@@ -3934,6 +3967,613 @@ class DataHubRestClient:
             self.logger.error(f"Error removing tag owner: {str(e)}")
             return False
 
+    def create_domain(self, domain_id: str, name: str, description: str = "", parent_domain_urn: str = None) -> Optional[str]:
+        """
+        Create a new domain in DataHub.
+
+        Args:
+            domain_id (str): Domain ID (will be used to construct URN)
+            name (str): Domain name
+            description (str): Domain description
+            parent_domain_urn (str): Parent domain URN (optional)
+
+        Returns:
+            str: Domain URN if successful, None otherwise
+        """
+        self.logger.info(f"Creating domain: {name} with ID: {domain_id}")
+
+        mutation = """
+        mutation createDomain($input: CreateDomainInput!) {
+          createDomain(input: $input)
+        }
+        """
+
+        input_data = {
+            "id": domain_id,
+            "name": name,
+            "description": description
+        }
+        
+        if parent_domain_urn:
+            input_data["parentDomain"] = parent_domain_urn
+
+        variables = {"input": input_data}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "createDomain" in result["data"]:
+                domain_urn = result["data"]["createDomain"]
+                if domain_urn:
+                    self.logger.info(f"Successfully created domain {name} with URN: {domain_urn}")
+                    return domain_urn
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(f"GraphQL errors when creating domain: {', '.join(error_messages)}")
+
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating domain: {str(e)}")
+            return None
+
+    def update_domain_description(self, domain_urn: str, description: str) -> bool:
+        """
+        Update the description of a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            description (str): New description
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Updating description for domain {domain_urn}")
+
+        mutation = """
+        mutation updateDescription($input: DescriptionUpdateInput!) {
+          updateDescription(input: $input)
+        }
+        """
+
+        variables = {"input": {"resourceUrn": domain_urn, "description": description}}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "updateDescription" in result["data"]:
+                success = result["data"]["updateDescription"]
+                if success:
+                    self.logger.info(
+                        f"Successfully updated description for domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when updating domain description: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating domain description: {str(e)}")
+            return False
+
+    def update_domain_display_properties(self, domain_urn: str, color_hex: str = None, icon: Dict[str, str] = None) -> bool:
+        """
+        Update the display properties of a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            color_hex (str): Hex color code (e.g., "#914b4b")
+            icon (dict): Icon configuration with name, style, iconLibrary
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Updating display properties for domain {domain_urn}")
+
+        mutation = """
+        mutation updateDisplayProperties($urn: String!, $input: DisplayPropertiesUpdateInput!) {
+          updateDisplayProperties(urn: $urn, input: $input)
+        }
+        """
+
+        input_data = {}
+        if color_hex:
+            input_data["colorHex"] = color_hex
+        if icon:
+            input_data["icon"] = icon
+
+        variables = {"urn": domain_urn, "input": input_data}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "updateDisplayProperties" in result["data"]:
+                success = result["data"]["updateDisplayProperties"]
+                if success:
+                    self.logger.info(
+                        f"Successfully updated display properties for domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when updating domain display properties: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating domain display properties: {str(e)}")
+            return False
+
+    def update_domain_structured_properties(self, domain_urn: str, structured_properties: List[Dict[str, Any]]) -> bool:
+        """
+        Update structured properties of a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            structured_properties (list): List of structured property updates
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Updating structured properties for domain {domain_urn}")
+
+        mutation = """
+        mutation upsertStructuredProperties($input: UpsertStructuredPropertiesInput!) {
+          upsertStructuredProperties(input: $input) {
+            properties {
+              ...structuredPropertiesFields
+              __typename
+            }
+            __typename
+          }
+        }
+
+        fragment structuredPropertiesFields on StructuredPropertiesEntry {
+          structuredProperty {
+            ...structuredPropertyFields
+            __typename
+          }
+          values {
+            ... on StringValue {
+              stringValue
+              __typename
+            }
+            ... on NumberValue {
+              numberValue
+              __typename
+            }
+            __typename
+          }
+          valueEntities {
+            urn
+            type
+            ...entityDisplayNameFields
+            __typename
+          }
+          associatedUrn
+          __typename
+        }
+
+        fragment structuredPropertyFields on StructuredPropertyEntity {
+          urn
+          type
+          exists
+          definition {
+            displayName
+            qualifiedName
+            description
+            cardinality
+            immutable
+            valueType {
+              urn
+              type
+              info {
+                type
+                displayName
+                __typename
+              }
+              __typename
+            }
+            entityTypes {
+              urn
+              type
+              info {
+                type
+                __typename
+              }
+              __typename
+            }
+            cardinality
+            filterStatus
+            typeQualifier {
+              allowedTypes {
+                urn
+                type
+                info {
+                  type
+                  displayName
+                  __typename
+                }
+                __typename
+              }
+              __typename
+            }
+            allowedValues {
+              value {
+                ... on StringValue {
+                  stringValue
+                  __typename
+                }
+                ... on NumberValue {
+                  numberValue
+                  __typename
+                }
+                __typename
+              }
+              description
+              __typename
+            }
+            created {
+              time
+              actor {
+                urn
+                editableProperties {
+                  displayName
+                  pictureLink
+                  __typename
+                }
+                ...entityDisplayNameFields
+                __typename
+              }
+              __typename
+            }
+            lastModified {
+              time
+              actor {
+                urn
+                editableProperties {
+                  displayName
+                  pictureLink
+                  __typename
+                }
+                ...entityDisplayNameFields
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+          settings {
+            isHidden
+            showInSearchFilters
+            showAsAssetBadge
+            showInAssetSummary
+            showInColumnsTable
+            __typename
+          }
+          __typename
+        }
+
+        fragment entityDisplayNameFields on Entity {
+          urn
+          type
+          ... on Dataset {
+            name
+            properties {
+              name
+              qualifiedName
+              __typename
+            }
+            __typename
+          }
+          ... on CorpUser {
+            username
+            editableProperties {
+              displayName
+              email
+              __typename
+            }
+            properties {
+              displayName
+              title
+              firstName
+              lastName
+              fullName
+              email
+              __typename
+            }
+            info {
+              active
+              displayName
+              title
+              firstName
+              lastName
+              fullName
+              email
+              __typename
+            }
+            __typename
+          }
+          ... on CorpGroup {
+            name
+            info {
+              displayName
+              __typename
+            }
+            __typename
+          }
+          ... on Dashboard {
+            dashboardId
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on Chart {
+            chartId
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on DataFlow {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on DataJob {
+            jobId
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on GlossaryTerm {
+            name
+            hierarchicalName
+            properties {
+              name
+              __typename
+            }
+            parentNodes {
+              nodes {
+                urn
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+          ... on GlossaryNode {
+            properties {
+              name
+              description
+              __typename
+            }
+            __typename
+          }
+          ... on Domain {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on Container {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on MLFeatureTable {
+            name
+            __typename
+          }
+          ... on MLFeature {
+            name
+            __typename
+          }
+          ... on MLPrimaryKey {
+            name
+            __typename
+          }
+          ... on MLModel {
+            name
+            __typename
+          }
+          ... on MLModelGroup {
+            name
+            __typename
+          }
+          ... on Tag {
+            name
+            properties {
+              name
+              colorHex
+              __typename
+            }
+            __typename
+          }
+          ... on DataPlatform {
+            ...nonConflictingPlatformFields
+            __typename
+          }
+          ... on DataProduct {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on Application {
+            properties {
+              name
+              __typename
+            }
+            __typename
+          }
+          ... on DataPlatformInstance {
+            instanceId
+            __typename
+          }
+          ... on StructuredPropertyEntity {
+            definition {
+              displayName
+              qualifiedName
+              __typename
+            }
+            __typename
+          }
+          ... on SchemaFieldEntity {
+            fieldPath
+            __typename
+          }
+          ... on OwnershipTypeEntity {
+            info {
+              name
+              __typename
+            }
+            __typename
+          }
+          __typename
+        }
+
+        fragment nonConflictingPlatformFields on DataPlatform {
+          urn
+          type
+          name
+          properties {
+            displayName
+            datasetNameDelimiter
+            logoUrl
+            __typename
+          }
+          displayName
+          info {
+            type
+            displayName
+            datasetNameDelimiter
+            logoUrl
+            __typename
+          }
+          __typename
+        }
+        """
+
+        variables = {
+            "input": {
+                "assetUrn": domain_urn,
+                "structuredPropertyInputParams": structured_properties,
+            }
+        }
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "upsertStructuredProperties" in result["data"]:
+                success = result["data"]["upsertStructuredProperties"]
+                if success:
+                    self.logger.info(
+                        f"Successfully updated structured properties for domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when updating domain structured properties: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error updating domain structured properties: {str(e)}")
+            return False
+
+    def add_domain_owner(
+        self,
+        domain_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
+        """
+        Add an owner to a domain.
+
+        Args:
+            domain_urn (str): Domain URN
+            owner_urn (str): Owner URN (urn:li:corpuser:username or urn:li:corpGroup:groupname)
+            ownership_type (str): Ownership type URN
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Adding owner {owner_urn} to domain {domain_urn}")
+
+        # Determine the owner entity type
+        owner_entity_type = "CORP_USER" if "corpuser:" in owner_urn else "CORP_GROUP"
+
+        mutation = """
+        mutation batchAddOwners($input: BatchAddOwnersInput!) {
+          batchAddOwners(input: $input)
+        }
+        """
+
+        variables = {
+            "input": {
+                "owners": [
+                    {
+                        "ownerUrn": owner_urn,
+                        "ownerEntityType": owner_entity_type,
+                        "ownershipTypeUrn": ownership_type,
+                    }
+                ],
+                "resources": [{"resourceUrn": domain_urn}],
+            }
+        }
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+
+            if result and "data" in result and "batchAddOwners" in result["data"]:
+                success = result["data"]["batchAddOwners"]
+                if success:
+                    self.logger.info(
+                        f"Successfully added owner {owner_urn} to domain {domain_urn}"
+                    )
+                    return True
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when adding domain owner: {', '.join(error_messages)}"
+                )
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error adding domain owner: {str(e)}")
+            return False
+
     def delete_tag(self, tag_urn: str) -> bool:
         """
         Delete a tag from DataHub.
@@ -3956,13 +4596,9 @@ class DataHubRestClient:
 
         try:
             result = self.execute_graphql(mutation, variables)
+            self.logger.debug(f"Delete tag GraphQL result: {result}")
 
-            if result and "data" in result and "deleteTag" in result["data"]:
-                success = result["data"]["deleteTag"]
-                if success:
-                    self.logger.info(f"Successfully deleted tag {tag_urn}")
-                    return True
-
+            # Check for explicit errors first
             if result and "errors" in result:
                 error_messages = [
                     e.get("message", "") for e in result.get("errors", [])
@@ -3970,7 +4606,30 @@ class DataHubRestClient:
                 self.logger.error(
                     f"GraphQL errors when deleting tag: {', '.join(error_messages)}"
                 )
+                return False
 
+            # If we have a result with data and no errors, consider it successful
+            if result and "data" in result:
+                delete_result = result["data"].get("deleteTag")
+                self.logger.debug(f"Delete tag success value: {delete_result}")
+                
+                # For delete operations, we'll be very permissive:
+                # - True = explicit success
+                # - None/null = likely success (common in GraphQL mutations)
+                # - Only False = explicit failure
+                if delete_result is not False:
+                    self.logger.info(f"Successfully deleted tag {tag_urn} (result: {delete_result})")
+                    return True
+                else:
+                    self.logger.warning(f"Tag deletion returned explicit False: {tag_urn}")
+                    return False
+
+            # If we have any result without errors, assume success
+            if result:
+                self.logger.info(f"Tag deletion assumed successful (no errors): {tag_urn}")
+                return True
+
+            self.logger.warning(f"No result returned for tag deletion: {tag_urn}")
             return False
         except Exception as e:
             self.logger.error(f"Error deleting tag: {str(e)}")
@@ -4605,18 +5264,18 @@ class DataHubRestClient:
 
     def get_glossary_node(self, node_urn):
         """
-        Get a specific glossary node and its children by URN.
+        Get a specific glossary node by URN (basic version without children).
 
         Args:
             node_urn (str): The URN of the glossary node to retrieve
 
         Returns:
-            dict: Dictionary with node details and its children (both nodes and terms)
+            dict: Dictionary with basic node details or None if not found
         """
         self.logger.info(f"Getting glossary node with URN: {node_urn}")
 
         try:
-            # First, get the node details with a simpler query
+            # Simple query for just the node details
             node_query = """
             query($urn: String!) {
               glossaryNode(urn: $urn) {
@@ -4625,6 +5284,14 @@ class DataHubRestClient:
                       properties {
                         name
                         description
+                }
+                parentNodes {
+                  nodes {
+                    urn
+                    properties {
+                      name
+                    }
+                  }
                 }
               }
             }
@@ -4639,166 +5306,183 @@ class DataHubRestClient:
                 not result
                 or "data" not in result
                 or "glossaryNode" not in result["data"]
+                or result["data"]["glossaryNode"] is None
             ):
                 errors = self._get_graphql_errors(result)
                 if errors:
                     self.logger.warning(
                         f"GraphQL query for node {node_urn} returned errors: {errors}"
                     )
+                else:
+                    self.logger.warning(f"Node {node_urn} not found in DataHub")
                 return None
 
             node_data = result["data"]["glossaryNode"]
 
-            # Process the node data
+            # Process the node data - simplified version
             properties = node_data.get("properties", {})
+            parent_nodes_data = node_data.get("parentNodes", {}) or {}
+            parent_nodes = parent_nodes_data.get("nodes", []) if parent_nodes_data else []
+            
             processed_node = {
                 "urn": node_data.get("urn"),
                 "type": node_data.get("type"),
                 "name": properties.get("name", "Unknown"),
                 "description": properties.get("description", ""),
                 "properties": properties,
-                "child_nodes": [],
-                "child_terms": [],
+                "parentNodes": [{"urn": p.get("urn"), "name": p.get("properties", {}).get("name", "") if p.get("properties") else ""} for p in parent_nodes if p]
             }
 
-            # Now get child nodes using searchAcrossEntities
-            search_query = """
-            query($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                searchResults {
-                  entity {
+            return processed_node
+        except Exception as e:
+            self.logger.error(f"Error getting glossary node {node_urn}: {str(e)}")
+            return None
+
+    def get_glossary_term(self, term_urn):
+        """
+        Get a specific glossary term by URN.
+
+        Args:
+            term_urn (str): The URN of the glossary term to retrieve
+
+        Returns:
+            dict: Dictionary with term details or None if not found
+        """
+        self.logger.info(f"Getting glossary term with URN: {term_urn}")
+
+        try:
+            # Query for the specific term
+            term_query = """
+            query($urn: String!) {
+              glossaryTerm(urn: $urn) {
+                urn
+                type
+                properties {
+                  name
+                  description
+                  termSource
+                  sourceRef
+                  sourceUrl
+                  customProperties {
+                    key
+                    value
+                  }
+                }
+                domain {
+                  domain {
                     urn
-                    type
-                    ... on GlossaryNode {
-                  properties {
-                    name
-                    description
+                    properties {
+                      name
+                      description
+                    }
+                  }
+                }
+                ownership {
+                  owners {
+                    owner {
+                      ... on CorpUser {
+                        urn
+                        username
+                        properties {
+                          displayName
+                          email
+                        }
+                      }
+                      ... on CorpGroup {
+                        urn
+                        name
+                        properties {
+                          displayName
+                        }
+                      }
+                    }
+                    ownershipType {
+                      urn
+                      info {
+                        name
+                      }
+                    }
+                  }
+                  lastModified {
+                    actor
+                    time
+                  }
                 }
                 parentNodes {
                   nodes {
-                    urn
+                    ... on GlossaryNode {
+                      urn
+                      properties {
+                        name
+                      }
+                    }
+                  }
+                }
+                deprecation {
+                  deprecated
+                }
+                relationships(input: {types: ["IsA", "HasA"], direction: OUTGOING}) {
+                  relationships {
+                    entity {
+                      ... on GlossaryTerm {
+                        urn
+                        properties {
+                          name
+                        }
+                      }
+                    }
+                  }
+                }
+                structuredProperties {
+                  properties {
+                    structuredProperty {
+                      urn
+                      definition {
+                        displayName
+                        qualifiedName
+                      }
+                    }
+                    values {
+                      ... on StringValue {
+                        stringValue
+                      }
+                      ... on NumberValue {
+                        numberValue
+                      }
                     }
                   }
                 }
               }
             }
-              }
-            }
             """
 
-            search_variables = {
-                "input": {
-                    "query": f'parentNodes.urn:"{node_urn}"',
-                    "types": ["GLOSSARY_NODE"],
-                    "count": 100,
-                }
-            }
+            variables = {"urn": term_urn}
 
-            self.logger.debug(f"Searching for child nodes of {node_urn}")
-            search_result = self.execute_graphql(search_query, search_variables)
+            self.logger.debug(f"Executing GraphQL query for term details: {term_urn}")
+            result = self.execute_graphql(term_query, variables)
 
             if (
-                search_result
-                and "data" in search_result
-                and "searchAcrossEntities" in search_result["data"]
+                not result
+                or "data" not in result
+                or "glossaryTerm" not in result["data"]
+                or result["data"]["glossaryTerm"] is None
             ):
-                search_data = search_result["data"]["searchAcrossEntities"]
-                if "searchResults" in search_data:
-                    for result in search_data["searchResults"]:
-                        entity = result.get("entity", {})
-                        child_properties = entity.get("properties", {})
-                        child_node = {
-                            "urn": entity.get("urn"),
-                            "type": entity.get("type"),
-                            "name": child_properties.get("name", "Unknown"),
-                            "description": child_properties.get("description", ""),
-                            "properties": child_properties,
-                            "parent_node_urn": node_urn,
-                        }
-                        processed_node["child_nodes"].append(child_node)
-
-            # Get child terms using searchAcrossEntities for GLOSSARY_TERM type
-            term_search_variables = {
-                "input": {
-                    "query": f'parentNodes.urn:"{node_urn}"',
-                    "types": ["GLOSSARY_TERM"],
-                    "count": 100,
-                }
-            }
-
-            self.logger.debug(f"Searching for child terms of {node_urn}")
-            term_search_result = self.execute_graphql(
-                search_query, term_search_variables
-            )
-
-            if (
-                term_search_result
-                and "data" in term_search_result
-                and "searchAcrossEntities" in term_search_result["data"]
-            ):
-                search_data = term_search_result["data"]["searchAcrossEntities"]
-                if "searchResults" in search_data:
-                    term_results = search_data["searchResults"]
-
-                    if term_results and len(term_results) > 0:
-                        self.logger.info(
-                            f"Found {len(term_results)} child terms for node {node_urn}"
-                        )
-                        for result in term_results:
-                            entity = result.get("entity", {})
-                            term_properties = entity.get("properties", {})
-                            term_data = {
-                                "urn": entity.get("urn"),
-                                "type": entity.get("type"),
-                                "name": term_properties.get("name", "Unknown"),
-                                "description": term_properties.get("description", ""),
-                                "term_source": term_properties.get(
-                                    "termSource", "INTERNAL"
-                                ),
-                                "properties": term_properties,
-                                "parent_node_urn": node_urn,
-                            }
-                            processed_node["child_terms"].append(term_data)
-                    else:
-                        self.logger.info(
-                            f"No child terms found in direct search for node {node_urn}"
-                        )
-                else:
-                    errors = self._get_graphql_errors(term_search_result)
+                errors = self._get_graphql_errors(result)
                 if errors:
                     self.logger.warning(
-                        f"GraphQL term search for node {node_urn} returned errors: {errors}"
+                        f"GraphQL query for term {term_urn} returned errors: {errors}"
                     )
-
-            # If no terms found via direct search, try list_glossary_terms as fallback
-            if not processed_node["child_terms"]:
-                self.logger.info(
-                    f"Trying list_glossary_terms as fallback for node {node_urn}"
-                )
-                all_terms = self.list_glossary_terms()
-
-                # All terms should be a dictionary with parent URNs as keys
-                if isinstance(all_terms, dict) and node_urn in all_terms:
-                    self.logger.info(
-                        f"Found {len(all_terms[node_urn])} terms for node {node_urn} via list_glossary_terms"
-                    )
-                    processed_node["child_terms"] = all_terms[node_urn]
                 else:
-                    self.logger.info(
-                        f"No child terms found for node {node_urn} in list_glossary_terms results"
-                    )
-                    # Try a direct search with node_urn parameter
-                    node_terms = self.list_glossary_terms(node_urn=node_urn)
-                    if node_terms and node_urn in node_terms:
-                        self.logger.info(
-                            f"Found {len(node_terms[node_urn])} terms via direct list_glossary_terms search"
-                        )
-                        processed_node["child_terms"] = node_terms[node_urn]
+                    self.logger.warning(f"Term {term_urn} not found in DataHub")
+                return None
 
-            return processed_node
+            term_data = result["data"]["glossaryTerm"]
+
+            # Process the term data using the same logic as _process_glossary_term
+            return self._process_glossary_term(term_data)
+
         except Exception as e:
-            self.logger.error(f"Error getting glossary node {node_urn}: {str(e)}")
-
+            self.logger.error(f"Error getting glossary term {term_urn}: {str(e)}")
             return None
 
     def create_glossary_node(self, node_id, name, description="", parent_urn=None):
@@ -5326,9 +6010,12 @@ class DataHubRestClient:
                 entity = item.get("entity", {})
                 urn = entity.get("urn")
                 
-                if urn and "urn:li:structuredProperty:" in urn:
-                    # Extract the ID from the URN by removing the prefix
-                    property_id = urn.replace("urn:li:structuredProperty:", "")
+                if urn and ("urn:li:structuredProperty:" in urn or "urn:li:structuredproperty:" in urn):
+                    # Extract the ID from the URN by removing the prefix (handle both formats)
+                    if "urn:li:structuredProperty:" in urn:
+                        property_id = urn.replace("urn:li:structuredProperty:", "")
+                    else:
+                        property_id = urn.replace("urn:li:structuredproperty:", "")
                     
                     structured_properties.append({
                         "urn": urn,
@@ -5345,7 +6032,6 @@ class DataHubRestClient:
         except Exception as e:
             logging.error(f"Error processing structured properties: {str(e)}")
             return {"success": False, "error": str(e)}
-
     def get_assertions(self, entity_urn=None, query="*", start=0, count=100):
         """
         Get assertions from DataHub using comprehensive GraphQL query.
@@ -6119,12 +6805,15 @@ class DataHubRestClient:
                         # Add basic info structure to maintain compatibility with views
                         entity["info"] = {
                             "description": "Assertion details not available due to schema compatibility",
-                            "type": "UNKNOWN"  # Use string instead of enum
+                            "type": "SQL"  # Use SQL as fallback instead of UNKNOWN to avoid enum issues
                         }
                         # Add basic platform info
                         entity["platform"] = {
                             "name": "Unknown Platform"
                         }
+                        # Clean up any enum artifacts that might cause issues
+                        if "type" in entity and entity["type"] == "$UNKNOWN":
+                            entity["type"] = "ASSERTION"
             
             return {"success": True, "data": search_results}
             
@@ -6243,43 +6932,21 @@ class DataHubRestClient:
                       }
                     }
                   }
-                  relationships(input: { types: ["ParentOf", "Contains"], direction: OUTGOING, start: 0, count: 100 }) {
-                    start
-                    count
-                    total
-                    relationships {
-                      type
-                      direction
-                      entity {
+                  structuredProperties {
+                    properties {
+                      structuredProperty {
                         urn
-                        type
                       }
-                      created {
-                        time
-                        actor
-                      }
-                    }
-                  }
-                  parentRelationships: relationships(input: { types: ["ParentOf", "Contains"], direction: INCOMING, start: 0, count: 10 }) {
-                    start
-                    count
-                    total
-                    relationships {
-                      type
-                      direction
-                      entity {
-                        urn
-                        type
-                        ... on Domain {
-                          urn
-                          properties {
-                            name
-                          }
+                      values {
+                        ... on StringValue {
+                          stringValue
+                        }
+                        ... on NumberValue {
+                          numberValue
                         }
                       }
-                      created {
-                        time
-                        actor
+                      valueEntities {
+                        urn
                       }
                     }
                   }
@@ -6333,18 +7000,6 @@ class DataHubRestClient:
                             if domains_list and len(domains_list) > 0:
                                 parent_urn = domains_list[0].get("urn")
                         
-                        # If not found, try incoming relationships (parentRelationships)
-                        if not parent_urn:
-                            parent_relationships = entity.get("parentRelationships", {})
-                            if parent_relationships and parent_relationships.get("relationships"):
-                                relationships_list = parent_relationships["relationships"]
-                                for rel in relationships_list:
-                                    if rel and rel.get("type") in ["ParentOf", "Contains"] and rel.get("entity"):
-                                        parent_entity = rel["entity"]
-                                        if parent_entity.get("type") == "DOMAIN":
-                                            parent_urn = parent_entity.get("urn")
-                                            break
-                        
                         # Extract entities count from GraphQL response
                         entities_info = entity.get("entities", {})
                         entities_count = entities_info.get("total", 0) if entities_info else 0
@@ -6357,12 +7012,12 @@ class DataHubRestClient:
                             "properties": properties,
                             "parentDomain": parent_urn,  # For backward compatibility
                             "parentDomains": entity.get("parentDomains"),
-                            "parentRelationships": entity.get("parentRelationships"),  # Add parent relationships
                             "ownership": entity.get("ownership"),
-                            "relationships": entity.get("relationships"),
                             "institutionalMemory": entity.get("institutionalMemory"),
                             "displayProperties": entity.get("displayProperties"),
+                            "entities": entity.get("entities"),  # Include full entities data for processing
                             "entities_count": entities_count,  # Add entities count from GraphQL
+                            "structuredProperties": entity.get("structuredProperties"),  # Add structured properties
                         }
                         
                         domains.append(domain)
@@ -6478,45 +7133,26 @@ class DataHubRestClient:
                 }
               }
             }
-            relationships(input: { types: ["ParentOf", "Contains"], direction: OUTGOING, start: 0, count: 100 }) {
-              start
-              count
-              total
-              relationships {
-                type
-                direction
-                entity {
+            structuredProperties {
+              properties {
+                structuredProperty {
                   urn
-                  type
                 }
-                created {
-                  time
-                  actor
+                values {
+                  ... on StringValue {
+                    stringValue
+                  }
+                  ... on NumberValue {
+                    numberValue
+                  }
+                }
+                valueEntities {
+                  urn
                 }
               }
             }
-            parentRelationships: relationships(input: { types: ["ParentOf", "Contains"], direction: INCOMING, start: 0, count: 10 }) {
-              start
-              count
+            entities(input: { start: 0, count: 1, query: "*" }) {
               total
-              relationships {
-                type
-                direction
-                entity {
-                  urn
-                  type
-                  ... on Domain {
-                    urn
-                    properties {
-                      name
-                    }
-                  }
-                }
-                created {
-                  time
-                  actor
-                }
-              }
             }
             displayProperties {
               colorHex
@@ -6525,9 +7161,6 @@ class DataHubRestClient:
                 name
                 style
               }
-            }
-            entities(input: { start: 0, count: 1, query: "*" }) {
-              total
             }
           }
         }
@@ -6555,18 +7188,6 @@ class DataHubRestClient:
                     if domains_list and len(domains_list) > 0:
                         parent_urn = domains_list[0].get("urn")
                 
-                # If not found, try incoming relationships (parentRelationships)
-                if not parent_urn:
-                    parent_relationships = domain_data.get("parentRelationships", {})
-                    if parent_relationships and parent_relationships.get("relationships"):
-                        relationships_list = parent_relationships["relationships"]
-                        for rel in relationships_list:
-                            if rel and rel.get("type") in ["ParentOf", "Contains"] and rel.get("entity"):
-                                parent_entity = rel["entity"]
-                                if parent_entity.get("type") == "DOMAIN":
-                                    parent_urn = parent_entity.get("urn")
-                                    break
-                
                 # Extract entities count from GraphQL response
                 entities_info = domain_data.get("entities", {})
                 entities_count = entities_info.get("total", 0) if entities_info else 0
@@ -6579,12 +7200,12 @@ class DataHubRestClient:
                     "properties": properties,
                     "parentDomain": parent_urn,  # For backward compatibility
                     "parentDomains": domain_data.get("parentDomains"),
-                    "parentRelationships": domain_data.get("parentRelationships"),  # Add parent relationships
                     "ownership": domain_data.get("ownership"),
-                    "relationships": domain_data.get("relationships"),
                     "institutionalMemory": domain_data.get("institutionalMemory"),
                     "displayProperties": domain_data.get("displayProperties"),
+                    "entities": domain_data.get("entities"),  # Include full entities data for processing
                     "entities_count": entities_count,  # Add entities count from GraphQL
+                    "structuredProperties": domain_data.get("structuredProperties"),  # Add structured properties
                 }
                 
                 return domain
@@ -6659,9 +7280,16 @@ class DataHubRestClient:
             if result and "errors" in result:
                 # Check for specific GraphQL validation errors
                 errors = self._get_graphql_errors(result)
+                self.logger.warning(f"GraphQL listTests returned errors: {len(errors)} error(s)")
+                if errors:
+                    self.logger.debug(f"First error: {errors[0]}")
+                
                 for error in errors:
                     if "FieldUndefined" in error or "Unknown type" in error or "listTests" in error:
                         self.logger.warning("listTests query not supported in this DataHub version")
+                        return []
+                    elif "non null type" in error or "wrongly returned a null value" in error:
+                        self.logger.warning("listTests query returned null values, skipping failed query")
                         return []
                     else:
                         self.logger.error(f"GraphQL error listing tests: {error}")
@@ -6818,14 +7446,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -6986,14 +7610,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7082,14 +7702,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7178,14 +7794,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7274,14 +7886,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7370,14 +7978,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7467,14 +8071,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7544,14 +8144,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7621,14 +8217,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7983,931 +8575,803 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
             if len(errors) > 1:
                 self.logger.debug(f"Additional {len(errors) - 1} GraphQL errors occurred")
 
-    def get_test(self, test_urn):
+    def aggregate_across_entities(self, facets, query="*", entity_types=None, max_agg_values=100):
         """
-        Get details of a metadata test by URN.
+        Use DataHub's aggregateAcrossEntities API to get faceted aggregations.
         
         Args:
-            test_urn (str): URN of the metadata test
+            facets (list): List of facet fields to aggregate (e.g., ["platform"])
+            query (str): Search query
+            entity_types (list): Optional list of entity types to filter by
+            max_agg_values (int): Maximum number of aggregation values to return
             
         Returns:
-            dict: Test details or None if not found
+            dict: Response containing faceted aggregation data
         """
-        self.logger.info(f"Getting metadata test with URN: {test_urn}")
+        self.logger.info(f"Aggregating across entities with facets={facets}, query='{query}', entity_types={entity_types}")
         
-        try:
-            # Simple test query to check if TEST type is supported
-            gql_query = """
-            query test($urn: String!) {
-              entity(urn: $urn) {
-                urn
-                type
-                ... on Test {
-                  urn
-                  type
-                  name
-                  description
-                  category
-                  definition {
-                    json
-                  }
-                  results {
-                    passingCount
-                    failingCount
-                    lastRunTimestampMillis
-                  }
-                }
-              }
-            }
-            """
-            
-            variables = {"urn": test_urn}
-            
-            # Execute the GraphQL query
-            result = self._execute_graphql(gql_query, variables)
-            
-            if result and "errors" in result:
-                # Check for schema validation errors
-                errors = self._get_graphql_errors(result)
-                for error in errors:
-                    if "FieldUndefined" in error or "Unknown type" in error:
-                        self.logger.warning("TEST entity type not supported in this DataHub version")
-                        return None
-                
-            if result and 'data' in result and 'entity' in result['data']:
-                entity = result['data']['entity']
-                if entity and entity.get('type') == 'TEST':
-                    # Extract definition JSON
-                    definition_json = ""
-                    if entity.get("definition") and entity["definition"].get("json"):
-                        definition_json = entity["definition"]["json"]
-                    
-                    # Extract results
-                    results = entity.get("results", {})
-                    
-                    return {
-                        'urn': entity.get('urn'),
-                        'type': entity.get('type'),
-                        'name': entity.get('name', ''),
-                        'description': entity.get('description', ''),
-                        'category': entity.get('category', ''),
-                        'definition_json': definition_json,
-                        'results': {
-                            'passingCount': results.get('passingCount', 0),
-                            'failingCount': results.get('failingCount', 0),
-                            'lastRunTimestampMillis': results.get('lastRunTimestampMillis'),
-                        }
-                    }
-            
-            return None
-            
-        except Exception as e:
-            error_str = str(e)
-            if "FieldUndefined" in error_str or "Unknown type" in error_str:
-                self.logger.warning("TEST entity type not supported in this DataHub version")
-                return None
-            else:
-                self.logger.error(f"Error getting metadata test: {error_str}")
-                return None
-    
-    def create_test(self, name, description, category, definition_json):
-        """
-        Create a metadata test in DataHub.
-        
-        Args:
-            name (str): Name of the test
-            description (str): Description of the test
-            category (str): Category of the test (e.g., "Data Governance")
-            definition_json (str): JSON string of the test definition
-            
-        Returns:
-            str: URN of the created test or None if failed
-        """
-        self.logger.info(f"Creating metadata test: {name}")
-        
-        try:
-            # Check if test creation is supported
-            gql_mutation = """
-            mutation createTest($input: CreateTestInput!) {
-              createTest(input: $input)
-            }
-            """
-            
-            input_data = {
-                "name": name,
-                "description": description,
-                "category": category,
-                "definition": {
-                    "json": definition_json
-                }
-            }
-            
-            variables = {"input": input_data}
-            
-            # Execute the GraphQL mutation
-            result = self._execute_graphql(gql_mutation, variables)
-            
-            if result and "errors" in result:
-                # Check for schema validation errors
-                errors = self._get_graphql_errors(result)
-                for error in errors:
-                    if "FieldUndefined" in error or "Unknown type" in error or "UnknownDirective" in error:
-                        self.logger.warning("Test creation not supported in this DataHub version")
-                        return None
-            
-            if result and 'data' in result and 'createTest' in result['data']:
-                return result['data']['createTest']
-            
-            return None
-            
-        except Exception as e:
-            error_str = str(e)
-            if "FieldUndefined" in error_str or "Unknown type" in error_str:
-                self.logger.warning("Test creation not supported in this DataHub version")
-                return None
-            else:
-                self.logger.error(f"Error creating metadata test: {error_str}")
-                return None
-    
-    def update_test(self, test_urn, name=None, description=None, category=None, definition_json=None):
-        """
-        Update a metadata test in DataHub.
-        
-        Args:
-            test_urn (str): URN of the test to update
-            name (str, optional): New name for the test
-            description (str, optional): New description for the test
-            category (str, optional): New category for the test
-            definition_json (str, optional): New JSON string of the test definition
-            
-        Returns:
-            bool: True if update was successful, False otherwise
-        """
-        self.logger.info(f"Updating metadata test with URN: {test_urn}")
-        
-        try:
-            # Prepare update input
-            update_input = {}
-            
-            if name is not None:
-                update_input["name"] = name
-                
-            if description is not None:
-                update_input["description"] = description
-                
-            if category is not None:
-                update_input["category"] = category
-                
-            if definition_json is not None:
-                update_input["definition"] = {"json": definition_json}
-                
-            if not update_input:
-                self.logger.warning("No fields to update for metadata test")
-                return False
-                
-            # Define GraphQL mutation for updating a test
-            gql_mutation = """
-            mutation updateTest($urn: String!, $input: UpdateTestInput!) {
-              updateTest(urn: $urn, input: $input)
-            }
-            """
-            
-            variables = {
-                "urn": test_urn,
-                "input": update_input
-            }
-            
-            # Execute the GraphQL mutation
-            result = self._execute_graphql(gql_mutation, variables)
-            
-            if result and "errors" in result:
-                # Check for schema validation errors
-                errors = self._get_graphql_errors(result)
-                for error in errors:
-                    if "FieldUndefined" in error or "Unknown type" in error or "UnknownDirective" in error:
-                        self.logger.warning("Test updates not supported in this DataHub version")
-                        return False
-            
-                        return False
-            
-            if result and 'data' in result and 'updateTest' in result['data']:
-                return True
-            
-            return False
-            
-        except Exception as e:
-            error_str = str(e)
-            if "FieldUndefined" in error_str or "Unknown type" in error_str:
-                self.logger.warning("Test updates not supported in this DataHub version")
-                return False
-            else:
-                self.logger.error(f"Error updating metadata test: {error_str}")
-                return False
-    
-    def delete_test(self, test_urn):
-        """
-        Delete a metadata test from DataHub.
-        
-        Args:
-            test_urn (str): URN of the test to delete
-            
-        Returns:
-            bool: True if deletion was successful, False otherwise
-        """
-        self.logger.info(f"Deleting metadata test with URN: {test_urn}")
-        
-        try:
-            # Define GraphQL mutation for deleting a test
-            gql_mutation = """
-            mutation deleteTest($urn: String!) {
-              deleteTest(urn: $urn)
-            }
-            """
-            
-            variables = {"urn": test_urn}
-            
-            # Execute the GraphQL mutation
-            result = self._execute_graphql(gql_mutation, variables)
-            
-            if result and "errors" in result:
-                # Check for schema validation errors
-                errors = self._get_graphql_errors(result)
-                for error in errors:
-                    if "FieldUndefined" in error or "Unknown type" in error or "UnknownDirective" in error:
-                        self.logger.warning("Test deletion not supported in this DataHub version")
-                        return False
-            
-            if result and 'data' in result and 'deleteTest' in result['data']:
-                return True
-            
-            return False
-            
-        except Exception as e:
-            error_str = str(e)
-            if "FieldUndefined" in error_str or "Unknown type" in error_str:
-                self.logger.warning("Test deletion not supported in this DataHub version")
-                return False
-            else:
-                self.logger.error(f"Error deleting metadata test: {error_str}")
-                return False
-
-    def get_data_contracts(self, query="*", start=0, count=100):
-        """
-        Get data contracts from DataHub using comprehensive GraphQL query.
-        
-        Args:
-            query (str): Search query (default: "*")
-            start (int): Start index for pagination (default: 0)
-            count (int): Number of results to return (default: 100)
-        
-        Returns:
-            dict: Response with success status and data contract data
-        """
-        try:
-            logger.info(f"Getting data contracts with query='{query}', start={start}, count={count}")
-            
-            # Comprehensive GraphQL query for data contracts
-            graphql_query = """
-            query GetDataContracts($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                start
-                count
-                total
-                searchResults {
-                  entity {
-                    urn
-                    type
-                    ... on DataContract {
-                      urn
-                      type
-                      properties {
-                        entityUrn
-                        freshness {
-                          assertion {
-                            urn
-                          }
-                        }
-                        schema {
-                          assertion {
-                            urn
-                          }
-                        }
-                        dataQuality {
-                          assertion {
-                            urn
-                          }
-                        }
-                      }
-                      status {
-                        state
-                      }
-                      structuredProperties {
-                        properties {
-                          values {
-                            ...on StringValue {
-                              stringValue
-                            }
-                            ...on NumberValue {
-                              numberValue
-                            }
-                          }
-                          valueEntities {
-                            urn
-                            type
-                          }
-                          associatedUrn
-                        }
-                      }
-                      relationships(input: {types: [], direction: OUTGOING, start: 0, count: 100}) {
-                        relationships {
-                          type
-                          direction
-                          entity {
-                            urn
-                          }
-                          created {
-                            time
-                            actor
-                          }
-                        }
-                      }
-                      result(refresh: false) {
-                        __typename
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            """
-            
-            # Build search input for data contracts
-            search_input = {
-                "types": ["DATA_CONTRACT"],
-                "query": query,
-                "start": start,
-                "count": count
-            }
-            
-            variables = {
-                "input": search_input
-            }
-            
-            result = self.execute_graphql(graphql_query, variables)
-            
-            if result is None:
-                logger.error("GraphQL execution returned None")
-                return {"success": False, "error": "GraphQL execution failed"}
-            
-            # Check for GraphQL errors
-            if "errors" in result:
-                error_messages = []
-                for error in result["errors"]:
-                    error_msg = error.get("message", "Unknown GraphQL error")
-                    error_messages.append(error_msg)
-                    logger.error(f"GraphQL error: {error_msg}")
-                
-                return {"success": False, "error": f"GraphQL errors: {'; '.join(error_messages)}"}
-            
-            # Extract data from response
-            if "data" not in result or not result["data"]:
-                logger.error("No data in GraphQL response")
-                return {"success": False, "error": "No data in response"}
-            
-            search_data = result["data"].get("searchAcrossEntities", {})
-            
-            logger.info(f"Successfully retrieved {len(search_data.get('searchResults', []))} data contracts")
-            
-            return {
-                "success": True,
-                "data": search_data
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting data contracts: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    def get_data_products(self, query="*", start=0, count=100):
-        """
-        Get data products from DataHub using comprehensive GraphQL query.
-        
-        Args:
-            query (str): Search query (default: "*")
-            start (int): Start index for pagination (default: 0)
-            count (int): Number of results to return (default: 100)
-        
-        Returns:
-            dict: Response with success status and data product data
-        """
-        try:
-            logger.info(f"Getting data products with query='{query}', start={start}, count={count}")
-            
-            # Use the comprehensive search query with fragments
-            graphql_query = """
-            query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
-              searchAcrossEntities(input: $input) {
-                start
-                count
-                total
-                searchResults {
-                  entity {
-                    urn
-                    type
-                    ... on DataProduct {
-                      urn
-                      type
-                      properties {
-                        name
-                        description
-                        externalUrl
-                      }
-          ownership {
-            owners {
-              owner {
-                ... on CorpUser {
-                  urn
-                              type
-                              username
-                              info {
-                                active
-                                displayName
-                                title
-                                email
-                                firstName
-                                lastName
-                                fullName
-                              }
-                              properties {
-                                active
-                                displayName
-                                title
-                                email
-                                firstName
-                                lastName
-                                fullName
-                              }
-                              editableProperties {
-                                displayName
-                                title
-                                pictureLink
-                                email
-                              }
-                }
-                ... on CorpGroup {
-                  urn
-                              type
-                              name
-                              properties {
-                                displayName
-                                email
-                }
-                              info {
-                                displayName
-                                email
-              }
-                            }
-                          }
-                          type
-              ownershipType {
-                urn
-                            type
-                            info {
-                              name
-                              description
-                            }
-                          }
-                          associatedUrn
-                        }
-                        lastModified {
-                          time
-                        }
-                      }
-                      tags {
-                        tags {
-                          tag {
-                            urn
-                            type
-                            name
-                            description
-            properties {
-                              name
-                              colorHex
-                            }
-                          }
-                          context
-                          associatedUrn
-                        }
-                      }
-                      glossaryTerms {
-                        terms {
-                          term {
-                            urn
-                            name
-                            type
-                            hierarchicalName
-                            properties {
-                              name
-                              description
-                              definition
-                              termSource
-                            }
-                          }
-                          actor {
-                            urn
-                          }
-                          context
-                          associatedUrn
-                        }
-                      }
-                      domain {
-                        domain {
-                          urn
-                          type
-                          properties {
-                            name
-                            description
-                          }
-                        }
-                        associatedUrn
-                      }
-                      entities(input: {start: 0, count: 0, query: "*"}) {
-                        total
-                      }
-                      structuredProperties {
-                        properties {
-                          structuredProperty {
-                            urn
-                            type
-                            definition {
-                              displayName
-                              qualifiedName
-                              description
-                              cardinality
-                              valueType {
-                                urn
-                                type
-                                info {
-                                  type
-              displayName
+        graphql_query = """
+        query aggregateAcrossEntities($input: AggregateAcrossEntitiesInput!) {
+          aggregateAcrossEntities(input: $input) {
+            facets {
+              ...facetFields
             }
           }
-                            }
+        }
+
+        fragment facetFields on FacetMetadata {
+          field
+          displayName
+          entity {
+            urn
+          }
+          aggregations {
+            entity {
+              urn
+              type
+              ...entityPlatformFields
+            }
+          }
+        }
+
+        fragment entityPlatformFields on Entity {
+          ... on Dataset {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on Dashboard {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on Chart {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on DataFlow {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on DataPlatform {
+            ...platformFields
+          }
+          ... on DataPlatformInstance {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on DataJob {
+            dataFlow {
+              platform {
+                ...platformFields
+              }
+            }
+          }
+          ... on Container {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on MLFeatureTable {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on MLFeature {
+            properties {
+              sources {
+                platform {
+                  ...platformFields
+                }
+              }
+            }
+          }
+          ... on MLPrimaryKey {
+            properties {
+              sources {
+                platform {
+                  ...platformFields
+                }
+              }
+            }
+          }
+          ... on MLModel {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on MLModelGroup {
+            platform {
+              ...platformFields
+            }
+          }
+        }
+
+        fragment platformFields on DataPlatform {
+          urn
+          name
+          properties {
+            displayName
+          }
+        }
+        """
+        
+        # Build input variables
+        variables = {
+            "input": {
+                "facets": facets,
+                "query": query,
+                "searchFlags": {
+                    "maxAggValues": max_agg_values,
+                    "skipCache": False
+                }
+            }
+        }
+        
+        # Add entity type filters if specified
+        if entity_types:
+            variables["input"]["types"] = entity_types
+        
+        try:
+            result = self._execute_graphql(graphql_query, variables)
+            
+            if result and "aggregateAcrossEntities" in result:
+                return {
+                    "success": True,
+                    "data": result["aggregateAcrossEntities"]
+                }
+            else:
+                self._log_graphql_errors(result)
+                return {
+                    "success": False,
+                    "error": "No aggregation data returned"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error in aggregate_across_entities: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def get_comprehensive_glossary_data(self, query="*", start=0, count=100):
+        """
+        Get comprehensive glossary data including nodes and terms with all metadata.
+        
+        Args:
+            query (str): Search query to filter results
+            start (int): Starting offset for pagination
+            count (int): Number of items to return
+            
+        Returns:
+            dict: Dictionary containing nodes and terms with comprehensive metadata
+        """
+        self.logger.info(f"Getting comprehensive glossary data with query={query}, start={start}, count={count}")
+        
+        # Query for both nodes and terms with comprehensive data - updated to match new format
+        comprehensive_query = """
+        query GetGlossary($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+                type
+                ... on GlossaryNode {
+                  ownership {
+                    owners {
+                      owner {
+                        ... on CorpUser {
+                          urn
+                          username
+                          properties {
+                            displayName
+                            email
                           }
-                          values {
-                            ... on StringValue {
-                              stringValue
-                            }
-                            ... on NumberValue {
-                              numberValue
-                            }
+                        }
+                        ... on CorpGroup {
+                          urn
+                          name
+                          properties {
+                            displayName
                           }
-                          valueEntities {
-                            urn
-                            type
-                          }
-                          associatedUrn
                         }
                       }
-                      institutionalMemory {
-                        elements {
-                          url
-                          description
-                          label
-                          created {
-                            actor
-                            time
-                          }
-                          associatedUrn
+                      ownershipType {
+                        urn
+                        info {
+                          name
                         }
+                      }
+                    }
+                    lastModified {
+                      actor
+                      time
+                    }
+                  }
+                  properties {
+                    name
+                    description
+                    customProperties {
+                      key
+                      value
+                    }
+                  }
+                  parentNodes {
+                    nodes {
+                      ... on GlossaryNode {
+                        urn
+                        properties {
+                          name
+                        }
+                      }
+                    }
+                  }
+                  displayProperties {
+                    colorHex
+                    icon {
+                      iconLibrary
+                      name
+                      style
+                    }
+                  }
+                  structuredProperties {
+                    properties {
+                      structuredProperty {
+                        urn
+                        definition {
+                          displayName
+                          qualifiedName
+                        }
+                      }
+                      values {
+                        ... on StringValue {
+                          stringValue
+                        }
+                        ... on NumberValue {
+                          numberValue
+                        }
+                      }
+                    }
+                  }
+                  institutionalMemory {
+                    elements {
+                      url
+                      label
+                      actor {
+                        ... on CorpUser {
+                          urn
+                        }
+                        ... on CorpGroup {
+                          urn
+                        }
+                      }
+                      created {
+                        actor
+                        time
+                      }
+                      updated {
+                        actor
+                        time
+                      }
+                      settings {
+                        showInAssetPreview
+                      }
+                    }
+                  }
+                }
+                ... on GlossaryTerm {
+                  ownership {
+                    owners {
+                      owner {
+                        ... on CorpUser {
+                          urn
+                          username
+                          properties {
+                            displayName
+                            email
+                          }
+                        }
+                        ... on CorpGroup {
+                          urn
+                          name
+                          properties {
+                            displayName
+                          }
+                        }
+                      }
+                      ownershipType {
+                        urn
+                        info {
+                          name
+                        }
+                      }
+                    }
+                    lastModified {
+                      actor
+                      time
+                    }
+                  }
+                  domain {
+                    domain {
+                      urn
+                      properties {
+                        name
+                        description
+                      }
+                    }
+                  }
+                  application {
+                    application {
+                      urn
+                    }
+                  }
+                  properties {
+                    name
+                    description
+                    termSource
+                    sourceRef
+                    sourceUrl
+                    customProperties {
+                      key
+                      value
+                    }
+                  }
+                  deprecation {
+                    deprecated
+                  }
+                  isRelatedTerms: relationships(input: {types: ["IsA"], direction: OUTGOING}) {
+                    relationships {
+                      entity {
+                        ... on GlossaryTerm {
+                          urn
+                          properties {
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                  hasRelatedTerms: relationships(input: {types: ["HasA"], direction: OUTGOING}) {
+                    relationships {
+                      entity {
+                        ... on GlossaryTerm {
+                          urn
+                          properties {
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                  parentNodes {
+                    nodes {
+                      ... on GlossaryNode {
+                        urn
+                        properties {
+                          name
+                        }
+                      }
+                    }
+                  }
+                  institutionalMemory {
+                    elements {
+                      url
+                      label
+                      actor {
+                        ... on CorpUser {
+                          urn
+                        }
+                        ... on CorpGroup {
+                          urn
+                        }
+                      }
+                      created {
+                        actor
+                        time
+                      }
+                      updated {
+                        actor
+                        time
+                      }
+                      settings {
+                        showInAssetPreview
+                      }
+                    }
+                  }
+                  structuredProperties {
+                    properties {
+                      structuredProperty {
+                        urn
+                        definition {
+                          displayName
+                          qualifiedName
+                        }
+                      }
+                      values {
+                        ... on StringValue {
+                          stringValue
+                        }
+                        ... on NumberValue {
+                          numberValue
+                        }
+                      }
+                      valueEntities {
+                        urn
                       }
                     }
                   }
                 }
               }
             }
-            """
-            
-            # Build search input for data products
-            search_input = {
-                "types": ["DATA_PRODUCT"],
+          }
+        }
+        """
+        
+        variables = {
+            "input": {
                 "query": query,
+                "types": ["GLOSSARY_NODE", "GLOSSARY_TERM"],
+                "count": count,
                 "start": start,
-                "count": count
             }
-            
-            variables = {
-                "input": search_input
-            }
-            
-            result = self.execute_graphql(graphql_query, variables)
-            
-            if result is None:
-                logger.error("GraphQL execution returned None")
-                return {"success": False, "error": "GraphQL execution failed"}
-            
-            # Check for GraphQL errors
-            if "errors" in result:
-                error_messages = []
-                for error in result["errors"]:
-                    error_msg = error.get("message", "Unknown GraphQL error")
-                    error_messages.append(error_msg)
-                    logger.error(f"GraphQL error: {error_msg}")
-                
-                return {"success": False, "error": f"GraphQL errors: {'; '.join(error_messages)}"}
-            
-            # Extract data from response
-            if "data" not in result or not result["data"]:
-                logger.error("No data in GraphQL response")
-                return {"success": False, "error": "No data in response"}
-            
-            search_data = result["data"].get("searchAcrossEntities", {})
-            
-            logger.info(f"Successfully retrieved {len(search_data.get('searchResults', []))} data products")
-            
-            return {
-                "success": True,
-                "data": search_data
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting data products: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    def create_data_product(self, data_product_data):
-        """
-        Create a data product in DataHub using GraphQL.
-        
-        Args:
-            data_product_data (dict): Data product information
-            
-        Returns:
-            dict: Response with success status and created data product URN
-        """
-        self.logger.info(f"Creating data product: {data_product_data.get('name')}")
+        }
         
         try:
-            # GraphQL mutation for creating data product
-            mutation = """
-            mutation createDataProduct($input: CreateDataProductInput!) {
-                createDataProduct(input: $input) {
-                    urn
-                    properties {
-                        name
-                        description
-                        externalUrl
-                    }
-                }
-            }
-            """
+            result = self.execute_graphql(comprehensive_query, variables)
             
-            # Prepare input
-            input_data = {
-                "name": data_product_data.get("name"),
-                "description": data_product_data.get("description", ""),
-                "id": data_product_data.get("id", data_product_data.get("name")),
-            }
+            # Add detailed logging for debugging
+            self.logger.debug(f"GraphQL result keys: {list(result.keys()) if result else 'None'}")
+            if result and "data" in result:
+                self.logger.debug(f"Data keys: {list(result['data'].keys()) if result['data'] else 'None'}")
             
-            # Add optional fields
-            if data_product_data.get("externalUrl"):
-                input_data["externalUrl"] = data_product_data["externalUrl"]
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_data = result["data"]["searchAcrossEntities"]
                 
-            if data_product_data.get("domainUrn"):
-                input_data["domainUrn"] = data_product_data["domainUrn"]
+                # Handle case where search_data might be None
+                if search_data is None:
+                    self.logger.warning("searchAcrossEntities returned None")
+                    return {"nodes": [], "terms": [], "total": 0, "start": 0, "count": 0}
                 
-            variables = {"input": input_data}
-            
-            result = self.execute_graphql(mutation, variables)
-            
-            if result and "data" in result and "createDataProduct" in result["data"]:
-                created_urn = result["data"]["createDataProduct"]["urn"]
-                self.logger.info(f"Successfully created data product: {created_urn}")
+                search_results = search_data.get("searchResults", [])
                 
-                # If entity URNs are provided, add them to the data product
-                if data_product_data.get("entity_urns"):
-                    self.add_entities_to_data_product(created_urn, data_product_data["entity_urns"])
+                nodes = []
+                terms = []
+                
+                for result_item in search_results:
+                    if result_item is None:
+                        continue
+                        
+                    entity = result_item.get("entity", {})
+                    if entity is None:
+                        continue
+                        
+                    entity_type = entity.get("type")
+                    
+                    if entity_type == "GLOSSARY_NODE":
+                        processed_node = self._process_glossary_node(entity)
+                        if processed_node:
+                            nodes.append(processed_node)
+                    elif entity_type == "GLOSSARY_TERM":
+                        processed_term = self._process_glossary_term(entity)
+                        if processed_term:
+                            terms.append(processed_term)
+                
+                # Resolve relationship names after processing all items
+                all_items = nodes + terms
+                self._resolve_relationship_names(all_items)
                 
                 return {
-                    "success": True,
-                    "urn": created_urn,
-                    "data": result["data"]["createDataProduct"]
+                    "nodes": nodes,
+                    "terms": terms,
+                    "total": search_data.get("total", 0),
+                    "start": search_data.get("start", 0),
+                    "count": search_data.get("count", 0)
                 }
-            
-            if result and "errors" in result:
-                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
-                self.logger.error(f"GraphQL errors creating data product: {error_msg}")
-                return {"success": False, "error": error_msg}
+            else:
+                self.logger.error(f"Failed to get comprehensive glossary data: {result}")
+                return {"nodes": [], "terms": [], "total": 0, "start": 0, "count": 0}
                 
-            return {"success": False, "error": "Unknown error creating data product"}
-            
         except Exception as e:
-            self.logger.error(f"Error creating data product: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    def update_data_product(self, urn, data_product_data):
-        """
-        Update a data product in DataHub using GraphQL.
-        
-        Args:
-            urn (str): Data product URN
-            data_product_data (dict): Updated data product information
+            self.logger.error(f"Error getting comprehensive glossary data: {str(e)}")
+            return {"nodes": [], "terms": [], "total": 0, "start": 0, "count": 0}
+    
+    def _process_glossary_node(self, entity):
+        """Process a glossary node entity into standardized format"""
+        if entity is None:
+            return None
             
-        Returns:
-            dict: Response with success status
-        """
-        self.logger.info(f"Updating data product: {urn}")
+        # Check if entity has a valid URN - if not, skip it
+        entity_urn = entity.get("urn")
+        if not entity_urn or entity_urn.strip() == "":
+            self.logger.warning(f"Skipping glossary node with missing or empty URN: {entity}")
+            return None
+            
+        properties = entity.get("properties", {}) or {}
+        ownership = entity.get("ownership", {}) or {}
+        structured_props = entity.get("structuredProperties", {}) or {}
+        parent_nodes_data = entity.get("parentNodes", {}) or {}
+        parent_nodes = parent_nodes_data.get("nodes", []) if parent_nodes_data else []
+        relationships_data = entity.get("relationships", {}) or {}
+        relationships = relationships_data.get("relationships", []) if relationships_data else []
+        incoming_relationships_data = entity.get("incomingRelationships", {}) or {}
+        incoming_relationships = incoming_relationships_data.get("relationships", []) if incoming_relationships_data else []
         
-        try:
-            # GraphQL mutation for updating data product
-            mutation = """
-            mutation updateDataProduct($urn: String!, $input: UpdateDataProductInput!) {
-                updateDataProduct(urn: $urn, input: $input) {
-                    urn
-                    properties {
-                        name
-                        description
-                        externalUrl
-                    }
+        # Process ownership
+        owners = []
+        ownership_owners = ownership.get("owners", []) if ownership else []
+        for owner_data in ownership_owners:
+            if owner_data is None:
+                continue
+            owner = owner_data.get("owner", {}) or {}
+            ownership_type = owner_data.get("ownershipType", {}) or {}
+            
+            owner_properties = owner.get("properties", {}) or {}
+            ownership_info = ownership_type.get("info", {}) or {}
+            
+            # Extract name from URN if not available in properties
+            owner_name = owner.get("username") or owner.get("name")
+            if not owner_name and owner.get("urn"):
+                # Extract from URN: urn:li:corpuser:username -> username
+                urn_parts = owner.get("urn").split(":")
+                if len(urn_parts) >= 4:
+                    owner_name = urn_parts[-1]  # Get the last part (username)
+            
+            owner_info = {
+                "urn": owner.get("urn"),
+                "type": owner.get("type"),
+                "name": owner_name or "Unknown",
+                "displayName": owner_properties.get("displayName", ""),
+                "email": owner_properties.get("email", ""),
+                "ownershipType": {
+                    "urn": ownership_type.get("urn"),
+                    "name": ownership_info.get("name", "Unknown")
                 }
             }
-            """
+            owners.append(owner_info)
+        
+        # Process structured properties
+        structured_properties = []
+        structured_props_list = structured_props.get("properties", []) if structured_props else []
+        for prop_data in structured_props_list:
+            if prop_data is None:
+                continue
+            structured_property = prop_data.get("structuredProperty", {}) or {}
+            prop_def = structured_property.get("definition", {}) or {}
+            values = prop_data.get("values", []) or []
             
-            # Prepare input
-            input_data = {}
+            prop_info = {
+                "urn": structured_property.get("urn"),
+                "displayName": prop_def.get("displayName", ""),
+                "qualifiedName": prop_def.get("qualifiedName", ""),
+                "values": [v.get("stringValue") or v.get("numberValue") for v in values if v]
+            }
+            structured_properties.append(prop_info)
+        
+        # Process relationships - combine both outgoing and incoming
+        processed_relationships = []
+        all_relationships = relationships + incoming_relationships
+        for rel in all_relationships:
+            if rel is None:
+                continue
+            rel_entity = rel.get("entity", {}) or {}
+            rel_entity_properties = rel_entity.get("properties", {}) or {}
+            created = rel.get("created", {}) or {}
+            processed_relationships.append({
+                "type": rel.get("type"),
+                "direction": rel.get("direction"),
+                "entity": {
+                    "urn": rel_entity.get("urn"),
+                    "type": rel_entity.get("type"),
+                    "name": rel_entity_properties.get("name", "Unknown")
+                },
+                "created": {
+                    "time": created.get("time"),
+                    "actor": created.get("actor")
+                } if created else None
+            })
+        
+        return {
+            "urn": entity.get("urn"),
+            "type": entity.get("type"),
+            "name": properties.get("name", "Unknown"),
+            "description": properties.get("description", ""),
+            "customProperties": properties.get("customProperties", []),
+            "owners": owners,
+            "structuredProperties": structured_properties,
+            "parentNodes": [{"urn": p.get("urn"), "name": p.get("properties", {}).get("name", "") if p.get("properties") else ""} for p in parent_nodes if p],
+            "relationships": processed_relationships,
+            "properties": properties
+        }
+    
+    def _process_glossary_term(self, entity):
+        """Process a glossary term entity into standardized format"""
+        if entity is None:
+            return None
             
-            if "name" in data_product_data:
-                input_data["name"] = data_product_data["name"]
-                
-            if "description" in data_product_data:
-                input_data["description"] = data_product_data["description"]
-                
-            if "externalUrl" in data_product_data:
-                input_data["externalUrl"] = data_product_data["externalUrl"]
-                
-            if "domainUrn" in data_product_data:
-                input_data["domainUrn"] = data_product_data["domainUrn"]
-                
-            variables = {"urn": urn, "input": input_data}
+        # Check if entity has a valid URN - if not, skip it
+        entity_urn = entity.get("urn")
+        if not entity_urn or entity_urn.strip() == "":
+            self.logger.warning(f"Skipping glossary term with missing or empty URN: {entity}")
+            return None
             
-            result = self.execute_graphql(mutation, variables)
+        properties = entity.get("properties", {}) or {}
+        ownership = entity.get("ownership", {}) or {}
+        structured_props = entity.get("structuredProperties", {}) or {}
+        parent_nodes_data = entity.get("parentNodes", {}) or {}
+        parent_nodes = parent_nodes_data.get("nodes", []) if parent_nodes_data else []
+        relationships_data = entity.get("relationships", {}) or {}
+        relationships = relationships_data.get("relationships", []) if relationships_data else []
+        incoming_relationships_data = entity.get("incomingRelationships", {}) or {}
+        incoming_relationships = incoming_relationships_data.get("relationships", []) if incoming_relationships_data else []
+        
+        # Process ownership
+        owners = []
+        ownership_owners = ownership.get("owners", []) if ownership else []
+        for owner_data in ownership_owners:
+            if owner_data is None:
+                continue
+            owner = owner_data.get("owner", {}) or {}
+            ownership_type = owner_data.get("ownershipType", {}) or {}
             
-            if result and "data" in result and "updateDataProduct" in result["data"]:
-                self.logger.info(f"Successfully updated data product: {urn}")
-                return {
-                    "success": True,
-                    "data": result["data"]["updateDataProduct"]
+            owner_properties = owner.get("properties", {}) or {}
+            ownership_info = ownership_type.get("info", {}) or {}
+            
+            # Extract name from URN if not available in properties
+            owner_name = owner.get("username") or owner.get("name")
+            if not owner_name and owner.get("urn"):
+                # Extract from URN: urn:li:corpuser:username -> username
+                urn_parts = owner.get("urn").split(":")
+                if len(urn_parts) >= 4:
+                    owner_name = urn_parts[-1]  # Get the last part (username)
+            
+            owner_info = {
+                "urn": owner.get("urn"),
+                "type": owner.get("type"),
+                "name": owner_name or "Unknown",
+                "displayName": owner_properties.get("displayName", ""),
+                "email": owner_properties.get("email", ""),
+                "ownershipType": {
+                    "urn": ownership_type.get("urn"),
+                    "name": ownership_info.get("name", "Unknown")
                 }
+            }
+            owners.append(owner_info)
+        
+        # Process structured properties
+        structured_properties = []
+        structured_props_list = structured_props.get("properties", []) if structured_props else []
+        for prop_data in structured_props_list:
+            if prop_data is None:
+                continue
+            structured_property = prop_data.get("structuredProperty", {}) or {}
+            prop_def = structured_property.get("definition", {}) or {}
+            values = prop_data.get("values", []) or []
             
-            if result and "errors" in result:
-                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
-                self.logger.error(f"GraphQL errors updating data product: {error_msg}")
-                return {"success": False, "error": error_msg}
-                
-            return {"success": False, "error": "Unknown error updating data product"}
-            
-        except Exception as e:
-            self.logger.error(f"Error updating data product: {str(e)}")
-            return {"success": False, "error": str(e)}
+            prop_info = {
+                "urn": structured_property.get("urn"),
+                "displayName": prop_def.get("displayName", ""),
+                "qualifiedName": prop_def.get("qualifiedName", ""),
+                "values": [v.get("stringValue") or v.get("numberValue") for v in values if v]
+            }
+            structured_properties.append(prop_info)
+        
+        # Process specific relationship types for glossary terms
+        processed_relationships = []
+        
+        # Process isRelatedTerms (IsA relationships)
+        is_related_terms = entity.get("isRelatedTerms", {}) or {}
+        is_related_relationships = is_related_terms.get("relationships", []) if is_related_terms else []
+        for rel in is_related_relationships:
+            if rel is None:
+                continue
+            rel_entity = rel.get("entity", {}) or {}
+            rel_entity_properties = rel_entity.get("properties", {}) or {}
+            processed_relationships.append({
+                "type": "IsA",
+                "direction": "OUTGOING",
+                "entity": {
+                    "urn": rel_entity.get("urn"),
+                    "type": rel_entity.get("type", "GlossaryTerm"),
+                    "name": rel_entity_properties.get("name", "Unknown")
+                }
+            })
+        
+        # Process hasRelatedTerms (HasA relationships)
+        has_related_terms = entity.get("hasRelatedTerms", {}) or {}
+        has_related_relationships = has_related_terms.get("relationships", []) if has_related_terms else []
+        for rel in has_related_relationships:
+            if rel is None:
+                continue
+            rel_entity = rel.get("entity", {}) or {}
+            rel_entity_properties = rel_entity.get("properties", {}) or {}
+            processed_relationships.append({
+                "type": "HasA",
+                "direction": "OUTGOING",
+                "entity": {
+                    "urn": rel_entity.get("urn"),
+                    "type": rel_entity.get("type", "GlossaryTerm"),
+                    "name": rel_entity_properties.get("name", "Unknown")
+                }
+            })
+        
+        # Also process any other relationships from the generic relationships field
+        all_relationships = relationships + incoming_relationships
+        for rel in all_relationships:
+            if rel is None:
+                continue
+            rel_entity = rel.get("entity", {}) or {}
+            rel_entity_properties = rel_entity.get("properties", {}) or {}
+            created = rel.get("created", {}) or {}
+            processed_relationships.append({
+                "type": rel.get("type"),
+                "direction": rel.get("direction"),
+                "entity": {
+                    "urn": rel_entity.get("urn"),
+                    "type": rel_entity.get("type"),
+                    "name": rel_entity_properties.get("name", "Unknown")
+                },
+                "created": {
+                    "time": created.get("time"),
+                    "actor": created.get("actor")
+                } if created else None
+            })
+        
+        # Process domain information
+        domain = None
+        domain_data = entity.get("domain", {}) or {}
+        if domain_data:
+            domain_info = domain_data.get("domain", {}) or {}
+            if domain_info and domain_info.get("urn"):
+                domain_properties = domain_info.get("properties", {}) or {}
+                domain = {
+                    "urn": domain_info.get("urn"),
+                    "name": domain_properties.get("name", ""),
+                    "description": domain_properties.get("description", "")
+                }
+        
+        return {
+            "urn": entity.get("urn"),
+            "type": entity.get("type"),
+            "name": properties.get("name", "Unknown"),
+            "description": properties.get("description", ""),
+            "termSource": properties.get("termSource", "INTERNAL"),
+            "customProperties": properties.get("customProperties", []),
+            "owners": owners,
+            "structuredProperties": structured_properties,
+            "parentNodes": [{"urn": p.get("urn"), "name": p.get("properties", {}).get("name", "") if p.get("properties") else ""} for p in parent_nodes if p],
+            "relationships": processed_relationships,
+            "domains": {"domain": domain} if domain else None,
+            "domain": domain,  # Keep both formats for compatibility
+            "properties": properties
+        }
 
-    def delete_data_product(self, urn):
+    def _resolve_relationship_names(self, items):
         """
-        Delete a data product from DataHub using GraphQL.
-        
-        Args:
-            urn (str): Data product URN
-            
-        Returns:
-            dict: Response with success status
+        Resolve relationship names by looking up URNs in the processed items.
+        This should be called after all items have been processed.
         """
-        self.logger.info(f"Deleting data product: {urn}")
+        # Create a URN to name mapping
+        urn_to_name = {}
+        for item in items:
+            if item and item.get("urn") and item.get("name"):
+                urn_to_name[item["urn"]] = item["name"]
         
-        try:
-            # GraphQL mutation for deleting data product
-            mutation = """
-            mutation deleteDataProduct($urn: String!) {
-                deleteDataProduct(urn: $urn)
-            }
-            """
-            
-            variables = {"urn": urn}
-            
-            result = self.execute_graphql(mutation, variables)
-            
-            if result and "data" in result and "deleteDataProduct" in result["data"]:
-                success = result["data"]["deleteDataProduct"]
-                if success:
-                    self.logger.info(f"Successfully deleted data product: {urn}")
-                    return {"success": True}
-                else:
-                    return {"success": False, "error": "Delete operation returned false"}
-            
-            if result and "errors" in result:
-                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
-                self.logger.error(f"GraphQL errors deleting data product: {error_msg}")
-                return {"success": False, "error": error_msg}
-                
-            return {"success": False, "error": "Unknown error deleting data product"}
-            
-        except Exception as e:
-            self.logger.error(f"Error deleting data product: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    def add_entities_to_data_product(self, data_product_urn, entity_urns):
-        """
-        Add entities to a data product.
+        # Update relationship names
+        for item in items:
+            if item and item.get("relationships"):
+                for relationship in item["relationships"]:
+                    if relationship and relationship.get("entity"):
+                        entity_urn = relationship["entity"].get("urn")
+                        if entity_urn and entity_urn in urn_to_name:
+                            relationship["entity"]["name"] = urn_to_name[entity_urn]
         
-        Args:
-            data_product_urn (str): Data product URN
-            entity_urns (list): List of entity URNs to add
-            
-        Returns:
-            dict: Response with success status
-        """
-        self.logger.info(f"Adding {len(entity_urns)} entities to data product: {data_product_urn}")
-        
-        try:
-            # GraphQL mutation for adding entities to data product
-            mutation = """
-            mutation batchUpdateDataProductAssets($input: BatchUpdateDataProductAssetsInput!) {
-                batchUpdateDataProductAssets(input: $input)
-            }
-            """
-            
-            input_data = {
-                "dataProductUrn": data_product_urn,
-                "assetUrns": entity_urns
-            }
-            
-            variables = {"input": input_data}
-            
-            result = self.execute_graphql(mutation, variables)
-            
-            if result and "data" in result and "batchUpdateDataProductAssets" in result["data"]:
-                success = result["data"]["batchUpdateDataProductAssets"]
-                if success:
-                    self.logger.info(f"Successfully added entities to data product: {data_product_urn}")
-                    return {"success": True}
-                else:
-                    return {"success": False, "error": "Add entities operation returned false"}
-            
-            if result and "errors" in result:
-                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
-                self.logger.error(f"GraphQL errors adding entities to data product: {error_msg}")
-                return {"success": False, "error": error_msg}
-                
-            return {"success": False, "error": "Unknown error adding entities to data product"}
-            
-        except Exception as e:
-            self.logger.error(f"Error adding entities to data product: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    def remove_entities_from_data_product(self, data_product_urn, entity_urns):
-        """
-        Remove entities from a data product.
-        
-        Args:
-            data_product_urn (str): Data product URN
-            entity_urns (list): List of entity URNs to remove
-            
-        Returns:
-            dict: Response with success status
-        """
-        self.logger.info(f"Removing {len(entity_urns)} entities from data product: {data_product_urn}")
-        
-        try:
-            # GraphQL mutation for removing entities from data product
-            mutation = """
-            mutation batchRemoveDataProductAssets($input: BatchRemoveDataProductAssetsInput!) {
-                batchRemoveDataProductAssets(input: $input)
-            }
-            """
-            
-            input_data = {
-                "dataProductUrn": data_product_urn,
-                "assetUrns": entity_urns
-            }
-            
-            variables = {"input": input_data}
-            
-            result = self.execute_graphql(mutation, variables)
-            
-            if result and "data" in result and "batchRemoveDataProductAssets" in result["data"]:
-                success = result["data"]["batchRemoveDataProductAssets"]
-                if success:
-                    self.logger.info(f"Successfully removed entities from data product: {data_product_urn}")
-                    return {"success": True}
-                else:
-                    return {"success": False, "error": "Remove entities operation returned false"}
-            
-            if result and "errors" in result:
-                error_msg = "; ".join([e.get("message", "") for e in result["errors"]])
-                self.logger.error(f"GraphQL errors removing entities from data product: {error_msg}")
-                return {"success": False, "error": error_msg}
-                
-            return {"success": False, "error": "Unknown error removing entities from data product"}
-            
-        except Exception as e:
-            self.logger.error(f"Error removing entities from data product: {str(e)}")
-            return {"success": False, "error": str(e)}
+        return items
 
     def list_users(self, start=0, count=100):
         """
@@ -9052,122 +9516,30 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
             self.logger.error(f"Error listing ownership types: {str(e)}")
             return None
 
-    def get_glossary_term_details(self, urn, start=0, count=100):
-        """Get detailed information for a specific glossary term including relationships"""
-        # This is a very large query with all the fragments, so I'll use a simplified version for now
-        # The full query from the user can be implemented later when needed
-        query = """
-        query getGlossaryTerm($urn: String!) {
-          glossaryTerm(urn: $urn) {
-            urn
-            type
-            exists
-            name
-            hierarchicalName
-            parentNodes {
-              count
-              nodes {
-                urn
-                type
-                properties {
-                  name
-                }
-              }
-            }
-            ownership {
-              owners {
-                owner {
-                  ... on CorpUser {
-                    urn
-                    type
-                    username
-                    properties {
-                      displayName
-                      email
-                    }
-                  }
-                  ... on CorpGroup {
-                    urn
-                    type
-                    name
-                    properties {
-                      displayName
-                    }
-                  }
-                }
-                type
-                ownershipType {
-                  urn
-                  type
-                  info {
-                    name
-                    description
-                  }
-                }
-              }
-            }
-            properties {
-              name
-              description
-              termSource
-              customProperties {
-                key
-                value
-              }
-            }
-            structuredProperties {
-              properties {
-                structuredProperty {
-                  urn
-                  definition {
-                    displayName
-                    qualifiedName
-                  }
-                }
-                values {
-                  ... on StringValue {
-                    stringValue
-                  }
-                  ... on NumberValue {
-                    numberValue
-                  }
-                }
-              }
-            }
-          }
-        }
-        """
-        
-        variables = {
-            "urn": urn
-        }
-        
-        try:
-            response = self.execute_graphql(query, variables)
-            if response and 'data' in response and 'glossaryTerm' in response['data']:
-                return response['data']['glossaryTerm']
-            return None
-        except Exception as e:
-            self.logger.error(f"Error getting glossary term details for {urn}: {e}")
-            return None
+    # Data Product Management Methods
 
-    def get_comprehensive_glossary_data(self, query="*", start=0, count=100):
+    def list_data_products(self, query="*", start=0, count=100) -> List[Dict[str, Any]]:
         """
-        Get comprehensive glossary data including nodes and terms with all metadata.
-        
+        List data products in DataHub with comprehensive information including ownership and relationships.
+
         Args:
-            query (str): Search query to filter results
+            query (str): Search query to filter data products (default: "*")
             start (int): Starting offset for pagination
-            count (int): Number of items to return
-            
+            count (int): Maximum number of data products to return
+
         Returns:
-            dict: Dictionary containing nodes and terms with comprehensive metadata
+            List of data product objects with detailed information
         """
-        self.logger.info(f"Getting comprehensive glossary data with query={query}, start={start}, count={count}")
-        
-        # Query for both nodes and terms with comprehensive data
-        comprehensive_query = """
-        query GetComprehensiveGlossaryData($input: SearchAcrossEntitiesInput!) {
+        self.logger.info(
+            f"Listing data products with query: {query}, start: {start}, count: {count}"
+        )
+        self.logger.debug(
+            f"Server URL: {self.server_url}, Token provided: {self.token is not None and len(self.token) > 0}, Verify SSL: {self.verify_ssl}"
+        )
+
+        # GraphQL query for data products with comprehensive information
+        graphql_query = """
+        query GetDataProducts($input: SearchAcrossEntitiesInput!) {
           searchAcrossEntities(input: $input) {
             start
             count
@@ -9176,46 +9548,82 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
               entity {
                 urn
                 type
-                ... on GlossaryNode {
-                  urn
-                  type
+                ... on DataProduct {
+                  properties {
+                    name
+                    description
+                    externalUrl
+                    numAssets
+                    customProperties {
+                      key
+                      value
+                    }
+                  }
                   ownership {
                     owners {
                       owner {
                         ... on CorpUser {
                           urn
+                          username
+                          properties {
+                            displayName
+                          }
                         }
                         ... on CorpGroup {
                           urn
+                          name
+                          properties {
+                            displayName
+                          }
                         }
                       }
-                      type
                       ownershipType {
                         urn
-                        type
                         info {
                           name
-                          description
                         }
+                      }
+                      source {
+                        type
+                        url
                       }
                     }
                   }
-                  properties {
-                    name
-                    description
-                    customProperties {
-                      key
-                      value
+                  institutionalMemory {
+                    elements {
+                      url
+                      label
+                      created {
+                        actor
+                      }
+                      updated {
+                        actor
+                      }
+                    }
+                  }
+                  glossaryTerms {
+                    terms {
+                      term {
+                        urn
+                      }
+                    }
+                  }
+                  domain {
+                    domain {
+                      urn
+                    }
+                  }
+                  tags {
+                    tags {
+                      tag {
+                        urn
+                      }
                     }
                   }
                   structuredProperties {
                     properties {
                       structuredProperty {
                         urn
-                        definition {
-                          displayName
-                          qualifiedName
-                        }
                       }
                       values {
                         ... on StringValue {
@@ -9225,119 +9633,192 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
                           numberValue
                         }
                       }
-                    }
-                  }
-                  parentNodes {
-                    nodes {
-                      urn
-                      properties {
-                        name
+                      valueEntities {
+                        urn
                       }
                     }
                   }
                 }
-                ... on GlossaryTerm {
-                  urn
-                  type
-                  ownership {
-                    owners {
-                      owner {
-                        ... on CorpUser {
-                          urn
+              }
+            }
+          }
+        }
+        """
+
+        variables = {
+            "input": {
+                "types": ["DATA_PRODUCT"],
+                "query": query,
+                "start": start,
+                "count": count,
+                "filters": [],
+            }
+        }
+
+        try:
+            result = self.execute_graphql(graphql_query, variables)
+
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_results = result["data"]["searchAcrossEntities"]["searchResults"]
+                data_products = []
+
+                for item in search_results:
+                    if "entity" in item and item["entity"] is not None:
+                        entity = item["entity"]
+                        
+                        # Skip if entity is None (defensive programming)
+                        if entity is None:
+                            continue
+                        
+                        # Extract basic data product information with proper None checking
+                        properties = entity.get("properties") or {}
+                        data_product = {
+                            "urn": entity.get("urn"),
+                            "type": entity.get("type"),
+                            "name": properties.get("name"),
+                            "description": properties.get("description"),
+                            "externalUrl": properties.get("externalUrl"),
+                            "numAssets": properties.get("numAssets", 0),
+                            "customProperties": properties.get("customProperties", []),
                         }
-                        ... on CorpGroup {
-                          urn
-                        }
-                      }
-                      type
-                      ownershipType {
-                        urn
-                        type
-                        info {
-                          name
-                          description
-                        }
-                      }
-                    }
-                  }
+                        
+                        # Add properties for backward compatibility
+                        if properties:
+                            data_product["properties"] = properties
+
+                        # Add ownership information with proper None checking
+                        ownership = entity.get("ownership")
+                        if ownership:
+                            data_product["ownership"] = ownership
+                            
+                            # Extract owner count and names for display
+                            owners = ownership.get("owners") or []
+                            data_product["owners_count"] = len(owners)
+                            data_product["owner_names"] = []
+                            
+                            for owner_info in owners:
+                                if not owner_info:
+                                    continue
+                                owner = owner_info.get("owner") or {}
+                                if owner.get("username"):  # CorpUser
+                                    owner_props = owner.get("properties") or {}
+                                    display_name = owner_props.get("displayName")
+                                    data_product["owner_names"].append(display_name or owner["username"])
+                                elif owner.get("name"):  # CorpGroup
+                                    owner_props = owner.get("properties") or {}
+                                    display_name = owner_props.get("displayName")
+                                    data_product["owner_names"].append(display_name or owner["name"])
+                        else:
+                            data_product["owners_count"] = 0
+                            data_product["owner_names"] = []
+
+                        # Add other metadata
+                        data_product["institutionalMemory"] = entity.get("institutionalMemory")
+                        data_product["glossaryTerms"] = entity.get("glossaryTerms")
+                        data_product["domain"] = entity.get("domain")
+                        data_product["application"] = entity.get("application")
+                        data_product["tags"] = entity.get("tags")
+                        data_product["structuredProperties"] = entity.get("structuredProperties")
+
+                        # Calculate additional counts for display
+                        glossary_terms = entity.get("glossaryTerms", {})
+                        terms = glossary_terms.get("terms", []) if glossary_terms else []
+                        data_product["glossary_terms_count"] = len(terms)
+
+                        tags = entity.get("tags", {})
+                        tag_list = tags.get("tags", []) if tags else []
+                        data_product["tags_count"] = len(tag_list)
+
+                        structured_props = entity.get("structuredProperties", {})
+                        props = structured_props.get("properties", []) if structured_props else []
+                        data_product["structured_properties_count"] = len(props)
+
+                        data_products.append(data_product)
+
+                return data_products
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.warning(
+                    f"GraphQL errors when listing data products: {', '.join(error_messages)}"
+                )
+
+            return []
+        except Exception as e:
+            self.logger.error(f"Error listing data products: {str(e)}")
+            return []
+
+    def get_data_product(self, data_product_urn: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific data product by URN.
+
+        Args:
+            data_product_urn (str): URN of the data product to retrieve
+
+        Returns:
+            Data product object if found, None otherwise
+        """
+        self.logger.info(f"Getting data product: {data_product_urn}")
+
+        # Use the same query as list_data_products but with specific URN
+        result = self.list_data_products(query=data_product_urn, start=0, count=1)
+        
+        if result and len(result) > 0:
+            return result[0]
+        
+        return None
+
+    def get_datasets_by_urns(self, entity_urns: List[str]) -> Dict[str, Any]:
+        """
+        Get dataset information for a list of entity URNs.
+        
+        Args:
+            entity_urns (List[str]): List of entity URNs to fetch dataset information for
+            
+        Returns:
+            Dictionary with success status and dataset information
+        """
+        if not entity_urns:
+            return {"success": True, "data": {"searchResults": []}}
+        
+        self.logger.info(f"Getting dataset information for {len(entity_urns)} entity URNs: {entity_urns}")
+        
+        # GraphQL query for dataset information
+        graphql_query = """
+        query GetDatasets($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+                ... on Dataset {
                   properties {
                     name
-                    description
-                    termSource
-                    customProperties {
-                      key
-                      value
+                  }
+                  browsePaths {
+                    path
+                  }
+                  browsePathV2 {
+                    path {
+                      entity {
+                        ... on Container {
+                          properties {
+                            name
+                          }
+                        }
+                      }
                     }
                   }
-                  structuredProperties {
+                  platform {
+                    name
+                  }
+                  dataPlatformInstance {
                     properties {
-                      structuredProperty {
-                        urn
-                        definition {
-                          displayName
-                          qualifiedName
-                        }
-                      }
-                      values {
-                        ... on StringValue {
-                          stringValue
-                        }
-                        ... on NumberValue {
-                          numberValue
-                        }
-                      }
-                    }
-                  }
-                  parentNodes {
-                    nodes {
-                      urn
-                      properties {
-                        name
-                      }
-                    }
-                  }
-                  relationships(input: {types: ["isA", "hasA", "relatedTo"], direction: OUTGOING, start: 0, count: 50}) {
-                    relationships {
-                      type
-                      direction
-                      entity {
-                        urn
-                        type
-                        ... on GlossaryTerm {
-                          properties {
-                            name
-                          }
-                        }
-                        ... on GlossaryNode {
-                          properties {
-                            name
-                          }
-                        }
-                      }
-                    }
-                  }
-                  incomingRelationships: relationships(input: {types: ["isA", "hasA", "relatedTo"], direction: INCOMING, start: 0, count: 50}) {
-                    relationships {
-                      type
-                      direction
-                      entity {
-                        urn
-                        type
-                        ... on GlossaryTerm {
-                          properties {
-                            name
-                          }
-                        }
-                        ... on GlossaryNode {
-                          properties {
-                            name
-                          }
-                        }
-                      }
-                      created {
-                        time
-                        actor
-                      }
+                      name
                     }
                   }
                 }
@@ -9349,269 +9830,669 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
         
         variables = {
             "input": {
-                "query": query,
-                "types": ["GLOSSARY_NODE", "GLOSSARY_TERM"],
-                "count": count,
-                "start": start,
+                "types": ["DATASET"],
+                "query": "*",
+                "start": 0,
+                "count": 100,
+                "orFilters": [
+                    {
+                        "and": [
+                            {
+                                "field": "urn",
+                                "condition": "IN",
+                                "values": entity_urns
+                            }
+                        ]
+                    }
+                ]
             }
         }
         
         try:
-            result = self.execute_graphql(comprehensive_query, variables)
-            
-            # Add detailed logging for debugging
-            self.logger.debug(f"GraphQL result keys: {list(result.keys()) if result else 'None'}")
-            if result and "data" in result:
-                self.logger.debug(f"Data keys: {list(result['data'].keys()) if result['data'] else 'None'}")
+            self.logger.debug(f"Executing dataset query with variables: {variables}")
+            result = self.execute_graphql(graphql_query, variables)
             
             if result and "data" in result and "searchAcrossEntities" in result["data"]:
                 search_data = result["data"]["searchAcrossEntities"]
                 
-                # Handle case where search_data might be None
-                if search_data is None:
-                    self.logger.warning("searchAcrossEntities returned None")
-                    return {"nodes": [], "terms": [], "total": 0, "start": 0, "count": 0}
-                
-                search_results = search_data.get("searchResults", [])
-                
-                nodes = []
-                terms = []
-                
-                for result_item in search_results:
-                    if result_item is None:
-                        continue
-                        
-                    entity = result_item.get("entity", {})
-                    if entity is None:
-                        continue
-                        
-                    entity_type = entity.get("type")
-                    
-                    if entity_type == "GLOSSARY_NODE":
-                        processed_node = self._process_glossary_node(entity)
-                        if processed_node:
-                            nodes.append(processed_node)
-                    elif entity_type == "GLOSSARY_TERM":
-                        processed_term = self._process_glossary_term(entity)
-                        if processed_term:
-                            terms.append(processed_term)
+                # Process the results to build browse paths
+                processed_results = []
+                for search_result in search_data.get("searchResults", []):
+                    entity = search_result.get("entity", {})
+                    if entity:
+                        self.logger.debug(f"Processing dataset entity: {entity.get('urn', 'Unknown URN')}")
+                        # Build browse path from browsePathV2, fallback to browsePaths
+                        browse_path = self._build_browse_path(entity)
+                        entity["computed_browse_path"] = browse_path
+                        self.logger.debug(f"Computed browse path: {browse_path}")
+                        processed_results.append(search_result)
                 
                 return {
-                    "nodes": nodes,
-                    "terms": terms,
-                    "total": search_data.get("total", 0),
-                    "start": search_data.get("start", 0),
-                    "count": search_data.get("count", 0)
+                    "success": True,
+                    "data": {
+                        "start": search_data.get("start", 0),
+                        "count": search_data.get("count", 0),
+                        "total": search_data.get("total", 0),
+                        "searchResults": processed_results
+                    }
                 }
             else:
-                self.logger.error(f"Failed to get comprehensive glossary data: {result}")
-                return {"nodes": [], "terms": [], "total": 0, "start": 0, "count": 0}
+                error_msg = "No data returned from DataHub"
+                if result and "errors" in result:
+                    errors = self._get_graphql_errors(result)
+                    error_msg = f"GraphQL errors: {', '.join(errors)}"
+                
+                self.logger.error(f"Error in get_datasets_by_urns: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
                 
         except Exception as e:
-            self.logger.error(f"Error getting comprehensive glossary data: {str(e)}")
-            return {"nodes": [], "terms": [], "total": 0, "start": 0, "count": 0}
+            self.logger.error(f"Error getting datasets by URNs: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
     
-    def _process_glossary_node(self, entity):
-        """Process a glossary node entity into standardized format"""
-        if entity is None:
-            return None
-            
-        properties = entity.get("properties", {}) or {}
-        ownership = entity.get("ownership", {}) or {}
-        structured_props = entity.get("structuredProperties", {}) or {}
-        parent_nodes_data = entity.get("parentNodes", {}) or {}
-        parent_nodes = parent_nodes_data.get("nodes", []) if parent_nodes_data else []
-        relationships_data = entity.get("relationships", {}) or {}
-        relationships = relationships_data.get("relationships", []) if relationships_data else []
-        incoming_relationships_data = entity.get("incomingRelationships", {}) or {}
-        incoming_relationships = incoming_relationships_data.get("relationships", []) if incoming_relationships_data else []
+    def _build_browse_path(self, entity: Dict[str, Any]) -> str:
+        """
+        Build a browse path from entity data, preferring browsePathV2 over browsePaths.
         
-        # Process ownership
-        owners = []
-        ownership_owners = ownership.get("owners", []) if ownership else []
-        for owner_data in ownership_owners:
-            if owner_data is None:
-                continue
-            owner = owner_data.get("owner", {}) or {}
-            ownership_type = owner_data.get("ownershipType", {}) or {}
+        Args:
+            entity: Entity data containing browsePath information
             
-            owner_properties = owner.get("properties", {}) or {}
-            ownership_info = ownership_type.get("info", {}) or {}
+        Returns:
+            String representation of the browse path
+        """
+        browse_path_parts = []
+        
+        try:
+            # Try browsePathV2 first (preferred)
+            browse_path_v2 = entity.get("browsePathV2", {})
+            if browse_path_v2 and browse_path_v2.get("path"):
+                path_entities = browse_path_v2.get("path", [])
+                for path_entity in path_entities:
+                    # Check if path_entity and its entity are not None
+                    if path_entity and path_entity.get("entity") is not None:
+                        entity_data = path_entity.get("entity", {})
+                        if entity_data and entity_data.get("properties", {}).get("name"):
+                            browse_path_parts.append(entity_data["properties"]["name"])
             
-            # Extract name from URN if not available in properties
-            owner_name = owner.get("username") or owner.get("name")
-            if not owner_name and owner.get("urn"):
-                # Extract from URN: urn:li:corpuser:username -> username
-                urn_parts = owner.get("urn").split(":")
-                if len(urn_parts) >= 4:
-                    owner_name = urn_parts[-1]  # Get the last part (username)
+            # Fallback to browsePaths if browsePathV2 is empty or has no valid entities
+            if not browse_path_parts:
+                browse_paths = entity.get("browsePaths", [])
+                if browse_paths and isinstance(browse_paths, list):
+                    first_browse_path = browse_paths[0]
+                    
+                                         # browsePaths is a list of objects with 'path' property
+                    if isinstance(first_browse_path, dict) and "path" in first_browse_path:
+                        path_value = first_browse_path.get("path")
+                        
+                        # Case 1: path is a list of strings (like ['prod', 'hive'])
+                        if isinstance(path_value, list):
+                            # Remove first and last values from the list
+                            if len(path_value) > 2:
+                                middle_parts = path_value[1:-1]  # Remove first and last
+                                browse_path_parts.extend([str(part) for part in middle_parts if part])
+                            # If list has 2 or fewer elements, removing first and last leaves empty
+                        
+                        # Case 2: path is a single string (like "/prod/hive")
+                        elif isinstance(path_value, str) and path_value:
+                            path_parts = [part for part in path_value.strip("/").split("/") if part]
+                            # Remove first and last values from the split parts
+                            if len(path_parts) > 2:
+                                middle_parts = path_parts[1:-1]  # Remove first and last
+                                browse_path_parts.extend(middle_parts)
+                    
+                                         # browsePaths is a list of strings directly
+                    elif isinstance(first_browse_path, str):
+                        path_parts = [part for part in first_browse_path.strip("/").split("/") if part]
+                        # Remove first and last values from the split parts
+                        if len(path_parts) > 2:
+                            middle_parts = path_parts[1:-1]  # Remove first and last
+                            browse_path_parts.extend(middle_parts)
+                    
+                    else:
+                        self.logger.debug(f"Unexpected browsePaths structure: {browse_paths}")
             
-            owner_info = {
-                "urn": owner.get("urn"),
-                "type": owner.get("type"),
-                "name": owner_name or "Unknown",
-                "displayName": owner_properties.get("displayName", ""),
-                "email": owner_properties.get("email", ""),
-                "ownershipType": {
-                    "urn": ownership_type.get("urn"),
-                    "name": ownership_info.get("name", "Unknown")
+            # Don't add the entity name at the end - this was causing duplication
+            
+            # Join with '/' to create the final browse path
+            return "/".join(browse_path_parts) if browse_path_parts else ""
+            
+        except Exception as e:
+            self.logger.error(f"Error building browse path for entity: {e}")
+            self.logger.debug(f"Entity data: {entity}")
+            # Fallback to just the entity name if available
+            properties = entity.get("properties", {})
+            entity_name = properties.get("name", "")
+            return entity_name
+
+    def get_data_contracts(self, query="*", start=0, count=100) -> Dict[str, Any]:
+        """
+        Get data contracts from DataHub with comprehensive information including related dataset details.
+
+        Args:
+            query (str): Search query to filter data contracts (default: "*")
+            start (int): Starting offset for pagination
+            count (int): Maximum number of data contracts to return
+
+        Returns:
+            Dictionary with success status and data contracts information
+        """
+        self.logger.info(
+            f"Getting data contracts with query: {query}, start: {start}, count: {count}"
+        )
+
+        # GraphQL query for data contracts with comprehensive information
+        graphql_query = """
+        query GetDataContracts($input: SearchAcrossEntitiesInput!) {
+          searchAcrossEntities(input: $input) {
+            start
+            count
+            total
+            searchResults {
+              entity {
+                urn
+                ... on DataContract {
+                  properties {
+                    entityUrn
+                    freshness {
+                      assertion {
+                        urn
+                        info {
+                          description
+                        }
+                      }
+                    }
+                    schema {
+                      assertion {
+                        urn
+                        info {
+                          description
+                        }
+                      }
+                    }
+                    dataQuality {
+                      assertion {
+                        urn
+                        info {
+                          description
+                        }
+                      }
+                    }
+                  }
+                  status {
+                    state
+                  }
+                  structuredProperties {
+                    properties {
+                      structuredProperty {
+                        urn
+                      }
+                      values {
+                        ... on StringValue {
+                          stringValue
+                        }
+                        ... on NumberValue {
+                          numberValue
+                        }
+                      }
+                      valueEntities {
+                        urn
+                      }
+                    }
+                  }
+                  result(refresh: false) {
+                    type
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+
+        variables = {
+            "input": {
+                "types": ["DATA_CONTRACT"],
+                "query": query,
+                "start": start,
+                "count": count,
+                "filters": [],
+            }
+        }
+
+        try:
+            result = self.execute_graphql(graphql_query, variables)
+
+            if result and "data" in result and "searchAcrossEntities" in result["data"]:
+                search_data = result["data"]["searchAcrossEntities"]
+                
+                # Extract entity URNs from data contracts
+                entity_urns = []
+                search_results = search_data.get("searchResults", [])
+                
+                for contract_result in search_results:
+                    entity = contract_result.get("entity", {})
+                    if entity:
+                        properties = entity.get("properties", {})
+                        entity_urn = properties.get("entityUrn")
+                        if entity_urn:
+                            entity_urns.append(entity_urn)
+                            self.logger.debug(f"Found entity URN for dataset lookup: {entity_urn}")
+                
+                self.logger.info(f"Extracted {len(entity_urns)} entity URNs from {len(search_results)} data contracts")
+                
+                # Get dataset information for the entity URNs
+                dataset_info = {}
+                if entity_urns:
+                    self.logger.info(f"Fetching dataset information for {len(entity_urns)} entities: {entity_urns}")
+                    dataset_result = self.get_datasets_by_urns(entity_urns)
+                    
+                    if dataset_result.get("success") and dataset_result.get("data"):
+                        dataset_search_results = dataset_result["data"].get("searchResults", [])
+                        self.logger.info(f"Dataset query returned {len(dataset_search_results)} results")
+                        
+                        # Create a mapping of URN to dataset info
+                        for dataset_result_item in dataset_search_results:
+                            dataset_entity = dataset_result_item.get("entity", {})
+                            if dataset_entity and dataset_entity.get("urn"):
+                                dataset_urn = dataset_entity["urn"]
+                                dataset_info[dataset_urn] = dataset_entity
+                                self.logger.debug(f"Mapped dataset URN {dataset_urn} to dataset info")
+                    else:
+                        self.logger.warning(f"Dataset query failed or returned no data: {dataset_result}")
+                
+                # Enhance contract data with dataset information
+                enhanced_results = []
+                for contract_result in search_results:
+                    entity = contract_result.get("entity", {})
+                    if entity:
+                        properties = entity.get("properties", {})
+                        entity_urn = properties.get("entityUrn")
+                        
+                        # Add dataset information if available
+                        if entity_urn and entity_urn in dataset_info:
+                            entity["dataset_info"] = dataset_info[entity_urn]
+                        
+                        enhanced_results.append(contract_result)
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "start": search_data.get("start", start),
+                        "count": search_data.get("count", 0),
+                        "total": search_data.get("total", 0),
+                        "searchResults": enhanced_results
+                    }
+                }
+
+            else:
+                error_msg = "No data returned from DataHub"
+                if result and "errors" in result:
+                    errors = self._get_graphql_errors(result)
+                    error_msg = f"GraphQL errors: {', '.join(errors)}"
+                
+                self.logger.error(f"Error in get_data_contracts: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error getting data contracts: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def import_glossary_node(self, node_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Import a glossary node using direct GraphQL mutation.
+
+        Args:
+            node_data: Glossary node data containing properties, parentNode, ownership, etc.
+
+        Returns:
+            Glossary node URN if successful, None otherwise
+        """
+        self.logger.info(f"Importing glossary node: {node_data.get('properties', {}).get('name', 'Unknown')}")
+        
+        try:
+            # Extract data from nested structure
+            properties = node_data.get('properties', {})
+            name = properties.get('name')
+            description = properties.get('description', '')
+            urn = node_data.get('urn')
+            
+            if not name:
+                self.logger.error("Glossary node name is required")
+                return None
+            
+            # Build mutation variables
+            variables = {
+                "input": {
+                    "name": name,
+                    "description": description,
                 }
             }
-            owners.append(owner_info)
-        
-        # Process structured properties
-        structured_properties = []
-        structured_props_list = structured_props.get("properties", []) if structured_props else []
-        for prop_data in structured_props_list:
-            if prop_data is None:
-                continue
-            structured_property = prop_data.get("structuredProperty", {}) or {}
-            prop_def = structured_property.get("definition", {}) or {}
-            values = prop_data.get("values", []) or []
             
-            prop_info = {
-                "urn": structured_property.get("urn"),
-                "displayName": prop_def.get("displayName", ""),
-                "qualifiedName": prop_def.get("qualifiedName", ""),
-                "values": [v.get("stringValue") or v.get("numberValue") for v in values if v]
-            }
-            structured_properties.append(prop_info)
-        
-        # Process relationships - combine both outgoing and incoming
-        processed_relationships = []
-        all_relationships = relationships + incoming_relationships
-        for rel in all_relationships:
-            if rel is None:
-                continue
-            rel_entity = rel.get("entity", {}) or {}
-            rel_entity_properties = rel_entity.get("properties", {}) or {}
-            created = rel.get("created", {}) or {}
-            processed_relationships.append({
-                "type": rel.get("type"),
-                "direction": rel.get("direction"),
-                "entity": {
-                    "urn": rel_entity.get("urn"),
-                    "type": rel_entity.get("type"),
-                    "name": rel_entity_properties.get("name", "Unknown")
-                },
-                "created": {
-                    "time": created.get("time"),
-                    "actor": created.get("actor")
-                } if created else None
-            })
-        
-        return {
-            "urn": entity.get("urn"),
-            "type": entity.get("type"),
-            "name": properties.get("name", "Unknown"),
-            "description": properties.get("description", ""),
-            "customProperties": properties.get("customProperties", []),
-            "owners": owners,
-            "structuredProperties": structured_properties,
-            "parentNodes": [{"urn": p.get("urn"), "name": p.get("properties", {}).get("name", "") if p.get("properties") else ""} for p in parent_nodes if p],
-            "relationships": processed_relationships,
-            "properties": properties
-        }
-    
-    def _process_glossary_term(self, entity):
-        """Process a glossary term entity into standardized format"""
-        if entity is None:
-            return None
+            # Add URN if provided
+            if urn:
+                variables["input"]["urn"] = urn
             
-        properties = entity.get("properties", {}) or {}
-        ownership = entity.get("ownership", {}) or {}
-        structured_props = entity.get("structuredProperties", {}) or {}
-        parent_nodes_data = entity.get("parentNodes", {}) or {}
-        parent_nodes = parent_nodes_data.get("nodes", []) if parent_nodes_data else []
-        relationships_data = entity.get("relationships", {}) or {}
-        relationships = relationships_data.get("relationships", []) if relationships_data else []
-        incoming_relationships_data = entity.get("incomingRelationships", {}) or {}
-        incoming_relationships = incoming_relationships_data.get("relationships", []) if incoming_relationships_data else []
-        
-        # Process ownership
-        owners = []
-        ownership_owners = ownership.get("owners", []) if ownership else []
-        for owner_data in ownership_owners:
-            if owner_data is None:
-                continue
-            owner = owner_data.get("owner", {}) or {}
-            ownership_type = owner_data.get("ownershipType", {}) or {}
+            # Add parent node if exists
+            parent_node = node_data.get('parentNode')
+            if parent_node and parent_node.get('urn'):
+                variables["input"]["parentNode"] = parent_node.get('urn')
             
-            owner_properties = owner.get("properties", {}) or {}
-            ownership_info = ownership_type.get("info", {}) or {}
+            # Add ownership if exists
+            ownership = node_data.get('ownership')
+            if ownership and ownership.get('owners'):
+                variables["input"]["ownership"] = ownership
             
-            # Extract name from URN if not available in properties
-            owner_name = owner.get("username") or owner.get("name")
-            if not owner_name and owner.get("urn"):
-                # Extract from URN: urn:li:corpuser:username -> username
-                urn_parts = owner.get("urn").split(":")
-                if len(urn_parts) >= 4:
-                    owner_name = urn_parts[-1]  # Get the last part (username)
-            
-            owner_info = {
-                "urn": owner.get("urn"),
-                "type": owner.get("type"),
-                "name": owner_name or "Unknown",
-                "displayName": owner_properties.get("displayName", ""),
-                "email": owner_properties.get("email", ""),
-                "ownershipType": {
-                    "urn": ownership_type.get("urn"),
-                    "name": ownership_info.get("name", "Unknown")
+            # Execute GraphQL mutation
+            mutation = """
+            mutation createGlossaryNode($input: CreateGlossaryNodeInput!) {
+                createGlossaryNode(input: $input) {
+                    urn
                 }
             }
-            owners.append(owner_info)
-        
-        # Process structured properties
-        structured_properties = []
-        structured_props_list = structured_props.get("properties", []) if structured_props else []
-        for prop_data in structured_props_list:
-            if prop_data is None:
-                continue
-            structured_property = prop_data.get("structuredProperty", {}) or {}
-            prop_def = structured_property.get("definition", {}) or {}
-            values = prop_data.get("values", []) or []
+            """
             
-            prop_info = {
-                "urn": structured_property.get("urn"),
-                "displayName": prop_def.get("displayName", ""),
-                "qualifiedName": prop_def.get("qualifiedName", ""),
-                "values": [v.get("stringValue") or v.get("numberValue") for v in values if v]
+            result = self._execute_graphql_query(mutation, variables)
+            
+            if result and 'data' in result and 'createGlossaryNode' in result['data']:
+                created_urn = result['data']['createGlossaryNode']['urn']
+                self.logger.info(f"Successfully created glossary node: {created_urn}")
+                return created_urn
+            else:
+                self.logger.error(f"Failed to create glossary node: {result}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error importing glossary node: {str(e)}")
+            return None
+
+    def import_glossary_term(self, term_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Import a glossary term to DataHub.
+        
+        Args:
+            term_data: Dictionary containing term data with keys like 'id', 'name', 'description', etc.
+            
+        Returns:
+            URN of the created/updated term if successful, None otherwise
+        """
+        try:
+            term_id = term_data.get('id') or term_data.get('qualified_name')
+            if not term_id:
+                self.logger.error("Term data must contain 'id' or 'qualified_name'")
+                return None
+                
+            term_urn = f"urn:li:glossaryTerm:{term_id}"
+            
+            mutation = """
+            mutation createGlossaryTerm($input: CreateGlossaryTermInput!) {
+                createGlossaryTerm(input: $input)
             }
-            structured_properties.append(prop_info)
-        
-        # Process relationships - combine both outgoing and incoming
-        processed_relationships = []
-        all_relationships = relationships + incoming_relationships
-        for rel in all_relationships:
-            if rel is None:
-                continue
-            rel_entity = rel.get("entity", {}) or {}
-            rel_entity_properties = rel_entity.get("properties", {}) or {}
-            created = rel.get("created", {}) or {}
-            processed_relationships.append({
-                "type": rel.get("type"),
-                "direction": rel.get("direction"),
-                "entity": {
-                    "urn": rel_entity.get("urn"),
-                    "type": rel_entity.get("type"),
-                    "name": rel_entity_properties.get("name", "Unknown")
-                },
-                "created": {
-                    "time": created.get("time"),
-                    "actor": created.get("actor")
-                } if created else None
-            })
-        
-        return {
-            "urn": entity.get("urn"),
-            "type": entity.get("type"),
-            "name": properties.get("name", "Unknown"),
-            "description": properties.get("description", ""),
-            "termSource": properties.get("termSource", "INTERNAL"),
-            "customProperties": properties.get("customProperties", []),
-            "owners": owners,
-            "structuredProperties": structured_properties,
-            "parentNodes": [{"urn": p.get("urn"), "name": p.get("properties", {}).get("name", "") if p.get("properties") else ""} for p in parent_nodes if p],
-            "relationships": processed_relationships,
-            "properties": properties
+            """
+            
+            variables = {
+                "input": {
+                    "id": term_id,
+                    "name": term_data.get('name', term_id),
+                    "description": term_data.get('description', ''),
+                    "parentNode": term_data.get('parent_node_urn')
+                }
+            }
+            
+            result = self.execute_graphql(mutation, variables)
+            
+            if result and "data" in result and "createGlossaryTerm" in result["data"]:
+                created_urn = result["data"]["createGlossaryTerm"]
+                if created_urn:
+                    self.logger.info(f"Successfully imported glossary term: {created_urn}")
+                    return created_urn
+            
+            if result and "errors" in result:
+                error_messages = [e.get("message", "") for e in result.get("errors", [])]
+                self.logger.error(f"GraphQL errors when importing glossary term: {', '.join(error_messages)}")
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error importing glossary term: {str(e)}")
+            return None
+
+    def delete_structured_property(self, property_urn: str) -> bool:
+        """
+        Delete a structured property from DataHub.
+
+        Args:
+            property_urn (str): Structured Property URN to delete
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        self.logger.info(f"Deleting structured property: {property_urn}")
+
+        mutation = """
+        mutation deleteStructuredProperty($urn: String!) {
+          deleteStructuredProperty(urn: $urn)
         }
+        """
+
+        variables = {"urn": property_urn}
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+            self.logger.debug(f"Delete structured property GraphQL result: {result}")
+
+            # Check for explicit errors first
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when deleting structured property: {', '.join(error_messages)}"
+                )
+                return False
+
+            # If we have a result with data and no errors, consider it successful
+            if result and "data" in result:
+                delete_result = result["data"].get("deleteStructuredProperty")
+                self.logger.debug(f"Delete structured property success value: {delete_result}")
+                
+                # For delete operations, we'll be very permissive:
+                # - True = explicit success
+                # - None/null = likely success (common in GraphQL mutations)
+                # - Only False = explicit failure
+                if delete_result is not False:
+                    self.logger.info(f"Successfully deleted structured property {property_urn} (result: {delete_result})")
+                    return True
+                else:
+                    self.logger.warning(f"Structured property deletion returned explicit False: {property_urn}")
+                    return False
+
+            # If we have any result without errors, assume success
+            if result:
+                self.logger.info(f"Structured property deletion assumed successful (no errors): {property_urn}")
+                return True
+
+            self.logger.warning(f"No result returned for structured property deletion: {property_urn}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error deleting structured property: {str(e)}")
+            return False
+
+    def create_structured_property(
+        self, display_name: str, description: str = "",
+        value_type: str = "STRING", cardinality: str = "SINGLE",
+        entity_types: List[str] = None, allowedValues: List[Any] = None,
+        qualified_name: str = None, **kwargs):
+        """
+        Create a structured property in DataHub
+        
+        Args:
+            display_name (str): Display name for the property
+            description (str): Description for the property  
+            value_type (str): Value type (STRING, NUMBER, etc.)
+            cardinality (str): Cardinality (SINGLE, MULTIPLE)
+            entity_types (List[str]): List of entity types this property applies to
+            allowedValues (List[Any]): List of allowed values
+            qualified_name (str): Qualified name for the property
+            **kwargs: Additional arguments
+            
+        Returns:
+            str: The URN of the created property
+        """
+        self.logger.info(f"Creating structured property: {display_name}")
+
+        mutation = """
+        mutation createStructuredProperty($input: CreateStructuredPropertyInput!) {
+          createStructuredProperty(input: $input) {
+            urn
+            type
+            exists
+            definition {
+              displayName
+              qualifiedName
+              description
+              valueType {
+                urn
+                type
+                __typename
+              }
+              cardinality
+              entityTypes {
+                urn
+                type
+                __typename
+              }
+              __typename
+            }
+            __typename
+          }
+        }
+        """
+
+        # Map simple value types to DataHub URNs if needed
+        value_type_mapping = {
+            "STRING": "urn:li:dataType:datahub.string",
+            "NUMBER": "urn:li:dataType:datahub.number",
+            "DATE": "urn:li:dataType:datahub.date",
+            "BOOLEAN": "urn:li:dataType:datahub.boolean",
+            "URN": "urn:li:dataType:datahub.urn"
+        }
+        
+        # Use the mapped value type if it's a simple string, otherwise use as-is
+        formatted_value_type = value_type_mapping.get(value_type.upper(), value_type) if isinstance(value_type, str) and not value_type.startswith("urn:") else value_type
+
+        # Build the input according to DataHub's CreateStructuredPropertyInput schema
+        input_data = {
+            "id": display_name,
+            "qualifiedName": qualified_name or display_name,
+            "displayName": display_name,
+            "description": description,
+            "valueType": formatted_value_type,
+            "cardinality": cardinality
+        }
+
+        if entity_types:
+            # Ensure entity types are formatted as URNs
+            formatted_entity_types = []
+            for entity_type in entity_types:
+                if isinstance(entity_type, str) and not entity_type.startswith("urn:"):
+                    formatted_entity_types.append(f"urn:li:entityType:datahub.{entity_type}")
+                else:
+                    formatted_entity_types.append(entity_type)
+            input_data["entityTypes"] = formatted_entity_types
+
+        if allowedValues:
+            # Format allowed values according to DataHub's AllowedValueInput structure
+            formatted_allowed_values = []
+            for allowed_value in allowedValues:
+                formatted_value = {}
+                
+                # Handle different input formats
+                if isinstance(allowed_value, dict):
+                    # If it's already a dict, check if it has the correct structure
+                    if 'value' in allowed_value:
+                        # Extract the actual value from the nested structure
+                        raw_value = allowed_value['value']
+                        if isinstance(raw_value, dict):
+                            # Handle nested value structures like {"double": 30}
+                            if 'double' in raw_value:
+                                formatted_value["numberValue"] = raw_value['double']
+                            elif 'string' in raw_value:
+                                formatted_value["stringValue"] = raw_value['string']
+                            else:
+                                # Try to infer the type
+                                for key, val in raw_value.items():
+                                    if key in ['double', 'float', 'number']:
+                                        formatted_value["numberValue"] = val
+                                    elif key in ['string', 'str']:
+                                        formatted_value["stringValue"] = val
+                        else:
+                            # Direct value, infer type
+                            if isinstance(raw_value, (int, float)):
+                                formatted_value["numberValue"] = float(raw_value)
+                            else:
+                                formatted_value["stringValue"] = str(raw_value)
+                    elif 'stringValue' in allowed_value or 'numberValue' in allowed_value:
+                        # Already in correct format
+                        formatted_value = allowed_value.copy()
+                    else:
+                        # Dict without proper structure, try to infer
+                        if 'description' in allowed_value:
+                            formatted_value["description"] = allowed_value['description']
+                        
+                        # Look for value indicators
+                        for key, val in allowed_value.items():
+                            if key not in ['description']:
+                                if isinstance(val, (int, float)):
+                                    formatted_value["numberValue"] = float(val)
+                                else:
+                                    formatted_value["stringValue"] = str(val)
+                                break
+                else:
+                    # Direct value, infer type
+                    if isinstance(allowed_value, (int, float)):
+                        formatted_value["numberValue"] = float(allowed_value)
+                    else:
+                        formatted_value["stringValue"] = str(allowed_value)
+                
+                formatted_allowed_values.append(formatted_value)
+            
+            input_data["allowedValues"] = formatted_allowed_values
+
+        variables = {
+            "input": input_data
+        }
+
+        try:
+            result = self.execute_graphql(mutation, variables)
+            self.logger.debug(f"Create structured property GraphQL result: {result}")
+
+            if result and "data" in result and "createStructuredProperty" in result["data"]:
+                created_property = result["data"]["createStructuredProperty"]
+                if created_property and created_property.get("urn"):
+                    created_urn = created_property["urn"]
+                    self.logger.info(f"Successfully created structured property: {created_urn}")
+                    return created_urn
+
+            if result and "errors" in result:
+                error_messages = [
+                    e.get("message", "") for e in result.get("errors", [])
+                ]
+                self.logger.error(
+                    f"GraphQL errors when creating structured property: {', '.join(error_messages)}"
+                )
+
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating structured property: {str(e)}")
+            return None

@@ -48,6 +48,47 @@ RECIPE_TYPES = [
     ("mssql", "Microsoft SQL Server"),
     ("oracle", "Oracle"),
     ("dbt", "dbt"),
+    ("redshift", "Amazon Redshift"),
+    ("kafka", "Apache Kafka"),
+    ("hive", "Apache Hive"),
+    ("glue", "AWS Glue"),
+    ("athena", "Amazon Athena"),
+    ("looker", "Looker"),
+    ("tableau", "Tableau"),
+    ("powerbi", "Microsoft Power BI"),
+    ("airflow", "Apache Airflow"),
+    ("elasticsearch", "Elasticsearch"),
+    ("mongodb", "MongoDB"),
+    ("neo4j", "Neo4j"),
+    ("databricks", "Databricks"),
+    ("clickhouse", "ClickHouse"),
+    ("druid", "Apache Druid"),
+    ("superset", "Apache Superset"),
+    ("trino", "Trino"),
+    ("presto", "Presto SQL"),
+    ("dynamodb", "Amazon DynamoDB"),
+    ("metabase", "Metabase"),
+    ("nifi", "Apache NiFi"),
+    ("pulsar", "Apache Pulsar"),
+    ("cassandra", "Apache Cassandra"),
+    ("delta_lake", "Delta Lake"),
+    ("feast", "Feast"),
+    ("fivetran", "Fivetran"),
+    ("dremio", "Dremio"),
+    ("iceberg", "Apache Iceberg"),
+    ("datahub", "DataHub"),
+    ("ldap", "LDAP"),
+    ("okta", "Okta"),
+    ("mode", "Mode Analytics"),
+    ("azure_ad", "Azure Active Directory"),
+    ("salesforce", "Salesforce"),
+    ("dagster", "Dagster"),
+    ("prefect", "Prefect"),
+    ("sagemaker", "AWS SageMaker"),
+    ("mlflow", "MLflow"),
+    ("vertexai", "Vertex AI"),
+    ("abs", "Azure Blob Storage"),
+    ("datahub-gc", "DataHub Garbage Collection"),
     ("other", "Other"),
 ]
 
@@ -139,9 +180,19 @@ class Mutation(models.Model):
     
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
-    platform_instance = models.CharField(max_length=255, help_text="Platform instance identifier")
-    env = models.CharField(max_length=255, help_text="Environment identifier")
+    platform_instance = models.CharField(max_length=255, blank=True, null=True, help_text="Platform instance identifier (deprecated - use platform_instance_mapping)")
+    env = models.CharField(max_length=255, blank=True, null=True, help_text="Environment identifier (deprecated - use platform_instance_mapping)")
     custom_properties = models.JSONField(default=dict, help_text="Custom properties as JSON")
+    platform_instance_mapping = models.JSONField(default=dict, help_text="Platform instance mapping (from -> to) for syncing between environments")
+    
+    # Apply mutations to entities - these will generate new URN values when staging changes
+    apply_to_tags = models.BooleanField(default=False, help_text="Apply mutations to tags")
+    apply_to_glossary_terms = models.BooleanField(default=False, help_text="Apply mutations to glossary terms")
+    apply_to_glossary_nodes = models.BooleanField(default=False, help_text="Apply mutations to glossary nodes")
+    apply_to_structured_properties = models.BooleanField(default=False, help_text="Apply mutations to structured properties")
+    apply_to_domains = models.BooleanField(default=False, help_text="Apply mutations to domains")
+    apply_to_data_products = models.BooleanField(default=False, help_text="Apply mutations to data products")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -160,6 +211,16 @@ class Mutation(models.Model):
         result = []
         for key, value in self.custom_properties.items():
             result.append(f"{key}: {value}")
+        return ", ".join(result)
+    
+    def get_platform_instance_mapping_display(self):
+        """Return a formatted string of platform instance mappings."""
+        if not self.platform_instance_mapping:
+            return "No platform instance mappings"
+        
+        result = []
+        for from_instance, to_instance in self.platform_instance_mapping.items():
+            result.append(f"{from_instance} → {to_instance}")
         return ", ".join(result)
 
 
@@ -358,6 +419,109 @@ class AppSettings:
     def set_json(cls, key, value):
         """Set a JSON setting value."""
         return cls.set(key, json.dumps(value))
+
+
+class Connection(models.Model):
+    """Model for storing DataHub connection configurations."""
+    
+    name = models.CharField(max_length=255, unique=True, help_text="Friendly name for this connection")
+    description = models.TextField(blank=True, null=True, help_text="Description of this connection")
+    datahub_url = models.URLField(help_text="DataHub GMS URL (e.g., https://your-datahub.com)")
+    datahub_token = models.CharField(max_length=255, blank=True, null=True, help_text="DataHub access token")
+    
+    # Connection settings
+    verify_ssl = models.BooleanField(default=True, help_text="Verify SSL certificates")
+    timeout = models.IntegerField(default=30, help_text="Connection timeout in seconds")
+    
+    # Status tracking
+    is_active = models.BooleanField(default=True, help_text="Whether this connection is active")
+    is_default = models.BooleanField(default=False, help_text="Whether this is the default connection")
+    last_tested = models.DateTimeField(null=True, blank=True, help_text="Last time connection was tested")
+    connection_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('connected', 'Connected'),
+            ('failed', 'Failed'),
+            ('unknown', 'Unknown'),
+        ],
+        default='unknown'
+    )
+    error_message = models.TextField(blank=True, null=True, help_text="Last error message if connection failed")
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "DataHub Connection"
+        verbose_name_plural = "DataHub Connections"
+        ordering = ["-is_default", "name"]
+    
+    def __str__(self):
+        return f"{self.name} ({'Default' if self.is_default else 'Active' if self.is_active else 'Inactive'})"
+    
+    def save(self, *args, **kwargs):
+        """Ensure only one default connection exists."""
+        if self.is_default:
+            # Remove default from all other connections
+            Connection.objects.filter(is_default=True).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+    
+    @classmethod
+    def get_default(cls):
+        """Get the default connection."""
+        return cls.objects.filter(is_default=True, is_active=True).first()
+    
+    @classmethod
+    def get_active_connections(cls):
+        """Get all active connections."""
+        return cls.objects.filter(is_active=True).order_by("-is_default", "name")
+    
+    def test_connection(self):
+        """Test the connection to DataHub."""
+        try:
+            from utils.datahub_rest_client import DataHubRestClient
+            
+            client = DataHubRestClient(
+                server_url=self.datahub_url,
+                token=self.datahub_token,
+                verify_ssl=self.verify_ssl,
+                timeout=self.timeout
+            )
+            
+            if client.test_connection():
+                self.connection_status = 'connected'
+                self.error_message = None
+                self.last_tested = timezone.now()
+                self.save(update_fields=['connection_status', 'error_message', 'last_tested'])
+                return True
+            else:
+                self.connection_status = 'failed'
+                self.error_message = "Connection test failed"
+                self.last_tested = timezone.now()
+                self.save(update_fields=['connection_status', 'error_message', 'last_tested'])
+                return False
+                
+        except Exception as e:
+            self.connection_status = 'failed'
+            self.error_message = str(e)
+            self.last_tested = timezone.now()
+            self.save(update_fields=['connection_status', 'error_message', 'last_tested'])
+            return False
+    
+    def get_client(self):
+        """Get a DataHub client for this connection."""
+        try:
+            from utils.datahub_rest_client import DataHubRestClient
+            
+            return DataHubRestClient(
+                server_url=self.datahub_url,
+                token=self.datahub_token,
+                verify_ssl=self.verify_ssl,
+                timeout=self.timeout
+            )
+        except Exception:
+            return None
 
 
 class RecipeTemplate(models.Model):
@@ -1800,17 +1964,14 @@ class GitIntegration:
             # Handle Domain objects from metadata_manager (identified by having to_dict method and being a Domain model)
             elif (
                 hasattr(instance_or_template, "to_dict")
-                and hasattr(instance_or_template, "deterministic_urn")
+                and hasattr(instance_or_template, "urn")
                 and hasattr(instance_or_template, "_meta") 
                 and getattr(instance_or_template._meta, "model_name", None) == "domain"
             ):
                 logger.info(f"Exporting domain: {instance_or_template.name}")
 
-                # Get environment (use domain's environment if set, otherwise default)
-                if instance_or_template.environment:
-                    environment = instance_or_template.environment.name.lower()
-                else:
-                    environment = Environment.get_default().name.lower()
+                # Get environment from current application context
+                environment = Environment.get_default().name.lower()
 
                 # Create metadata-manager directory structure
                 metadata_manager_dir = base_dir / "metadata-manager" / environment / "domains"
@@ -1841,7 +2002,7 @@ class GitIntegration:
                         "input": {
                             "name": instance_or_template.name,
                             "description": instance_or_template.description or "",
-                            "urn": domain_data.get("urn", instance_or_template.deterministic_urn)
+                            "urn": domain_data.get("urn", instance_or_template.urn)
                         }
                     }
                 }
@@ -1910,6 +2071,134 @@ class GitIntegration:
                     f.write(content)
 
                 pr_title = f"Add/update metadata test: {instance_or_template.name}"
+
+            # Handle domains (identified by having a urn and no recipe_type)
+            elif (
+                hasattr(instance_or_template, "urn")
+                and hasattr(instance_or_template, "name")
+                and not hasattr(instance_or_template, "recipe_type")
+            ):
+                logger.info(f"Exporting domain: {instance_or_template.name}")
+
+                # Get environment from current application context
+                environment = Environment.get_default().name.lower()
+
+                # Create metadata-manager directory structure
+                metadata_manager_dir = base_dir / "metadata-manager" / environment / "domains"
+                metadata_manager_dir.mkdir(parents=True, exist_ok=True)
+
+                # Generate a safe file name from the domain name
+                import re
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+                
+                # Create filename with operation prefix and domain ID for uniqueness
+                filename = f"create_DOMAIN_{instance_or_template.id}_{safe_name}.json"
+                file_path = metadata_manager_dir / filename
+
+                # Get base domain data
+                domain_data = instance_or_template.to_dict()
+                
+                # Structure the data for GraphQL workflow compatibility
+                structured_data = {
+                    "operation": "create",
+                    "entity_type": "DOMAIN",
+                    "name": instance_or_template.name,
+                    "description": instance_or_template.description or "",
+                    "config": domain_data,
+                    "local_id": str(instance_or_template.id),
+                    "filename": filename,
+                    "graphql_input": {
+                        "mutation": "createDomain",
+                        "input": {
+                            "name": instance_or_template.name,
+                            "description": instance_or_template.description or "",
+                            "urn": domain_data.get("urn", instance_or_template.urn)
+                        }
+                    }
+                }
+                
+                # Add parent domain if exists
+                if instance_or_template.parent_domain_urn:
+                    structured_data["graphql_input"]["input"]["parentDomains"] = {
+                        "domains": [{"urn": instance_or_template.parent_domain_urn}]
+                    }
+                
+                # Add display properties if they exist
+                if instance_or_template.color_hex or instance_or_template.icon_name:
+                    display_props = {}
+                    if instance_or_template.color_hex:
+                        display_props["colorHex"] = instance_or_template.color_hex
+                    if instance_or_template.icon_name:
+                        display_props["icon"] = {
+                            "name": instance_or_template.icon_name,
+                            "style": instance_or_template.icon_style or "solid",
+                            "iconLibrary": instance_or_template.icon_library or "font-awesome",
+                        }
+                    structured_data["graphql_input"]["input"]["displayProperties"] = display_props
+
+                # Export the domain as JSON
+                import json
+                with open(file_path, "w") as f:
+                    json.dump(structured_data, f, indent=2)
+
+                pr_title = f"Add/update domain '{instance_or_template.name}' for {environment} environment"
+
+            # Handle data products (DataProductForGit wrapper or direct data product)
+            elif (
+                hasattr(instance_or_template, "entity_urns")
+                or (hasattr(instance_or_template, "name") and 
+                    (hasattr(instance_or_template, "domain_urn") or hasattr(instance_or_template, "external_url")))
+            ):
+                # Generate a safe file name from the data product name
+                import re
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+                
+                # Construct file path for Data Product
+                file_path = f"data_products/{safe_name}.yml"
+
+            # Handle assertions (AssertionForGit wrapper or direct assertion)
+            elif (
+                (hasattr(instance_or_template, "config") and hasattr(instance_or_template, "name"))
+                or (hasattr(instance_or_template, "assertion_type") and hasattr(instance_or_template, "name"))
+            ):
+                # Get environment (default to 'prod' if not specified)
+                environment = Environment.get_default().name.lower()
+                
+                # Generate a safe file name from the assertion name
+                import re
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+                
+                # Construct file path for Assertion
+                file_path = f"assertions/{environment}/{safe_name}.yml"
+
+            # Handle metadata tests (identified by having id, name, definition, and environment attributes)
+            elif (
+                hasattr(instance_or_template, "id")
+                and hasattr(instance_or_template, "name")
+                and hasattr(instance_or_template, "definition")
+                and hasattr(instance_or_template, "environment")
+            ):
+                # Get environment (default to 'prod' if not specified)
+                if instance_or_template.environment:
+                    environment = instance_or_template.environment.name.lower()
+                else:
+                    environment = Environment.get_default().name.lower()
+
+                # Generate a safe file name from the test name
+                import re
+
+                safe_name = re.sub(
+                    r"[^a-zA-Z0-9_-]", "_", instance_or_template.name.lower()
+                )
+
+                # Construct file path for Metadata Test
+                file_path = f"metadata_tests/{environment}/{safe_name}.yaml"
 
             else:
                 err_msg = f"Invalid object type: {type(instance_or_template)}"
@@ -2520,9 +2809,9 @@ class GitIntegration:
             policy_name = instance_or_template.name.replace(" ", "_").lower()
             file_path = f"policies/{environment}/{policy_name}.json"
 
-        # Handle domains (identified by having a deterministic_urn and no recipe_type)
+        # Handle domains (identified by having a urn and no recipe_type)
         elif (
-            hasattr(instance_or_template, "deterministic_urn")
+            hasattr(instance_or_template, "urn")
             and hasattr(instance_or_template, "name")
             and not hasattr(instance_or_template, "recipe_type")
         ):
@@ -2866,84 +3155,7 @@ class Policy(models.Model):
         return yaml_content
 
 
-class EnvironmentInstance(models.Model):
-    """Model representing a set of environment variables for a specific deployment"""
 
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)
-    template = models.ForeignKey(
-        EnvVarsTemplate, on_delete=models.PROTECT, related_name="instances"
-    )
-    recipe_type = models.CharField(
-        max_length=50,
-        choices=(
-            ("postgres", "PostgreSQL"),
-            ("mysql", "MySQL"),
-            ("mssql", "Microsoft SQL Server"),
-            ("snowflake", "Snowflake"),
-            ("bigquery", "BigQuery"),
-            ("redshift", "Redshift"),
-            ("databricks", "Databricks"),
-        ),
-    )
-    tenant = models.CharField(max_length=255, blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.name
-
-    def to_dict(self):
-        """Convert environment instance to a dictionary suitable for JSON/YAML export."""
-        env_vars = {}
-        for var in self.variables.all():
-            env_vars[var.key] = {
-                "value": var.value,
-                "description": var.description or "",
-                "is_secret": var.is_secret,
-                "is_required": var.is_required,
-            }
-
-        return {
-            "environment_instance": {
-                "name": self.name,
-                "description": self.description or "",
-                "recipe_type": self.recipe_type,
-                "template": self.template.name,
-                "tenant": self.tenant or "",
-                "variables": env_vars,
-            },
-            "metadata": {
-                "exported_at": datetime.now().isoformat(),
-                "exported_by": "datahub_recipes_manager",
-            },
-        }
-
-    def to_yaml(self, path=None):
-        """
-        Export environment instance to YAML format.
-
-        Args:
-            path: Optional path to save the YAML file
-
-        Returns:
-            Path to the saved file or the YAML string if path is None
-        """
-        import yaml
-
-        data = self.to_dict()
-        yaml_content = yaml.dump(data, default_flow_style=False, sort_keys=False)
-
-        if path:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-
-            # Write to file
-            with open(path, "w") as f:
-                f.write(yaml_content)
-            return path
-
-        return yaml_content
 
 
 class GitSecrets(models.Model):

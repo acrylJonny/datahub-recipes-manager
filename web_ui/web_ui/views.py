@@ -9,7 +9,7 @@ sys.path.append(
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.contrib import messages
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django.urls import reverse
 import json
 import yaml
@@ -28,7 +28,7 @@ from django.views.decorators.csrf import csrf_exempt
 import time
 from random import randint
 import uuid
-from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_utils import get_datahub_client, get_datahub_client_from_request, test_datahub_connection
 from .datahub_utils import get_datahub_client_info, refresh_all_client_info, test_datahub_connection as test_env_connection
 from web_ui.models import AppSettings, GitSettings
 
@@ -75,28 +75,7 @@ from .services.git_service import GitService
 logger = logging.getLogger(__name__)
 
 
-def get_datahub_client():
-    """Get a DataHub client instance if possible."""
-    if not DATAHUB_CLIENT_AVAILABLE:
-        logger.warning("DataHub client is not available")
-        LogEntry.warning("DataHub client is not available", source="web_ui.views")
-        return None
 
-    datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", ""))
-    datahub_token = AppSettings.get(
-        "datahub_token", os.environ.get("DATAHUB_TOKEN", "")
-    )
-
-    if not datahub_url:
-        logger.warning("DataHub URL is not configured")
-        LogEntry.warning("DataHub URL is not configured", source="web_ui.views")
-        return None
-
-    logger.debug(f"Creating DataHub client with URL: {datahub_url}")
-    LogEntry.debug(
-        f"Creating DataHub client with URL: {datahub_url}", source="web_ui.views"
-    )
-    return DataHubRestClient(server_url=datahub_url, token=datahub_token)
 
 
 def index(request):
@@ -120,7 +99,7 @@ def index(request):
 
 def dashboard_data(request):
     """AJAX endpoint to load dashboard data asynchronously."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     connected = False
     recipes_count = 0
     active_schedules_count = 0
@@ -203,32 +182,13 @@ def dashboard_data(request):
                 'name': env.name,
                 'description': env.description or '',
                 'is_default': env.is_default,
-                'datahub_url': env.datahub_url,
-                'git_branch': env.git_branch,
-                'connected': False,
                 'recipes_count': 0,
                 'policies_count': 0
             }
             
-            # Test connection for this environment if it has DataHub config
-            if env.datahub_url and env.datahub_token:
-                try:
-                    from utils.datahub_utils import DataHubClient
-                    env_client = DataHubClient(
-                        server=env.datahub_url,
-                        token=env.datahub_token
-                    )
-                    env_data['connected'] = env_client.test_connection()
-                    
-                    if env_data['connected']:
-                        # Get environment-specific counts if possible
-                        try:
-                            env_recipes = env_client.list_ingestion_sources()
-                            env_data['recipes_count'] = len(env_recipes) if env_recipes else 0
-                        except:
-                            pass
-                except Exception as e:
-                    logger.debug(f"Error testing environment {env.name}: {str(e)}")
+            # Note: Environments are logical groupings, not DataHub connections
+            # They don't have their own connection status - that's handled by the Connection model
+            # We'll just show the environment info without connection testing
             
             environments_data.append(env_data)
     except Exception as e:
@@ -332,7 +292,6 @@ def dashboard_data(request):
     system_health = {
         'datahub_connection': connected,
         'environments_configured': len(environments_data),
-        'environments_connected': sum(1 for env in environments_data if env.get('connected', False)),
         'git_integration': git_status.get('enabled', False),
         'metadata_sync_pending': (
             metadata_stats.get('domains_local', 0) + 
@@ -378,7 +337,7 @@ def recipes(request):
     refresh_rate = AppSettings.get_int("refresh_rate", 60)
     
     # Quick connection test
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     connected = client and client.test_connection() if client else False
 
     return render(
@@ -396,7 +355,7 @@ def recipes(request):
 
 def recipes_data(request):
     """AJAX endpoint to load recipes data asynchronously."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     recipes_list = []
     connected = False
     
@@ -462,7 +421,7 @@ def recipe_create(request):
     if request.method == "POST":
         form = RecipeForm(request.POST)
         if form.is_valid():
-            client = get_datahub_client()
+            client = get_datahub_client_from_request(request)
             if client and client.test_connection():
                 try:
                     # Parse recipe content
@@ -518,7 +477,7 @@ def recipe_create(request):
 
 def recipe_edit(request, recipe_id):
     """Edit an existing recipe."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("recipes")
@@ -716,7 +675,7 @@ def recipe_import(request):
 @require_POST
 def recipe_delete(request, recipe_id):
     """Delete a recipe."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
     if not client or not client.test_connection():
@@ -782,7 +741,7 @@ def extract_recipe_id(recipe_id):
 
 def recipe_run(request, recipe_id):
     """Run a recipe immediately."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
 
     # Check if this is a POST or AJAX request
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
@@ -917,7 +876,7 @@ def recipe_run(request, recipe_id):
 
 def recipe_download(request, recipe_id):
     """Download a recipe as JSON."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("recipes")
@@ -950,7 +909,7 @@ def policies(request):
     # Data will be loaded asynchronously via AJAX
     
     # Quick connection test
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     connected = client and client.test_connection() if client else False
 
     # Get local policies from database (quick operation)
@@ -977,7 +936,7 @@ def policies(request):
 
 def policies_data(request):
     """AJAX endpoint to load policies data asynchronously."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     connected = client and client.test_connection() if client else False
 
     try:
@@ -1027,7 +986,7 @@ def policy_create(request):
     )
 
     # Only require DataHub connection for non-local policies
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     connected = client and client.test_connection()
 
     if not is_local and not connected:
@@ -1156,7 +1115,7 @@ def policy_edit(request, policy_id):
 
     # If not a local policy, try to get from DataHub
     if not is_local:
-        client = get_datahub_client()
+        client = get_datahub_client_from_request(request)
         if not client or not client.test_connection():
             messages.warning(
                 request,
@@ -1373,7 +1332,7 @@ def policy_import(request):
 @require_POST
 def policy_delete(request, policy_id):
     """Delete a policy."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("policies")
@@ -1397,7 +1356,7 @@ def policy_delete(request, policy_id):
 
 def policy_download(request, policy_id):
     """Download a policy as JSON."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("policies")
@@ -1423,7 +1382,7 @@ def policy_download(request, policy_id):
 
 def policy_detail(request, policy_id):
     """Display policy details."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     policy = None
 
     if client and client.test_connection():
@@ -1478,7 +1437,7 @@ def policy_detail(request, policy_id):
 
 def policy_export_all(request):
     """Export all policies to JSON files in a zip archive."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("policies")
@@ -1538,7 +1497,7 @@ def export_all_policies(request):
 
 def export_all_recipes(request):
     """Export all recipes to JSON files in a zip archive."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("recipes")
@@ -1662,70 +1621,10 @@ def settings(request):
         if request.method == "POST":
             section = request.POST.get("section", "")
 
+            # Legacy connection handling removed - use Connections management instead
             if section == "connection" or section == "datahub_connection":
-                # Update connection settings
-                datahub_url = request.POST.get("datahub_url", "").strip()
-                datahub_token = request.POST.get("datahub_token", "").strip()
-                verify_ssl = "verify_ssl" in request.POST
-                timeout = request.POST.get("timeout", "30")
-
-                # Validate timeout
-                try:
-                    timeout_int = int(timeout)
-                    if timeout_int < 5 or timeout_int > 300:
-                        timeout_int = 30
-                except (ValueError, TypeError):
-                    timeout_int = 30
-
-                # Save settings to database
-                AppSettings.set("datahub_url", datahub_url)
-                if datahub_token:  # Only update token if provided
-                    AppSettings.set("datahub_token", datahub_token)
-                AppSettings.set("verify_ssl", "true" if verify_ssl else "false")
-                AppSettings.set("timeout", str(timeout_int))
-
-                # Sync settings with metadata_manager Environment model
-                try:
-                    from metadata_manager.models import (
-                        Environment as MetadataEnvironment,
-                    )
-
-                    default_env = MetadataEnvironment.objects.filter(
-                        is_default=True
-                    ).first()
-                    if default_env:
-                        default_env.datahub_url = datahub_url
-                        if datahub_token:
-                            default_env.datahub_token = datahub_token
-                        default_env.save()
-                        logger.info(
-                            f"Synced settings with metadata manager default environment: {default_env.name}"
-                        )
-                    else:
-                        logger.warning(
-                            "No default environment found in metadata_manager"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Error syncing settings with metadata_manager: {str(e)}"
-                    )
-
-                # Test connection if requested
-                if "test_connection" in request.POST:
-                    # Force a new client instance with the updated settings
-                    connected, client = test_datahub_connection()
-
-                    if connected and client:
-                        messages.success(request, "Successfully connected to DataHub")
-                    else:
-                        messages.error(
-                            request,
-                            "Failed to connect to DataHub. Please check your settings.",
-                        )
-                else:
-                    messages.success(request, "DataHub connection settings updated")
-
-                return redirect("settings")
+                messages.warning(request, "Legacy connection settings have been disabled. Please use the new Connection Management system.")
+                return redirect("connections_list")
 
             elif section == "github_settings":
                 # Handle GitHub settings
@@ -1826,13 +1725,6 @@ def settings(request):
 
         # Get current settings for display
         try:
-            # DataHub connection settings
-            datahub_url = AppSettings.get("datahub_url", "")
-            verify_ssl = AppSettings.get_bool("verify_ssl", True)
-            timeout = AppSettings.get_int("timeout", 30)
-
-            # Test current connection
-            connected, client = test_datahub_connection()
 
             # Git settings
             from web_ui.models import GitSettings
@@ -1865,11 +1757,6 @@ def settings(request):
             }
 
             context = {
-                "datahub_url": datahub_url,
-                "verify_ssl": verify_ssl,
-                "timeout": timeout,
-                "has_token": bool(AppSettings.get("datahub_token")),
-                "is_connected": connected,
                 "github_form": github_form,
                 "github_configured": git_settings.enabled and git_settings.token and git_settings.username and git_settings.repository,
                 "config": config,
@@ -1891,7 +1778,7 @@ def settings(request):
 
 def health(request):
     """Health check endpoint."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     status = "OK" if client and client.test_connection() else "Disconnected"
     return HttpResponse(status)
 
@@ -2160,7 +2047,7 @@ def policy_view(request, policy_id):
         is_local = False
 
         # If not found locally, try to fetch from DataHub
-        client = get_datahub_client()
+        client = get_datahub_client_from_request(request)
     if client and client.test_connection():
         try:
             # First try to fetch by ID directly
@@ -2481,7 +2368,7 @@ def recipe_template_deploy(request, template_id):
     import uuid
 
     template = get_object_or_404(RecipeTemplate, id=template_id)
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
 
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
@@ -2637,7 +2524,7 @@ def store_recipe_secrets(recipe_id, env_vars):
 
 def recipe_save_as_template(request, recipe_id):
     """Save an existing recipe as a template."""
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("recipes")
@@ -3187,7 +3074,7 @@ def recipe_instance_delete(request, instance_id):
 def recipe_instance_deploy(request, instance_id):
     """Deploy a recipe instance to DataHub."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
 
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
@@ -3244,7 +3131,7 @@ def recipe_instance_deploy(request, instance_id):
 def recipe_instance_undeploy(request, instance_id):
     """Undeploy a recipe instance from DataHub by deleting it from the server."""
     instance = get_object_or_404(RecipeInstance, id=instance_id)
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
 
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
@@ -5276,7 +5163,7 @@ def policy_push_github(request, policy_id):
         )
 
     # Get DataHub client
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         logger.error("DataHub connection not available")
         return JsonResponse(
@@ -6079,7 +5966,7 @@ def policy_deploy(request, policy_id):
     policy = get_object_or_404(Policy, id=policy_id)
 
     # Get DataHub client
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(
             request, "Not connected to DataHub. Please check your connection settings."
@@ -6187,7 +6074,7 @@ def get_recipe_by_id(recipe_id):
     Returns:
         dict: Recipe data if found, None otherwise
     """
-    client = get_datahub_client()
+    client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         logger.error("Not connected to DataHub")
         return None
@@ -6247,13 +6134,23 @@ def mutation_create(request):
         platform_instance = request.POST.get("platform_instance")
         env = request.POST.get("env")
         custom_properties = request.POST.get("custom_properties", "{}")
+        platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
+        
+        # Get checkbox values for apply mutations to entities
+        apply_to_tags = request.POST.get("apply_to_tags") == "on"
+        apply_to_glossary_terms = request.POST.get("apply_to_glossary_terms") == "on"
+        apply_to_glossary_nodes = request.POST.get("apply_to_glossary_nodes") == "on"
+        apply_to_structured_properties = request.POST.get("apply_to_structured_properties") == "on"
+        apply_to_domains = request.POST.get("apply_to_domains") == "on"
+        apply_to_data_products = request.POST.get("apply_to_data_products") == "on"
         
         try:
             # Validate JSON
             import json
             custom_props = json.loads(custom_properties) if custom_properties else {}
+            platform_mapping = json.loads(platform_instance_mapping) if platform_instance_mapping else {}
         except json.JSONDecodeError:
-            messages.error(request, "Invalid JSON format for custom properties")
+            messages.error(request, "Invalid JSON format for custom properties or platform instance mapping")
             return render(
                 request,
                 "mutations/create.html",
@@ -6263,13 +6160,20 @@ def mutation_create(request):
                 },
             )
 
-        # Create the mutation
+        # Create the mutation - use default values for platform_instance and env since they're handled via mapping
         Mutation.objects.create(
             name=name,
             description=description,
-            platform_instance=platform_instance,
-            env=env,
+            platform_instance=platform_instance or "default",  # Provide default value since field is removed from form
+            env=env or "default",  # Provide default value since field is removed from form
             custom_properties=custom_props,
+            platform_instance_mapping=platform_mapping,
+            apply_to_tags=apply_to_tags,
+            apply_to_glossary_terms=apply_to_glossary_terms,
+            apply_to_glossary_nodes=apply_to_glossary_nodes,
+            apply_to_structured_properties=apply_to_structured_properties,
+            apply_to_domains=apply_to_domains,
+            apply_to_data_products=apply_to_data_products,
         )
 
         messages.success(request, f'Mutation "{name}" created successfully.')
@@ -6285,16 +6189,27 @@ def mutation_edit(request, mutation_id):
     if request.method == "POST":
         mutation.name = request.POST.get("name")
         mutation.description = request.POST.get("description")
-        mutation.platform_instance = request.POST.get("platform_instance")
-        mutation.env = request.POST.get("env")
+        # Keep existing values for platform_instance and env since they're handled via mapping
+        mutation.platform_instance = request.POST.get("platform_instance") or mutation.platform_instance
+        mutation.env = request.POST.get("env") or mutation.env
         custom_properties = request.POST.get("custom_properties", "{}")
+        platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
+        
+        # Get checkbox values for apply mutations to entities
+        mutation.apply_to_tags = request.POST.get("apply_to_tags") == "on"
+        mutation.apply_to_glossary_terms = request.POST.get("apply_to_glossary_terms") == "on"
+        mutation.apply_to_glossary_nodes = request.POST.get("apply_to_glossary_nodes") == "on"
+        mutation.apply_to_structured_properties = request.POST.get("apply_to_structured_properties") == "on"
+        mutation.apply_to_domains = request.POST.get("apply_to_domains") == "on"
+        mutation.apply_to_data_products = request.POST.get("apply_to_data_products") == "on"
         
         try:
             # Validate JSON
             import json
             mutation.custom_properties = json.loads(custom_properties) if custom_properties else {}
+            mutation.platform_instance_mapping = json.loads(platform_instance_mapping) if platform_instance_mapping else {}
         except json.JSONDecodeError:
-            messages.error(request, "Invalid JSON format for custom properties")
+            messages.error(request, "Invalid JSON format for custom properties or platform instance mapping")
             return render(
                 request,
                 "mutations/edit.html",
@@ -6309,14 +6224,15 @@ def mutation_edit(request, mutation_id):
         messages.success(request, f'Mutation "{mutation.name}" updated successfully.')
         return redirect("environments")
 
-    # Serialize custom_properties for display
+    # Serialize custom_properties and platform_instance_mapping for display
     import json
     mutation_data = {
         'name': mutation.name,
         'description': mutation.description,
         'platform_instance': mutation.platform_instance,
         'env': mutation.env,
-        'custom_properties': json.dumps(mutation.custom_properties, indent=2) if mutation.custom_properties else '{}'
+        'custom_properties': json.dumps(mutation.custom_properties, indent=2) if mutation.custom_properties else '{}',
+        'platform_instance_mapping': json.dumps(mutation.platform_instance_mapping, indent=2) if mutation.platform_instance_mapping else '{}'
     }
     
     return render(
@@ -6354,6 +6270,291 @@ def mutation_delete(request, mutation_id):
             "env_count": env_count,
         },
     )
+
+
+def connections_list(request):
+    """List all DataHub connections."""
+    try:
+        from web_ui.models import Connection
+        
+        connections = Connection.objects.all().order_by('-is_default', 'name')
+        
+        context = {
+            'connections': connections,
+            'page_title': 'DataHub Connections',
+        }
+        
+        return render(request, 'connections/list.html', context)
+        
+    except Exception as e:
+        logger.error(f"Error in connections list view: {str(e)}")
+        messages.error(request, f"Error loading connections: {str(e)}")
+        return redirect('settings')
+
+
+def connection_create(request):
+    """Create a new DataHub connection."""
+    if request.method == 'POST':
+        try:
+            from web_ui.models import Connection
+            
+            name = request.POST.get('name', '').strip()
+            description = request.POST.get('description', '').strip()
+            datahub_url = request.POST.get('datahub_url', '').strip()
+            datahub_token = request.POST.get('datahub_token', '').strip()
+            verify_ssl = 'verify_ssl' in request.POST
+            timeout = int(request.POST.get('timeout', 30))
+            is_default = 'is_default' in request.POST
+            
+            # Validation
+            if not name:
+                messages.error(request, "Connection name is required.")
+                return render(request, 'connections/form.html', {
+                    'form_data': request.POST,
+                    'page_title': 'Create Connection'
+                })
+            
+            if not datahub_url:
+                messages.error(request, "DataHub URL is required.")
+                return render(request, 'connections/form.html', {
+                    'form_data': request.POST,
+                    'page_title': 'Create Connection'
+                })
+            
+            # Create connection
+            connection = Connection.objects.create(
+                name=name,
+                description=description,
+                datahub_url=datahub_url,
+                datahub_token=datahub_token,
+                verify_ssl=verify_ssl,
+                timeout=timeout,
+                is_default=is_default,
+                is_active=True
+            )
+            
+            # Test connection if requested
+            if 'test_connection' in request.POST:
+                if connection.test_connection():
+                    messages.success(request, f"Connection '{name}' created and tested successfully!")
+                else:
+                    messages.warning(request, f"Connection '{name}' created but failed connection test: {connection.error_message}")
+            else:
+                messages.success(request, f"Connection '{name}' created successfully!")
+            
+            return redirect('connections_list')
+            
+        except Exception as e:
+            logger.error(f"Error creating connection: {str(e)}")
+            messages.error(request, f"Error creating connection: {str(e)}")
+            return render(request, 'connections/form.html', {
+                'form_data': request.POST,
+                'page_title': 'Create Connection'
+            })
+    
+    return render(request, 'connections/form.html', {
+        'page_title': 'Create Connection'
+    })
+
+
+def connection_edit(request, connection_id):
+    """Edit an existing DataHub connection."""
+    try:
+        from web_ui.models import Connection
+        
+        connection = get_object_or_404(Connection, id=connection_id)
+        
+        if request.method == 'POST':
+            try:
+                name = request.POST.get('name', '').strip()
+                description = request.POST.get('description', '').strip()
+                datahub_url = request.POST.get('datahub_url', '').strip()
+                datahub_token = request.POST.get('datahub_token', '').strip()
+                verify_ssl = 'verify_ssl' in request.POST
+                timeout = int(request.POST.get('timeout', 30))
+                is_default = 'is_default' in request.POST
+                
+                # Validation
+                if not name:
+                    messages.error(request, "Connection name is required.")
+                    return render(request, 'connections/form.html', {
+                        'connection': connection,
+                        'form_data': request.POST,
+                        'page_title': f'Edit Connection: {connection.name}'
+                    })
+                
+                if not datahub_url:
+                    messages.error(request, "DataHub URL is required.")
+                    return render(request, 'connections/form.html', {
+                        'connection': connection,
+                        'form_data': request.POST,
+                        'page_title': f'Edit Connection: {connection.name}'
+                    })
+                
+                # Update connection
+                connection.name = name
+                connection.description = description
+                connection.datahub_url = datahub_url
+                if datahub_token:  # Only update token if provided
+                    connection.datahub_token = datahub_token
+                connection.verify_ssl = verify_ssl
+                connection.timeout = timeout
+                connection.is_default = is_default
+                connection.save()
+                
+                # Test connection if requested
+                if 'test_connection' in request.POST:
+                    if connection.test_connection():
+                        messages.success(request, f"Connection '{name}' updated and tested successfully!")
+                    else:
+                        messages.warning(request, f"Connection '{name}' updated but failed connection test: {connection.error_message}")
+                else:
+                    messages.success(request, f"Connection '{name}' updated successfully!")
+                
+                return redirect('connections_list')
+                
+            except Exception as e:
+                logger.error(f"Error updating connection: {str(e)}")
+                messages.error(request, f"Error updating connection: {str(e)}")
+        
+        context = {
+            'connection': connection,
+            'page_title': f'Edit Connection: {connection.name}',
+            'has_token': bool(connection.datahub_token),
+        }
+        
+        return render(request, 'connections/form.html', context)
+        
+    except Exception as e:
+        logger.error(f"Error in connection edit view: {str(e)}")
+        messages.error(request, f"Error loading connection: {str(e)}")
+        return redirect('connections_list')
+
+
+def connection_delete(request, connection_id):
+    """Delete a DataHub connection."""
+    try:
+        from web_ui.models import Connection
+        
+        connection = get_object_or_404(Connection, id=connection_id)
+        
+        if request.method == 'POST':
+            # Check if this is the default connection
+            if connection.is_default:
+                # Make another connection default if available
+                other_connection = Connection.objects.filter(is_active=True).exclude(id=connection_id).first()
+                if other_connection:
+                    other_connection.is_default = True
+                    other_connection.save()
+                    messages.info(request, f"Made '{other_connection.name}' the new default connection.")
+            
+            connection_name = connection.name
+            connection.delete()
+            messages.success(request, f"Connection '{connection_name}' deleted successfully!")
+            return redirect('connections_list')
+        
+        context = {
+            'connection': connection,
+            'page_title': f'Delete Connection: {connection.name}',
+        }
+        
+        return render(request, 'connections/delete.html', context)
+        
+    except Exception as e:
+        logger.error(f"Error in connection delete view: {str(e)}")
+        messages.error(request, f"Error deleting connection: {str(e)}")
+        return redirect('connections_list')
+
+ 
+def connection_test(request, connection_id):
+    """Test a DataHub connection."""
+    try:
+        from web_ui.models import Connection
+        
+        connection = get_object_or_404(Connection, id=connection_id)
+        
+        if connection.test_connection():
+            messages.success(request, f"Connection '{connection.name}' tested successfully!")
+        else:
+            messages.error(request, f"Connection test failed for '{connection.name}': {connection.error_message}")
+        
+        return redirect('connections_list')
+        
+    except Exception as e:
+        logger.error(f"Error testing connection: {str(e)}")
+        messages.error(request, f"Error testing connection: {str(e)}")
+        return redirect('connections_list')
+
+
+def connection_set_default(request, connection_id):
+    """Set a connection as the default."""
+    try:
+        from web_ui.models import Connection
+        
+        connection = get_object_or_404(Connection, id=connection_id)
+        
+        # Remove default from all other connections and set this one as default
+        Connection.objects.all().update(is_default=False)
+        connection.is_default = True
+        connection.save()
+        
+        messages.success(request, f"'{connection.name}' is now the default connection.")
+        return redirect('connections_list')
+        
+    except Exception as e:
+        logger.error(f"Error setting default connection: {str(e)}")
+        messages.error(request, f"Error setting default connection: {str(e)}")
+        return redirect('connections_list')
+
+
+@require_http_methods(["POST"])
+def api_switch_connection(request):
+    """API endpoint to switch the current connection context."""
+    try:
+        from web_ui.models import Connection
+        
+        connection_id = request.POST.get('connection_id')
+        
+        if not connection_id:
+            return JsonResponse({'success': False, 'error': 'Connection ID is required'})
+        
+        connection = Connection.objects.filter(id=connection_id, is_active=True).first()
+        
+        if not connection:
+            return JsonResponse({'success': False, 'error': 'Connection not found or inactive'})
+        
+        # Store the selected connection in session
+        request.session['current_connection_id'] = str(connection.id)
+        
+        return JsonResponse({
+            'success': True,
+            'connection_name': connection.name,
+            'connection_id': connection.id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error switching connection: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+def get_current_connection(request):
+    """Get the current connection for the user's session."""
+    try:
+        from web_ui.models import Connection
+        
+        # Try to get from session first
+        connection_id = request.session.get('current_connection_id')
+        
+        if connection_id:
+            connection = Connection.objects.filter(id=connection_id, is_active=True).first()
+            if connection:
+                return connection
+        
+        # Fall back to default connection
+        return Connection.get_default()
+        
+    except Exception:
+        return None
 
 
 

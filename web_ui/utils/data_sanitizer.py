@@ -304,4 +304,54 @@ def sanitize_for_display(item: Dict[str, Any], limits: Optional[Dict[str, int]] 
 
 def safe_json_response(obj: Any, max_string_length: int = None) -> str:
     """Convenience function for safe JSON serialization in API responses."""
-    return DataSanitizer.safe_json_dumps(obj, max_string_length) 
+    return DataSanitizer.safe_json_dumps(obj, max_string_length)
+
+
+def sanitize_ownership_data(data):
+    """
+    Specifically sanitize ownership data to ensure it's properly formatted for database storage.
+    
+    Args:
+        data: The ownership data to sanitize
+        
+    Returns:
+        Sanitized ownership data with consistent structure
+    """
+    if not data:
+        return {"owners": []}
+    
+    if isinstance(data, dict):
+        # Check if this already has the correct structure with owners
+        if "owners" in data and isinstance(data["owners"], list):
+            # This is the standard DataHub ownership format
+            sanitized_data = {}
+            
+            # Preserve the owners array
+            sanitized_data["owners"] = DataSanitizer.sanitize_for_json(data["owners"])
+            
+            # Preserve other ownership metadata if present
+            if "lastModified" in data:
+                sanitized_data["lastModified"] = DataSanitizer.sanitize_for_json(data["lastModified"])
+            
+            # Preserve any other fields in the ownership object
+            for key, value in data.items():
+                if key not in ["owners", "lastModified"]:
+                    sanitized_data[key] = DataSanitizer.sanitize_for_json(value)
+            
+            return sanitized_data
+        
+        # If no owners key, try to find owners in other keys
+        for key, value in data.items():
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                # This looks like an owners list
+                return {"owners": DataSanitizer.sanitize_for_json(value)}
+        
+        # No suitable owners list found, but preserve the structure
+        return DataSanitizer.sanitize_for_json(data)
+    
+    elif isinstance(data, list):
+        # Direct list of owners
+        return {"owners": DataSanitizer.sanitize_for_json(data)}
+    
+    # Default empty structure
+    return {"owners": []} 

@@ -18,7 +18,7 @@ project_root = os.path.dirname(
 sys.path.append(project_root)
 
 # Import the deterministic URN utilities
-
+from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.datahub_rest_client import DataHubRestClient
 from .models import Tag, GlossaryNode, GlossaryTerm, Domain, Assertion, Environment, StructuredProperty, SearchResultCache, SearchProgress
 
@@ -123,15 +123,25 @@ def editable_properties_view(request):
 
     # Check if there's a default environment and log its details
     if environment:
-        logger.info(
-            f"Default environment: {environment.name}, URL: {environment.datahub_url}"
-        )
-        # Try to create a client and test connection
+        logger.info(f"Default environment: {environment.name}")
+        
+        # Note: Environment objects don't have datahub_url/datahub_token fields.
+        # Using the default connection configuration instead.
         try:
             from utils.datahub_rest_client import DataHubRestClient
+            from web_ui.models import Connection
+
+            default_connection = Connection.get_default()
+            if not default_connection:
+                logger.warning("No default DataHub connection configured!")
+                return render(
+                    request,
+                    "metadata_manager/entities/editable_properties.html",
+                    {"page_title": "Editable Properties"},
+                )
 
             client = DataHubRestClient(
-                environment.datahub_url, environment.datahub_token
+                default_connection.datahub_url, default_connection.datahub_token
             )
             connection_working = client.test_connection()
             logger.info(
@@ -425,6 +435,7 @@ def get_editable_entities(request):
                 "total": total_cached,
                 "filtered_total": total_cached,
                 "searchResults": [{"entity": result} for result in cached_results],
+                "cache_complete": True,  # Indicate this is from complete cache
             }
             
             return JsonResponse({"success": True, "data": response_data})
@@ -532,11 +543,13 @@ def _perform_background_search(session_key, cache_key, query, entity_type, platf
         # Mark as complete
         progress = SearchProgress.get_progress(session_key, cache_key)
         if progress:
+            total_cached = SearchResultCache.get_total_count(session_key, cache_key)
             SearchProgress.update_progress(
                 session_key=session_key,
                 cache_key=cache_key,
-                current_step="Search completed",
-                is_complete=True
+                current_step=f"Search completed - cached {total_cached} results",
+                is_complete=True,
+                total_results_found=total_cached
             )
             
     except Exception as e:
@@ -639,9 +652,10 @@ def _perform_comprehensive_search_with_progress(client, query, entity_type, plat
     SearchProgress.update_progress(
         session_key=session_key,
         cache_key=cache_key,
-        current_step="Comprehensive search completed",
+        current_step=f"Comprehensive search completed - cached {total_results} results for fast pagination",
         completed_combinations=total_combinations,
-        total_results_found=total_results
+        total_results_found=total_results,
+        is_complete=True
     )
 
 
@@ -1145,7 +1159,12 @@ def update_entity_properties(request):
             )
         
         # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
+        default_connection = Connection.get_default()
+        if not default_connection:
+            logger.warning("No default DataHub connection configured for client creation!")
+            return JsonResponse({'error': 'No DataHub connection configured'}, status=500)
+        
+        client = DataHubRestClient(default_connection.datahub_url, default_connection.datahub_token)
         
         # Get entity details from request
         entity_urn = request.POST.get("entityUrn")
@@ -1213,15 +1232,12 @@ from .views_sync import *
 def get_entity_details(request, urn):
     """Get details of a specific entity."""
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
+        # Get DataHub client using connection system
+        client = get_client_from_session(request)
+        if not client:
             return JsonResponse(
-                {"success": False, "error": "No active environment configured"}
+                {"success": False, "error": "No active connection configured"}
             )
-        
-        # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
         
         # Get entity details
         entity = client.get_entity(urn)
@@ -1240,15 +1256,12 @@ def get_entity_details(request, urn):
 def get_entity_schema(request, urn):
     """Get schema details for a dataset entity."""
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
+        # Get DataHub client using connection system
+        client = get_client_from_session(request)
+        if not client:
             return JsonResponse(
-                {"success": False, "error": "No active environment configured"}
+                {"success": False, "error": "No active connection configured"}
             )
-        
-        # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
         
         # Get schema details
         schema = client.get_schema(urn)
@@ -1267,15 +1280,12 @@ def get_entity_schema(request, urn):
 def sync_metadata(request):
     """Sync metadata with DataHub."""
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
+        # Get DataHub client using connection system
+        client = get_client_from_session(request)
+        if not client:
             return JsonResponse(
-                {"success": False, "error": "No active environment configured"}
+                {"success": False, "error": "No active connection configured"}
             )
-        
-        # Initialize DataHub client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
         
         # Sync metadata
         success = client.sync_metadata()
@@ -1887,7 +1897,7 @@ def metadata_entities_editable_list(request):
         editable_only = request.GET.get("editable_only", "true").lower() == "true"
 
         # Get client
-        client = get_datahub_client()
+        client = get_datahub_client_from_request(request)
 
         # Call the improved get_editable_entities method with all parameters
         result = client.get_editable_entities(
@@ -1924,7 +1934,7 @@ def metadata_entities_editable_list(request):
 
 def get_client_from_session(request):
     """
-    Get a DataHub client from the session or create a new one.
+    Get a DataHub client from the session or create a new one using the connection system.
 
     Args:
         request (HttpRequest): The request object
@@ -1933,15 +1943,8 @@ def get_client_from_session(request):
         DataHubRestClient: The client instance or None if not connected
     """
     try:
-        # Get active environment
-        environment = Environment.objects.filter(is_default=True).first()
-        if not environment:
-            logger.error("No active environment configured")
-            return None
-
-        # Initialize and return a client
-        client = DataHubRestClient(environment.datahub_url, environment.datahub_token)
-        return client
+        from utils.datahub_utils import get_datahub_client_from_request
+        return get_datahub_client_from_request(request)
     except Exception as e:
         logger.error(f"Error creating DataHub client: {str(e)}")
         return None
@@ -1951,8 +1954,8 @@ def get_client_from_session(request):
 def get_platforms(request):
     """Get list of platforms from DataHub."""
     try:
-        # Get client from session
-        client = get_client_from_session(request)
+        # Get connection-specific client
+        client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse(
                 {"success": False, "error": "Not connected to DataHub"}, status=400
@@ -1960,67 +1963,120 @@ def get_platforms(request):
         
         entity_type = request.GET.get("entity_type")
         
-        # Use comprehensive platform search to get all available platforms
+        # Fast platform discovery using DataHub's aggregation API
         platforms = set()
         
-        # Start with common platforms
-        common_platforms = [
-            "postgres", "mysql", "snowflake", "bigquery", "redshift", 
-            "databricks", "azure", "glue", "hive", "kafka", "oracle", 
-            "mssql", "teradata", "tableau", "looker", "metabase", 
-            "superset", "powerbi", "airflow"
-        ]
-        
-        # Try to get actual platforms from DataHub by searching for entities
         try:
-            result = client.get_editable_entities(
-                start=0,
-                count=1000,
+            logger.info(f"Starting fast platform discovery using aggregation API for entity_type='{entity_type}'")
+            
+            # Use DataHub's aggregateAcrossEntities GraphQL query for efficient platform discovery
+            result = client.aggregate_across_entities(
+                facets=["platform"],
                 query="*",
-                entity_type=entity_type,
-                platform=None,
-                sort_by="name",
-                editable_only=False,
+                entity_types=[entity_type] if entity_type else None,
+                max_agg_values=1000  # Get up to 1000 platforms - increased from 100
             )
             
             if result and result.get("success") and "data" in result:
-                search_results = result["data"].get("searchResults", [])
+                facets = result["data"].get("facets", [])
+                
+                for facet in facets:
+                    if facet.get("field") == "platform":
+                        aggregations = facet.get("aggregations", [])
+                        logger.info(f"Found {len(aggregations)} platform aggregations from GraphQL API")
+                        
+                        for agg in aggregations:
+                            entity = agg.get("entity", {})
+                            if entity.get("type") == "DATA_PLATFORM":
+                                platform_name = entity.get("name")
+                                if platform_name:
+                                    platforms.add(platform_name)
+                                    logger.debug(f"Added platform: {platform_name}")
+                            else:
+                                logger.debug(f"Skipped non-DATA_PLATFORM entity: {entity.get('type', 'unknown')}")
+                
+                logger.info(f"Fast platform discovery completed: found {len(platforms)} platforms using aggregation API")
+                if len(platforms) >= 1000:
+                    logger.warning("Platform discovery may have hit the 1000 platform limit - some platforms might be missing")
+                
+            else:
+                logger.warning("Aggregation API failed or returned no data, falling back to entity search")
+                # Fallback to a single search if aggregation fails
+                result = client.get_editable_entities(
+                    start=0,
+                    count=10000,  # Much larger sample for comprehensive platform discovery
+                    query="*",
+                    entity_type=entity_type,
+                    platform=None,
+                    sort_by="name",
+                    editable_only=False,
+                )
+                
+                # Handle client response format
+                if result and result.get("success") and "data" in result:
+                    search_results = result["data"].get("searchResults", [])
+                elif result and "searchResults" in result:
+                    search_results = result.get("searchResults", [])
+                else:
+                    search_results = []
+                    
+                logger.info(f"Fallback entity search returned {len(search_results)} entities for platform discovery")
+                    
                 for search_result in search_results:
                     entity = search_result.get("entity", {})
                     
-                    # Extract platform from various locations
-                    platform_name = None
+                    # Extract platform from all possible locations
+                    platform_names = []
                     
+                    # Method 1: Direct platform reference
                     if entity.get("platform") and entity["platform"].get("name"):
-                        platform_name = entity["platform"]["name"]
-                    elif entity.get("dataPlatformInstance") and entity["dataPlatformInstance"].get("platform"):
-                        platform_name = entity["dataPlatformInstance"]["platform"].get("name")
+                        platform_names.append(entity["platform"]["name"])
                     
-                    if platform_name:
-                        platforms.add(platform_name)
-                        
-                    # Also check for platform in URN
-                    if entity.get("urn") and "urn:li:dataPlatform:" in entity["urn"]:
-                        try:
-                            urn_platform = entity["urn"].split("urn:li:dataPlatform:")[1].split(",")[0]
-                            if urn_platform:
-                                platforms.add(urn_platform)
-                        except:
-                            pass
+                    # Method 2: Platform instance reference  
+                    if entity.get("dataPlatformInstance") and entity["dataPlatformInstance"].get("platform"):
+                        platform_names.append(entity["dataPlatformInstance"]["platform"].get("name"))
+                    
+                    # Method 3: DataFlow platform (for DataJobs)
+                    if entity.get("dataFlow") and entity["dataFlow"].get("platform"):
+                        platform_names.append(entity["dataFlow"]["platform"].get("name"))
+                    
+                    # Add all found platform names
+                    for platform_name in platform_names:
+                        if platform_name:
+                            platforms.add(platform_name)
                             
+                    # Method 4: Extract from URN (multiple URN formats)
+                    if entity.get("urn"):
+                        urn = entity["urn"]
+                        try:
+                            # Format: urn:li:dataset:(urn:li:dataPlatform:platform_name,...)
+                            if "urn:li:dataPlatform:" in urn:
+                                urn_platform = urn.split("urn:li:dataPlatform:")[1].split(",")[0].split(")")[0]
+                                if urn_platform:
+                                    platforms.add(urn_platform)
+                            
+                            # Format: urn:li:dataFlow:(platform_name,...)
+                            elif urn.startswith("urn:li:dataFlow:("):
+                                urn_platform = urn.split("urn:li:dataFlow:(")[1].split(",")[0]
+                                if urn_platform:
+                                    platforms.add(urn_platform)
+                            
+                            # Format: urn:li:dataJob:(urn:li:dataFlow:(platform_name,...),...)
+                            elif "urn:li:dataFlow:(" in urn:
+                                urn_platform = urn.split("urn:li:dataFlow:(")[1].split(",")[0]
+                                if urn_platform:
+                                    platforms.add(urn_platform)
+                                    
+                        except Exception as e:
+                            logger.debug(f"Failed to extract platform from URN {urn}: {e}")
+                            pass
+                
+                logger.info(f"Fallback platform discovery completed: found {len(platforms)} platforms from {len(search_results)} entities")
+                    
         except Exception as e:
-            logger.warning(f"Could not fetch platforms from DataHub: {str(e)}")
-            # Fall back to common platforms
-            platforms.update(common_platforms)
+            logger.error(f"Error in platform discovery: {str(e)}")
         
-        # Ensure we have at least the common platforms
-        platforms.update(common_platforms)
-        
-        # Filter by entity type if specified
-        if entity_type:
-            entity_type_platforms = get_platform_list(client, entity_type)
-            if entity_type_platforms:
-                platforms = platforms.intersection(set(entity_type_platforms))
+        logger.info(f"Platform discovery final result: found {len(platforms)} unique platforms")
         
         # Convert to sorted list
         platform_list = sorted(list(platforms))
@@ -2108,14 +2164,16 @@ def get_search_progress(request):
 def get_datahub_url_config(request):
     """Get DataHub URL configuration for frontend use"""
     try:
-        # Get the default environment
-        environment = ensure_default_environment()
-        if not environment:
-            return JsonResponse({"success": False, "error": "No default environment configured"})
+        # Use the default connection instead of environment
+        from web_ui.models import Connection
+        
+        default_connection = Connection.get_default()
+        if not default_connection:
+            return JsonResponse({"success": False, "error": "No default DataHub connection configured"})
         
         return JsonResponse({
             "success": True,
-            "url": environment.datahub_url
+            "url": default_connection.datahub_url
         })
     except Exception as e:
         logger.error(f"Error getting DataHub URL config: {str(e)}")
@@ -2127,21 +2185,32 @@ def get_structured_properties(request):
     """
     Get all structured properties from DataHub.
     This endpoint is used to build filters for the editable entities search.
-    Results are cached for 60 minutes.
+    Results are cached for 2 minutes per connection.
     """
     try:
-        # Check if we have a cached response
-        cache_key = "structured_properties_cache"
-        cached_data = cache.get(cache_key)
+        # Get current connection for connection-specific caching
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        connection_id = current_connection.id if current_connection else 'default'
         
-        if cached_data:
-            logger.info("Returning cached structured properties")
-            return JsonResponse(cached_data)
+        # Create connection-specific cache key
+        cache_key = f"structured_properties_cache_{connection_id}"
         
-        # Get client from environment
+        # Check if we should bypass cache (when connection_id or timestamp params are present)
+        force_refresh = request.GET.get('connection_id') or request.GET.get('t')
+        
+        if not force_refresh:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                logger.info(f"Returning cached structured properties for connection: {connection_id}")
+                return JsonResponse(cached_data)
+        
+        # Get client from session (connection-specific)
         client = get_client_from_session(request)
         if not client:
             return JsonResponse({"success": False, "error": "Could not connect to DataHub"})
+        
+        logger.info(f"Fetching fresh structured properties from DataHub for connection: {connection_id}")
         
         # Fetch structured properties from DataHub
         result = client.get_structured_properties(count=1000)
@@ -2154,17 +2223,197 @@ def get_structured_properties(request):
         # Log some information about the structured properties
         structured_properties = result.get("structured_properties", [])
         total = result.get("total", 0)
-        logger.info(f"Retrieved {len(structured_properties)} structured properties out of {total} total")
+        logger.info(f"Retrieved {len(structured_properties)} structured properties out of {total} total for connection: {connection_id}")
         
         if structured_properties and len(structured_properties) > 0:
             # Log a few examples
             examples = structured_properties[:3]
-            logger.info(f"Example structured properties: {examples}")
+            logger.info(f"Example structured properties for connection {connection_id}: {examples}")
         
-        # Cache the result for 60 minutes
-        cache.set(cache_key, result, 60 * 60)
+        # Cache the result for 2 minutes (connection-specific)
+        cache.set(cache_key, result, 2 * 60)
         
         return JsonResponse(result)
     except Exception as e:
         logger.error(f"Error getting structured properties: {str(e)}")
         return JsonResponse({"success": False, "error": str(e)})
+
+
+@require_http_methods(["POST"])
+def export_entities_with_mutations(request):
+    """Export entities with environment-specific mutations applied and save to environment directory."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        import json
+        import os
+        from datetime import datetime
+        from django.conf import settings
+        from web_ui.models import Environment
+        
+        # Try to import MutationStore, but continue without it if it fails
+        try:
+            from web_ui.services.mutation_store import MutationStore
+        except ImportError as import_error:
+            logger.error(f"Could not import MutationStore: {import_error}")
+            MutationStore = None
+        
+        # Parse request data
+        data = json.loads(request.body)
+        entities = data.get('entities', [])
+        include_mutations = data.get('include_mutations', True)
+        export_format = data.get('export_format', 'metadata_migration')
+        
+        if not entities:
+            return JsonResponse(
+                {"success": False, "error": "No entities provided for export"}, 
+                status=400
+            )
+        
+        # Get current environment and mutations
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        
+        # Determine environment name
+        env_name = getattr(current_connection, 'environment', 'dev')
+        
+        mutations = {}
+        if include_mutations and current_connection and MutationStore:
+            try:
+                environment = Environment.objects.filter(name=env_name).first()
+                
+                if environment:
+                    mutation_store = MutationStore(environment)
+                    mutations = mutation_store.get_mutations()
+                    logger.info(f"Loaded {len(mutations)} mutations for environment {env_name}")
+                else:
+                    logger.warning(f"Environment {env_name} not found in database")
+                
+            except Exception as e:
+                logger.error(f"Error loading mutations: {str(e)}")
+                # Continue without mutations
+        elif include_mutations and not MutationStore:
+            logger.warning("MutationStore not available, continuing without mutations")
+        
+        # Use our metadata migration script to process entities properly
+        import subprocess
+        import tempfile
+        
+        # Create temporary file with entities
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+            json.dump({"entities": entities}, temp_file, indent=2)
+            temp_entities_file = temp_file.name
+        
+        try:
+            # Create output directory for the environment
+            # BASE_DIR points to web_ui, so go up one level to get to workspace root
+            web_ui_dir = getattr(settings, 'BASE_DIR', os.getcwd())
+            workspace_root = os.path.dirname(web_ui_dir)
+            env_dir = os.path.join(workspace_root, 'metadata-manager', env_name)
+            editable_entities_dir = os.path.join(env_dir, 'editable_entities')
+            
+            # Create directories if they don't exist
+            os.makedirs(editable_entities_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = f"exported_entities_{timestamp}.json"
+            output_path = os.path.join(editable_entities_dir, output_filename)
+            
+            # Look for mutations file
+            mutations_file = None
+            mutations_paths = [
+                os.path.join(workspace_root, 'params', 'environments', env_name, 'mutations.json'),
+                os.path.join(workspace_root, 'web_ui', 'environments', f'{env_name}_mutations.json'),
+            ]
+            
+            for path in mutations_paths:
+                if os.path.exists(path):
+                    mutations_file = path
+                    break
+            
+            # Build command for our migration script
+            script_path = os.path.join(workspace_root, 'scripts', 'process_metadata_migration.py')
+            cmd = [
+                'python', script_path,
+                '--input', temp_entities_file,
+                '--target-env', env_name,
+                '--output-dir', editable_entities_dir,
+                '--dry-run',  # Generate MCPs but don't emit
+                '--verbose'
+            ]
+            
+            if mutations_file:
+                cmd.extend(['--mutations-file', mutations_file])
+            
+            # Run the script
+            logger.info(f"Running metadata migration script: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=workspace_root)
+            
+            if result.returncode != 0:
+                logger.error(f"Migration script failed: {result.stderr}")
+                return JsonResponse({
+                    "success": False, 
+                    "error": f"Migration processing failed: {result.stderr}"
+                }, status=500)
+            
+            # Also save the original export data as a simple JSON file
+            export_data = {
+                "metadata": {
+                    "export_timestamp": datetime.now().isoformat(),
+                    "export_format": export_format,
+                    "source_environment": env_name,
+                    "entity_count": len(entities),
+                    "mutations_applied": include_mutations,
+                    "mutations_count": len(mutations) if mutations else 0,
+                    "processed_by": "metadata_migration_script"
+                },
+                "entities": entities  # Keep original entities for reference
+            }
+            
+            # Save the export data
+            with open(output_path, 'w') as f:
+                json.dump(export_data, f, indent=2)
+            
+            # Count generated MCP files
+            mcp_files = []
+            for file in os.listdir(editable_entities_dir):
+                if file.endswith('.json') and file != output_filename:
+                    mcp_files.append(file)
+            
+            logger.info(f"Export completed: {output_path}")
+            logger.info(f"Generated {len(mcp_files)} MCP files")
+            
+            return JsonResponse({
+                "success": True,
+                "file_path": output_path,
+                "filename": output_filename,
+                "entity_count": len(entities),
+                "mutations_applied": include_mutations,
+                "environment": env_name,
+                "mcp_files_generated": len(mcp_files),
+                "directory": f"metadata-manager/{env_name}/editable_entities/",
+                "message": f"Exported {len(entities)} entities to {env_name} environment directory with {len(mcp_files)} MCP files generated"
+            })
+            
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_entities_file)
+            except:
+                pass
+        
+    except json.JSONDecodeError:
+        return JsonResponse(
+            {"success": False, "error": "Invalid JSON in request body"}, 
+            status=400
+        )
+    except Exception as e:
+        logger.error(f"Error exporting entities with mutations: {str(e)}")
+        return JsonResponse(
+            {"success": False, "error": str(e)}, 
+            status=500
+        )
+
+
