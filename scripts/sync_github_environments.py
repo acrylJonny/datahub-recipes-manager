@@ -24,11 +24,44 @@ logger = logging.getLogger(__name__)
 
 
 def get_github_token():
-    """Get GitHub token from environment or .env file."""
+    """Get GitHub token from database settings or environment variables."""
+    # First try to get from database (same as web application)
+    try:
+        # Set up Django environment if not already set
+        import django
+        from django.conf import settings
+        
+        if not settings.configured:
+            # Add both the root directory and web_ui directory to the path
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            sys.path.insert(0, str(Path(__file__).parent.parent / "web_ui"))
+            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.settings")
+            
+            # Disable Django logging to avoid database handler issues
+            import logging
+            logging.disable(logging.CRITICAL)
+            
+            django.setup()
+            
+            # Re-enable logging for our script
+            logging.disable(logging.NOTSET)
+
+        # Import the GitSettings model
+        from web_ui.models import GitSettings
+
+        # Get the token from database settings
+        git_settings = GitSettings.get_instance()
+        if git_settings and git_settings.token:
+            return git_settings.token
+            
+    except Exception as e:
+        logger.error(f"Error accessing GitHub token from database: {e}")
+
+    # Fallback to environment variable
     token = os.environ.get("GITHUB_TOKEN")
 
     if not token:
-        # Try to load from .env file
+        # Try to load from .env file as last resort
         env_path = Path(__file__).parent.parent / ".env"
         if env_path.exists():
             with open(env_path, "r") as f:
@@ -49,30 +82,33 @@ def get_github_settings():
     if not repo_owner or not repo_name:
         # Try to get from Django settings
         try:
-            # Add the parent directory to the path so we can import Django settings
-            sys.path.insert(0, str(Path(__file__).parent.parent))
-
-            # Set up Django environment with minimal logging
-            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.web_ui.settings")
-            
-            # Disable Django logging to avoid database handler issues
-            import logging
-            logging.disable(logging.CRITICAL)
-            
+            # Set up Django environment if not already set
             import django
-            django.setup()
+            from django.conf import settings
             
-            # Re-enable logging for our script
-            logging.disable(logging.NOTSET)
+            if not settings.configured:
+                # Add both the root directory and web_ui directory to the path
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                sys.path.insert(0, str(Path(__file__).parent.parent / "web_ui"))
+                os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.settings")
+                
+                # Disable Django logging to avoid database handler issues
+                import logging
+                logging.disable(logging.CRITICAL)
+                
+                django.setup()
+                
+                # Re-enable logging for our script
+                logging.disable(logging.NOTSET)
 
             # Now import the model
             from web_ui.models import GitSettings
 
             # Get the settings
-            settings = GitSettings.get_instance()
-            if settings:
-                repo_owner = settings.username
-                repo_name = settings.repository
+            settings_obj = GitSettings.get_instance()
+            if settings_obj:
+                repo_owner = settings_obj.username
+                repo_name = settings_obj.repository
         except Exception as e:
             logger.error(f"Error accessing Django settings: {e}")
 
@@ -83,21 +119,25 @@ def get_environments_from_webapp():
     """Get environments from the web application database."""
     try:
         # Set up Django environment if not already set
-        if "DJANGO_SETTINGS_MODULE" not in os.environ:
+        import django
+        from django.conf import settings
+        
+        if not settings.configured:
+            # Add both the root directory and web_ui directory to the path
             sys.path.insert(0, str(Path(__file__).parent.parent))
-            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.web_ui.settings")
+            sys.path.insert(0, str(Path(__file__).parent.parent / "web_ui"))
+            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.settings")
             
             # Disable Django logging to avoid database handler issues
             import logging
             logging.disable(logging.CRITICAL)
             
-            import django
             django.setup()
             
             # Re-enable logging for our script
             logging.disable(logging.NOTSET)
-
-        # Import the Environment model
+        
+        # Import the Environment model after Django is set up
         from web_ui.models import Environment
 
         # Get all environments
