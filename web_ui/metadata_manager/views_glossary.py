@@ -1757,11 +1757,11 @@ def get_remote_glossary_data(request):
         local_only_terms = []
         remote_only_terms = []
         
-        # Get DataHub URL and token for proper link generation and API calls
-        from web_ui.models import AppSettings
-        import os
-        datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", "")).rstrip('/')
-        datahub_token = AppSettings.get("datahub_token", os.environ.get("DATAHUB_TOKEN", ""))
+        # Get DataHub URL and token from current connection
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        datahub_url = current_connection.datahub_url.rstrip('/') if current_connection and current_connection.datahub_url else ""
+        datahub_token = current_connection.datahub_token if current_connection and current_connection.datahub_token else ""
 
         # Get comprehensive remote data with all metadata including structured properties and ownership
         try:

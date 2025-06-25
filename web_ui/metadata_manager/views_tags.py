@@ -1327,12 +1327,12 @@ def get_users_and_groups(request):
         # Need to refresh from DataHub
         logger.info("Refreshing users and groups from DataHub")
         
-        # Get DataHub configuration from AppSettings
-        from web_ui.models import AppSettings
-        import os
+        # Get DataHub configuration from current connection
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
         
-        datahub_url = AppSettings.get("datahub_url", os.environ.get("DATAHUB_GMS_URL", ""))
-        datahub_token = AppSettings.get("datahub_token", os.environ.get("DATAHUB_TOKEN", ""))
+        datahub_url = current_connection.datahub_url if current_connection and current_connection.datahub_url else ""
+        datahub_token = current_connection.datahub_token if current_connection and current_connection.datahub_token else ""
         
         if not datahub_url:
             return JsonResponse({
