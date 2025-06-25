@@ -2,99 +2,14 @@
 {% load static %}
 
 {% block extra_css %}
+<!-- Metadata Manager Standardized CSS -->
+<link href="{% static 'metadata_manager/metadata_manager.css' %}" rel="stylesheet" />
 <!-- Select2 CSS -->
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 
 <style>
-    .color-swatch {
-        width: 20px;
-        height: 20px;
-        border-radius: 3px;
-        border: 1px solid #ddd;
-        display: inline-block;
-    }
-    
-    .bulk-actions {
-        display: none;
-        padding: 1rem;
-        background-color: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-    }
-    
-    .bulk-actions.show {
-        display: block;
-    }
-
-    .table th {
-        background-color: #f8f9fa;
-        border-top: none;
-    }
-    
-    .clickable-stat {
-        cursor: pointer;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    
-    .clickable-stat:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-    }
-    
-    .clickable-stat.active {
-        border-color: #007bff;
-        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-    }
-    
-    /* Filter Statistics Styling */
-    .filter-row {
-        min-height: 70px;
-    }
-    
-    .filter-stat {
-        cursor: pointer;
-        transition: all 0.2s ease;
-        border-right: 1px solid #e9ecef;
-        padding: 1rem 0.5rem;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 70px;
-    }
-    
-    .filter-stat:last-child {
-        border-right: none;
-    }
-    
-    .filter-stat:hover {
-        background-color: #f8f9fa;
-    }
-    
-    .clickable-stat:not(.multi-select).active {
-        background-color: #007bff;
-        color: white;
-        border-color: #007bff;
-    }
-    
-    .multi-select.active {
-        background-color: #28a745;
-        color: white;
-        border-color: #28a745;
-    }
-    
-    .clickable-stat.active .text-muted {
-        color: rgba(255, 255, 255, 0.9) !important;
-    }
-    
-    /* Custom column width for overview statistics */
-    .col-md-2-5 {
-        flex: 1;
-        max-width: none;
-    }
-    
-    /* Table column max-width constraints */
+    /* Page-specific overrides for tags */
     .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
         width: 40px;
         max-width: 40px;
@@ -141,60 +56,6 @@
         width: 200px;
         max-width: 200px;
         text-align: left;
-    }
-    
-    /* Sortable table headers */
-    .sortable-header {
-        cursor: pointer;
-        user-select: none;
-        position: relative;
-        padding-right: 20px !important;
-    }
-    
-    .sortable-header:hover {
-        background-color: #e9ecef !important;
-    }
-    
-    .sortable-header::after {
-        content: "⇅";
-        position: absolute;
-        right: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-        opacity: 0.5;
-        font-size: 12px;
-    }
-    
-    .sortable-header.sort-asc::after {
-        content: "↑";
-        opacity: 1;
-        color: #007bff;
-    }
-    
-    .sortable-header.sort-desc::after {
-        content: "↓";
-        opacity: 1;
-        color: #007bff;
-    }
-    
-    /* Pagination styling */
-    .pagination-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        border-top: 1px solid #dee2e6;
-        background-color: #f8f9fa;
-    }
-    
-    .pagination-info {
-        color: #6c757d;
-        font-size: 0.9rem;
-    }
-    
-    .pagination .page-link {
-        color: #007bff;
-        border-color: #dee2e6;
     }
     
     .pagination .page-item.active .page-link {
