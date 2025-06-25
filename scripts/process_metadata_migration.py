@@ -84,6 +84,20 @@ class MetadataMigrationProcessor:
         if not dry_run:
             self._initialize_api_clients()
     
+    def safe_get(self, obj: Any, *keys: str, default: Any = None) -> Any:
+        """Safely get nested values from dictionaries, handling None values"""
+        if not obj:
+            return default
+            
+        current = obj
+        for key in keys:
+            if not isinstance(current, dict):
+                return default
+            current = current.get(key)
+            if current is None:
+                return default
+        return current
+    
     def _initialize_api_clients(self):
         """Initialize DataHub API clients"""
         try:
@@ -117,8 +131,19 @@ class MetadataMigrationProcessor:
             else:
                 entities = data  # List of entities
             
-            self.logger.info(f"Loaded {len(entities)} entities from {filepath}")
-            return entities
+            # Filter out None values and invalid entities
+            valid_entities = []
+            invalid_count = 0
+            for entity in entities:
+                if entity is not None and isinstance(entity, dict) and len(entity) > 0:
+                    valid_entities.append(entity)
+                else:
+                    invalid_count += 1
+                    
+            self.logger.info(f"Loaded {len(valid_entities)} valid entities from {filepath}")
+            if invalid_count > 0:
+                self.logger.warning(f"Filtered out {invalid_count} invalid/null entities")
+            return valid_entities
             
         except Exception as e:
             self.logger.error(f"Failed to load entities from {filepath}: {e}")
@@ -126,14 +151,19 @@ class MetadataMigrationProcessor:
     
     def extract_browse_path(self, entity: Dict[str, Any]) -> str:
         """Extract browse path from entity using the same logic as JavaScript"""
+        if not entity or not isinstance(entity, dict):
+            return ''
+            
         browse_paths = []
         
         # Check browsePathV2 first (preferred)
-        if entity.get('browsePathV2', {}).get('path'):
+        browse_path_v2 = self.safe_get(entity, 'browsePathV2', 'path')
+        if browse_path_v2:
             path_parts = []
-            for path_item in entity['browsePathV2']['path']:
-                if path_item.get('entity', {}).get('properties', {}).get('name'):
-                    path_parts.append(path_item['entity']['properties']['name'])
+            for path_item in browse_path_v2:
+                path_name = self.safe_get(path_item, 'entity', 'properties', 'name')
+                if path_name:
+                    path_parts.append(path_name)
             if path_parts:
                 browse_paths.append('/' + '/'.join(path_parts))
         
@@ -146,11 +176,17 @@ class MetadataMigrationProcessor:
     
     def extract_entity_name(self, entity: Dict[str, Any]) -> str:
         """Extract entity name from entity data"""
+        if not entity or not isinstance(entity, dict):
+            return ''
+            
         # Try different sources for entity name
+        editable_properties = entity.get('editableProperties') or {}
+        properties = entity.get('properties') or {}
+        
         name = (
             entity.get('name') or
-            entity.get('editableProperties', {}).get('name') or
-            entity.get('properties', {}).get('name') or
+            editable_properties.get('name') or
+            properties.get('name') or
             ''
         )
         
@@ -202,6 +238,11 @@ class MetadataMigrationProcessor:
         # Create lookup for target entities
         target_lookup = {}
         for target_entity in target_entities:
+            # Skip None or empty entities
+            if not target_entity or not isinstance(target_entity, dict):
+                self.logger.warning(f"Skipping invalid target entity: {target_entity}")
+                continue
+                
             browse_path = self.extract_browse_path(target_entity)
             name = self.extract_entity_name(target_entity)
             entity_type = target_entity.get('type', '')
@@ -211,6 +252,10 @@ class MetadataMigrationProcessor:
         
         # Match source entities
         for source_entity in source_entities:
+            # Skip None or empty entities
+            if not source_entity or not isinstance(source_entity, dict):
+                self.logger.warning(f"Skipping invalid source entity: {source_entity}")
+                continue
             source_browse_path = self.extract_browse_path(source_entity)
             source_name = self.extract_entity_name(source_entity)
             source_type = source_entity.get('type', '')
@@ -259,17 +304,22 @@ class MetadataMigrationProcessor:
     
     def generate_mcps_for_match(self, match: EntityMatch) -> List[MCPTask]:
         """Generate MCPs for a matched entity"""
+        if not match or not match.source_entity or not isinstance(match.source_entity, dict):
+            self.logger.warning(f"Skipping invalid match: {match}")
+            return []
+            
         mcps = []
         source_entity = match.source_entity
         target_urn = match.target_urn
         
         # Process tags
-        if source_entity.get('tags', {}).get('tags'):
+        tags_list = self.safe_get(source_entity, 'tags', 'tags')
+        if tags_list:
             tag_associations = []
             source_urns = []
             
-            for tag in source_entity['tags']['tags']:
-                tag_urn = tag.get('tag', {}).get('urn', '')
+            for tag in tags_list:
+                tag_urn = self.safe_get(tag, 'tag', 'urn', '')
                 if tag_urn:
                     mutated_tag_urn = self.apply_urn_mutations(tag_urn)
                     source_urns.append(tag_urn)
@@ -284,12 +334,13 @@ class MetadataMigrationProcessor:
                 ))
         
         # Process glossary terms
-        if source_entity.get('glossaryTerms', {}).get('terms'):
+        terms_list = self.safe_get(source_entity, 'glossaryTerms', 'terms')
+        if terms_list:
             term_associations = []
             source_urns = []
             
-            for term in source_entity['glossaryTerms']['terms']:
-                term_urn = term.get('term', {}).get('urn', '')
+            for term in terms_list:
+                term_urn = self.safe_get(term, 'term', 'urn', '')
                 if term_urn:
                     mutated_term_urn = self.apply_urn_mutations(term_urn)
                     source_urns.append(term_urn)
@@ -304,8 +355,8 @@ class MetadataMigrationProcessor:
                 ))
         
         # Process domain
-        if source_entity.get('domain', {}).get('urn'):
-            domain_urn = source_entity['domain']['urn']
+        domain_urn = self.safe_get(source_entity, 'domain', 'urn')
+        if domain_urn:
             mutated_domain_urn = self.apply_urn_mutations(domain_urn)
             
             mcps.append(MCPTask(
@@ -476,9 +527,22 @@ class MetadataMigrationProcessor:
             # Extract unique platforms and entity types
             platforms = set()
             entity_types = set()
-            for entity in source_entities:
-                if entity.get('platform', {}).get('name'):
-                    platforms.add(entity['platform']['name'])
+            for i, entity in enumerate(source_entities):
+                self.logger.debug(f"Processing entity {i}: type={type(entity)}, value={entity}")
+                
+                # Skip None or empty entities
+                if not entity or not isinstance(entity, dict):
+                    self.logger.warning(f"Skipping invalid entity {i}: {entity}")
+                    continue
+                
+                # Double check to ensure entity is not None before accessing
+                if entity is None:
+                    self.logger.error(f"Entity {i} is None after validation!")
+                    continue
+                    
+                platform_info = entity.get('platform') or {}
+                if platform_info.get('name'):
+                    platforms.add(platform_info['name'])
                 if entity.get('type'):
                     entity_types.add(entity['type'])
             
@@ -516,7 +580,9 @@ class MetadataMigrationProcessor:
             }
             
         except Exception as e:
+            import traceback
             self.logger.error(f"Migration processing failed: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
 def main():
@@ -531,6 +597,8 @@ def main():
     args = parser.parse_args()
     
     if args.verbose:
+        # Set up verbose logging
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.getLogger().setLevel(logging.DEBUG)
     
     # Load mutations if provided
@@ -573,7 +641,9 @@ def main():
         print("="*50)
         
     except Exception as e:
+        import traceback
         logging.error(f"Migration failed: {e}")
+        logging.error(f"Traceback: {traceback.format_exc()}")
         sys.exit(1)
 
 if __name__ == '__main__':

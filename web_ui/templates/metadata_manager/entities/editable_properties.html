@@ -205,6 +205,7 @@
         </div>
         <div class="card-body">
             <form id="filterForm" class="row g-3">
+                {% csrf_token %}
                 <div class="col-md-4">
                     <div class="input-group">
                         <span class="input-group-text"><i class="fas fa-search"></i></span>
@@ -357,6 +358,7 @@
             </div>
             <div class="modal-body">
                 <form id="editEntityForm">
+                    {% csrf_token %}
                     <input type="hidden" id="entityUrn" name="entityUrn">
                     <input type="hidden" id="entityType" name="entityType">
                     
@@ -4231,7 +4233,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    'X-CSRFToken': getCookie('csrftoken')
                 },
                 body: JSON.stringify({ type: 'all' })
             });

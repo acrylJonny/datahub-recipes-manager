@@ -17,7 +17,8 @@ class MutationStore:
     Provides methods for transforming entities based on environment configuration.
     """
 
-    def __init__(self):
+    def __init__(self, environment=None):
+        self.environment = environment
         self.entity_transformers = {
             "glossaryNode": self._transform_glossary_node,
             "glossaryTerm": self._transform_glossary_term,
@@ -368,6 +369,29 @@ class MutationStore:
         dataset = apply_entity_mutation(dataset, "dataset", environment_config)
 
         return dataset
+
+    def get_mutations(self) -> Dict[str, Any]:
+        """
+        Get mutations for the current environment.
+        
+        Returns:
+            Dictionary of mutations for the environment
+        """
+        mutations = {}
+        
+        if self.environment:
+            # Try to get mutations from the environment model
+            if hasattr(self.environment, 'mutations') and self.environment.mutations:
+                try:
+                    import json
+                    mutations = json.loads(self.environment.mutations)
+                except json.JSONDecodeError:
+                    logger.error(f"Error parsing mutations JSON for environment {self.environment.name}")
+            
+            # Add environment name to mutations for URN transformations
+            mutations['environment_name'] = getattr(self.environment, 'name', 'dev')
+        
+        return mutations
 
 
 # Singleton instance for use throughout the application
