@@ -16,14 +16,7 @@
         </div>
     </div>
 
-    {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        {% endfor %}
-    {% endif %}
+    <!-- Messages will be handled by JavaScript popup notifications -->
 
     <!-- Environments Section -->
     <div class="card mb-4">
@@ -214,4 +207,9 @@
         </div>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}
+
+{% comment %}
+Django messages are now handled globally by base.html
+No need for page-specific message handling
+{% endcomment %} 

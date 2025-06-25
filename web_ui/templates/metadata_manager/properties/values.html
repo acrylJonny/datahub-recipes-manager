@@ -499,12 +499,12 @@
                     modal.show();
                 } else {
                     console.error('Failed to load entity details:', data.error);
-                    showToast('error', 'Error', data.error || 'Failed to load entity details');
+                    showToast('error', data.error || 'Failed to load entity details');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showToast('error', 'Error', error.message);
+                showToast('error', error.message);
             });
     }
     
@@ -583,12 +583,12 @@
                     modal.show();
                 } else {
                     console.error('Failed to load entity details:', data.error);
-                    showToast('error', 'Error', data.error || 'Failed to load entity details');
+                    showToast('error', data.error || 'Failed to load entity details');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showToast('error', 'Error', error.message);
+                showToast('error', error.message);
             });
     }
     
@@ -635,24 +635,24 @@
                 bootstrap.Modal.getInstance(document.getElementById('editEntityModal')).hide();
                 
                 // Show success message
-                showToast('success', 'Success', 'Entity updated successfully');
+                showToast('success', 'Entity updated successfully');
                 
                 // Reload entities
                 loadEntities(currentPage);
             } else {
-                showToast('error', 'Error', data.error || 'Failed to update entity');
+                showToast('error', data.error || 'Failed to update entity');
             }
         })
         .catch(error => {
             console.error('Error updating entity:', error);
-            showToast('error', 'Error', error.message);
+            showToast('error', error.message);
         });
     });
     
     // Function to download entity data
     document.getElementById('downloadButton').addEventListener('click', function() {
         if (allEntities.length === 0) {
-            showToast('error', 'Error', 'No entities to download');
+            showToast('error', 'No entities to download');
             return;
         }
         
@@ -701,15 +701,15 @@
         })
         .then(data => {
             if (data.success) {
-                showToast('success', 'Success', 'Entities synced successfully');
+                showToast('success', 'Entities synced successfully');
                 loadEntities(1); // Reload first page
             } else {
-                showToast('error', 'Error', data.error || 'Failed to sync entities');
+                showToast('error', data.error || 'Failed to sync entities');
             }
         })
         .catch(error => {
             console.error('Error syncing entities:', error);
-            showToast('error', 'Error', error.message);
+            showToast('error', error.message);
         })
         .finally(() => {
             // Reset button state
@@ -719,11 +719,8 @@
         });
     });
     
-    // Function to show toast notifications
-    function showToast(type, title, message) {
-        // You can implement this based on your UI framework
-        console.log(`${type}: ${title} - ${message}`);
-    }
+    // Using global notification system from notifications.js
+    // showToast(type, message) is now available globally
     
     // Function to get CSRF token from cookies
     function getCookie(name) {

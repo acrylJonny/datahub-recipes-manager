@@ -301,10 +301,26 @@
     <script src="{% static 'js/utils.js' %}?v={{ cache_version }}?v={{ cache_version }}"></script>
     <!-- Common Ownership Management -->
     <script src="{% static 'js/ownership_common.js' %}?v={{ cache_version }}"></script>
+    <!-- Common Notifications -->
+    <script src="{% static 'js/notifications.js' %}?v={{ cache_version }}"></script>
     <!-- Custom JS -->
     <script src="{% static 'js/scripts.js' %}?v={{ cache_version }}"></script>
-    <!-- Initialize tooltips -->
+    <!-- Global Django messages setup for popup notifications -->
     <script>
+        // Set up Django messages globally for all pages
+        {% if messages %}
+            window.djangoMessages = [
+                {% for message in messages %}
+                    {
+                        type: '{{ message.tags }}',
+                        text: '{{ message|escapejs }}'
+                    }{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ];
+        {% else %}
+            window.djangoMessages = [];
+        {% endif %}
+        
         document.addEventListener('DOMContentLoaded', function() {
             // Initialize all tooltips
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"], [title]:not([data-bs-toggle="modal"]):not([data-bs-toggle="tab"])'));
