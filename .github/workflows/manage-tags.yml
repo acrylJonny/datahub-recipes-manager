@@ -95,10 +95,10 @@ jobs:
             path: ${{ steps.check_file.outputs.file_path }}
             
         sink:
-          type: datahub-rest
-          config:
-            server: \${{ env.DATAHUB_URL }}
-            token: \${{ env.DATAHUB_TOKEN }}
+                      type: datahub-rest
+            config:
+              server: \${{ env.DATAHUB_GMS_URL }}
+              token: \${{ env.DATAHUB_GMS_TOKEN }}
             
         pipeline_name: tags_ingestion_${{ matrix.environment }}
         EOF
@@ -106,8 +106,8 @@ jobs:
     - name: Run DataHub ingestion (dry run)
       if: steps.check_file.outputs.exists == 'true' && (github.event.inputs.dry_run == 'true' || github.event_name == 'pull_request')
       env:
-        DATAHUB_URL: ${{ secrets[format('DATAHUB_URL_{0}', matrix.environment)] || secrets.DATAHUB_URL }}
-        DATAHUB_TOKEN: ${{ secrets[format('DATAHUB_TOKEN_{0}', matrix.environment)] || secrets.DATAHUB_TOKEN }}
+        DATAHUB_GMS_URL: ${{ secrets[format('DATAHUB_GMS_URL_{0}', matrix.environment)] || secrets.DATAHUB_GMS_URL }}
+        DATAHUB_GMS_TOKEN: ${{ secrets[format('DATAHUB_GMS_TOKEN_{0}', matrix.environment)] || secrets.DATAHUB_GMS_TOKEN }}
       run: |
         echo "🧪 Running DataHub ingestion in dry-run mode..."
         datahub ingest --dry-run -c tags_recipe.yml
@@ -115,8 +115,8 @@ jobs:
     - name: Run DataHub ingestion
       if: steps.check_file.outputs.exists == 'true' && github.event.inputs.dry_run != 'true' && github.event_name != 'pull_request'
       env:
-        DATAHUB_URL: ${{ secrets[format('DATAHUB_URL_{0}', matrix.environment)] || secrets.DATAHUB_URL }}
-        DATAHUB_TOKEN: ${{ secrets[format('DATAHUB_TOKEN_{0}', matrix.environment)] || secrets.DATAHUB_TOKEN }}
+        DATAHUB_GMS_URL: ${{ secrets[format('DATAHUB_GMS_URL_{0}', matrix.environment)] || secrets.DATAHUB_GMS_URL }}
+        DATAHUB_GMS_TOKEN: ${{ secrets[format('DATAHUB_GMS_TOKEN_{0}', matrix.environment)] || secrets.DATAHUB_GMS_TOKEN }}
       run: |
         echo "🚀 Running DataHub ingestion for tags..."
         datahub ingest -c tags_recipe.yml

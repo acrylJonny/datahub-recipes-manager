@@ -52,7 +52,7 @@ These workflows process `mcp_file.json` files using DataHub's [metadata-file sou
 
 3. **Environment Support:**
    - Processes files for `dev`, `staging`, and `prod` environments
-   - Uses environment-specific secrets: `DATAHUB_URL_<ENV>` and `DATAHUB_TOKEN_<ENV>`
+   - Uses environment-specific secrets: `DATAHUB_GMS_URL_<ENV>` and `DATAHUB_GMS_TOKEN_<ENV>`
    - Falls back to default secrets if environment-specific ones don't exist
 
 4. **Output:**
@@ -76,16 +76,16 @@ Each workflow requires DataHub connection credentials:
 
 ```yaml
 # Global defaults
-DATAHUB_URL: "https://your-datahub-instance.com"
-DATAHUB_TOKEN: "your-datahub-token"
+DATAHUB_GMS_URL: "https://your-datahub-instance.com:8080"
+DATAHUB_GMS_TOKEN: "your-datahub-token"
 
 # Environment-specific (optional, falls back to global)
-DATAHUB_URL_DEV: "https://dev-datahub.com"
-DATAHUB_TOKEN_DEV: "dev-token"
-DATAHUB_URL_STAGING: "https://staging-datahub.com"  
-DATAHUB_TOKEN_STAGING: "staging-token"
-DATAHUB_URL_PROD: "https://prod-datahub.com"
-DATAHUB_TOKEN_PROD: "prod-token"
+DATAHUB_GMS_URL_DEV: "https://dev-datahub.com:8080"
+DATAHUB_GMS_TOKEN_DEV: "dev-token"
+DATAHUB_GMS_URL_STAGING: "https://staging-datahub.com:8080"  
+DATAHUB_GMS_TOKEN_STAGING: "staging-token"
+DATAHUB_GMS_URL_PROD: "https://prod-datahub.com:8080"
+DATAHUB_GMS_TOKEN_PROD: "prod-token"
 ```
 
 ### Additional Secrets
