@@ -1665,50 +1665,54 @@ function bulkAddToPR(tabType) {
                 return;
             }
             
-            // Make the API call to add this tag to staged changes
-            fetch(`/metadata/api/tags/${tagId}/stage_changes/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCsrfToken()
-                },
-                body: JSON.stringify({
-                    environment: currentEnvironment.name,
-                    mutation_name: mutationName
-                })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Failed to add tag ${tag.name || tag.urn} to staged changes`);
+            // Use the proper addTagToStagedChanges function which handles both remote and local tags
+            try {
+                // Check if tag_actions.js functions are available
+                if (typeof addTagToStagedChanges === 'function') {
+                    // Create a promise wrapper around the addTagToStagedChanges function
+                    const originalShowNotification = window.showNotification;
+                    let tagProcessed = false;
+                    
+                    // Temporarily intercept notifications to track success/failure
+                    window.showNotification = (type, message) => {
+                        if (!tagProcessed) {
+                            tagProcessed = true;
+                            if (type === 'success') {
+                                console.log(`Successfully added tag to staged changes: ${tag.name || tag.urn}`);
+                                successCount++;
+                            } else {
+                                console.error(`Error adding tag ${tag.name || tag.urn} to staged changes:`, message);
+                                errorCount++;
+                            }
+                            processedCount++;
+                            
+                            // Update progress
+                            if (processedCount % 5 === 0 || processedCount === validatedTags.length) {
+                                originalShowNotification('success', `Progress: ${processedCount}/${validatedTags.length} tags processed`);
+                            }
+                            
+                            // Restore original notification function
+                            window.showNotification = originalShowNotification;
+                            
+                            // Process the next tag
+                            processNextTag(index + 1);
+                        }
+                    };
+                    
+                    // Call the proper function
+                    addTagToStagedChanges(tag);
+                } else {
+                    // Fallback to the old method if addTagToStagedChanges is not available
+                    throw new Error('addTagToStagedChanges function not available');
                 }
-                return response.json();
-            })
-            .then(data => {
-                console.log(`Successfully added tag to staged changes: ${tag.name || tag.urn}`);
-                successCount++;
-                processedCount++;
-                
-                // Track created files
-                if (data.files_created && data.files_created.length > 0) {
-                    createdFiles = [...createdFiles, ...data.files_created];
-                }
-                
-                // Update progress
-                if (processedCount % 5 === 0 || processedCount === validatedTags.length) {
-                    showNotification('success', `Progress: ${processedCount}/${validatedTags.length} tags processed`);
-                }
-                
-                // Process the next tag
-                processNextTag(index + 1);
-            })
-            .catch(error => {
+            } catch (error) {
                 console.error(`Error adding tag ${tag.name || tag.urn} to staged changes:`, error);
                 errorCount++;
                 processedCount++;
                 
                 // Process the next tag despite the error
                 processNextTag(index + 1);
-            });
+            }
         }
         
         // Start processing tags
