@@ -24,6 +24,17 @@ from scripts.mcps.create_domain_mcps import (
     save_mcps_to_files
 )
 
+# Try to import the new URN generation utilities
+try:
+    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
+    from utils.urn_utils import (
+        generate_domain_urn, 
+        get_mutation_config_for_environment
+    )
+    HAS_NEW_URN_UTILS = True
+except ImportError:
+    HAS_NEW_URN_UTILS = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,11 +101,25 @@ def add_domain_to_staged_changes(
     setup_logging()
     
     try:
-        # Generate domain URN
+        # Generate domain URN with mutation support
         domain_urn = f"urn:li:domain:{domain_id}"
+        custom_urn = None
         
         # Extract mutation_name from kwargs if provided, otherwise use environment
         mutation_name = kwargs.pop('mutation_name', environment)
+        
+        if HAS_NEW_URN_UTILS:
+            try:
+                mutation_config = get_mutation_config_for_environment(environment)
+                if mutation_config:
+                    mutated_urn = generate_domain_urn(domain_urn, environment, mutation_config)
+                    if mutated_urn != domain_urn:
+                        custom_urn = mutated_urn
+                        domain_urn = mutated_urn
+                        logger.info(f"Generated mutated URN for domain: {f'urn:li:domain:{domain_id}'} -> {mutated_urn}")
+                logger.info(f"Using mutation config for environment '{environment}': {mutation_config is not None}")
+            except Exception as e:
+                logger.warning(f"Could not get mutation config for environment '{environment}': {e}")
         
         # Create MCPs using the new comprehensive function
         mcps = create_domain_staged_changes(
@@ -113,6 +138,7 @@ def add_domain_to_staged_changes(
             parent_domain=parent_domain,
             include_all_aspects=include_all_aspects,
             custom_aspects=custom_aspects,
+            custom_urn=custom_urn,
             environment=environment,
             mutation_name=mutation_name,
             **kwargs
@@ -274,6 +300,7 @@ def add_domain_to_staged_changes_legacy(
     forms = domain_data.get("forms", [])
     test_results = domain_data.get("test_results", [])
     display_properties = domain_data.get("display_properties", {})
+    mutation_name = domain_data.get("mutation_name")
     
     # Use the new function
     result = add_domain_to_staged_changes(
@@ -294,7 +321,8 @@ def add_domain_to_staged_changes_legacy(
         custom_aspects=custom_aspects,
         environment=environment,
         owner=owner,
-        base_dir="metadata-manager"
+        base_dir="metadata-manager",
+        mutation_name=mutation_name
     )
     
     # Convert to legacy format (file paths only)

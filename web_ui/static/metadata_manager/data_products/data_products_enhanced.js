@@ -464,7 +464,7 @@ function getStatusBadgeClass(status) {
 function getActionButtons(product, tabType) {
     const buttons = [];
     
-    // View button (always available)
+    // 1. View button (always first - unique to data products)
     buttons.push(`
         <button type="button" class="btn btn-sm btn-outline-primary view-item" 
                 onclick="showProductDetails(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
@@ -473,57 +473,13 @@ function getActionButtons(product, tabType) {
         </button>
     `);
     
-    // View in DataHub button - only for non-local products
-    if (product.urn && !product.urn.includes('local:') && tabType !== 'local') {
-        buttons.push(`
-            <a href="${getDataHubUrl(product.urn, 'dataProduct')}" 
-               class="btn btn-sm btn-outline-info" 
-               target="_blank" title="View in DataHub">
-                <i class="fas fa-external-link-alt"></i>
-            </a>
-        `);
-    }
-    
-    // Tab-specific actions
+    // Tab-specific actions - following consistent order
     switch (tabType) {
-        case 'synced':
-            buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-warning" 
-                        onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
-                        title="Add to Staged Changes">
-                    <i class="fab fa-github"></i>
-                </button>
-            `);
-            buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-info" 
-                        onclick="resyncProduct('${product.id}', '${product.urn}', this)"
-                        title="Resync">
-                    <i class="fas fa-sync-alt"></i>
-                </button>
-            `);
-            buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-success" 
-                        onclick="pushProductToDataHub('${product.id}', this)"
-                        title="Push to DataHub">
-                    <i class="fas fa-upload"></i>
-                </button>
-            `);
-            buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-danger" 
-                        onclick="deleteLocalProduct('${product.id}', this)"
-                        title="Delete Local">
-                    <i class="fas fa-trash"></i>
-                </button>
-            `);
-            break;
         case 'local':
-            buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-warning" 
-                        onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
-                        title="Add to Staged Changes">
-                    <i class="fab fa-github"></i>
-                </button>
-            `);
+            // 2. Edit - For local data products (would need to be implemented)
+            // Skipping edit for now as it's not implemented for data products
+            
+            // 3. Sync to DataHub - For local products
             buttons.push(`
                 <button type="button" class="btn btn-sm btn-outline-success" 
                         onclick="syncProductToDataHub('${product.id}', this)"
@@ -531,6 +487,26 @@ function getActionButtons(product, tabType) {
                     <i class="fas fa-upload"></i>
                 </button>
             `);
+            
+            // 4. Download JSON - Available for all
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-secondary" 
+                        onclick="downloadProductJson(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Download JSON">
+                    <i class="fas fa-file-download"></i>
+                </button>
+            `);
+            
+            // 5. Add to Staged Changes - Available for all
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-warning" 
+                        onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Add to Staged Changes">
+                    <i class="fab fa-github"></i>
+                </button>
+            `);
+            
+            // 6. Delete Local - For local products
             buttons.push(`
                 <button type="button" class="btn btn-sm btn-outline-danger" 
                         onclick="deleteLocalProduct('${product.id}', this)"
@@ -539,7 +515,27 @@ function getActionButtons(product, tabType) {
                 </button>
             `);
             break;
+            
         case 'remote':
+            // 3. Sync to Local - For remote products
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-primary" 
+                        onclick="syncProductToLocal('${product.urn}', this)"
+                        title="Sync to Local">
+                    <i class="fas fa-download"></i>
+                </button>
+            `);
+            
+            // 4. Download JSON - Available for all
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-secondary" 
+                        onclick="downloadProductJson(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Download JSON">
+                    <i class="fas fa-file-download"></i>
+                </button>
+            `);
+            
+            // 5. Add to Staged Changes - Available for all
             buttons.push(`
                 <button type="button" class="btn btn-sm btn-outline-warning" 
                         onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
@@ -547,13 +543,8 @@ function getActionButtons(product, tabType) {
                     <i class="fab fa-github"></i>
                 </button>
             `);
-            buttons.push(`
-                <button type="button" class="btn btn-sm btn-outline-info" 
-                        onclick="syncProductToLocal('${product.urn}', this)"
-                        title="Sync to Local">
-                    <i class="fas fa-download"></i>
-                </button>
-            `);
+            
+            // 6. Delete Remote - For remote products
             buttons.push(`
                 <button type="button" class="btn btn-sm btn-outline-danger" 
                         onclick="deleteRemoteProduct('${product.urn}', this)"
@@ -562,6 +553,67 @@ function getActionButtons(product, tabType) {
                 </button>
             `);
             break;
+            
+        case 'synced':
+            // 2. Edit - For synced data products (would need to be implemented)
+            // Skipping edit for now as it's not implemented for data products
+            
+            // 3. Resync - For synced products
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-info" 
+                        onclick="resyncProduct('${product.id}', '${product.urn}', this)"
+                        title="Resync from DataHub">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            `);
+            
+            // 3b. Push to DataHub - For modified synced products
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-success" 
+                        onclick="pushProductToDataHub('${product.id}', this)"
+                        title="Push to DataHub">
+                    <i class="fas fa-upload"></i>
+                </button>
+            `);
+            
+            // 4. Download JSON - Available for all
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-secondary" 
+                        onclick="downloadProductJson(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Download JSON">
+                    <i class="fas fa-file-download"></i>
+                </button>
+            `);
+            
+            // 5. Add to Staged Changes - Available for all
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-warning" 
+                        onclick="addProductToStagedChanges(${DataUtils.safeJsonStringify(product).replace(/'/g, "\\'")})"
+                        title="Add to Staged Changes">
+                    <i class="fab fa-github"></i>
+                </button>
+            `);
+            
+            // 6. Delete Local - For synced products
+            buttons.push(`
+                <button type="button" class="btn btn-sm btn-outline-danger" 
+                        onclick="deleteLocalProduct('${product.id}', this)"
+                        title="Delete Local">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `);
+            break;
+    }
+    
+    // View in DataHub button - always last for non-local products
+    if (product.urn && !product.urn.includes('local:') && tabType !== 'local') {
+        buttons.push(`
+            <a href="${getDataHubUrl(product.urn, 'dataProduct')}" 
+               class="btn btn-sm btn-outline-info" 
+               target="_blank" title="View in DataHub">
+                <i class="fas fa-external-link-alt"></i>
+            </a>
+        `);
     }
     
     return `<div class="btn-group" role="group">${buttons.join('')}</div>`;

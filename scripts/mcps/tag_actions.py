@@ -26,6 +26,14 @@ from scripts.mcps.create_tag_mcps import (
     save_mcp_to_file
 )
 
+# Try to import the new URN generation utilities
+try:
+    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
+    from utils.urn_utils import generate_tag_urn, get_mutation_config_for_environment
+    HAS_NEW_URN_UTILS = True
+except ImportError:
+    HAS_NEW_URN_UTILS = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -238,6 +246,26 @@ def add_tag_to_staged_changes(
         # Create new MCPs for this tag
         new_mcps = []
         
+        # Get mutation configuration for environment-based URN generation
+        mutation_config = None
+        if HAS_NEW_URN_UTILS:
+            try:
+                mutation_config = get_mutation_config_for_environment(environment)
+                logger.info(f"Using mutation config for environment '{environment}': {mutation_config is not None}")
+            except Exception as e:
+                logger.warning(f"Could not get mutation config for environment '{environment}': {e}")
+        
+        # Generate mutated URN if mutations are configured
+        mutated_urn = tag_urn
+        if HAS_NEW_URN_UTILS and mutation_config:
+            try:
+                mutated_urn = generate_tag_urn(tag_urn, environment, mutation_config)
+                if mutated_urn != tag_urn:
+                    logger.info(f"Generated mutated URN for tag: {tag_urn} -> {mutated_urn}")
+            except Exception as e:
+                logger.warning(f"Could not generate mutated URN: {e}")
+                mutated_urn = tag_urn
+        
         # Create properties MCP
         properties_mcp = create_tag_properties_mcp(
             tag_id=tag_id,
@@ -246,7 +274,8 @@ def add_tag_to_staged_changes(
             description=description,
             color_hex=color_hex,
             environment=environment,
-            mutation_name=mutation_name
+            mutation_name=mutation_name,
+            custom_urn=mutated_urn if mutated_urn != tag_urn else None
         )
         new_mcps.append(properties_mcp)
         
@@ -255,7 +284,8 @@ def add_tag_to_staged_changes(
             tag_id=tag_id,
             owner=owner,
             environment=environment,
-            mutation_name=mutation_name
+            mutation_name=mutation_name,
+            custom_urn=mutated_urn if mutated_urn != tag_urn else None
         )
         new_mcps.append(ownership_mcp)
         

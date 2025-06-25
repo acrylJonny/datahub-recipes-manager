@@ -77,6 +77,15 @@
                                 </label>
                                 <div class="form-text">Apply mutations to tag entities</div>
                             </div>
+
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="apply_to_glossary_nodes" name="apply_to_glossary_nodes" 
+                                       {% if form_data.apply_to_glossary_nodes or mutation.apply_to_glossary_nodes %}checked{% endif %}>
+                                <label class="form-check-label" for="apply_to_glossary_nodes">
+                                    <strong>Glossary Nodes</strong>
+                                </label>
+                                <div class="form-text">Apply mutations to glossary node entities</div>
+                            </div>
                             
                             <div class="form-check mb-2">
                                 <input type="checkbox" class="form-check-input" id="apply_to_glossary_terms" name="apply_to_glossary_terms" 
@@ -86,9 +95,11 @@
                                 </label>
                                 <div class="form-text">Apply mutations to glossary term entities</div>
                             </div>
+                            
                         </div>
                         
                         <div class="col-md-6">
+                            
                             <div class="form-check mb-2">
                                 <input type="checkbox" class="form-check-input" id="apply_to_structured_properties" name="apply_to_structured_properties" 
                                        {% if form_data.apply_to_structured_properties or mutation.apply_to_structured_properties %}checked{% endif %}>
@@ -105,6 +116,15 @@
                                     <strong>Domains</strong>
                                 </label>
                                 <div class="form-text">Apply mutations to domain entities</div>
+                            </div>
+                            
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="apply_to_data_products" name="apply_to_data_products" 
+                                       {% if form_data.apply_to_data_products or mutation.apply_to_data_products %}checked{% endif %}>
+                                <label class="form-check-label" for="apply_to_data_products">
+                                    <strong>Data Products</strong>
+                                </label>
+                                <div class="form-text">Apply mutations to data product entities</div>
                             </div>
                         </div>
                     </div>
@@ -130,7 +150,7 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Custom Properties</label>
+                    <label class="form-label">Custom Properties (Not yet implemented)</label>
                     <div class="form-text mb-2">
                         Add key-value pairs for custom properties that will be applied during metadata transformation.
                         <a href="#" data-bs-toggle="modal" data-bs-target="#customPropertiesHelp">View examples</a>

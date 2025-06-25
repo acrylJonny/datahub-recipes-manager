@@ -542,6 +542,7 @@ class Assertion(BaseMetadataModel):
     
     # Platform information
     platform_name = models.CharField(max_length=100, blank=True, null=True)
+    platform_instance = models.CharField(max_length=100, blank=True, null=True, help_text="Platform instance of the dataset")
     
     # External URL for assertion
     external_url = models.URLField(blank=True, null=True)
@@ -588,6 +589,7 @@ class Assertion(BaseMetadataModel):
             "assertion_type": self.assertion_type,
             "entity_urn": self.entity_urn,
             "platform_name": self.platform_name,
+            "platform_instance": self.platform_instance,
             "external_url": self.external_url,
             "removed": self.removed,
             "sync_status": self.sync_status,
@@ -953,6 +955,13 @@ class Test(BaseMetadataModel):
     # Test specific fields
     category = models.CharField(max_length=100, blank=True, null=True)
     
+    # Entity that this test is attached to
+    entity_urn = models.CharField(max_length=500, blank=True, null=True)
+    
+    # Platform information
+    platform_name = models.CharField(max_length=100, blank=True, null=True)
+    platform_instance = models.CharField(max_length=100, blank=True, null=True, help_text="Platform instance of the dataset")
+    
     # Test definition
     definition_json = models.JSONField(blank=True, null=True, help_text="Test definition in JSON format")
     yaml_definition = models.TextField(blank=True, null=True, help_text="Test definition in YAML format")
@@ -979,6 +988,9 @@ class Test(BaseMetadataModel):
             "description": self.description,
             "category": self.category,
             "urn": self.urn,
+            "entity_urn": self.entity_urn,
+            "platform_name": self.platform_name,
+            "platform_instance": self.platform_instance,
             "definition_json": self.definition_json,
             "yaml_definition": self.yaml_definition,
             "results": {

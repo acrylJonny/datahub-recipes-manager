@@ -2502,8 +2502,8 @@ function getDataProductActionButtons(item, tabType) {
                 </button>
             `;
             
-            // 2. Sync to DataHub - Only for local-only data products
-            if (hasDataHubConnection && item.sync_status === 'LOCAL_ONLY') {
+            // 2. Sync to DataHub - For all local data products
+            if (hasDataHubConnection) {
                 buttons += `
                     <button type="button" class="btn btn-sm btn-outline-success sync-to-datahub" 
                             data-product-id="${item.id}" title="Sync to DataHub">

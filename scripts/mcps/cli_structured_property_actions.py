@@ -33,11 +33,12 @@ def parse_args():
     # Add structured property to staged changes
     stage_parser = subparsers.add_parser("stage-property", help="Add structured property to staged changes")
     stage_parser.add_argument("--property-file", required=True, help="JSON file with structured property data")
-    stage_parser.add_argument("--environment", default="dev", help="Environment name")
+    stage_parser.add_argument("--environment", default="dev", help="Environment name (dev, staging, prod)")
     stage_parser.add_argument("--owner", default="admin", help="Owner username")
-    stage_parser.add_argument("--base-dir", default="metadata", help="Base directory for output")
+    stage_parser.add_argument("--base-dir", help="Base directory for output")
     stage_parser.add_argument("--include-all-aspects", action="store_true", default=True, help="Include all supported aspects")
     stage_parser.add_argument("--custom-aspects", help="JSON string with custom aspects")
+    stage_parser.add_argument("--mutation-name", help="Mutation name for deterministic URN generation")
     
     # General options
     parser.add_argument(
@@ -121,7 +122,8 @@ def main():
                 custom_aspects=custom_aspects,
                 environment=args.environment,
                 owner=args.owner,
-                base_dir=args.base_dir
+                base_dir=args.base_dir,
+                mutation_name=args.mutation_name
             )
             
             if result.get("success"):

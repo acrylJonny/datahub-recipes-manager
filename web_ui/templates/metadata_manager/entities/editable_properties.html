@@ -2,6 +2,93 @@
 
 {% block title %}Editable Properties - DataHub CI/CD Manager{% endblock %}
 
+{% block extra_css %}
+<style>
+/* Multi-select dropdown styling */
+.multi-select-dropdown {
+    position: relative;
+}
+
+.multi-select-dropdown select[multiple] {
+    display: none;
+}
+
+.multi-select-display {
+    min-height: 38px;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background-color: #fff;
+    cursor: pointer;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.multi-select-display:focus {
+    border-color: #86b7fe;
+    outline: 0;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.multi-select-placeholder {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.multi-select-tag {
+    background-color: #0d6efd;
+    color: white;
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.multi-select-tag .remove {
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.multi-select-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    max-height: 200px;
+    overflow-y: auto;
+    display: none;
+}
+
+.multi-select-option {
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f8f9fa;
+}
+
+.multi-select-option:hover {
+    background-color: #f8f9fa;
+}
+
+.multi-select-option.selected {
+    background-color: #e7f1ff;
+    color: #0d6efd;
+}
+
+.multi-select-option:last-child {
+    border-bottom: none;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="mb-4">
@@ -23,11 +110,8 @@
             <button type="button" class="btn btn-outline-secondary me-2" id="downloadButton">
                 <i class="fas fa-download me-1"></i> Download
             </button>
-            <button type="button" class="btn btn-outline-info me-2" id="refreshCacheButton" title="Clear cache and refresh data">
-                <i class="fas fa-sync-alt me-1"></i> Refresh Cache
-            </button>
-            <button type="button" class="btn btn-success me-2" id="addAllToPrButton">
-                <i class="fas fa-code-branch me-1"></i> Add All to PR
+            <button type="button" class="btn btn-success me-2" id="addAllToStagedChangesButton">
+                                        <i class="fas fa-plus me-1"></i> Add Filtered to Staged Changes
             </button>
         </div>
     </div>
@@ -74,8 +158,8 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <select class="form-select" id="platform" name="platform">
-                        <option value="">All Platforms</option>
+                    <select class="form-select" id="platform" name="platform" multiple>
+                        <!-- Options will be populated dynamically -->
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -90,7 +174,7 @@
                     <div class="card bg-light">
                         <div class="card-body">
                             <div class="row g-3">
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label">Browse Path</label>
                                     <div class="input-group">
                                         <span class="input-group-text">/</span>
@@ -100,37 +184,13 @@
                                         Filter by directory path (e.g. "prod/data")
                                     </div>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Platform Instance</label>
-                                    <input type="text" class="form-control" id="platformInstance" name="platformInstance" placeholder="Enter instance name">
-                                    <div class="form-text">
-                                        Filter by specific platform instance
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Has Properties</label>
-                                    <select class="form-select" id="hasProperties" name="hasProperties">
-                                        <option value="">Any</option>
-                                        <option value="name">Name</option>
-                                        <option value="description">Description</option>
-                                        <option value="documentation">Documentation</option>
-                                        <option value="owners">Owners</option>
-                                        <option value="tags">Tags</option>
-                                        <option value="glossaryTerms">Glossary Terms</option>
-                                    </select>
-                                </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">Search Mode</label>
-                                    <div>
-                                        <div class="form-check form-check-inline">
-                                            <input class="form-check-input" type="checkbox" id="usePlatformPagination" name="usePlatformPagination" checked>
-                                            <label class="form-check-label" for="usePlatformPagination">
-                                                Use comprehensive search (recommended)
-                                            </label>
-                                        </div>
-                                        <div class="form-text">
-                                            Searches across all platforms, entity types, and browse paths for complete results. Uncheck for faster, targeted searches.
-                                        </div>
+                                    <label class="form-label">Platform Instance</label>
+                                    <select class="form-select" id="platformInstance" name="platformInstance" multiple>
+                                        <!-- Options will be populated dynamically -->
+                                    </select>
+                                    <div class="form-text">
+                                        Filter by specific platform instance (includes "Empty" for entities without instances)
                                     </div>
                                 </div>
                             </div>
@@ -151,7 +211,7 @@
             </div>
             <div>
                 <h5 class="alert-heading">Search Performance Notice</h5>
-                <p class="mb-0">Comprehensive search across all platforms, instances, and browse paths may take longer in large environments. Results are cached to improve pagination performance.</p>
+                <p class="mb-0">Comprehensive search across all platforms, instances, and browse paths may take longer in large environments. Results are cached temporarily for better pagination performance.</p>
             </div>
         </div>
     </div>
@@ -166,7 +226,7 @@
                 </div>
                 <div class="text-muted small">
                     <i class="fas fa-info-circle me-1"></i>
-                    Results are cached for 60 minutes for better performance
+                    Results are cached during your session for better performance
                 </div>
             </div>
         </div>
@@ -482,7 +542,11 @@ document.addEventListener('DOMContentLoaded', function() {
     let totalPages = 1;
     let itemsPerPage = 20;
     let allEntities = [];
+    let filteredEntities = []; // Client-side filtered entities
     let currentCacheKey = null; // Store the current cache key for progress monitoring
+    let platformInstanceCache = new Map(); // Cache for platform instances by platform and connection
+    let isSearchInProgress = false; // Track if a search is currently running
+    let allResultsLoaded = false; // Track if we have all results loaded for client-side pagination
     
     // User, group, and ownership type cache
     let usersAndGroupsCache = {
@@ -493,65 +557,259 @@ document.addEventListener('DOMContentLoaded', function() {
         cacheExpiry: 5 * 60 * 1000 // 5 minutes
     };
     
-    // Structured properties cache for building filters
+    // Structured properties cache for building filters (connection-specific)
     let structuredPropertiesCache = {
         properties: [],
         lastFetched: null,
-        cacheExpiry: 60 * 60 * 1000, // 60 minutes
-        loading: false
+        cacheExpiry: 120 * 1000, // 2 minutes only (Apply always refreshes)
+        loading: false,
+        connectionId: null
     };
     
-    // Load platforms dynamically from the backend
+    // Get current connection ID from the base template's connection dropdown
+    function getCurrentConnectionId() {
+        const connectionElement = document.getElementById('current-connection-name');
+        const connectionId = connectionElement ? connectionElement.dataset.connectionId || 'default' : 'default';
+        console.log('Current connection ID:', connectionId, 'Element found:', !!connectionElement);
+        return connectionId;
+    }
+    
+    // Load platforms dynamically from the backend with connection-specific caching
     function loadPlatforms(entityType = '') {
+        const currentConnection = getCurrentConnectionId();
+        loadPlatformsForConnection(entityType, currentConnection);
+    }
+    
+    // Load platforms for a specific connection (used when connection changes)
+    function loadPlatformsForConnection(entityType = '', connectionId = null) {
         const platformSelect = document.getElementById('platform');
         const applyButton = document.getElementById('applyFiltersButton');
         const spinner = document.getElementById('applyButtonSpinner');
         
+        // Use provided connection ID or get current one
+        const currentConnection = connectionId || getCurrentConnectionId();
+        
+        console.log('Loading platforms for entity type:', entityType, 'connection:', currentConnection, '- always fetching fresh');
+        
         // Disable apply button while loading platforms
-        applyButton.disabled = true;
-        spinner.style.display = 'inline-block';
+        if (applyButton) {
+            applyButton.disabled = true;
+        }
+        if (spinner) {
+            spinner.style.display = 'inline-block';
+        }
         
         // Clear existing options and show loading
-        platformSelect.innerHTML = '<option value="">Loading platforms...</option>';
-        platformSelect.disabled = true;
+        if (platformSelect) {
+            platformSelect.innerHTML = '<option value="">Loading platforms...</option>';
+            platformSelect.disabled = true;
+        }
         
         // Fetch platforms from backend
         const url = entityType ? 
             `/metadata/platforms/?entity_type=${encodeURIComponent(entityType)}` : 
             '/metadata/platforms/';
             
+        console.log('Fetching platforms from:', url, 'for connection:', currentConnection);
+        
         fetch(url)
             .then(response => response.json())
             .then(data => {
                 if (data.success && data.platforms) {
-                    // Clear loading option
-                    platformSelect.innerHTML = '<option value="">All Platforms</option>';
-                    
-                    // Add platform options
-                    data.platforms.forEach(platform => {
-                        const option = document.createElement('option');
-                        option.value = platform;
-                        option.textContent = platform.charAt(0).toUpperCase() + platform.slice(1);
-                        platformSelect.appendChild(option);
-                    });
-                    
-                    // Enable platform dropdown
-                    platformSelect.disabled = false;
-                    console.log(`Loaded ${data.platforms.length} platforms for entity type: ${entityType || 'all'}`);
+                    // No caching - always use fresh platform data
+                    populatePlatformDropdown(data.platforms);
+                    console.log(`Loaded ${data.platforms.length} platforms for entity type: ${entityType || 'all'}, connection: ${currentConnection}`);
                 } else {
-                    platformSelect.innerHTML = '<option value="">No platforms available</option>';
+                    if (platformSelect) {
+                        platformSelect.innerHTML = '<option value="">No platforms available</option>';
+                    }
                     console.error('Failed to load platforms:', data.error || 'Unknown error');
                 }
             })
             .catch(error => {
                 console.error('Error loading platforms:', error);
-                platformSelect.innerHTML = '<option value="">Error loading platforms</option>';
+                if (platformSelect) {
+                    platformSelect.innerHTML = '<option value="">Error loading platforms</option>';
+                }
             })
             .finally(() => {
                 // Enable apply button when platforms loading is complete
-                applyButton.disabled = false;
-                spinner.style.display = 'none';
+                if (applyButton) {
+                    applyButton.disabled = false;
+                    applyButton.innerHTML = '<i class="fas fa-search me-1"></i> Apply';
+                }
+                if (spinner) {
+                    spinner.style.display = 'none';
+                }
             });
+    }
+    
+    // Helper function to populate platform dropdown
+    function populatePlatformDropdown(platforms) {
+        const platformSelect = document.getElementById('platform');
+        
+        if (!platformSelect) {
+            console.warn('Platform select element not found');
+            return;
+        }
+        
+        // Clear loading option
+        platformSelect.innerHTML = '<option value="">All Platforms</option>';
+        
+        // Add platform options
+        platforms.forEach(platform => {
+            const option = document.createElement('option');
+            option.value = platform;
+            option.textContent = platform.charAt(0).toUpperCase() + platform.slice(1);
+            platformSelect.appendChild(option);
+        });
+        
+        // Enable platform dropdown
+        platformSelect.disabled = false;
+    }
+    
+    // Helper function to extract platform name from entity (returns just the name, not HTML)
+    function getEntityPlatformName(entity) {
+        // Priority 1: Check direct platform reference from GraphQL
+        if (entity.platform) {
+            return entity.platform.name || 
+                   (entity.platform.properties && entity.platform.properties.displayName) || 
+                   null;
+        }
+        
+        // Priority 2: Check for dataPlatformInstance
+        if (entity.dataPlatformInstance && entity.dataPlatformInstance.platform) {
+            return entity.dataPlatformInstance.platform.name || 
+                   (entity.dataPlatformInstance.platform.properties && entity.dataPlatformInstance.platform.properties.displayName) || 
+                   null;
+        }
+        
+        // Priority 3: Check for platform in dataFlow for DataJobs
+        if (entity.type === 'DATA_JOB' && entity.dataFlow && entity.dataFlow.platform) {
+            return entity.dataFlow.platform.name || 
+                   (entity.dataFlow.platform.properties && entity.dataFlow.platform.properties.displayName) || 
+                   null;
+        }
+        
+        // Priority 4: Try to extract from URN for datasets and similar entities
+        if (entity.urn && entity.urn.includes('urn:li:dataPlatform:')) {
+            try {
+                const matches = entity.urn.match(/urn:li:dataPlatform:([^,)]+)/);
+                if (matches && matches[1]) {
+                    return matches[1];
+                }
+            } catch (e) {
+                console.error('Error extracting platform from URN:', e);
+            }
+        }
+        
+        return null;
+    }
+    
+    // Helper function to extract platform instance from entity
+    function getEntityPlatformInstance(entity) {
+        // Check for dataPlatformInstance.instanceId (this is the main location)
+        if (entity.dataPlatformInstance && entity.dataPlatformInstance.instanceId) {
+            return entity.dataPlatformInstance.instanceId;
+        }
+        
+        // Fallback to properties.name if available
+        if (entity.dataPlatformInstance && entity.dataPlatformInstance.properties && entity.dataPlatformInstance.properties.name) {
+            return entity.dataPlatformInstance.properties.name;
+        }
+        
+        return null;
+    }
+    
+    // Extract and cache ALL platform instances from loaded entities
+    function extractAllPlatformInstances() {
+        if (allEntities.length === 0) {
+            return;
+        }
+        
+        console.log('Extracting all platform instances from', allEntities.length, 'entities');
+        
+        // Group instances by platform
+        const instancesByPlatform = new Map();
+        
+        allEntities.forEach(entity => {
+            const platformName = getEntityPlatformName(entity);
+            const instanceId = getEntityPlatformInstance(entity);
+            
+            if (platformName && instanceId) {
+                if (!instancesByPlatform.has(platformName)) {
+                    instancesByPlatform.set(platformName, new Set());
+                }
+                instancesByPlatform.get(platformName).add(instanceId);
+                console.log('Found instance:', instanceId, 'for platform:', platformName);
+            }
+        });
+        
+        // Cache instances for each platform
+        const currentConnection = getCurrentConnectionId();
+        instancesByPlatform.forEach((instances, platformName) => {
+            const instanceCacheKey = `${platformName}_${currentConnection}`;
+            const instancesArray = Array.from(instances).sort();
+            platformInstanceCache.set(instanceCacheKey, instancesArray);
+            console.log('Cached', instancesArray.length, 'instances for platform:', platformName);
+        });
+        
+        // Update the dropdown based on current platform selection
+        updatePlatformInstancesDropdown();
+    }
+    
+    // Update platform instances dropdown based on selected platform
+    function updatePlatformInstancesDropdown() {
+        const platform = document.getElementById('platform').value;
+        const platformInstanceSelect = document.getElementById('platformInstance');
+        
+        if (!platform) {
+            // Show all unique instances across all platforms
+            const allInstances = new Set();
+            platformInstanceCache.forEach((instances, key) => {
+                instances.forEach(instance => allInstances.add(instance));
+            });
+            const sortedInstances = Array.from(allInstances).sort();
+            populatePlatformInstanceDropdown(sortedInstances);
+            console.log('Showing all', sortedInstances.length, 'instances across all platforms');
+            return;
+        }
+        
+        console.log('Updating platform instances for platform:', platform);
+        
+        // Create connection-specific cache key for platform instances
+        const currentConnection = getCurrentConnectionId();
+        const instanceCacheKey = `${platform}_${currentConnection}`;
+        
+        // Check if we have cached instances for this platform and connection
+        if (platformInstanceCache.has(instanceCacheKey)) {
+            const instances = platformInstanceCache.get(instanceCacheKey);
+            populatePlatformInstanceDropdown(instances);
+            console.log('Using cached', instances.length, 'instances for platform:', platform);
+        } else {
+            // No instances found for this platform
+            populatePlatformInstanceDropdown([]);
+            console.log('No instances found for platform:', platform);
+        }
+    }
+    
+    // Legacy function name for backward compatibility
+    function updatePlatformInstances() {
+        updatePlatformInstancesDropdown();
+    }
+    
+    // Helper function to populate platform instance dropdown
+    function populatePlatformInstanceDropdown(instances) {
+        const platformInstanceSelect = document.getElementById('platformInstance');
+        
+        platformInstanceSelect.innerHTML = '<option value="">All Instances</option>';
+        
+        instances.forEach(instance => {
+            const option = document.createElement('option');
+            option.value = instance;
+            option.textContent = instance;
+            platformInstanceSelect.appendChild(option);
+        });
     }
     
     // Load all platforms initially
@@ -562,6 +820,106 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load structured properties for advanced filtering in parallel
     loadStructuredProperties();
+    
+    // Create a global function to handle connection changes (called from base template)
+    window.switchConnectionCache = function(newConnectionId) {
+        console.log('Connection switched to:', newConnectionId, '- clearing all caches...');
+        
+        // Show user feedback that we're switching connections
+        const applyButton = document.getElementById('applyFiltersButton');
+        const spinner = document.getElementById('applyButtonSpinner');
+        if (applyButton && spinner) {
+            applyButton.disabled = true;
+            spinner.style.display = 'inline-block';
+            applyButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Switching Connection...';
+        }
+        
+        // Get the previous connection before it changes
+        const previousConnection = getCurrentConnectionId();
+        console.log('Previous connection:', previousConnection, 'New connection:', newConnectionId);
+        
+        // Clear all caches when connection changes
+        resultsCache.clear();
+        structuredPropertiesCache.properties = [];
+        structuredPropertiesCache.lastFetched = null;
+        structuredPropertiesCache.connectionId = null;
+        platformInstanceCache.clear(); // Clear platform instance cache
+        
+        // Platform cache removed - no need to clear sessionStorage
+        
+        // Clear entity data
+        allEntities = [];
+        filteredEntities = [];
+        
+        // Clear the entities table
+        const tbody = document.getElementById('entitiesTableBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="13" class="text-center py-5">
+                        <div class="mb-3">
+                            <i class="fas fa-exchange-alt fa-4x text-primary"></i>
+                        </div>
+                        <h4>Connection Changed</h4>
+                        <p class="text-muted">Loading platforms for the new connection...</p>
+                    </td>
+                </tr>
+            `;
+        }
+        
+        // Reset entity count
+        const entityCount = document.getElementById('entityCount');
+        if (entityCount) {
+            entityCount.textContent = '0 entities';
+        }
+        
+        // Clear platform instance dropdown
+        const platformInstanceSelect = document.getElementById('platformInstance');
+        if (platformInstanceSelect) {
+            platformInstanceSelect.innerHTML = '<option value="">All Instances</option>';
+        }
+        
+        // Force reload platforms AND structured properties for the new connection
+        setTimeout(() => {
+            const entityType = document.getElementById('entityType').value;
+            console.log('Reloading platforms for entity type:', entityType, 'and new connection:', newConnectionId);
+            loadPlatformsForConnection(entityType, newConnectionId);
+            
+            // Also reload structured properties for the new connection
+            console.log('Reloading structured properties for new connection:', newConnectionId);
+            loadStructuredPropertiesForConnection(newConnectionId);
+        }, 200);
+        
+        console.log('Cleared all caches due to connection change');
+    };
+    
+    // Add event listeners for platform changes
+    document.getElementById('platform').addEventListener('change', function() {
+        updatePlatformInstancesDropdown();
+        // Only apply client-side filters if we have entities loaded
+        if (allEntities.length > 0) {
+            applyClientSideFilters();
+        }
+    });
+    document.getElementById('entityType').addEventListener('change', function() {
+        loadPlatforms(this.value);
+        // Apply client-side filtering if we have loaded entities
+        if (allEntities.length > 0) {
+            applyClientSideFilters();
+        }
+    });
+    
+    // Add event listeners for client-side filtering (only for advanced filters)
+    document.getElementById('browsePath').addEventListener('input', debounce(function() {
+        if (allEntities.length > 0) {
+            applyClientSideFilters();
+        }
+    }, 300));
+    document.getElementById('platformInstance').addEventListener('change', function() {
+        if (allEntities.length > 0) {
+            applyClientSideFilters();
+        }
+    });
     
     // Toggle advanced filters visibility
     document.getElementById('toggleAdvancedFilters').addEventListener('click', function() {
@@ -666,6 +1024,186 @@ document.addEventListener('DOMContentLoaded', function() {
         loadRecentBrowsePaths();
     }
     
+    // Client-side filtering functions
+    function applyClientSideFilters() {
+        if (allEntities.length === 0) {
+            return; // No data to filter
+        }
+        
+        const entityType = document.getElementById('entityType').value;
+        const selectedPlatforms = getSelectedValues(document.getElementById('platform'));
+        const browsePath = document.getElementById('browsePath').value.trim();
+        const selectedPlatformInstances = getSelectedValues(document.getElementById('platformInstance'));
+        
+        filteredEntities = allEntities.filter(entity => {
+            // Entity type filter
+            if (entityType && entityType !== '' && entity.type !== entityType) {
+                return false;
+            }
+            
+            // Platform filter (multi-select)
+            if (selectedPlatforms.length > 0) {
+                const entityPlatformName = getEntityPlatformName(entity);
+                const matches = selectedPlatforms.some(platform => 
+                    entityPlatformName && entityPlatformName.toLowerCase() === platform.toLowerCase()
+                );
+                if (!matches) {
+                    return false;
+                }
+            }
+            
+            // Browse path filter
+            if (browsePath) {
+                const entityBrowsePaths = getEntityBrowsePaths(entity);
+                if (!entityBrowsePaths.some(path => path.toLowerCase().includes(browsePath.toLowerCase()))) {
+                    return false;
+                }
+            }
+            
+            // Platform instance filter (multi-select)
+            if (selectedPlatformInstances.length > 0) {
+                const entityInstance = getEntityPlatformInstance(entity);
+                const matches = selectedPlatformInstances.some(instance => 
+                    entityInstance && entityInstance.toLowerCase() === instance.toLowerCase()
+                );
+                if (!matches) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        // Update the display with filtered results
+        updateEntitiesTableWithFilteredData();
+        updatePagination(filteredEntities.length);
+        
+        // Update entity count
+        const entityCount = document.getElementById('entityCount');
+        if (filteredEntities.length !== allEntities.length) {
+            entityCount.textContent = `${filteredEntities.length} of ${allEntities.length} entities`;
+        } else {
+            entityCount.textContent = `${filteredEntities.length} entities`;
+        }
+    }
+    
+    // Update the entities table with filtered data
+    function updateEntitiesTableWithFilteredData() {
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageEntities = filteredEntities.slice(start, end);
+        
+        const tbody = document.getElementById('entitiesTableBody');
+        tbody.innerHTML = '';
+        
+        if (pageEntities.length > 0) {
+            pageEntities.forEach(entity => {
+                const tr = createEntityRow(entity);
+                tbody.appendChild(tr);
+            });
+        } else {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td colspan="13" class="text-center">
+                    <div class="py-4">
+                        <i class="fas fa-filter fa-3x text-muted mb-3"></i>
+                        <h5>No entities match the current filters</h5>
+                        <p class="text-muted">Try adjusting your filter criteria</p>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+    
+    // Create a table row for an entity
+    function createEntityRow(entity) {
+        const tr = document.createElement('tr');
+        
+        // Get entity name using helper that checks all possible locations
+        let displayName = getEntityName(entity);
+        
+        // Get entity platform information
+        const platformInfo = getEntityPlatform(entity);
+        
+        // Get browse paths using the improved function from data contracts
+        const browsePaths = getEntityBrowsePaths(entity);
+        let browsePathDisplay = '<span class="text-muted">N/A</span>';
+        if (browsePaths.length > 0) {
+            browsePathDisplay = browsePaths.map(path => 
+                `<div class="small text-truncate">${path}</div>`
+            ).join('');
+        }
+        
+        // Check if entity is deprecated
+        const isDeprecated = entity.deprecation ? entity.deprecation.deprecated : false;
+        const deprecatedBadge = isDeprecated ? 
+            '<span class="badge bg-warning text-dark">Yes</span>' : 
+            '<span class="badge bg-success">No</span>';
+            
+        // Count various properties
+        const editablePropsCount = countEditableProperties(entity);
+        const schemaMetadataCount = countSchemaMetadata(entity);
+        const domainsCount = countDomains(entity);
+        const glossaryTermsCount = countGlossaryTerms(entity);
+        const tagsCount = countTags(entity);
+        const structuredPropsCount = countStructuredProperties(entity);
+        
+        tr.innerHTML = `
+            <td title="${displayName}">
+                <strong>${displayName.length > 30 ? displayName.substring(0, 30) + '...' : displayName}</strong>
+            </td>
+            <td>
+                <span class="badge bg-primary">${entity.type}</span>
+            </td>
+            <td>${platformInfo}</td>
+            <td>${deprecatedBadge}</td>
+            <td class="text-center">
+                <span class="badge ${editablePropsCount > 0 ? 'bg-primary' : 'bg-secondary'}">${editablePropsCount}</span>
+            </td>
+            <td class="text-center">
+                <span class="badge ${schemaMetadataCount > 0 ? 'bg-info' : 'bg-secondary'}">${schemaMetadataCount}</span>
+            </td>
+            <td class="text-center">
+                <span class="badge ${domainsCount > 0 ? 'bg-success' : 'bg-secondary'}">${domainsCount}</span>
+            </td>
+            <td class="text-center">
+                <span class="badge ${glossaryTermsCount > 0 ? 'bg-warning text-dark' : 'bg-secondary'}">${glossaryTermsCount}</span>
+            </td>
+            <td class="text-center">
+                <span class="badge ${tagsCount > 0 ? 'bg-secondary' : 'bg-secondary'}">${tagsCount}</span>
+            </td>
+            <td class="text-center">
+                <span class="badge ${structuredPropsCount > 0 ? 'bg-dark' : 'bg-secondary'}">${structuredPropsCount}</span>
+            </td>
+            <td title="${browsePaths.join(', ')}">${browsePathDisplay}</td>
+            <td title="${entity.urn}">
+                <code class="small">${entity.urn.length > 40 ? entity.urn.substring(0, 40) + '...' : entity.urn}</code>
+            </td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-info view-entity" 
+                        data-urn="${entity.urn}" data-type="${entity.type}">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </td>
+        `;
+        
+        return tr;
+    }
+    
+    // Debounce function for input fields
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
     // Enhanced results cache system with background loading
     const resultsCache = {
         // Cache storage
@@ -677,9 +1215,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Background loading state
         backgroundLoading: new Set(),
         
-        // Generate a cache key from search parameters
+        // Generate a cache key from search parameters (connection-specific)
         generateCacheKey: function(params) {
+            const currentConnection = getCurrentConnectionId();
             return JSON.stringify({
+                connectionId: currentConnection,
                 query: params.query || '',
                 entityType: params.entityType || '',
                 platform: params.platform || '',
@@ -794,8 +1334,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return true;
             }
             
-            // Use cache if it's not stale (60 minutes)
-            const maxAge = 60 * 60 * 1000;
+            // Use cache if it's not stale (2 minutes)
+            const maxAge = 2 * 60 * 1000;
             const isStale = Date.now() - cachedData.timestamp > maxAge;
             
             if (isStale) {
@@ -857,7 +1397,7 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         
         // Clear cache older than a certain age (in milliseconds)
-        clearStale: function(maxAge = 60 * 60 * 1000) { // Default: 60 minutes
+        clearStale: function(maxAge = 2 * 60 * 1000) { // Default: 2 minutes
             const now = Date.now();
             let clearedCount = 0;
             
@@ -876,14 +1416,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Update the loadEntities function to handle progress updates and progressive rendering
     window.loadEntities = async function(page = 1) {
+        // Prevent multiple simultaneous searches
+        if (isSearchInProgress) {
+            console.log('Search already in progress, ignoring new request');
+            showSearchInProgressMessage();
+            return;
+        }
+        
+        isSearchInProgress = true;
+        updateSearchUI(true);
+        
+        // Clear any existing client-side filtering when starting a new server query
+        filteredEntities = [];
+        allEntities = [];
+        allResultsLoaded = false; // Reset the all results loaded flag
+        
         const searchQuery = document.getElementById('searchQuery').value;
         const entityType = document.getElementById('entityType').value;
         const platform = document.getElementById('platform').value;
         const browsePath = document.getElementById('browsePath')?.value || '';
         const platformInstance = document.getElementById('platformInstance')?.value || '';
-        const hasProperties = document.getElementById('hasProperties')?.value || '';
-        const sortBy = document.getElementById('sortBy')?.value || 'name';
-        const usePlatformPagination = document.getElementById('usePlatformPagination').checked;
+        const hasProperties = ''; // Removed from UI - comprehensive search is always enabled
+        const sortBy = 'name'; // Default sorting
+        const usePlatformPagination = true; // Always use platform pagination for comprehensive search
         
         // Add a parameter to explicitly filter for entities with editable properties
         const editablePropertiesOnly = true;
@@ -895,25 +1450,25 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const start = (page - 1) * itemsPerPage;
         
-        // Build advanced filters for more efficient searching
+        // Build advanced filters for comprehensive search (without platform-specific filtering)
         let orFilters = null;
         
-        // Only use advanced filters if platform pagination is enabled
+        // Build comprehensive filters for efficient searching
         if (usePlatformPagination) {
             try {
                 // Show loading state while building filters
-                updateCacheStatus('Building advanced filters...');
+                updateCacheStatus('Building comprehensive search filters...');
                 
-                // Build filters in the background
-                orFilters = await buildAdvancedFilters(platform);
+                // Build filters with platform optimization
+                orFilters = await buildAdvancedFilters(platform); // Pass platform for backend optimization
                 
-                console.log(`Built ${orFilters.length} advanced filters for efficient search`);
+                console.log(`Built ${orFilters.length} comprehensive search filters`);
             } catch (error) {
-                console.error('Error building advanced filters:', error);
+                console.error('Error building comprehensive search filters:', error);
             }
         }
         
-        console.log(`Loading entities with: start=${start}, count=${itemsPerPage}, searchQuery=${searchQuery}, entityType=${entityType}, platform=${platform}, browsePath=${browsePath}, platformInstance=${platformInstance}, usePlatformPagination=${usePlatformPagination}, editablePropertiesOnly=${editablePropertiesOnly}, advancedFilters=${orFilters ? 'yes' : 'no'}`);
+        console.log(`Loading entities with backend optimization: start=${start}, count=${itemsPerPage}, searchQuery=${searchQuery}, entityType=${entityType}, platform=${platform}, browsePath=${browsePath}, platformInstance=${platformInstance}, usePlatformPagination=${usePlatformPagination}, editablePropertiesOnly=${editablePropertiesOnly}`);
         
         
         // Show loading state with better coverage
@@ -934,7 +1489,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                             </div>
                             <div id="progressDetails" class="small text-muted">
-                                Preparing comprehensive search across all platforms and entity types...
+                                Loading entities with backend optimization + client-side filtering...
                             </div>
                         </div>
                     </div>
@@ -942,7 +1497,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </tr>
         `;
         
-        // Build the query string
+        // Build the query string (include server-side filters for backend optimization)
         let query = searchQuery;
         
         // Add browse path filter if specified
@@ -954,7 +1509,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Add platform instance filter if specified
+        // Add platform instance filter if specified (backend optimization)
         if (platformInstance && platform) {
             if (query && query !== '*') {
                 query += ` AND instance:${platformInstance}`;
@@ -963,7 +1518,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Add property existence filters if specified
+        // Add property existence filters if specified (backend optimization)
         if (hasProperties) {
             if (query && query !== '*') {
                 query += ` AND has:${hasProperties}`;
@@ -972,29 +1527,47 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Create search parameters object for cache key
+        // Create search parameters object - pass through backend filters for performance
         const searchParams = {
             query: query,
-            entityType: entityType,
-            platform: platform,
+            entityType: entityType, // Pass to backend for performance optimization
+            platform: platform, // Pass to backend for performance optimization
             browsePath: browsePath,
-            platformInstance: platformInstance,
+            platformInstance: platformInstance, // Pass to backend for performance optimization
             hasProperties: hasProperties,
             sortBy: sortBy,
             usePlatformPagination: usePlatformPagination,
             editablePropertiesOnly: editablePropertiesOnly,
-            orFilters: orFilters // Include the advanced filters
-            // Note: refreshCache is not included in regular searches
+            orFilters: orFilters, // Include the advanced filters
+            refreshCache: true, // Always force fresh results when Apply is clicked
+            // Store for client-side filtering
+            clientSideEntityType: entityType,
+            clientSidePlatforms: getSelectedValues(document.getElementById('platform')),
+            clientSidePlatformInstances: getSelectedValues(document.getElementById('platformInstance'))
         };
         
         // Start the search and progress monitoring
-        startSearchWithProgress(searchParams, start, itemsPerPage, null, page);
+        try {
+            await startSearchWithProgress(searchParams, start, itemsPerPage, null, page);
+        } catch (error) {
+            console.error('Search failed:', error);
+            showError(`Search failed: ${error.message}`);
+        } finally {
+            isSearchInProgress = false;
+            updateSearchUI(false);
+        }
     };
     
-    // Start search with progress monitoring
-    function startSearchWithProgress(searchParams, start, count, cacheKey, page) {
-        // Construct the API URL
-        let apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${count}&searchQuery=${encodeURIComponent(searchParams.query)}&entityType=${searchParams.entityType}&platform=${searchParams.platform}&use_platform_pagination=${searchParams.usePlatformPagination}&sortBy=${searchParams.sortBy}&editable_only=${searchParams.editablePropertiesOnly}`;
+    // Start search with progress monitoring - optimized to load ALL results and cache them
+    async function startSearchWithProgress(searchParams, start, count, cacheKey, page) {
+        // For the initial search, always request ALL results (start=0, count=10000)
+        // This ensures we load everything into cache for fast client-side pagination
+        const loadAllResults = page === 1 || !allEntities.length;
+        const requestStart = loadAllResults ? 0 : start;
+        const requestCount = loadAllResults ? 10000 : count; // Load up to 10K results initially
+        
+        // Construct the API URL (pass through platform and entityType for backend optimization)
+        let apiUrl = `/metadata/entities/editable/list/?start=${requestStart}&count=${requestCount}&searchQuery=${encodeURIComponent(searchParams.query)}&entityType=${searchParams.entityType}&platform=${searchParams.platform}&use_platform_pagination=${searchParams.usePlatformPagination}&sortBy=${searchParams.sortBy}&editable_only=${searchParams.editablePropertiesOnly}`;
         
         // Add refresh_cache parameter if specified
         if (searchParams.refreshCache) {
@@ -1007,67 +1580,91 @@ document.addEventListener('DOMContentLoaded', function() {
             apiUrl += `&orFilters=${orFiltersParam}`;
         }
         
-        console.log(`Starting search: ${apiUrl}`);
+        console.log(`Starting search (loading ${loadAllResults ? 'ALL' : 'paginated'} results): ${apiUrl}`);
         
-        fetch(apiUrl)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    if (data.in_progress) {
-                        // Store the cache key for progress monitoring
-                        currentCacheKey = data.cache_key;
-                        
-                        // Search is in progress, start monitoring
-                        updateProgress(data.progress);
-                        monitorProgress(currentCacheKey, searchParams, start, count, page);
+        try {
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            
+            if (data.success) {
+                if (data.in_progress) {
+                    // Store the cache key for progress monitoring
+                    currentCacheKey = data.cache_key;
+                    
+                    // Search is in progress, start monitoring
+                    updateProgress(data.progress);
+                    await monitorProgress(currentCacheKey, searchParams, requestStart, requestCount, page, loadAllResults);
+                } else {
+                    // Search completed immediately (cached results)
+                    if (loadAllResults) {
+                        // We loaded all results - handle them and then show the requested page
+                        handleAllSearchResults(data.data, page);
                     } else {
-                        // Search completed immediately (cached results)
+                        // Regular paginated results
                         handleSearchResults(data.data, page);
                     }
-                } else {
-                    showError(data.error || 'Failed to start search');
                 }
-            })
-            .catch(error => {
-                console.error('Error starting search:', error);
-                showError(`Failed to start search: ${error.message}`);
-            });
+            } else {
+                throw new Error(data.error || 'Failed to start search');
+            }
+        } catch (error) {
+            console.error('Error starting search:', error);
+            isSearchInProgress = false;
+            updateSearchUI(false);
+            showError(`Failed to start search: ${error.message}`);
+            throw error; // Re-throw to be caught by caller
+        }
     }
     
     // Monitor search progress
-    function monitorProgress(cacheKey, searchParams, start, count, page) {
-        const progressInterval = setInterval(() => {
-            fetch(`/metadata/entities/editable/progress/?cache_key=${cacheKey}`)
-                .then(response => response.json())
-                .then(data => {
+    async function monitorProgress(cacheKey, searchParams, start, count, page, loadAllResults = false) {
+        return new Promise((resolve, reject) => {
+            const progressInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/metadata/entities/editable/progress/?cache_key=${cacheKey}`);
+                    const data = await response.json();
+                    
                     if (data.success) {
                         updateProgress(data.progress);
+                        updateCacheStatus(`${data.progress.current_step} (${data.progress.percentage}%)`);
                         
                         if (data.progress.is_complete) {
                             clearInterval(progressInterval);
                             
                             if (data.progress.error_message) {
+                                isSearchInProgress = false;
+                                updateSearchUI(false);
                                 showError(data.progress.error_message);
+                                reject(new Error(data.progress.error_message));
                             } else {
                                 // Search completed, fetch results
-                                fetchCompletedResults(searchParams, start, count, page);
+                                await fetchCompletedResults(searchParams, start, count, page, loadAllResults);
+                                resolve();
                             }
                         }
                     } else {
                         // If no search in progress, it might have completed very quickly
-                        // Try to fetch results directly
                         clearInterval(progressInterval);
                         console.log('No progress found, attempting to fetch results directly');
-                        fetchCompletedResults(searchParams, start, count, page);
+                        await fetchCompletedResults(searchParams, start, count, page, loadAllResults);
+                        resolve();
                     }
-                })
-                .catch(error => {
+                } catch (error) {
                     clearInterval(progressInterval);
                     console.error('Error monitoring progress:', error);
+                    isSearchInProgress = false;
+                    updateSearchUI(false);
+                    
                     // Try to fetch results in case the search completed
-                    fetchCompletedResults(searchParams, start, count, page);
-                });
-        }, 1000); // Check every second
+                    try {
+                        await fetchCompletedResults(searchParams, start, count, page, loadAllResults);
+                        resolve();
+                    } catch (fetchError) {
+                        reject(fetchError);
+                    }
+                }
+            }, 1000); // Check every second
+        });
     }
     
     // Update progress display
@@ -1111,53 +1708,269 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Fetch completed results
-    function fetchCompletedResults(searchParams, start, count, page) {
-        // Don't include refresh_cache when fetching completed results
-        const apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${count}&searchQuery=${encodeURIComponent(searchParams.query)}&entityType=${searchParams.entityType}&platform=${searchParams.platform}&use_platform_pagination=${searchParams.usePlatformPagination}&sortBy=${searchParams.sortBy}&editable_only=${searchParams.editablePropertiesOnly}`;
+    async function fetchCompletedResults(searchParams, start, count, page, loadAllResults = false) {
+        // Don't include refresh_cache when fetching completed results but include orFilters
+        // Pass through entityType and platform for backend optimization
+        let apiUrl = `/metadata/entities/editable/list/?start=${start}&count=${count}&searchQuery=${encodeURIComponent(searchParams.query)}&entityType=${searchParams.entityType}&platform=${searchParams.platform}&use_platform_pagination=${searchParams.usePlatformPagination}&sortBy=${searchParams.sortBy}&editable_only=${searchParams.editablePropertiesOnly}`;
         
-        fetch(apiUrl)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && !data.in_progress) {
+        // Add orFilters as JSON if available
+        if (searchParams.orFilters && searchParams.orFilters.length > 0) {
+            const orFiltersParam = encodeURIComponent(JSON.stringify(searchParams.orFilters));
+            apiUrl += `&orFilters=${orFiltersParam}`;
+        }
+        
+        try {
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            
+            if (data.success && !data.in_progress) {
+                // Search completed - handle results (even if 0 results)
+                fetchCompletedResults.retryCount = 0; // Reset retry counter on success
+                
+                if (loadAllResults) {
+                    // We loaded all results - handle them and then show the requested page
+                    handleAllSearchResults(data.data, page);
+                } else {
+                    // Regular paginated results
                     handleSearchResults(data.data, page);
-                } else if (data.success && data.in_progress) {
-                    // Still in progress, continue monitoring
-                    if (currentCacheKey) {
-                        setTimeout(() => {
-                            monitorProgress(currentCacheKey, searchParams, start, count, page);
-                        }, 1000);
+                }
+            } else if (data.success && data.in_progress) {
+                // Still in progress, continue monitoring (but with a retry limit to prevent infinite loops)
+                if (currentCacheKey) {
+                    updateCacheStatus('Search still in progress, continuing to monitor...');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // Add retry counter to prevent infinite loops
+                    if (!fetchCompletedResults.retryCount) {
+                        fetchCompletedResults.retryCount = 0;
+                    }
+                    fetchCompletedResults.retryCount++;
+                    
+                    if (fetchCompletedResults.retryCount > 30) { // Max 30 seconds of retries
+                        console.warn('Search monitoring timeout - treating as complete with 0 results');
+                        if (loadAllResults) {
+                            handleAllSearchResults({ searchResults: [], total: 0, filtered_total: 0 }, page);
+                        } else {
+                            handleSearchResults({ searchResults: [], total: 0, filtered_total: 0 }, page);
+                        }
+                        fetchCompletedResults.retryCount = 0;
                     } else {
-                        showError('Search still in progress but no cache key available');
+                        await monitorProgress(currentCacheKey, searchParams, start, count, page, loadAllResults);
                     }
                 } else {
-                    showError(data.error || 'Failed to fetch completed results');
+                    throw new Error('Search still in progress but no cache key available');
                 }
-            })
-            .catch(error => {
-                console.error('Error fetching results:', error);
-                showError(`Failed to fetch results: ${error.message}`);
-            });
+            } else {
+                throw new Error(data.error || 'Failed to fetch completed results');
+            }
+        } catch (error) {
+            console.error('Error fetching results:', error);
+            isSearchInProgress = false;
+            updateSearchUI(false);
+            showError(`Failed to fetch results: ${error.message}`);
+            
+            // Reset retry counter on error
+            fetchCompletedResults.retryCount = 0;
+            throw error; // Re-throw to be caught by caller
+        }
     }
     
-            // Handle search results
+            // Handle search results (regular pagination)
         function handleSearchResults(data, page) {
-            updateCacheStatus('Results loaded from cache (' + new Date().toLocaleTimeString() + ')');
+            updateCacheStatus('Results loaded (' + new Date().toLocaleTimeString() + ')');
             
-            // Store entities for download
+            // Store entities for download and client-side filtering
             allEntities = data.searchResults.map(result => result.entity);
             
-            updateEntitiesTable(data);
+            // Apply client-side filtering
+            applyClientSideFilters();
+            
+            // Extract and cache all platform instances from loaded data
+            extractAllPlatformInstances();
+            
+            // Create enhanced data structure for the updated table rendering
+            const enhancedData = {
+                ...data,
+                searchResults: data.searchResults.map(result => ({
+                    ...result,
+                    entity: result.entity
+                }))
+            };
+            
+            // Use existing table rendering but with enhanced data
+            updateEntitiesTableWithCheckboxes(enhancedData);
             updatePagination(data.total);
             
             // Show entity count
             const entityCount = document.getElementById('entityCount');
-            if (data.total > 0) {
-                entityCount.textContent = `${data.total} entities`;
+            if (filteredEntities.length > 0) {
+                const totalText = allEntities.length !== filteredEntities.length ? 
+                    ` (${filteredEntities.length} of ${allEntities.length} shown)` : 
+                    '';
+                entityCount.textContent = `${filteredEntities.length} entities${totalText}`;
             } else {
                 entityCount.textContent = 'No entities found';
             }
+            
+            // Search completed, reset UI state
+            isSearchInProgress = false;
+            updateSearchUI(false);
+        }
+
+        // Handle ALL search results and enable client-side pagination
+        function handleAllSearchResults(data, requestedPage) {
+            updateCacheStatus('All results loaded - enabling fast pagination (' + new Date().toLocaleTimeString() + ')');
+            
+            // Store ALL entities for fast client-side operations
+            allEntities = data.searchResults.map(result => result.entity);
+            
+            // Apply client-side filtering
+            applyClientSideFilters();
+            allResultsLoaded = true; // Mark that we have all results
+            
+            // Extract and cache all platform instances from loaded data
+            extractAllPlatformInstances();
+            
+            console.log(`Loaded ${allEntities.length} total entities, ${filteredEntities.length} after filtering`);
+            
+            // Show the requested page using client-side pagination
+            showClientSidePage(requestedPage);
+            
+            // Update entity count
+            const entityCount = document.getElementById('entityCount');
+            if (filteredEntities.length > 0) {
+                const totalText = allEntities.length !== filteredEntities.length ? 
+                    ` (${filteredEntities.length} of ${allEntities.length} shown)` : 
+                    ' (all loaded for fast browsing)';
+                entityCount.textContent = `${filteredEntities.length} entities${totalText}`;
+            } else {
+                entityCount.textContent = 'No entities found';
+            }
+            
+            // Search completed, reset UI state
+            isSearchInProgress = false;
+            updateSearchUI(false);
+        }
+
+        // Show a specific page using client-side pagination
+        function showClientSidePage(page) {
+            const start = (page - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            
+            // Get the entities for this page
+            const pageEntities = filteredEntities.slice(start, end);
+            
+            // Create data structure for table rendering
+            const pageData = {
+                start: start,
+                count: pageEntities.length,
+                total: filteredEntities.length,
+                filtered_total: filteredEntities.length,
+                searchResults: pageEntities.map(entity => ({ entity: entity }))
+            };
+            
+            // Update the table
+            updateEntitiesTableWithCheckboxes(pageData);
+            
+            // Update pagination controls
+            updatePagination(filteredEntities.length);
+            
+            // Update current page
+            currentPage = page;
+            
+            console.log(`Showing page ${page}: entities ${start + 1}-${Math.min(end, filteredEntities.length)} of ${filteredEntities.length}`);
         }
     
+    // Update search UI to show/hide loading states
+    function updateSearchUI(searching) {
+        const applyButton = document.getElementById('applyFiltersButton');
+        const spinner = document.getElementById('applyButtonSpinner');
+        const cacheStatus = document.getElementById('cacheStatusText');
+        
+        if (searching) {
+            // Show loading state
+            if (applyButton) {
+                applyButton.disabled = true;
+                applyButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Searching...';
+            }
+            if (cacheStatus) {
+                cacheStatus.innerHTML = '<i class="fas fa-search fa-spin me-1"></i>Search in progress...';
+            }
+        } else {
+            // Hide loading state
+            if (applyButton) {
+                applyButton.disabled = false;
+                applyButton.innerHTML = '<i class="fas fa-search me-1"></i> Apply';
+            }
+            if (cacheStatus) {
+                cacheStatus.innerHTML = '<i class="fas fa-clock me-1"></i>Ready to search...';
+            }
+        }
+    }
+    
+    // Show message when search is already in progress
+    function showSearchInProgressMessage() {
+        const tbody = document.getElementById('entitiesTableBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="13" class="text-center py-4">
+                        <div class="alert alert-info mb-0">
+                            <div class="d-flex align-items-center justify-content-center">
+                                <div class="spinner-border text-info me-3" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <div>
+                                    <strong>Search Already Running</strong><br>
+                                    <small>Please wait for the current search to complete</small>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+    
+    // Enhanced table rendering function with checkboxes
+    function updateEntitiesTableWithCheckboxes(data) {
+        const tbody = document.getElementById('entitiesTableBody');
+        tbody.innerHTML = '';
+        
+        if (data && data.searchResults && data.searchResults.length > 0) {
+            data.searchResults.forEach(result => {
+                const entity = result.entity;
+                if (!entity) return;
+                
+                const tr = createEntityRow(entity);
+                tbody.appendChild(tr);
+            });
+            
+            // Add event listeners for action buttons
+            document.querySelectorAll('.view-entity').forEach(button => {
+                button.addEventListener('click', function() {
+                    const urn = this.getAttribute('data-urn');
+                    const type = this.getAttribute('data-type');
+                    openViewModal(urn, type);
+                });
+            });
+            
+            // Note: edit-entity and add-to-staged buttons have been removed
+        } else {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td colspan="13" class="text-center">
+                    <div class="py-4">
+                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                        <h5>No entities found</h5>
+                        <p class="text-muted">Try adjusting your search criteria</p>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+
     // Helper function to format search summary
     function formatSearchSummary(query, entityType, platform, browsePath, platformInstance) {
         const parts = [];
@@ -1691,7 +2504,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     const page = parseInt(link.getAttribute('data-page'));
                     if (page && page !== currentPage) {
                         currentPage = page;
-                        loadEntities(page);
+                        
+                        // Use client-side pagination if we have all results loaded
+                        if (allResultsLoaded) {
+                            console.log(`Using client-side pagination for page ${page}`);
+                            showClientSidePage(page);
+                        } else {
+                            console.log(`Using server-side pagination for page ${page}`);
+                            loadEntities(page);
+                        }
                     }
                 });
             });
@@ -2285,121 +3106,88 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Helper function to get browse paths from an entity
+    // Helper function to get browse paths from an entity (improved version like data contracts)
     function getBrowsePaths(entity) {
-        let paths = [];
+        return getEntityBrowsePaths(entity);
+    }
+    
+    // Function to get browse paths from entity (improved version like data contracts)
+    function getEntityBrowsePaths(entity) {
+        const paths = [];
         
-        // Try browsePathV2 first (priority)
-        if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
-            const pathNames = [];
-            for (const pathEntry of entity.browsePathV2.path) {
-                // Check if it has an entity with properties.name
-                if (pathEntry.entity && pathEntry.entity.properties && pathEntry.entity.properties.name) {
-                    pathNames.push(pathEntry.entity.properties.name);
-                }
-                // Check if it has a container with a name
-                else if (pathEntry.entity && 
-                    pathEntry.entity.container && 
-                    pathEntry.entity.container.properties && 
-                    pathEntry.entity.container.properties.name) {
-                    
-                    pathNames.push(pathEntry.entity.container.properties.name);
-                }
-                // Fallback to the name field
-                else if (pathEntry && pathEntry.name) {
-                    pathNames.push(pathEntry.name);
-                }
-            }
-            
-            if (pathNames.length > 0) {
-                // Reverse the order of path components
-                const reversedPathNames = [...pathNames].reverse();
-                paths.push('/' + reversedPathNames.join('/'));
-            }
-        }
-        
-        // Try browsePaths
-        if (entity.browsePaths && Array.isArray(entity.browsePaths)) {
-            entity.browsePaths.forEach(path => {
-                let pathValue = '';
-                if (typeof path === 'string') {
-                    pathValue = path;
-                } else if (path && path.path) {
-                    pathValue = path.path;
-                } else if (path && path.elements && Array.isArray(path.elements)) {
-                    // Reverse the elements array
-                    const reversedElements = [...path.elements].reverse();
-                    pathValue = '/' + reversedElements.join('/');
-                }
+        try {
+            // Try browsePathV2 first (preferred) - similar to data contracts implementation
+            if (entity.browsePathV2 && entity.browsePathV2.path && Array.isArray(entity.browsePathV2.path)) {
+                const pathParts = [];
                 
-                if (pathValue) {
-                    // Make sure path starts with /
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
+                entity.browsePathV2.path.forEach(pathEntity => {
+                    if (pathEntity && pathEntity.entity && pathEntity.entity.properties && pathEntity.entity.properties.name) {
+                        pathParts.push(pathEntity.entity.properties.name);
                     }
-                    
-                    // Reverse the path components
-                    const pathParts = pathValue.split('/').filter(p => p);
-                    const reversedPath = '/' + [...pathParts].reverse().join('/');
-                    paths.push(reversedPath);
+                });
+                
+                if (pathParts.length > 0) {
+                    // Don't add the entity name at the end - this was causing duplication
+                    const browsePath = '/' + pathParts.join('/');
+                    paths.push(browsePath);
                 }
-            });
-        }
-        
-        // Try properties.browsePaths
-        if (entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
-            entity.properties.browsePaths.forEach(path => {
-                if (path) {
-                    // Make sure path starts with /
-                    let pathValue = path;
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    
-                    // Reverse the path components
-                    const pathParts = pathValue.split('/').filter(p => p);
-                    const reversedPath = '/' + [...pathParts].reverse().join('/');
-                    paths.push(reversedPath);
-                }
-            });
-        }
-        
-        // Check for origin browse paths in datasets
-        if (entity.type === 'DATASET' && entity.dataset && entity.dataset.origin && 
-            entity.dataset.origin.browsePaths && Array.isArray(entity.dataset.origin.browsePaths)) {
-            
-            entity.dataset.origin.browsePaths.forEach(path => {
-                if (path) {
-                    // Make sure path starts with /
-                    let pathValue = path;
-                    if (!pathValue.startsWith('/')) {
-                        pathValue = '/' + pathValue;
-                    }
-                    
-                    // Reverse the path components
-                    const pathParts = pathValue.split('/').filter(p => p);
-                    const reversedPath = '/' + [...pathParts].reverse().join('/');
-                    paths.push(reversedPath);
-                }
-            });
-        }
-        
-        // Check for container path
-        if ((entity.type === 'CONTAINER' || entity.type === 'DATASET') && 
-            entity.container && entity.container.path) {
-            
-            let containerPath = entity.container.path;
-            if (!containerPath.startsWith('/')) {
-                containerPath = '/' + containerPath;
             }
             
-            // Reverse the path components
-            const pathParts = containerPath.split('/').filter(p => p);
-            const reversedPath = '/' + [...pathParts].reverse().join('/');
-            paths.push(reversedPath);
+            // Fallback to browsePaths if browsePathV2 is empty or has no valid entities
+            if (paths.length === 0 && entity.browsePaths && Array.isArray(entity.browsePaths)) {
+                entity.browsePaths.forEach(browsePathItem => {
+                    if (browsePathItem && typeof browsePathItem === 'object' && browsePathItem.path) {
+                        // Case 1: path is a list of strings (like ['prod', 'hive'])
+                        if (Array.isArray(browsePathItem.path)) {
+                            // Remove first and last values from the list
+                            if (browsePathItem.path.length > 2) {
+                                const middleParts = browsePathItem.path.slice(1, -1); // Remove first and last
+                                if (middleParts.length > 0) {
+                                    paths.push('/' + middleParts.join('/'));
+                                }
+                            }
+                        }
+                        // Case 2: path is a single string (like "/prod/hive")
+                        else if (typeof browsePathItem.path === 'string' && browsePathItem.path) {
+                            const pathParts = browsePathItem.path.replace(/^\/+|\/+$/g, '').split('/').filter(part => part);
+                            // Remove first and last values from the split parts
+                            if (pathParts.length > 2) {
+                                const middleParts = pathParts.slice(1, -1); // Remove first and last
+                                if (middleParts.length > 0) {
+                                    paths.push('/' + middleParts.join('/'));
+                                }
+                            }
+                        }
+                    }
+                    // browsePaths is a list of strings directly
+                    else if (typeof browsePathItem === 'string') {
+                        const pathParts = browsePathItem.replace(/^\/+|\/+$/g, '').split('/').filter(part => part);
+                        // Remove first and last values from the split parts
+                        if (pathParts.length > 2) {
+                            const middleParts = pathParts.slice(1, -1); // Remove first and last
+                            if (middleParts.length > 0) {
+                                paths.push('/' + middleParts.join('/'));
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Additional checks for properties.browsePaths
+            if (paths.length === 0 && entity.properties && entity.properties.browsePaths && Array.isArray(entity.properties.browsePaths)) {
+                entity.properties.browsePaths.forEach(path => {
+                    if (path && typeof path === 'string') {
+                        // Simple case: just add the path
+                        paths.push(path.startsWith('/') ? path : '/' + path);
+                    }
+                });
+            }
+            
+        } catch (e) {
+            console.error('Error extracting browse paths:', e);
         }
         
-        return paths;
+        return paths.length > 0 ? paths : [];
     }
     
     // Function to load schema fields
@@ -2440,35 +3228,75 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
     
-    // Function to download entity data
+    // Function to download entity data (post-filter, all entities across all pages)
     document.getElementById('downloadButton').addEventListener('click', function() {
-        if (allEntities.length === 0) {
+        const entitiesToDownload = filteredEntities.length > 0 ? filteredEntities : allEntities;
+        
+        if (entitiesToDownload.length === 0) {
             showError('No entities to download');
             return;
         }
         
         // Format the data for download
-        const downloadData = allEntities.map(entity => {
-            const properties = entity.editableProperties || {};
-            const name = properties.name || entity.urn.split('/').pop();
+        const downloadData = entitiesToDownload.map(entity => {
+            const editableProperties = entity.editableProperties || {};
+            const name = getEntityName(entity);
+            const browsePaths = getEntityBrowsePaths(entity);
+            const platformInfo = getEntityPlatform(entity);
             
             return {
                 name: name,
                 urn: entity.urn,
                 type: entity.type,
-                properties: properties,
-                browsePaths: entity.browsePaths || []
+                platform: platformInfo,
+                deprecated: entity.deprecation ? entity.deprecation.deprecated : false,
+                editableProperties: editableProperties,
+                browsePaths: browsePaths,
+                // Include additional metadata
+                schemaMetadata: entity.schemaMetadata ? true : false,
+                domains: entity.domains || [],
+                glossaryTerms: entity.glossaryTerms || {},
+                tags: entity.tags || {},
+                structuredProperties: entity.structuredProperties || {},
+                ownership: entity.ownership || {},
+                // Raw entity data for debugging/advanced use
+                rawEntity: entity
             };
         });
         
-        // Create a download link
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(downloadData, null, 2));
+        // Create metadata for the download
+        const metadata = {
+            downloadedAt: new Date().toISOString(),
+            totalEntities: entitiesToDownload.length,
+            filteredFrom: allEntities.length,
+            filters: {
+                entityType: document.getElementById('entityType').value,
+                platforms: getSelectedValues(document.getElementById('platform')),
+                browsePath: document.getElementById('browsePath').value,
+                platformInstances: getSelectedValues(document.getElementById('platformInstance'))
+            }
+        };
+        
+        const fullDownloadData = {
+            metadata: metadata,
+            entities: downloadData
+        };
+        
+        // Create a download link with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        const filename = `editable_entities_${timestamp}.json`;
+        
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(fullDownloadData, null, 2));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "datahub_editable_properties.json");
+        downloadAnchorNode.setAttribute("download", filename);
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
+        
+        const filterText = filteredEntities.length > 0 && filteredEntities.length !== allEntities.length ? 
+            ` (filtered from ${allEntities.length})` : '';
+        showSuccess(`Downloaded ${downloadData.length} entities${filterText} to ${filename}`);
     });
     
     // Function to save entity changes
@@ -2622,98 +3450,182 @@ document.addEventListener('DOMContentLoaded', function() {
         return cookieValue;
     }
 
-    // Add the Add All to PR functionality
-    document.getElementById('addAllToPrButton').addEventListener('click', function() {
+    // Add entity to staged changes
+    function addEntityToStagedChanges(entityUrn) {
+        const button = event.target;
+        const originalHtml = button.innerHTML;
+        
+        // Show loading state
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        fetch('/metadata/entities/editable/add-to-staged-changes/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                entity_urn: entityUrn,
+                environment: currentEnvironment.name,
+                mutation_name: mutationName
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification(`Entity added to staged changes successfully! Files: ${data.files_created.join(', ')}`, 'success');
+            } else {
+                showNotification(`Failed to add entity to staged changes: ${data.error}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding entity to staged changes:', error);
+            showNotification(`Error adding entity to staged changes: ${error.message}`, 'error');
+        })
+        .finally(() => {
+            // Reset button state
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+        });
+    }
+    
+    // Add selected entities to staged changes
+    function addSelectedToStagedChanges() {
+        const selectedCheckboxes = document.querySelectorAll('.entity-checkbox:checked');
+        if (selectedCheckboxes.length === 0) {
+            showNotification('No entities selected', 'warning');
+            return;
+        }
+        
+        if (!confirm(`Add ${selectedCheckboxes.length} selected entities to staged changes?`)) {
+            return;
+        }
+        
+        const entityUrns = Array.from(selectedCheckboxes).map(cb => cb.value);
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        showNotification(`Adding ${entityUrns.length} entities to staged changes...`, 'info');
+        
+        fetch('/metadata/entities/editable/bulk-add-to-staged-changes/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                entity_urns: entityUrns,
+                environment: currentEnvironment.name,
+                mutation_name: mutationName
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification(`Successfully added ${data.success_count || entityUrns.length} entities to staged changes!`, 'success');
+                if (data.errors && data.errors.length > 0) {
+                    console.warn('Some entities failed:', data.errors);
+                }
+                
+                // Uncheck all selected checkboxes
+                selectedCheckboxes.forEach(cb => cb.checked = false);
+                document.getElementById('selectAllCheckbox').checked = false;
+            } else {
+                showNotification(`Failed to add entities to staged changes: ${data.error}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding entities to staged changes:', error);
+            showNotification(`Error adding entities to staged changes: ${error.message}`, 'error');
+        });
+    }
+    
+    // Select/deselect all checkboxes
+    document.getElementById('selectAllCheckbox').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.entity-checkbox');
+        checkboxes.forEach(cb => cb.checked = this.checked);
+    });
+    
+    // Add the Add All to Staged Changes functionality
+    document.getElementById('addAllToStagedChangesButton').addEventListener('click', function() {
+        const entitiesToAdd = filteredEntities.length > 0 ? filteredEntities : allEntities;
+        
+        if (entitiesToAdd.length === 0) {
+            showNotification('No entities to add to staged changes', 'warning');
+            return;
+        }
+        
         // Disable the button and show loading state
         this.disabled = true;
         this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Processing...';
         
+        const filterText = filteredEntities.length > 0 && filteredEntities.length !== allEntities.length ? 
+            ` (filtered from ${allEntities.length})` : '';
+        
         // Show a confirmation dialog
-        if (confirm('This will add all editable properties to a new pull request. This process may take some time. Continue?')) {
-            // Call the API endpoint to create a PR with all editable properties
-            fetch('/metadata/entities/editable/create-pr/', {
-            method: 'POST',
-            headers: {
+        if (confirm(`This will add ${entitiesToAdd.length} entities${filterText} to staged changes. This process may take some time. Continue?`)) {
+            const entityUrns = entitiesToAdd.map(entity => entity.urn);
+            
+            // Get current environment and mutation from global state or settings
+            const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+            const mutationName = currentEnvironment.mutation_name || null;
+            
+            // Call the bulk API endpoint
+            fetch('/metadata/entities/editable/bulk-add-to-staged-changes/', {
+                method: 'POST',
+                headers: {
                     'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                    // Show success message with PR link if available
-                    let message = 'Successfully created pull request with all editable properties.';
-                    if (data.pr_url) {
-                        message += ` <a href="${data.pr_url}" target="_blank">View PR <i class="fas fa-external-link-alt"></i></a>`;
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    entity_urns: entityUrns,
+                    environment: currentEnvironment.name,
+                    mutation_name: mutationName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success message
+                    let message = `Successfully added ${data.success_count || entityUrns.length} entities to staged changes.`;
+                    if (data.files_created_count) {
+                        message += ` ${data.files_created_count} files created.`;
                     }
-                    showSuccess(message);
-            } else {
+                    showNotification(message, 'success');
+                    
+                    if (data.errors && data.errors.length > 0) {
+                        console.warn('Some entities failed:', data.errors);
+                        showNotification(`${data.error_count} entities failed. Check console for details.`, 'warning');
+                    }
+                } else {
                     // Show error message
-                    showError(data.error || 'Failed to create pull request');
-            }
-        })
-        .catch(error => {
-                console.error('Error creating pull request:', error);
-                showError('Failed to create pull request: ' + error.message);
-        })
-        .finally(() => {
+                    showNotification(`Failed to add entities to staged changes: ${data.error}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error adding entities to staged changes:', error);
+                showNotification(`Failed to add entities to staged changes: ${error.message}`, 'error');
+            })
+            .finally(() => {
                 // Reset button state
-            this.disabled = false;
-                this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-plus me-1"></i> Add Filtered to Staged Changes';
             });
         } else {
             // Reset button if user cancels
             this.disabled = false;
-            this.innerHTML = '<i class="fas fa-code-branch me-1"></i> Add All to PR';
+            this.innerHTML = '<i class="fas fa-plus me-1"></i> Add Filtered to Staged Changes';
         }
     });
 
-    // Add the Refresh button
-    document.getElementById('refreshCacheButton').addEventListener('click', function() {
-        const button = this;
-        const originalText = button.innerHTML;
-        
-        // Show loading state
-        button.disabled = true;
-        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Clearing...';
-        
-        // Clear server-side cache
-        fetch('{% url "metadata_manager:clear_editable_entities_cache" %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-                'Content-Type': 'application/json',
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Clear client-side cache and reload data
-                resultsCache.clear();
-                
-                // Force reload by bypassing cache check
-                const currentParams = getCurrentSearchParams();
-                loadEntitiesFromServer(currentParams, 1);
-                
-                // Update cache status
-                updateCacheStatus('Cache cleared - loading fresh data');
-                
-                // Show success message
-                showNotification('Cache cleared successfully!', 'success');
-            } else {
-                throw new Error(data.error || 'Failed to clear cache');
-            }
-        })
-        .catch(error => {
-            console.error('Error clearing cache:', error);
-            showNotification('Error clearing cache: ' + error.message, 'error');
-        })
-        .finally(() => {
-            // Restore button state
-            button.disabled = false;
-            button.innerHTML = originalText;
-        });
-    });
+
     
     // Helper function to get current search parameters
     function getCurrentSearchParams() {
@@ -2722,9 +3634,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const platform = document.getElementById('platform').value;
         const browsePath = document.getElementById('browsePath')?.value || '';
         const platformInstance = document.getElementById('platformInstance')?.value || '';
-        const hasProperties = document.getElementById('hasProperties')?.value || '';
-        const sortBy = document.getElementById('sortBy')?.value || 'name';
-        const usePlatformPagination = document.getElementById('usePlatformPagination').checked;
+        const hasProperties = ''; // Removed from UI - comprehensive search is always enabled
+        const sortBy = 'name'; // Default sorting
+        const usePlatformPagination = true; // Always use platform pagination for comprehensive search
         
         let query = searchQuery;
         
@@ -2994,9 +3906,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const platform = document.getElementById('platform').value;
         const browsePath = document.getElementById('browsePath')?.value || '';
         const platformInstance = document.getElementById('platformInstance')?.value || '';
-        const hasProperties = document.getElementById('hasProperties')?.value || '';
-        const sortBy = document.getElementById('sortBy')?.value || 'name';
-        const usePlatformPagination = document.getElementById('usePlatformPagination').checked;
+        const hasProperties = ''; // Removed from UI - comprehensive search is always enabled
+        const sortBy = 'name'; // Default sorting
+        const usePlatformPagination = true; // Always use platform pagination for comprehensive search
         
         const editablePropertiesOnly = true;
         const start = 0; // Always start from beginning when refreshing
@@ -3087,13 +3999,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to load structured properties for advanced filtering
     async function loadStructuredProperties() {
+        const currentConnection = getCurrentConnectionId();
+        return await loadStructuredPropertiesForConnection(currentConnection);
+    }
+    
+    // Load structured properties for a specific connection (used when connection changes)
+    async function loadStructuredPropertiesForConnection(connectionId) {
         const now = Date.now();
         
-        // Check if cache is still valid
+        // Check if cache is still valid and connection-specific
         if (structuredPropertiesCache.lastFetched && 
             (now - structuredPropertiesCache.lastFetched) < structuredPropertiesCache.cacheExpiry &&
+            structuredPropertiesCache.connectionId === connectionId &&
             structuredPropertiesCache.properties.length > 0) {
-            console.log('Using cached structured properties');
+            console.log('Using cached structured properties for connection:', connectionId);
             return structuredPropertiesCache.properties;
         }
         
@@ -3104,11 +4023,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         structuredPropertiesCache.loading = true;
-        console.log('Fetching fresh structured properties data');
+        console.log('Fetching fresh structured properties data for connection:', connectionId);
         
         try {
-            // Fetch structured properties from the backend
-            const response = await fetch('/metadata/structured-properties/');
+            // Fetch structured properties from the backend with connection-specific cache busting
+            const url = `/metadata/structured-properties/?connection_id=${encodeURIComponent(connectionId)}&t=${now}`;
+            const response = await fetch(url);
             
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
@@ -3119,8 +4039,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 structuredPropertiesCache.properties = data.structured_properties || [];
                 structuredPropertiesCache.lastFetched = now;
+                structuredPropertiesCache.connectionId = connectionId;
                 
-                console.log(`Loaded ${structuredPropertiesCache.properties.length} structured properties`);
+                console.log(`Loaded ${structuredPropertiesCache.properties.length} structured properties for connection: ${connectionId}`);
                 return structuredPropertiesCache.properties;
             } else {
                 console.error('Failed to load structured properties:', data.error);
@@ -3392,6 +4313,201 @@ document.addEventListener('DOMContentLoaded', function() {
                 showError(`Failed to load entity details: ${error.message}`);
             });
     }
+
+    // Multi-select dropdown functionality
+    function initializeMultiSelect(selectElement) {
+        const container = selectElement.parentElement;
+        container.classList.add('multi-select-dropdown');
+        
+        // Create display element
+        const display = document.createElement('div');
+        display.className = 'multi-select-display';
+        display.tabIndex = 0;
+        
+        // Create dropdown menu
+        const menu = document.createElement('div');
+        menu.className = 'multi-select-dropdown-menu';
+        
+        // Update display based on selected values
+        function updateDisplay() {
+            const selectedOptions = Array.from(selectElement.selectedOptions);
+            display.innerHTML = '';
+            
+            if (selectedOptions.length === 0) {
+                const placeholder = document.createElement('span');
+                placeholder.className = 'multi-select-placeholder';
+                placeholder.textContent = selectElement.id === 'platform' ? 'All Platforms' : 'All Instances';
+                display.appendChild(placeholder);
+            } else {
+                selectedOptions.forEach(option => {
+                    const tag = document.createElement('span');
+                    tag.className = 'multi-select-tag';
+                    tag.innerHTML = `
+                        ${option.textContent}
+                        <span class="remove" data-value="${option.value}">×</span>
+                    `;
+                    display.appendChild(tag);
+                });
+            }
+        }
+        
+        // Update menu options
+        function updateMenu() {
+            menu.innerHTML = '';
+            Array.from(selectElement.options).forEach(option => {
+                const menuOption = document.createElement('div');
+                menuOption.className = 'multi-select-option';
+                menuOption.textContent = option.textContent;
+                menuOption.dataset.value = option.value;
+                
+                if (option.selected) {
+                    menuOption.classList.add('selected');
+                }
+                
+                menuOption.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    option.selected = !option.selected;
+                    updateDisplay();
+                    updateMenu();
+                    
+                    // Trigger change event for filtering
+                    selectElement.dispatchEvent(new Event('change'));
+                });
+                
+                menu.appendChild(menuOption);
+            });
+        }
+        
+        // Handle tag removal
+        display.addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove')) {
+                const value = e.target.dataset.value;
+                const option = selectElement.querySelector(`option[value="${value}"]`);
+                if (option) {
+                    option.selected = false;
+                    updateDisplay();
+                    updateMenu();
+                    selectElement.dispatchEvent(new Event('change'));
+                }
+                e.stopPropagation();
+            }
+        });
+        
+        // Toggle dropdown
+        display.addEventListener('click', function() {
+            const isVisible = menu.style.display === 'block';
+            
+            // Close all other multi-select dropdowns
+            document.querySelectorAll('.multi-select-dropdown-menu').forEach(m => {
+                m.style.display = 'none';
+            });
+            
+            menu.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                updateMenu();
+            }
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!container.contains(e.target)) {
+                menu.style.display = 'none';
+            }
+        });
+        
+        // Insert elements
+        selectElement.style.display = 'none';
+        container.insertBefore(display, selectElement);
+        container.appendChild(menu);
+        
+        updateDisplay();
+        
+        return {
+            updateOptions: function(options) {
+                selectElement.innerHTML = '';
+                options.forEach(option => {
+                    const optionElement = document.createElement('option');
+                    optionElement.value = option.value;
+                    optionElement.textContent = option.text;
+                    selectElement.appendChild(optionElement);
+                });
+                updateDisplay();
+            }
+        };
+    }
+    
+    // Initialize multi-select dropdowns
+    const platformMultiSelect = initializeMultiSelect(document.getElementById('platform'));
+    const platformInstanceMultiSelect = initializeMultiSelect(document.getElementById('platformInstance'));
+    
+    // Update platform loading to work with multi-select and be connection-specific
+    function loadPlatforms(entityType = '') {
+        const currentConnection = getCurrentConnectionId();
+        console.log('Loading platforms for entity type:', entityType, 'connection:', currentConnection);
+        
+        const applyButton = document.getElementById('applyFiltersButton');
+        const spinner = document.getElementById('applyButtonSpinner');
+        
+        if (applyButton && spinner) {
+            spinner.style.display = 'inline-block';
+        }
+        
+        // Use connection-specific platform endpoint
+        const url = entityType ? 
+            `/metadata/platforms/?entity_type=${encodeURIComponent(entityType)}` : 
+            '/metadata/platforms/';
+        
+        console.log('Fetching platforms from:', url, 'for connection:', currentConnection);
+        
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.platforms) {
+                    const options = data.platforms.map(platform => ({
+                        value: platform,
+                        text: platform.charAt(0).toUpperCase() + platform.slice(1)
+                    }));
+                    
+                    platformMultiSelect.updateOptions(options);
+                    console.log('Loaded', data.platforms.length, 'platforms for connection:', currentConnection);
+                } else {
+                    console.error('Failed to load platforms:', data.error);
+                    platformMultiSelect.updateOptions([]);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading platforms:', error);
+                platformMultiSelect.updateOptions([]);
+            })
+            .finally(() => {
+                if (applyButton && spinner) {
+                    spinner.style.display = 'none';
+                }
+            });
+    }
+    
+    // Update platform instance population to include "Empty" option
+    function populatePlatformInstanceDropdown(instances) {
+        const options = [
+            { value: '__EMPTY__', text: 'Empty (No Instance)' }
+        ];
+        
+        instances.forEach(instance => {
+            options.push({
+                value: instance,
+                text: instance
+            });
+        });
+        
+        platformInstanceMultiSelect.updateOptions(options);
+    }
+    
+    // Update client-side filtering to handle multi-select values
+    function getSelectedValues(selectElement) {
+        return Array.from(selectElement.selectedOptions).map(option => option.value);
+    }
+    
+
 
 });
 </script>

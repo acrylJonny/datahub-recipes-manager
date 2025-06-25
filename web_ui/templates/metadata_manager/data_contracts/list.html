@@ -620,7 +620,7 @@
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="#" onclick="bulkResyncContracts('all')"><i class="fas fa-sync-alt me-2"></i>Resync All</a></li>
                             <li><a class="dropdown-item" href="#" onclick="bulkSyncToLocal('all')"><i class="fas fa-download me-2"></i>Sync All to Local</a></li>
-                            <li><a class="dropdown-item" href="#" onclick="bulkAddToStagedChanges('all')"><i class="fas fa-layer-group me-2"></i>Add All to Staged Changes</a></li>
+                            <li><a class="dropdown-item disabled" href="#" title="Stay tuned" style="cursor: not-allowed; opacity: 0.5;"><i class="fas fa-layer-group me-2"></i>Add All to Staged Changes</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="#" onclick="bulkDownloadJson('all')"><i class="fas fa-download me-2"></i>Export All as JSON</a></li>
                         </ul>
@@ -683,14 +683,14 @@
                                     </div>
                                 </div>
                                 <div class="col-md-2-5 border-end">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="local" data-category="overview">
-                                        <div class="h5 mb-0" id="local-count">0</div>
+                                    <div class="filter-stat text-center clickable-stat" data-filter="local-only" data-category="overview">
+                                        <div class="h5 mb-0" id="local-only-count">0</div>
                                         <div class="text-muted">Local Only</div>
                                     </div>
                                 </div>
                                 <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat" data-filter="remote" data-category="overview">
-                                        <div class="h5 mb-0" id="remote-count">0</div>
+                                    <div class="filter-stat text-center clickable-stat" data-filter="remote-only" data-category="overview">
+                                        <div class="h5 mb-0" id="remote-only-count">0</div>
                                         <div class="text-muted">Remote Only</div>
                                     </div>
                                 </div>
@@ -749,7 +749,7 @@
                                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('synced')">
                                             <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
-                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('synced')">
+                                        <button type="button" class="btn btn-outline-warning btn-sm" disabled title="Stay tuned" style="cursor: not-allowed; opacity: 0.5;">
                                             <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('synced')">
@@ -792,7 +792,7 @@
                                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('local')">
                                             <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
-                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('local')">
+                                        <button type="button" class="btn btn-outline-warning btn-sm" disabled title="Stay tuned" style="cursor: not-allowed; opacity: 0.5;">
                                             <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                         <button type="button" class="btn btn-outline-danger btn-sm" onclick="bulkDeleteLocal('local')">
@@ -835,7 +835,7 @@
                                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="bulkDownloadJson('remote')">
                                             <i class="fas fa-file-download me-1"></i> Bulk Download
                                         </button>
-                                        <button type="button" class="btn btn-outline-warning btn-sm" onclick="bulkAddToPR('remote')">
+                                        <button type="button" class="btn btn-outline-warning btn-sm" disabled title="Stay tuned" style="cursor: not-allowed; opacity: 0.5;">
                                             <i class="fab fa-github me-1"></i> Bulk Add to Staged Changes
                                         </button>
                                     </div>

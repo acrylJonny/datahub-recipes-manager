@@ -188,8 +188,10 @@ class Mutation(models.Model):
     # Apply mutations to entities - these will generate new URN values when staging changes
     apply_to_tags = models.BooleanField(default=False, help_text="Apply mutations to tags")
     apply_to_glossary_terms = models.BooleanField(default=False, help_text="Apply mutations to glossary terms")
+    apply_to_glossary_nodes = models.BooleanField(default=False, help_text="Apply mutations to glossary nodes")
     apply_to_structured_properties = models.BooleanField(default=False, help_text="Apply mutations to structured properties")
     apply_to_domains = models.BooleanField(default=False, help_text="Apply mutations to domains")
+    apply_to_data_products = models.BooleanField(default=False, help_text="Apply mutations to data products")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

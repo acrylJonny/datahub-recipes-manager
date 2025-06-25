@@ -1,0 +1,206 @@
+name: Manage DataHub Metadata Tests
+
+on:
+  push:
+    paths:
+      - 'metadata-manager/**/metadata_tests/**'
+    branches:
+      - main
+      - develop
+  pull_request:
+    paths:
+      - 'metadata-manager/**/metadata_tests/**'
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to process metadata tests for'
+        required: true
+        default: 'dev'
+        type: string
+      dry_run:
+        description: 'Dry run - validate without executing'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  process-metadata-tests:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        # Process each environment directory separately
+        include:
+          - environment: dev
+          - environment: staging  
+          - environment: prod
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pydantic
+
+    - name: Check if environment directory exists
+      id: check_env
+      run: |
+        if [ -d "metadata-manager/${{ matrix.environment }}/metadata_tests" ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Process metadata test files
+      if: steps.check_env.outputs.exists == 'true'
+      env:
+        DATAHUB_URL: ${{ secrets[format('DATAHUB_URL_{0}', matrix.environment)] || secrets.DATAHUB_URL }}
+        DATAHUB_TOKEN: ${{ secrets[format('DATAHUB_TOKEN_{0}', matrix.environment)] || secrets.DATAHUB_TOKEN }}
+        ENVIRONMENT: ${{ matrix.environment }}
+        DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      run: |
+        python scripts/process_metadata_tests.py
+
+    - name: Comment on PR with results
+      if: github.event_name == 'pull_request' && steps.check_env.outputs.exists == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Read results file if it exists
+          const resultsFile = `metadata-test-results-${{ matrix.environment }}.json`;
+          if (fs.existsSync(resultsFile)) {
+            const results = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+            
+            let comment = `## 🧪 Metadata Test Processing Results - ${{ matrix.environment }}\n\n`;
+            
+            if (results.processed > 0) {
+              comment += `✅ Successfully processed ${results.processed} metadata test(s)\n`;
+              comment += `${results.created} created, ${results.updated} updated\n\n`;
+              
+              if (results.details.length > 0) {
+                comment += `### Details:\n`;
+                results.details.forEach(detail => {
+                  const icon = detail.success ? '✅' : '❌';
+                  comment += `${icon} **${detail.name}** (${detail.type}): ${detail.message}\n`;
+                });
+              }
+            } else {
+              comment += `ℹ️ No metadata test files found for ${{ matrix.environment }}\n`;
+            }
+            
+            if (results.errors.length > 0) {
+              comment += `\n### ⚠️ Errors:\n`;
+              results.errors.forEach(error => {
+                comment += `- ${error}\n`;
+              });
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } else {
+            // Comment that no results file was found
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🧪 Metadata Test Processing Results - ${{ matrix.environment }}\n\nℹ️ No metadata test files found for processing.`
+            });
+          }
+
+    - name: Upload test processing results
+      if: steps.check_env.outputs.exists == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: metadata-test-results-${{ matrix.environment }}
+        path: metadata-test-results-${{ matrix.environment }}.json
+        retention-days: 30
+
+  validate-test-files:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install jsonschema
+
+    - name: Validate JSON files
+      run: |
+        find metadata-manager -name "*.json" -path "*/metadata_tests/*" | while read -r file; do
+          echo "Validating $file"
+          python -m json.tool "$file" > /dev/null
+          if [ $? -ne 0 ]; then
+            echo "❌ Invalid JSON in $file"
+            exit 1
+          else
+            echo "✅ Valid JSON: $file"
+          fi
+        done
+
+    - name: Check required fields in test files
+      run: |
+        python -c "
+        import json
+        import sys
+        import glob
+        
+        errors = []
+        required_fields = ['name', 'test_type', 'operation', 'graphql_input']
+        
+        for file_path in glob.glob('metadata-manager/**/metadata_tests/*.json', recursive=True):
+            try:
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                
+                missing_fields = [field for field in required_fields if field not in data]
+                if missing_fields:
+                    errors.append(f'{file_path}: Missing required fields: {missing_fields}')
+                    
+                # Check GraphQL input structure
+                if 'graphql_input' in data:
+                    graphql_input = data['graphql_input']
+                    if 'mutation' not in graphql_input or 'input' not in graphql_input:
+                        errors.append(f'{file_path}: GraphQL input must contain \"mutation\" and \"input\" fields')
+                        
+            except Exception as e:
+                errors.append(f'{file_path}: {str(e)}')
+        
+        if errors:
+            print('❌ Validation errors found:')
+            for error in errors:
+                print(f'  - {error}')
+            sys.exit(1)
+        else:
+            print('✅ All metadata test files are valid')
+        " 

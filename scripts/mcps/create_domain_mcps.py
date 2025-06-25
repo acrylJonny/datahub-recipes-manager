@@ -204,15 +204,40 @@ def create_domain_global_tags_mcp(
     """
     Create an MCP for domain global tags
     """
+    # Import URN utilities with graceful fallback
+    try:
+        from utils.urn_utils import (
+            get_mutation_config_for_environment,
+            generate_mutated_urn
+        )
+        urn_utils_available = True
+    except ImportError:
+        urn_utils_available = False
+        logger.warning("URN utilities not available - using original URNs")
+    
     domain_urn = generate_deterministic_urn(
         "domain", domain_id, environment=environment, mutation_name=mutation_name
     )
     
+    # Get mutation configuration if URN utilities are available
+    mutation_config = None
+    if urn_utils_available and (environment or mutation_name):
+        env_name = environment or mutation_name
+        mutation_config = get_mutation_config_for_environment(env_name)
+    
     tag_associations = []
     for tag in tags:
         tag_urn = f"urn:li:tag:{tag}"
+        
+        # Apply URN mutation to the tag URN if utilities are available
+        if urn_utils_available and mutation_config and (environment or mutation_name):
+            env_name = environment or mutation_name
+            tag_urn = generate_mutated_urn(
+                tag_urn, env_name, 'tag', mutation_config
+            )
+        
         tag_associations.append(TagAssociationClass(
-            tag=tag_urn,
+            tag=tag_urn,  # Use mutated URN
             context=None,
             attribution=None
         ))
@@ -240,9 +265,26 @@ def create_domain_glossary_terms_mcp(
     """
     Create an MCP for domain glossary terms associations
     """
+    # Import URN utilities with graceful fallback
+    try:
+        from utils.urn_utils import (
+            get_mutation_config_for_environment,
+            generate_mutated_urn
+        )
+        urn_utils_available = True
+    except ImportError:
+        urn_utils_available = False
+        logger.warning("URN utilities not available - using original URNs")
+    
     domain_urn = generate_deterministic_urn(
         "domain", domain_id, environment=environment, mutation_name=mutation_name
     )
+
+    # Get mutation configuration if URN utilities are available
+    mutation_config = None
+    if urn_utils_available and (environment or mutation_name):
+        env_name = environment or mutation_name
+        mutation_config = get_mutation_config_for_environment(env_name)
 
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
@@ -253,8 +295,16 @@ def create_domain_glossary_terms_mcp(
     term_associations = []
     for term in glossary_terms:
         term_urn = f"urn:li:glossaryTerm:{term}"
+        
+        # Apply URN mutation to the glossary term URN if utilities are available
+        if urn_utils_available and mutation_config and (environment or mutation_name):
+            env_name = environment or mutation_name
+            term_urn = generate_mutated_urn(
+                term_urn, env_name, 'glossaryTerm', mutation_config
+            )
+        
         term_associations.append(GlossaryTermAssociationClass(
-            urn=term_urn,
+            urn=term_urn,  # Use mutated URN
             actor=f"urn:li:corpuser:{owner}",
             context=None,
             attribution=None
@@ -353,9 +403,26 @@ def create_domain_structured_properties_mcp(
     """
     Create an MCP for domain structured properties
     """
+    # Import URN utilities with graceful fallback
+    try:
+        from utils.urn_utils import (
+            get_mutation_config_for_environment,
+            generate_mutated_urn
+        )
+        urn_utils_available = True
+    except ImportError:
+        urn_utils_available = False
+        logger.warning("URN utilities not available - using original URNs")
+    
     domain_urn = generate_deterministic_urn(
         "domain", domain_id, environment=environment, mutation_name=mutation_name
     )
+
+    # Get mutation configuration if URN utilities are available
+    mutation_config = None
+    if urn_utils_available and (environment or mutation_name):
+        env_name = environment or mutation_name
+        mutation_config = get_mutation_config_for_environment(env_name)
 
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
@@ -365,8 +432,17 @@ def create_domain_structured_properties_mcp(
     
     property_assignments = []
     for prop in properties:
+        prop_urn = prop["propertyUrn"]
+        
+        # Apply URN mutation to the property URN if utilities are available
+        if urn_utils_available and mutation_config and (environment or mutation_name):
+            env_name = environment or mutation_name
+            prop_urn = generate_mutated_urn(
+                prop_urn, env_name, 'structuredProperty', mutation_config
+            )
+        
         property_assignments.append(StructuredPropertyValueAssignmentClass(
-            propertyUrn=prop["propertyUrn"],
+            propertyUrn=prop_urn,  # Use mutated URN
             values=prop["values"],
             created=audit_stamp,
             lastModified=audit_stamp
@@ -763,6 +839,7 @@ def create_domain_staged_changes(
     parent_domain: Optional[str] = None,
     include_all_aspects: bool = True,
     custom_aspects: Optional[Dict[str, Any]] = None,
+    custom_urn: Optional[str] = None,
     **kwargs
 ) -> List[Dict[str, Any]]:
     """
@@ -790,7 +867,9 @@ def create_domain_staged_changes(
         List of MCP dictionaries
     """
     mcps = []
-    domain_id = domain_urn.split(":")[-1]
+    # Use custom_urn if provided, otherwise use the passed domain_urn
+    effective_urn = custom_urn if custom_urn else domain_urn
+    domain_id = effective_urn.split(":")[-1]
     
     # 1. Domain Properties (always include)
     properties_mcp = create_domain_properties_mcp(

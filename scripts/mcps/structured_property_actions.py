@@ -24,6 +24,17 @@ from scripts.mcps.create_structured_property_mcps import (
     save_mcps_to_files
 )
 
+# Try to import the new URN generation utilities
+try:
+    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
+    from utils.urn_utils import (
+        generate_structured_property_urn, 
+        get_mutation_config_for_environment
+    )
+    HAS_NEW_URN_UTILS = True
+except ImportError:
+    HAS_NEW_URN_UTILS = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,8 +105,22 @@ def add_structured_property_to_staged_changes(
     setup_logging()
     
     try:
-        # Generate structured property URN
+        # Generate structured property URN with mutation support
         property_urn = f"urn:li:structuredProperty:{property_id}"
+        custom_urn = None
+        
+        if HAS_NEW_URN_UTILS:
+            try:
+                mutation_config = get_mutation_config_for_environment(environment)
+                if mutation_config:
+                    mutated_urn = generate_structured_property_urn(property_urn, environment, mutation_config)
+                    if mutated_urn != property_urn:
+                        custom_urn = mutated_urn
+                        property_urn = mutated_urn
+                        logger.info(f"Generated mutated URN for structured property: {f'urn:li:structuredProperty:{property_id}'} -> {mutated_urn}")
+                logger.info(f"Using mutation config for environment '{environment}': {mutation_config is not None}")
+            except Exception as e:
+                logger.warning(f"Could not get mutation config for environment '{environment}': {e}")
         
         # Determine output directory - use repo root metadata-manager instead of web_ui/metadata-manager
         if base_dir:
@@ -174,6 +199,7 @@ def add_structured_property_to_staged_changes(
             custom_properties=custom_properties,
             include_all_aspects=include_all_aspects,
             custom_aspects=custom_aspects,
+            custom_urn=custom_urn,
             **kwargs
         )
         

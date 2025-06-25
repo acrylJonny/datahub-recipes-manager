@@ -30,6 +30,13 @@ let currentSort = {
     tabType: null
 };
 
+// Search variables
+let currentSearch = {
+    synced: '',
+    local: '',
+    remote: ''
+};
+
 // Connection-specific cache management (following tags pattern)
 let testsCacheByConnection = {};
 let currentConnectionId = null;
@@ -86,6 +93,8 @@ function setupEventListeners() {
         loadTestsData();
     });
     
+
+    
     // Filter statistics
     document.querySelectorAll('.filter-stat.clickable-stat').forEach(stat => {
         stat.addEventListener('click', function() {
@@ -126,6 +135,7 @@ function setupSearchListeners() {
         
         if (searchInput) {
             searchInput.addEventListener('input', function() {
+                currentSearch[tabType] = this.value.toLowerCase();
                 filterAndRenderTests(tabType);
             });
         }
@@ -133,6 +143,7 @@ function setupSearchListeners() {
         if (clearButton) {
             clearButton.addEventListener('click', function() {
                 searchInput.value = '';
+                currentSearch[tabType] = '';
                 filterAndRenderTests(tabType);
             });
         }
@@ -235,7 +246,21 @@ function setupTabSwitchHandlers() {
     // Tab switching handlers
     document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
         tab.addEventListener('shown.bs.tab', function (e) {
-            const targetId = e.target.getAttribute('href').substring(1);
+            // Get target from data-bs-target attribute or href
+            let targetId = e.target.getAttribute('data-bs-target');
+            if (!targetId) {
+                const href = e.target.getAttribute('href');
+                if (href) {
+                    targetId = href.substring(1);
+                } else {
+                    console.error('Tab element missing data-bs-target or href attribute');
+                    return;
+                }
+            } else {
+                // Remove the # prefix if present
+                targetId = targetId.replace('#', '');
+            }
+            
             const tabType = targetId.replace('-items', '');
             loadTabContent(tabType);
             
@@ -283,21 +308,25 @@ function setupActionButtonListeners() {
         const row = target.closest('tr');
         if (!row) return;
         
-        const itemData = row.getAttribute('data-item');
-        let testData = null;
+        // Get test data from row attributes
+        const testId = row.getAttribute('data-test-id');
+        const testUrn = row.getAttribute('data-test-urn');
         
-        if (itemData) {
-            try {
-                const parsedData = JSON.parse(itemData.replace(/&quot;/g, '"').replace(/&apos;/g, "'"));
-                const cacheKey = parsedData.urn || parsedData.id;
-                testData = window.testDataCache[cacheKey] || parsedData;
-            } catch (e) {
-                console.error('Error parsing test data:', e);
-                return;
-            }
+        // Find test data in cache
+        let testData = null;
+        if (testUrn && window.testDataCache[testUrn]) {
+            testData = window.testDataCache[testUrn];
+        } else if (testId && window.testDataCache[testId]) {
+            testData = window.testDataCache[testId];
+        } else {
+            // Fallback: find in testsData array
+            testData = testsData.find(t => t.id === testId || t.urn === testUrn);
         }
         
-        if (!testData) return;
+        if (!testData) {
+            console.error('Test data not found for ID:', testId, 'URN:', testUrn);
+            return;
+        }
         
         // Handle different action buttons
         if (target.classList.contains('view-item')) {
@@ -334,45 +363,100 @@ function setupActionButtonListeners() {
 function loadTestsData() {
     console.log('Loading tests data...');
     
-    // Hide error states and show loading
+    // Show loading indicator
     document.getElementById('loading-indicator').style.display = 'block';
     document.getElementById('tests-content').style.display = 'none';
     
-    fetch('/metadata/tests/remote-data/', {
-        method: 'GET',
+    // Get current connection
+    const currentConnection = getCurrentConnectionCache();
+    
+    fetch('/metadata/tests/data/', {
+        method: 'POST',
         headers: {
-            'X-Requested-With': 'XMLHttpRequest',
             'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
         },
+        body: JSON.stringify({
+            connection_id: currentConnection ? currentConnection.id : null
+        })
     })
-    .then(response => {
-        console.log('Tests data response status:', response.status);
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-        console.log('Tests data received:', data);
+        console.log('Tests data loaded:', data);
         testsData = data.tests || [];
         filteredTests = [...testsData];
         
-        console.log(`Loaded ${testsData.length} tests`);
+        // Store DataHub URL for external links
+        testsData.datahub_url = data.datahub_url || '';
+        
+        // Cache the data for later use
+        window.testDataCache = {};
+        testsData.forEach(test => {
+            const cacheKey = test.urn || test.id;
+            window.testDataCache[cacheKey] = test;
+        });
         
         // Update statistics
         updateStatistics();
         
-        // Load initial tab content
-        loadTabContent('synced');
+        // Load the active tab content
+        const activeTab = document.querySelector('#testTabs .nav-link.active');
+        if (activeTab) {
+            const tabType = activeTab.getAttribute('data-bs-target').replace('#', '').replace('-items', '');
+            loadTabContent(tabType);
+        }
         
-        // Set initial overview active state
-        updateOverviewActiveState('synced');
-        
-        // Hide loading and show content
+        // Hide loading indicator and show content
         document.getElementById('loading-indicator').style.display = 'none';
         document.getElementById('tests-content').style.display = 'block';
     })
     .catch(error => {
         console.error('Error loading tests data:', error);
+        showNotification('error', 'Failed to load tests data');
+        
+        // Hide loading indicator
         document.getElementById('loading-indicator').style.display = 'none';
-        showNotification('error', 'Error loading tests data');
+    });
+}
+
+function pullTestsFromDataHub() {
+    console.log('Pulling tests from DataHub...');
+    
+    if (!confirm('This will pull all tests from DataHub and sync them to the local database. Continue?')) {
+        return;
+    }
+    
+    // Show loading notification
+    showNotification('success', 'Pulling tests from DataHub...');
+    
+    // Make API call to pull tests
+    fetch('/metadata/tests/pull/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to pull tests from DataHub');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            showNotification('success', data.message);
+            // Refresh the data to show newly synced tests
+            setTimeout(() => {
+                loadTestsData();
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error pulling tests from DataHub:', error);
+        showNotification('error', `Error pulling tests from DataHub: ${error.message}`);
     });
 }
 
@@ -500,24 +584,24 @@ function renderTestsTable(tests, tabType, container) {
             <table class="table table-hover mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th width="50">
+                        <th width="30">
                             <input type="checkbox" class="form-check-input" id="${tabType}-select-all">
                         </th>
-                        <th class="sortable" data-column="name" data-tab="${tabType}" style="cursor: pointer;">
-                            Test Name ${getSortIcon('name', tabType)}
+                        <th class="sortable-header" data-sort="name" width="120">
+                            Test Name
                         </th>
-                        <th>Description</th>
-                        <th class="sortable" data-column="category" data-tab="${tabType}" style="cursor: pointer;">
-                            Category ${getSortIcon('category', tabType)}
+                        <th width="200">Description</th>
+                        <th class="sortable-header" data-sort="category" width="100">
+                            Category
                         </th>
-                        <th class="sortable" data-column="results" data-tab="${tabType}" style="cursor: pointer;">
-                            Results ${getSortIcon('results', tabType)}
+                        <th class="sortable-header" data-sort="results" width="100">
+                            Results
                         </th>
-                        <th class="sortable" data-column="last_run" data-tab="${tabType}" style="cursor: pointer;">
-                            Last Run ${getSortIcon('last_run', tabType)}
+                        <th class="sortable-header" data-sort="last_run" width="100">
+                            Last Run
                         </th>
-                        <th>URN</th>
-                        <th>Actions</th>
+                        <th width="180">URN</th>
+                        <th width="180">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -534,6 +618,9 @@ function renderTestsTable(tests, tabType, container) {
     
     // Attach sorting handlers
     attachSortingHandlers(container, tabType);
+    
+    // Restore sort state
+    restoreSortState(container, tabType);
 }
 
 function renderTestRow(test, tabType) {
@@ -574,48 +661,59 @@ function renderTestRow(test, tabType) {
             </td>
             <td>${resultsDisplay}</td>
             <td>${lastRunDisplay}</td>
-            <td>
-                <code class="small text-muted" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">${test.urn || 'N/A'}</code>
+            <td title="${escapeHtml(test.urn || 'N/A')}">
+                <code class="small">${escapeHtml(test.urn || 'N/A')}</code>
             </td>
-            <td>${actions}</td>
+            <td>
+                <div class="btn-group action-buttons" role="group">
+                    ${actions}
+                </div>
+            </td>
         </tr>
     `;
 }
 
-// Sorting functions
-function getSortIcon(column, tabType) {
-    if (currentSort.column !== column || currentSort.tabType !== tabType) {
-        return '<i class="fas fa-sort text-muted ms-1"></i>';
-    }
-    
-    if (currentSort.direction === 'asc') {
-        return '<i class="fas fa-sort-up text-primary ms-1"></i>';
-    } else {
-        return '<i class="fas fa-sort-down text-primary ms-1"></i>';
-    }
-}
+// Sorting functions - sort icons now handled by CSS
 
 function attachSortingHandlers(container, tabType) {
-    const sortableHeaders = container.querySelectorAll('.sortable');
+    const sortableHeaders = container.querySelectorAll('.sortable-header');
     
     sortableHeaders.forEach(header => {
         header.addEventListener('click', function() {
-            const column = this.getAttribute('data-column');
-            const tab = this.getAttribute('data-tab');
+            const column = this.getAttribute('data-sort');
+            
+            // Remove existing sort classes from all headers
+            sortableHeaders.forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+            });
             
             // Toggle direction if same column, otherwise default to asc
-            if (currentSort.column === column && currentSort.tabType === tab) {
+            if (currentSort.column === column && currentSort.tabType === tabType) {
                 currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
             } else {
                 currentSort.column = column;
                 currentSort.direction = 'asc';
-                currentSort.tabType = tab;
+                currentSort.tabType = tabType;
             }
+            
+            // Add sort class to current header
+            this.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
             
             // Re-render the tab with new sorting
             loadTabContent(tabType);
         });
     });
+}
+
+function restoreSortState(content, tabType) {
+    if (currentSort.column && currentSort.tabType === tabType) {
+        const headers = content.querySelectorAll('.sortable-header');
+        headers.forEach(header => {
+            if (header.getAttribute('data-sort') === currentSort.column) {
+                header.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        });
+    }
 }
 
 function sortTests(tests, column, direction) {
@@ -671,28 +769,47 @@ function getActionButtons(test, tabType) {
     
     let actionButtons = '';
     
-    // 1. Edit Test - For local and synced tests
+    // 1. View Test Details - Available for all tests
+    actionButtons += `
+        <button type="button" class="btn btn-sm btn-outline-primary view-item" 
+                title="View Details">
+            <i class="fas fa-eye"></i>
+        </button>
+    `;
+    
+    // 2. View in DataHub button if test exists in DataHub for current connection
+    if (shouldShowDataHubViewButton(test, tabType)) {
+        actionButtons += `
+            <a href="${getDataHubUrl(testData.urn, 'test')}" 
+               class="btn btn-sm btn-outline-info" 
+               target="_blank" title="View in DataHub">
+                <i class="fas fa-external-link-alt"></i>
+            </a>
+        `;
+    }
+    
+    // 3. Edit Test - For local and synced tests
     if (tabType === 'local' || tabType === 'synced') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-warning edit-test" 
                     title="Edit Test">
-                <i class="fas fa-edit"></i>
+            <i class="fas fa-edit"></i>
             </button>
         `;
     }
-
-    // 2. Sync to DataHub - For tests in local tab
+    
+    // 4. Sync to DataHub - For tests in local tab
     // Show for ALL tests in local tab regardless of their connection or sync status
     if (tabType === 'local') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-success sync-to-datahub" 
                     title="Sync to DataHub">
-                <i class="fas fa-upload"></i>
+            <i class="fas fa-upload"></i>
             </button>
         `;
     }
     
-    // 2b. Resync - Only for synced tests (tests that belong to current connection and have remote match)
+    // 5. Resync - Only for synced tests (tests that belong to current connection and have remote match)
     if (tabType === 'synced' && connectionContext === 'current' && hasRemoteMatch) {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-info resync-test" 
@@ -702,27 +819,27 @@ function getActionButtons(test, tabType) {
         `;
     }
     
-    // 2c. Push to DataHub - Only for synced tests that are modified
+    // 6. Push to DataHub - Only for synced tests that are modified
     if (tabType === 'synced' && connectionContext === 'current' && testData.sync_status === 'MODIFIED') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-success push-to-datahub" 
                     title="Push to DataHub">
-                <i class="fas fa-upload"></i>
+            <i class="fas fa-upload"></i>
             </button>
         `;
     }
     
-    // 3. Sync to Local - Only for remote-only tests
+    // 7. Sync to Local - Only for remote-only tests
     if (tabType === 'remote') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-primary sync-to-local" 
                     title="Sync to Local">
-                <i class="fas fa-download"></i>
+            <i class="fas fa-download"></i>
             </button>
         `;
     }
     
-    // 4. Download JSON - Available for all tests
+    // 8. Download JSON - Available for all tests
     actionButtons += `
         <button type="button" class="btn btn-sm btn-outline-secondary download-json"
                 title="Download JSON">
@@ -730,7 +847,7 @@ function getActionButtons(test, tabType) {
         </button>
     `;
 
-    // 5. Add to Staged Changes - Available for all tests
+    // 9. Add to Staged Changes - Available for all tests
     actionButtons += `
         <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
                 title="Add to Staged Changes">
@@ -738,24 +855,24 @@ function getActionButtons(test, tabType) {
         </button>
     `;
 
-    // 6. Delete Local Test - Only for synced and local tests
+    // 10. Delete Local Test - Only for synced and local tests
     if (tabType === 'synced' || tabType === 'local') {
-        // Use a simple form with a POST action for direct deletion
-        // This avoids all the complex JavaScript ID handling
+        // Use a simple form with a POST action for direct deletion from local database
         actionButtons += `
             <form method="POST" action="/metadata/tests/${testData.id}/delete/" 
                   style="display:inline;" 
-                  onsubmit="return confirm('Are you sure you want to delete this test? This action cannot be undone.');">
+                  onsubmit="return confirm('Are you sure you want to delete this test from the local database? This action cannot be undone.');">
                 <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                <input type="hidden" name="delete_type" value="local_only">
                 <button type="submit" class="btn btn-sm btn-outline-danger"
-                        title="Delete Local Test">
-                    <i class="fas fa-trash"></i>
+                        title="Delete from Local Database">
+            <i class="fas fa-trash"></i>
                 </button>
             </form>
         `;
     }
     
-    // 7. Delete Remote Test - Only for remote-only tests
+    // 11. Delete Remote Test - Only for remote-only tests
     if (tabType === 'remote') {
         actionButtons += `
             <button type="button" class="btn btn-sm btn-outline-danger delete-remote-test" 
@@ -863,7 +980,7 @@ function populateEditTestModal(test) {
                     definitionText = JSON.stringify(parsed, null, 2);
                 } catch (e) {
                     // If parsing fails, use the string as-is
-                    definitionText = test.definition_json;
+                definitionText = test.definition_json;
                 }
             } else {
                 // If it's an object, stringify it
@@ -957,7 +1074,8 @@ function addRemoteTestToStagedChanges(testData) {
     const currentEnvironment = window.currentEnvironment || { name: 'dev' };
     const mutationName = currentEnvironment.mutation_name || null;
     
-    // Make API call to create test files for remote test
+    // Use the new database intermediate layer pattern
+    // This endpoint will first sync the test to database, then stage it
     fetch('/metadata/tests/remote/stage_changes/', {
         method: 'POST',
         headers: {
@@ -979,6 +1097,11 @@ function addRemoteTestToStagedChanges(testData) {
     .then(data => {
         // Show success notification
         showNotification('success', `Remote test successfully added to staged changes: ${data.files_created.join(', ')}`);
+        
+        // Optionally refresh the data to show the test is now synced locally
+        setTimeout(() => {
+            loadTestsData();
+        }, 1000);
     })
     .catch(error => {
         console.error('Error adding remote test to staged changes:', error);
@@ -1029,14 +1152,16 @@ function syncTestToDataHub(testData) {
     if (!testId) {
         console.error('Cannot sync test without a database ID:', testData);
         showNotification('error', 'Error syncing test: Missing test database ID.');
-        return;
+        return Promise.reject(new Error('Missing test database ID'));
     }
     
-    // Show loading notification
-    showNotification('success', `Syncing test "${testData.name}" to DataHub...`);
+    // Show loading notification (only for individual calls)
+    if (!testData._bulkOperation) {
+        showNotification('success', `Syncing test "${testData.name}" to DataHub...`);
+    }
     
     // Make the API call to sync this test to DataHub
-    fetch(`/metadata/tests/${testId}/sync_to_datahub/`, {
+    return fetch(`/metadata/tests/${testId}/sync_to_datahub/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -1052,18 +1177,24 @@ function syncTestToDataHub(testData) {
     .then(data => {
         console.log('Sync to DataHub response:', data);
         if (data.success) {
-            showNotification('success', data.message);
-            // Refresh the page to show updated sync status
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
+            if (!testData._bulkOperation) {
+                showNotification('success', data.message);
+                // Refresh the page to show updated sync status
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            }
+            return data;
         } else {
             throw new Error(data.error || 'Unknown error occurred');
         }
     })
     .catch(error => {
         console.error('Error syncing test to DataHub:', error);
-        showNotification('error', `Error syncing test: ${error.message}`);
+        if (!testData._bulkOperation) {
+            showNotification('error', `Error syncing test: ${error.message}`);
+        }
+        throw error;
     });
 }
 
@@ -1075,14 +1206,16 @@ function resyncTest(testData) {
     if (!testId) {
         console.error('Cannot resync test without a database ID:', testData);
         showNotification('error', 'Error resyncing test: Missing test database ID.');
-        return;
+        return Promise.reject(new Error('Missing test database ID'));
     }
     
-    // Show loading notification
-    showNotification('success', `Resyncing test "${testData.name}" from DataHub...`);
+    // Show loading notification (only for individual calls)
+    if (!testData._bulkOperation) {
+        showNotification('success', `Resyncing test "${testData.name}" from DataHub...`);
+    }
     
     // Make the API call to resync this test from DataHub
-    fetch(`/metadata/tests/${testId}/resync/`, {
+    return fetch(`/metadata/tests/${testId}/resync/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -1098,18 +1231,24 @@ function resyncTest(testData) {
     .then(data => {
         console.log('Resync response:', data);
         if (data.success) {
-            showNotification('success', data.message);
-            // Refresh the page to show updated data
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
+            if (!testData._bulkOperation) {
+                showNotification('success', data.message);
+                // Refresh the page to show updated data
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            }
+            return data;
         } else {
             throw new Error(data.error || 'Unknown error occurred');
         }
     })
     .catch(error => {
         console.error('Error resyncing test:', error);
-        showNotification('error', `Error resyncing test: ${error.message}`);
+        if (!testData._bulkOperation) {
+            showNotification('error', `Error resyncing test: ${error.message}`);
+        }
+        throw error;
     });
 }
 
@@ -1160,7 +1299,40 @@ function pushTestToDataHub(testData) {
 }
 
 function syncTestToLocal(testUrn) {
-    showNotification('info', 'Sync to local functionality will be implemented');
+    console.log('Syncing test to local database:', testUrn);
+    
+    // Show loading notification
+    showNotification('success', `Syncing test to local database...`);
+    
+    // Make API call to sync the remote test to local database
+    fetch(`/metadata/api/tests/${encodeURIComponent(testUrn)}/sync_to_local/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to sync test to local database');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            showNotification('success', data.message);
+            // Refresh the data to show the test is now synced locally
+            setTimeout(() => {
+                loadTestsData();
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    })
+    .catch(error => {
+        console.error('Error syncing test to local:', error);
+        showNotification('error', `Error syncing test to local: ${error.message}`);
+    });
 }
 
 function pushTestToDataHub(testId) {
@@ -1168,26 +1340,8 @@ function pushTestToDataHub(testId) {
 }
 
 function deleteLocalTest(testId) {
-    // Find the test to determine its status
-    const test = testsData.find(t => t.id === testId || t.urn === testId);
-    const testStatus = test ? test.status : 'unknown';
-    
-    let confirmMessage = 'Are you sure you want to delete this test?';
-    let deleteType = 'both'; // both local and remote
-    
-    if (testStatus === 'synced') {
-        confirmMessage = 'Are you sure you want to delete this test locally? (It will remain on DataHub)';
-        deleteType = 'local_only';
-    } else if (testStatus === 'local') {
-        confirmMessage = 'Are you sure you want to delete this local test?';
-        deleteType = 'local_only';
-    } else if (testStatus === 'remote') {
-        confirmMessage = 'Are you sure you want to delete this test from DataHub?';
-        deleteType = 'remote_only';
-    }
-    
-    if (confirm(confirmMessage)) {
-        // Call backend to delete test
+    if (confirm('Are you sure you want to delete this test from the local database? This action cannot be undone.')) {
+        // Call backend to delete test from local database only
         fetch(`/metadata/tests/${testId}/delete/`, {
             method: 'POST',
             headers: {
@@ -1195,20 +1349,20 @@ function deleteLocalTest(testId) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                delete_type: deleteType
+                delete_type: 'local_only'
             })
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showNotification(data.message || 'Test deleted successfully', 'success');
+                showNotification('success', 'Test deleted from local database successfully');
                 loadTestsData(); // Refresh data
             } else {
-                showNotification(data.error || 'Failed to delete test', 'error');
+                showNotification('error', data.error || 'Failed to delete test from local database');
             }
         })
         .catch(error => {
-            showNotification('Error deleting test', 'error');
+            showNotification('error', 'Error deleting test from local database');
             console.error('Error:', error);
         });
     }
@@ -1428,7 +1582,88 @@ function bulkSyncToLocal(tabType) {
         return;
     }
     
-    showNotification('info', `Bulk sync to local functionality will be implemented for ${selectedTests.length} tests`);
+    if (confirm(`Are you sure you want to sync ${selectedTests.length} test(s) to local database?`)) {
+        console.log(`Bulk sync ${selectedTests.length} tests to local for ${tabType}:`, selectedTests);
+        
+        // Show loading indicator
+        showNotification('success', `Starting to sync ${selectedTests.length} tests to local database...`);
+        
+        // Process each test sequentially
+        let successCount = 0;
+        let errorCount = 0;
+        let processedCount = 0;
+        
+        // Create a function to process tests one by one
+        function processNextTest(index) {
+            if (index >= selectedTests.length) {
+                // All tests processed
+                if (successCount > 0) {
+                    showNotification('success', `Completed: ${successCount} tests synced to local, ${errorCount} failed.`);
+                    // Refresh the data to show updated sync status
+                    setTimeout(() => {
+                        loadTestsData();
+                    }, 1000);
+                } else if (errorCount > 0) {
+                    showNotification('error', `Failed to sync any tests to local. ${errorCount} errors occurred.`);
+                }
+                return;
+            }
+            
+            const test = selectedTests[index];
+            const testUrn = test.urn;
+            
+            if (!testUrn) {
+                console.error('Cannot sync test without URN:', test);
+                errorCount++;
+                processedCount++;
+                processNextTest(index + 1);
+                return;
+            }
+            
+            // Make the API call to sync this test to local
+            fetch(`/metadata/api/tests/${encodeURIComponent(testUrn)}/sync_to_local/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to sync test ${test.name || test.urn} to local`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    console.log(`Successfully synced test to local: ${test.name || test.urn}`);
+                    successCount++;
+                } else {
+                    throw new Error(data.error || 'Unknown error occurred');
+                }
+                processedCount++;
+                
+                // Update progress
+                if (processedCount % 5 === 0 || processedCount === selectedTests.length) {
+                    showNotification('success', `Progress: ${processedCount}/${selectedTests.length} tests processed`);
+                }
+                
+                // Process the next test
+                processNextTest(index + 1);
+            })
+            .catch(error => {
+                console.error(`Error syncing test ${test.name || test.urn} to local:`, error);
+                errorCount++;
+                processedCount++;
+                
+                // Process the next test despite the error
+                processNextTest(index + 1);
+            });
+        }
+        
+        // Start processing from the first test
+        processNextTest(0);
+    }
 }
 
 function bulkDeleteRemote(tabType) {
@@ -1442,26 +1677,29 @@ function bulkDeleteRemote(tabType) {
 }
 
 function getSelectedTests(tabType) {
-    const checkboxes = document.querySelectorAll(`#${tabType}-items .item-checkbox:checked`);
+    const checkboxes = document.querySelectorAll(`#${tabType}-content .test-checkbox:checked`);
     return Array.from(checkboxes).map(checkbox => {
         const row = checkbox.closest('tr');
-        const itemData = row.getAttribute('data-item');
-        if (itemData) {
-            try {
-                const parsedData = JSON.parse(itemData.replace(/&quot;/g, '"').replace(/&apos;/g, "'"));
-                const cacheKey = parsedData.urn || parsedData.id;
-                return window.testDataCache[cacheKey] || parsedData;
-            } catch (e) {
-                console.error('Error parsing item data:', e);
-                return null;
-            }
+        const testId = row.getAttribute('data-test-id');
+        const testUrn = row.getAttribute('data-test-urn');
+        
+        // Find test data in cache or testsData array
+        let testData = null;
+        if (testUrn && window.testDataCache[testUrn]) {
+            testData = window.testDataCache[testUrn];
+        } else if (testId && window.testDataCache[testId]) {
+            testData = window.testDataCache[testId];
+        } else {
+            // Fallback: find in testsData array
+            testData = testsData.find(t => t.id === testId || t.urn === testUrn);
         }
-        return null;
+        
+        return testData;
     }).filter(item => item !== null);
 }
 
 function clearAllSelections() {
-    const checkboxes = document.querySelectorAll('.item-checkbox');
+    const checkboxes = document.querySelectorAll('.test-checkbox');
     checkboxes.forEach(checkbox => {
         checkbox.checked = false;
     });
@@ -1588,7 +1826,55 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Utility Functions
 function filterAndRenderTests(tabType) {
-    loadTabContent(tabType);
+    const searchTerm = currentSearch[tabType] || '';
+    
+    // Get the appropriate tests for this tab
+    let tests = [];
+    switch (tabType) {
+        case 'synced':
+            tests = testsData.filter(test => test.status === 'synced');
+            break;
+        case 'local':
+            tests = testsData.filter(test => test.status === 'local_only');
+            break;
+        case 'remote':
+            tests = testsData.filter(test => test.status === 'remote_only');
+            break;
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+        tests = tests.filter(test => {
+            const testData = test.combined || test;
+            const name = testData.name || '';
+            const description = testData.description || '';
+            const category = testData.category || '';
+            const urn = testData.urn || '';
+            
+            return name.toLowerCase().includes(searchTerm) ||
+                   description.toLowerCase().includes(searchTerm) ||
+                   category.toLowerCase().includes(searchTerm) ||
+                   urn.toLowerCase().includes(searchTerm);
+        });
+    }
+    
+    // Apply sorting if active for this tab
+    if (currentSort.column && currentSort.tabType === tabType) {
+        tests = sortTests(tests, currentSort.column, currentSort.direction);
+    }
+    
+    // Render the filtered and sorted tests
+    const container = document.getElementById(`${tabType}-content`);
+    if (container) {
+        renderTestsTable(tests, tabType, container);
+        
+        // Update bulk selection handlers
+        setupBulkSelection(tabType);
+        
+        // Attach sorting handlers and restore sort state
+        attachSortingHandlers(container, tabType);
+        restoreSortState(container, tabType);
+    }
 }
 
 function getCSRFToken() {
@@ -1648,7 +1934,7 @@ function getDataHubUrl(urn, type) {
     
     // Ensure no double slashes and don't encode URN colons
     const baseUrl = testsData.datahub_url.replace(/\/+$/, ''); // Remove trailing slashes
-    return `${baseUrl}/test/${urn}`;
+    return `${baseUrl}/tests?filter_urn=${encodeURIComponent(urn)}`;
 }
 
 function getDatabaseId(testData) {
@@ -1711,6 +1997,11 @@ function sanitizeDataForAttribute(item, maxDescriptionLength = 200) {
 }
 
 function showNotification(type, message) {
+    // Check if notifications are suppressed for bulk operations
+    if (window._bulkOperation) {
+        return;
+    }
+    
     // Check if we have notifications container
     let container = document.getElementById('notifications-container');
     
@@ -1774,4 +2065,217 @@ function showNotification(type, message) {
     toast.addEventListener('hidden.bs.toast', function () {
         toast.remove();
     });
-} 
+}
+
+// Global bulk actions for tests
+function resyncAllTests() {
+    if (confirm('Are you sure you want to resync all tests? This will fetch the latest data from DataHub.')) {
+        showNotification('success', 'Starting resync of all tests...');
+        loadTestsData();
+    }
+}
+
+function exportAllTests() {
+    // Export all tests to JSON
+    if (testsData && testsData.length > 0) {
+        const exportData = {
+            tests: testsData,
+            metadata: {
+                exported_at: new Date().toISOString(),
+                count: testsData.length,
+                source: window.location.origin
+            }
+        };
+        
+        const jsonData = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `all-tests-export-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        
+        setTimeout(() => {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }, 100);
+        
+        showNotification('success', `All ${testsData.length} tests exported successfully.`);
+    } else {
+        showNotification('error', 'No tests available to export.');
+    }
+}
+
+function addAllTestsToStagedChanges() {
+    if (testsData && testsData.length > 0) {
+        if (confirm(`Are you sure you want to add all ${testsData.length} tests to staged changes?`)) {
+            showNotification('success', `Starting to add ${testsData.length} tests to staged changes...`);
+            
+            // Get current environment
+            const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+            
+            // Process each test
+            let successCount = 0;
+            let errorCount = 0;
+            
+            testsData.forEach((test, index) => {
+                const testId = getDatabaseId(test);
+                if (!testId) {
+                    errorCount++;
+                    return;
+                }
+                
+                fetch(`/metadata/tests/${testId}/stage_changes/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        environment: currentEnvironment.name
+                    })
+                })
+                .then(response => {
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                    
+                    // Show final result when all are processed
+                    if (index === testsData.length - 1) {
+                        if (successCount > 0) {
+                            showNotification('success', `${successCount} tests added to staged changes, ${errorCount} failed.`);
+                        } else {
+                            showNotification('error', `Failed to add tests to staged changes. ${errorCount} errors occurred.`);
+                        }
+                    }
+                })
+                .catch(() => {
+                    errorCount++;
+                });
+            });
+        }
+    } else {
+        showNotification('error', 'No tests available to add to staged changes.');
+    }
+}
+
+function showImportTestsModal() {
+    // Show import modal for tests
+    const modal = new bootstrap.Modal(document.getElementById('importTestsModal'));
+    modal.show();
+}
+
+// Bulk actions for specific tabs
+function bulkResyncTests(tabType) {
+    const selectedTests = getSelectedTests(tabType);
+    if (selectedTests.length === 0) {
+        showNotification('error', 'Please select tests to resync.');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to resync ${selectedTests.length} test(s)?`)) {
+        showNotification('success', `Starting resync of ${selectedTests.length} tests...`);
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        selectedTests.forEach((test, index) => {
+            // Mark as bulk operation to suppress individual notifications
+            test._bulkOperation = true;
+            resyncTest(test)
+                .then(() => {
+                    successCount++;
+                })
+                .catch(() => {
+                    errorCount++;
+                })
+                .finally(() => {
+                    if (index === selectedTests.length - 1) {
+                        if (successCount > 0) {
+                            showNotification('success', `${successCount} tests resynced, ${errorCount} failed.`);
+                            loadTestsData();
+                        } else {
+                            showNotification('error', 'Failed to resync tests.');
+                        }
+                    }
+                });
+        });
+    }
+}
+
+function bulkDownloadJson(tabType) {
+    const selectedTests = getSelectedTests(tabType);
+    if (selectedTests.length === 0) {
+        showNotification('error', 'Please select tests to download.');
+        return;
+    }
+    
+    const exportData = {
+        tests: selectedTests,
+        metadata: {
+            exported_at: new Date().toISOString(),
+            count: selectedTests.length,
+            source: window.location.origin,
+            tab: tabType
+        }
+    };
+    
+    const jsonData = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tests-export-${selectedTests.length}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+    
+    showNotification('success', `${selectedTests.length} tests exported successfully.`);
+}
+
+// Add the missing bulkSyncToDataHub function
+function bulkSyncToDataHub(tabType) {
+    const selectedTests = getSelectedTests(tabType);
+    if (selectedTests.length === 0) {
+        showNotification('error', 'Please select tests to sync to DataHub.');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to sync ${selectedTests.length} test(s) to DataHub?`)) {
+        showNotification('success', `Starting sync of ${selectedTests.length} tests to DataHub...`);
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        selectedTests.forEach((test, index) => {
+            // Mark as bulk operation to suppress individual notifications
+            test._bulkOperation = true;
+            syncTestToDataHub(test)
+                .then(() => {
+                    successCount++;
+                })
+                .catch(() => {
+                    errorCount++;
+                })
+                .finally(() => {
+                    if (index === selectedTests.length - 1) {
+                        if (successCount > 0) {
+                            showNotification('success', `${successCount} tests synced to DataHub, ${errorCount} failed.`);
+                            loadTestsData();
+                        } else {
+                            showNotification('error', 'Failed to sync tests to DataHub.');
+                        }
+                    }
+                });
+        });
+    }
+}

@@ -6,7 +6,8 @@ let contractsData = {
     local_only_items: [],
     remote_only_items: [],
     datahub_url: '',
-    datahub_token: ''
+    datahub_token: '',
+    statistics: {}
 };
 
 let currentSearch = {
@@ -21,15 +22,6 @@ let currentPagination = {
     synced: { page: 1, itemsPerPage: 25 },
     local: { page: 1, itemsPerPage: 25 },
     remote: { page: 1, itemsPerPage: 25 }
-};
-
-// User, group, and ownership type cache
-let usersAndGroupsCache = {
-    users: [],
-    groups: [],
-    ownership_types: [],
-    lastFetched: null,
-    cacheExpiry: 5 * 60 * 1000 // 5 minutes
 };
 
 // DataUtils object for safe data handling
@@ -94,11 +86,8 @@ const DataUtils = {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Data Contracts page loaded, initializing...');
     
-    // Load users and groups cache first
-    loadUsersAndGroups().then(() => {
-        // Then load contracts data
-        loadContractsData();
-    });
+    // Load contracts data directly - no need for users/groups cache
+    loadContractsData();
     
     // Search functionality for each tab
     ['synced', 'local', 'remote'].forEach(tab => {
@@ -191,39 +180,6 @@ function clearAllSelections() {
     console.log('Cleared all contract selections due to data refresh');
 }
 
-function loadUsersAndGroups() {
-    return new Promise((resolve) => {
-        // Check if cache is still valid
-        if (usersAndGroupsCache.lastFetched && 
-            (Date.now() - usersAndGroupsCache.lastFetched) < usersAndGroupsCache.cacheExpiry) {
-            console.log('Using cached users and groups data');
-            resolve();
-            return;
-        }
-
-        console.log('Loading users and groups...');
-        fetch('/metadata/tags/users-groups/')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    usersAndGroupsCache.users = data.data.users || [];
-                    usersAndGroupsCache.groups = data.data.groups || [];
-                    usersAndGroupsCache.ownership_types = data.data.ownership_types || [];
-                    usersAndGroupsCache.lastFetched = Date.now();
-                    console.log(`Loaded ${usersAndGroupsCache.users.length} users, ${usersAndGroupsCache.groups.length} groups, ${usersAndGroupsCache.ownership_types.length} ownership types`);
-                } else {
-                    console.error('Failed to load users and groups:', data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error loading users and groups:', error);
-            })
-            .finally(() => {
-                resolve();
-            });
-    });
-}
-
 function loadContractsData() {
     console.log('Loading contracts data...');
     showLoading(true);
@@ -266,7 +222,8 @@ function processContractsData(rawData) {
         local_only_items: [],
         remote_only_items: [],
         datahub_url: rawData.datahub_url || '',
-        datahub_token: rawData.datahub_token || ''
+        datahub_token: rawData.datahub_token || '',
+        statistics: rawData.statistics || {}
     };
 
     // Process synced items
@@ -321,7 +278,10 @@ function showLoading(show) {
 }
 
 function updateStatistics() {
-    const stats = calculateStatistics();
+    // Use statistics from backend if available, otherwise calculate locally
+    const stats = contractsData.statistics && Object.keys(contractsData.statistics).length > 0 
+        ? contractsData.statistics 
+        : calculateStatistics();
     
     // Update main statistics with null checks
     const totalElement = document.getElementById('total-items');
@@ -335,6 +295,19 @@ function updateStatistics() {
     
     const remoteOnlyElement = document.getElementById('remote-only-count');
     if (remoteOnlyElement) remoteOnlyElement.textContent = stats.remote_only_count || 0;
+    
+    // Update additional statistics if elements exist
+    const ownedElement = document.getElementById('owned-items');
+    if (ownedElement) ownedElement.textContent = stats.owned_items || 0;
+    
+    const relationshipsElement = document.getElementById('items-with-relationships');
+    if (relationshipsElement) relationshipsElement.textContent = stats.items_with_relationships || 0;
+    
+    const customPropsElement = document.getElementById('items-with-custom-properties');
+    if (customPropsElement) customPropsElement.textContent = stats.items_with_custom_properties || 0;
+    
+    const structuredPropsElement = document.getElementById('items-with-structured-properties');
+    if (structuredPropsElement) structuredPropsElement.textContent = stats.items_with_structured_properties || 0;
 }
 
 function calculateStatistics() {
@@ -495,8 +468,8 @@ function displayTabContent(tabType) {
             });
         });
         
-        // Attach click handlers for add to staged changes buttons
-        content.querySelectorAll('.add-to-staged').forEach(button => {
+        // Attach click handlers for add to staged changes buttons (skip disabled ones)
+        content.querySelectorAll('.add-to-staged:not([disabled])').forEach(button => {
             button.addEventListener('click', function() {
                 const row = this.closest('tr');
                 const itemData = JSON.parse(row.dataset.item);
@@ -580,67 +553,44 @@ function applyFilters(items) {
 }
 
 function setupFilterHandlers() {
-    // Overview filters (single select)
-    document.querySelectorAll('[data-category="overview"]').forEach(stat => {
+    // Overview filters - switch tabs instead of filtering
+    document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(stat => {
         stat.addEventListener('click', function() {
-            const filter = this.dataset.filter;
+            const filter = this.getAttribute('data-filter');
             
-            // Clear all overview filters first
-            document.querySelectorAll('[data-category="overview"]').forEach(s => s.classList.remove('active'));
+            // Switch to appropriate tab
+            let targetTab = null;
+            switch (filter) {
+                case 'synced':
+                    targetTab = 'synced-tab';
+                    break;
+                case 'local-only':
+                    targetTab = 'local-tab';
+                    break;
+                case 'remote-only':
+                    targetTab = 'remote-tab';
+                    break;
+                default:
+                    return; // Don't switch for total
+            }
             
-            if (filter === 'total') {
-                // Clear all filters and show all data
-                currentOverviewFilter = null;
-                displayAllTabs();
-            } else if (currentOverviewFilter === filter) {
-                // Deselect if clicking same filter
-                currentOverviewFilter = null;
-                displayAllTabs();
-            } else {
-                // Select new filter and switch tab
-                currentOverviewFilter = filter;
+            if (targetTab) {
+                // Clear overview active states
+                document.querySelectorAll('.clickable-stat[data-category="overview"]').forEach(s => {
+                    s.classList.remove('active');
+                });
+                
+                // Set this one as active
                 this.classList.add('active');
                 
-                // Switch to appropriate tab based on filter
-                switch(filter) {
-                    case 'synced':
-                        switchToTab('synced');
-                        break;
-                    case 'local-only':
-                        switchToTab('local');
-                        break;
-                    case 'remote-only':
-                        switchToTab('remote');
-                        break;
+                // Switch to the tab
+                const tabButton = document.getElementById(targetTab);
+                if (tabButton) {
+                    tabButton.click();
                 }
-                
-                displayAllTabs();
             }
         });
     });
-}
-
-function switchToTab(tabType) {
-    // Remove active class from all tab buttons
-    document.querySelectorAll('.nav-link').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    
-    // Remove active class from all tab panes
-    document.querySelectorAll('.tab-pane').forEach(pane => {
-        pane.classList.remove('active', 'show');
-    });
-    
-    // Activate the selected tab
-    const tabButton = document.querySelector(`[data-bs-target="#${tabType}"]`);
-    if (tabButton) {
-        tabButton.classList.add('active');
-    }
-    
-    const tabPane = document.getElementById(tabType);
-    if (tabPane) {
-        tabPane.classList.add('active', 'show');
-    }
 }
 
 function generateTableHTML(items, tabType) {
@@ -892,10 +842,12 @@ function getContractActionButtons(contract, tabType) {
         </button>
     `;
 
-    // 5. Add to Staged Changes - Available for all contracts
+    // 5. Add to Staged Changes - Disabled with "Stay tuned" tooltip
     actionButtons += `
-        <button type="button" class="btn btn-sm btn-outline-warning add-to-staged"
-                title="Add to Staged Changes">
+        <button type="button" class="btn btn-sm btn-outline-warning add-to-staged" 
+                disabled
+                title="Stay tuned"
+                style="cursor: not-allowed; opacity: 0.5;">
             <i class="fab fa-github"></i>
         </button>
     `;
@@ -1609,10 +1561,62 @@ function addAllToStagedChanges() {
     
     showNotification(`Adding all ${allContracts.length} contract(s) to staged changes...`, 'info');
     
-    // Here you would call your API to add all to staged changes
-    setTimeout(() => {
-        showNotification(`Successfully added all ${allContracts.length} contract(s) to staged changes`, 'success');
-    }, 2000);
+    // First, identify remote-only contracts that need to be synced to local
+    const remoteOnlyContracts = allContracts.filter(contract => 
+        contract.sync_status === 'REMOTE_ONLY'
+    );
+    
+    // Process remote-only contracts first by syncing to local
+    let syncPromises = [];
+    if (remoteOnlyContracts.length > 0) {
+        showNotification(`First syncing ${remoteOnlyContracts.length} remote-only contract(s) to local...`, 'info');
+        
+        syncPromises = remoteOnlyContracts.map(contract => 
+            syncContractToLocal(contract, true) // suppressNotifications = true
+        );
+    }
+    
+    // Wait for all syncs to complete, then add all to staged changes
+    Promise.all(syncPromises)
+        .then(() => {
+            if (remoteOnlyContracts.length > 0) {
+                showNotification(`Successfully synced ${remoteOnlyContracts.length} contract(s). Now adding all to staged changes...`, 'info');
+            }
+            
+            // Now call the backend to add all contracts to staged changes
+            return fetch('/metadata/data-contracts/add_all_to_staged_changes/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    environment: 'dev',
+                    mutation_name: null
+                })
+            });
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                showNotification(data.message || `Successfully added all ${allContracts.length} contract(s) to staged changes`, 'success');
+                if (data.files_created && data.files_created.length > 0) {
+                    console.log('Created files:', data.files_created);
+                }
+                loadContractsData(); // Refresh data
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding all contracts to staged changes:', error);
+            showNotification(`Error adding contracts to staged changes: ${error.message}`, 'danger');
+        });
 }
 
 function showImportModal() {
@@ -1627,7 +1631,7 @@ async function syncContractToLocal(contract, suppressNotifications = false) {
             showNotification(`Syncing contract "${contract.name || contract.urn}" to local...`, 'info');
         }
         
-        const response = await fetch('/metadata_manager/data-contracts/sync-to-local/', {
+        const response = await fetch('/metadata/data-contracts/sync-to-local/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1637,6 +1641,21 @@ async function syncContractToLocal(contract, suppressNotifications = false) {
                 urn: contract.urn
             })
         });
+        
+        // Check if response is OK first
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Sync response not OK:', response.status, response.statusText, errorText);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}. ${errorText.substring(0, 200)}`);
+        }
+        
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const responseText = await response.text();
+            console.error('Response is not JSON:', contentType, responseText.substring(0, 500));
+            throw new Error(`Expected JSON response but got ${contentType}. Response: ${responseText.substring(0, 200)}`);
+        }
         
         const result = await response.json();
         
@@ -1655,7 +1674,7 @@ async function syncContractToLocal(contract, suppressNotifications = false) {
     } catch (error) {
         console.error('Error syncing contract to local:', error);
         if (!suppressNotifications) {
-            showNotification('Error syncing contract to local', 'danger');
+            showNotification(`Error syncing contract to local: ${error.message}`, 'danger');
         }
         throw error;
     }
@@ -1665,7 +1684,7 @@ async function resyncContract(contract) {
     try {
         showNotification(`Resyncing contract "${contract.name || contract.urn}"...`, 'info');
         
-        const response = await fetch(`/metadata_manager/data-contracts/${contract.id}/resync/`, {
+        const response = await fetch(`/metadata/data-contracts/${contract.id}/resync/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1707,11 +1726,76 @@ async function addContractToStagedChanges(contract) {
     try {
         showNotification(`Adding contract "${contract.name || contract.urn}" to staged changes...`, 'info');
         
+        // Check if this is a remote-only contract that needs to be synced to local first
+        if (contract.sync_status === 'REMOTE_ONLY') {
+            showNotification(`Contract is remote-only. Syncing to local first...`, 'info');
+            
+            try {
+                // Sync to local first
+                const syncResult = await syncContractToLocal(contract, true); // suppressNotifications = true
+                showNotification(`Contract synced to local. Now adding to staged changes...`, 'info');
+                
+                // Wait for data to refresh and find the updated contract
+                let updatedContract = null;
+                let attempts = 0;
+                const maxAttempts = 5;
+                
+                while (!updatedContract && attempts < maxAttempts) {
+                    // Refresh data
+                    await new Promise(resolve => {
+                        loadContractsData();
+                        // Wait for the data to load
+                        setTimeout(resolve, 1000 + (attempts * 500)); // Increasing wait time
+                    });
+                    
+                    // Try to find the contract in synced or local items
+                    updatedContract = contractsData.synced_items.find(c => c.urn === contract.urn) ||
+                                    contractsData.local_only_items.find(c => c.urn === contract.urn);
+                    
+                    attempts++;
+                    
+                    if (!updatedContract) {
+                        console.log(`Attempt ${attempts}: Contract not found in synced/local items yet. Synced: ${contractsData.synced_items.length}, Local: ${contractsData.local_only_items.length}`);
+                    }
+                }
+                
+                if (!updatedContract) {
+                    // Fallback: If we still can't find it, use the sync result data
+                    if (syncResult && syncResult.contract_id) {
+                        updatedContract = {
+                            ...contract,
+                            id: syncResult.contract_id,
+                            name: syncResult.contract_name || contract.name,
+                            sync_status: 'SYNCED'
+                        };
+                        console.log('Using fallback contract data from sync result:', updatedContract);
+                    } else {
+                        throw new Error('Failed to get local contract ID after sync - contract not found in local data and no ID in sync result');
+                    }
+                }
+                
+                // Use the updated contract with local ID
+                contract = updatedContract;
+                console.log('Using updated contract for staged changes:', contract);
+            } catch (syncError) {
+                throw new Error(`Failed to sync contract to local: ${syncError.message}`);
+            }
+        }
+        
+        // Now add to staged changes using the local contract ID
         const formData = new FormData();
-        formData.append('contract_urn', contract.urn);
+        if (contract.id) {
+            // For local/synced contracts, use the database ID
+            formData.append('contract_id', contract.id);
+            console.log('Adding to staged changes with contract ID:', contract.id);
+        } else {
+            // Fallback to URN for remote contracts (should not happen after sync)
+            formData.append('contract_urn', contract.urn);
+            console.log('Adding to staged changes with contract URN (fallback):', contract.urn);
+        }
         formData.append('csrfmiddlewaretoken', getCsrfToken());
         
-        const response = await fetch('/metadata_manager/data-contracts/stage_changes/', {
+        const response = await fetch('/metadata/data-contracts/stage_changes/', {
             method: 'POST',
             body: formData
         });
@@ -1720,12 +1804,15 @@ async function addContractToStagedChanges(contract) {
         
         if (result.success) {
             showNotification(result.message || 'Contract added to staged changes', 'success');
+            if (result.files_created && result.files_created.length > 0) {
+                console.log('Created files:', result.files_created);
+            }
         } else {
             showNotification(result.error || 'Failed to add contract to staged changes', 'danger');
         }
     } catch (error) {
         console.error('Error adding contract to staged changes:', error);
-        showNotification('Error adding contract to staged changes', 'danger');
+        showNotification(`Error adding contract to staged changes: ${error.message}`, 'danger');
     }
 }
 

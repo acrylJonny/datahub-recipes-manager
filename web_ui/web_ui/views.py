@@ -6139,8 +6139,10 @@ def mutation_create(request):
         # Get checkbox values for apply mutations to entities
         apply_to_tags = request.POST.get("apply_to_tags") == "on"
         apply_to_glossary_terms = request.POST.get("apply_to_glossary_terms") == "on"
+        apply_to_glossary_nodes = request.POST.get("apply_to_glossary_nodes") == "on"
         apply_to_structured_properties = request.POST.get("apply_to_structured_properties") == "on"
         apply_to_domains = request.POST.get("apply_to_domains") == "on"
+        apply_to_data_products = request.POST.get("apply_to_data_products") == "on"
         
         try:
             # Validate JSON
@@ -6168,8 +6170,10 @@ def mutation_create(request):
             platform_instance_mapping=platform_mapping,
             apply_to_tags=apply_to_tags,
             apply_to_glossary_terms=apply_to_glossary_terms,
+            apply_to_glossary_nodes=apply_to_glossary_nodes,
             apply_to_structured_properties=apply_to_structured_properties,
             apply_to_domains=apply_to_domains,
+            apply_to_data_products=apply_to_data_products,
         )
 
         messages.success(request, f'Mutation "{name}" created successfully.')
@@ -6194,8 +6198,10 @@ def mutation_edit(request, mutation_id):
         # Get checkbox values for apply mutations to entities
         mutation.apply_to_tags = request.POST.get("apply_to_tags") == "on"
         mutation.apply_to_glossary_terms = request.POST.get("apply_to_glossary_terms") == "on"
+        mutation.apply_to_glossary_nodes = request.POST.get("apply_to_glossary_nodes") == "on"
         mutation.apply_to_structured_properties = request.POST.get("apply_to_structured_properties") == "on"
         mutation.apply_to_domains = request.POST.get("apply_to_domains") == "on"
+        mutation.apply_to_data_products = request.POST.get("apply_to_data_products") == "on"
         
         try:
             # Validate JSON

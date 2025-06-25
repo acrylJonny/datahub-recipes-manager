@@ -25,6 +25,18 @@ from scripts.mcps.create_glossary_mcps import (
     save_mcp_to_file
 )
 
+# Try to import the new URN generation utilities
+try:
+    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
+    from utils.urn_utils import (
+        generate_glossary_term_urn, 
+        generate_glossary_node_urn, 
+        get_mutation_config_for_environment
+    )
+    HAS_NEW_URN_UTILS = True
+except ImportError:
+    HAS_NEW_URN_UTILS = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -177,6 +189,31 @@ def add_glossary_to_staged_changes(
                 logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
                 existing_mcps = []
         
+        # Get mutation configuration for environment-based URN generation
+        mutation_config = None
+        custom_urn = None
+        if HAS_NEW_URN_UTILS:
+            try:
+                mutation_config = get_mutation_config_for_environment(environment)
+                if mutation_config:
+                    # Get the original URN from entity data
+                    original_urn = entity_data.get("urn")
+                    if original_urn:
+                        # Generate mutated URN based on entity type
+                        if entity_type == "term":
+                            mutated_urn = generate_glossary_term_urn(original_urn, environment, mutation_config)
+                        elif entity_type == "node":
+                            mutated_urn = generate_glossary_node_urn(original_urn, environment, mutation_config)
+                        else:
+                            mutated_urn = original_urn
+                        
+                        if mutated_urn != original_urn:
+                            custom_urn = mutated_urn
+                            logger.info(f"Generated mutated URN for {entity_type}: {original_urn} -> {mutated_urn}")
+                logger.info(f"Using mutation config for environment '{environment}': {mutation_config is not None}")
+            except Exception as e:
+                logger.warning(f"Could not get mutation config for environment '{environment}': {e}")
+
         # Create comprehensive MCPs using all backend data
         logger.info(f"Creating comprehensive MCPs for {entity_type} '{entity_name}'...")
         new_mcps = create_comprehensive_glossary_mcps(
@@ -184,7 +221,8 @@ def add_glossary_to_staged_changes(
             entity_type=entity_type,
             owner=owner,
             environment=environment,
-            mutation_name=mutation_name
+            mutation_name=mutation_name,
+            custom_urn=custom_urn
         )
         
         logger.info(f"Created {len(new_mcps)} MCPs for {entity_type} '{entity_name}'")

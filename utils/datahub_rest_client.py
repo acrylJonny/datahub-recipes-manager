@@ -7446,14 +7446,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7614,14 +7610,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7710,14 +7702,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7806,14 +7794,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7902,14 +7886,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -7998,14 +7978,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -8095,14 +8071,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -8172,14 +8144,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -8249,14 +8217,10 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
           }
           browsePathV2 {
             path {
-              name
               entity {
                 ... on Container {
-                  container {
-                    urn
-                    properties {
-                      name
-                    }
+                  properties {
+                    name
                   }
                 }
               }
@@ -8610,6 +8574,168 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
             self.logger.error(f"GraphQL error: {errors[0]}")
             if len(errors) > 1:
                 self.logger.debug(f"Additional {len(errors) - 1} GraphQL errors occurred")
+
+    def aggregate_across_entities(self, facets, query="*", entity_types=None, max_agg_values=100):
+        """
+        Use DataHub's aggregateAcrossEntities API to get faceted aggregations.
+        
+        Args:
+            facets (list): List of facet fields to aggregate (e.g., ["platform"])
+            query (str): Search query
+            entity_types (list): Optional list of entity types to filter by
+            max_agg_values (int): Maximum number of aggregation values to return
+            
+        Returns:
+            dict: Response containing faceted aggregation data
+        """
+        self.logger.info(f"Aggregating across entities with facets={facets}, query='{query}', entity_types={entity_types}")
+        
+        graphql_query = """
+        query aggregateAcrossEntities($input: AggregateAcrossEntitiesInput!) {
+          aggregateAcrossEntities(input: $input) {
+            facets {
+              ...facetFields
+            }
+          }
+        }
+
+        fragment facetFields on FacetMetadata {
+          field
+          displayName
+          entity {
+            urn
+          }
+          aggregations {
+            entity {
+              urn
+              type
+              ...entityPlatformFields
+            }
+          }
+        }
+
+        fragment entityPlatformFields on Entity {
+          ... on Dataset {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on Dashboard {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on Chart {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on DataFlow {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on DataPlatform {
+            ...platformFields
+          }
+          ... on DataPlatformInstance {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on DataJob {
+            dataFlow {
+              platform {
+                ...platformFields
+              }
+            }
+          }
+          ... on Container {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on MLFeatureTable {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on MLFeature {
+            properties {
+              sources {
+                platform {
+                  ...platformFields
+                }
+              }
+            }
+          }
+          ... on MLPrimaryKey {
+            properties {
+              sources {
+                platform {
+                  ...platformFields
+                }
+              }
+            }
+          }
+          ... on MLModel {
+            platform {
+              ...platformFields
+            }
+          }
+          ... on MLModelGroup {
+            platform {
+              ...platformFields
+            }
+          }
+        }
+
+        fragment platformFields on DataPlatform {
+          urn
+          name
+          properties {
+            displayName
+          }
+        }
+        """
+        
+        # Build input variables
+        variables = {
+            "input": {
+                "facets": facets,
+                "query": query,
+                "searchFlags": {
+                    "maxAggValues": max_agg_values,
+                    "skipCache": False
+                }
+            }
+        }
+        
+        # Add entity type filters if specified
+        if entity_types:
+            variables["input"]["types"] = entity_types
+        
+        try:
+            result = self._execute_graphql(graphql_query, variables)
+            
+            if result and "aggregateAcrossEntities" in result:
+                return {
+                    "success": True,
+                    "data": result["aggregateAcrossEntities"]
+                }
+            else:
+                self._log_graphql_errors(result)
+                return {
+                    "success": False,
+                    "error": "No aggregation data returned"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error in aggregate_across_entities: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     def get_comprehensive_glossary_data(self, query="*", start=0, count=100):
         """

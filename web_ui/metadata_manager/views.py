@@ -435,6 +435,7 @@ def get_editable_entities(request):
                 "total": total_cached,
                 "filtered_total": total_cached,
                 "searchResults": [{"entity": result} for result in cached_results],
+                "cache_complete": True,  # Indicate this is from complete cache
             }
             
             return JsonResponse({"success": True, "data": response_data})
@@ -542,11 +543,13 @@ def _perform_background_search(session_key, cache_key, query, entity_type, platf
         # Mark as complete
         progress = SearchProgress.get_progress(session_key, cache_key)
         if progress:
+            total_cached = SearchResultCache.get_total_count(session_key, cache_key)
             SearchProgress.update_progress(
                 session_key=session_key,
                 cache_key=cache_key,
-                current_step="Search completed",
-                is_complete=True
+                current_step=f"Search completed - cached {total_cached} results",
+                is_complete=True,
+                total_results_found=total_cached
             )
             
     except Exception as e:
@@ -649,9 +652,10 @@ def _perform_comprehensive_search_with_progress(client, query, entity_type, plat
     SearchProgress.update_progress(
         session_key=session_key,
         cache_key=cache_key,
-        current_step="Comprehensive search completed",
+        current_step=f"Comprehensive search completed - cached {total_results} results for fast pagination",
         completed_combinations=total_combinations,
-        total_results_found=total_results
+        total_results_found=total_results,
+        is_complete=True
     )
 
 
@@ -1950,8 +1954,8 @@ def get_client_from_session(request):
 def get_platforms(request):
     """Get list of platforms from DataHub."""
     try:
-        # Get client from session
-        client = get_client_from_session(request)
+        # Get connection-specific client
+        client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse(
                 {"success": False, "error": "Not connected to DataHub"}, status=400
@@ -1959,67 +1963,120 @@ def get_platforms(request):
         
         entity_type = request.GET.get("entity_type")
         
-        # Use comprehensive platform search to get all available platforms
+        # Fast platform discovery using DataHub's aggregation API
         platforms = set()
         
-        # Start with common platforms
-        common_platforms = [
-            "postgres", "mysql", "snowflake", "bigquery", "redshift", 
-            "databricks", "azure", "glue", "hive", "kafka", "oracle", 
-            "mssql", "teradata", "tableau", "looker", "metabase", 
-            "superset", "powerbi", "airflow"
-        ]
-        
-        # Try to get actual platforms from DataHub by searching for entities
         try:
-            result = client.get_editable_entities(
-                start=0,
-                count=1000,
+            logger.info(f"Starting fast platform discovery using aggregation API for entity_type='{entity_type}'")
+            
+            # Use DataHub's aggregateAcrossEntities GraphQL query for efficient platform discovery
+            result = client.aggregate_across_entities(
+                facets=["platform"],
                 query="*",
-                entity_type=entity_type,
-                platform=None,
-                sort_by="name",
-                editable_only=False,
+                entity_types=[entity_type] if entity_type else None,
+                max_agg_values=1000  # Get up to 1000 platforms - increased from 100
             )
             
             if result and result.get("success") and "data" in result:
-                search_results = result["data"].get("searchResults", [])
+                facets = result["data"].get("facets", [])
+                
+                for facet in facets:
+                    if facet.get("field") == "platform":
+                        aggregations = facet.get("aggregations", [])
+                        logger.info(f"Found {len(aggregations)} platform aggregations from GraphQL API")
+                        
+                        for agg in aggregations:
+                            entity = agg.get("entity", {})
+                            if entity.get("type") == "DATA_PLATFORM":
+                                platform_name = entity.get("name")
+                                if platform_name:
+                                    platforms.add(platform_name)
+                                    logger.debug(f"Added platform: {platform_name}")
+                            else:
+                                logger.debug(f"Skipped non-DATA_PLATFORM entity: {entity.get('type', 'unknown')}")
+                
+                logger.info(f"Fast platform discovery completed: found {len(platforms)} platforms using aggregation API")
+                if len(platforms) >= 1000:
+                    logger.warning("Platform discovery may have hit the 1000 platform limit - some platforms might be missing")
+                
+            else:
+                logger.warning("Aggregation API failed or returned no data, falling back to entity search")
+                # Fallback to a single search if aggregation fails
+                result = client.get_editable_entities(
+                    start=0,
+                    count=10000,  # Much larger sample for comprehensive platform discovery
+                    query="*",
+                    entity_type=entity_type,
+                    platform=None,
+                    sort_by="name",
+                    editable_only=False,
+                )
+                
+                # Handle client response format
+                if result and result.get("success") and "data" in result:
+                    search_results = result["data"].get("searchResults", [])
+                elif result and "searchResults" in result:
+                    search_results = result.get("searchResults", [])
+                else:
+                    search_results = []
+                    
+                logger.info(f"Fallback entity search returned {len(search_results)} entities for platform discovery")
+                    
                 for search_result in search_results:
                     entity = search_result.get("entity", {})
                     
-                    # Extract platform from various locations
-                    platform_name = None
+                    # Extract platform from all possible locations
+                    platform_names = []
                     
+                    # Method 1: Direct platform reference
                     if entity.get("platform") and entity["platform"].get("name"):
-                        platform_name = entity["platform"]["name"]
-                    elif entity.get("dataPlatformInstance") and entity["dataPlatformInstance"].get("platform"):
-                        platform_name = entity["dataPlatformInstance"]["platform"].get("name")
+                        platform_names.append(entity["platform"]["name"])
                     
-                    if platform_name:
-                        platforms.add(platform_name)
-                        
-                    # Also check for platform in URN
-                    if entity.get("urn") and "urn:li:dataPlatform:" in entity["urn"]:
-                        try:
-                            urn_platform = entity["urn"].split("urn:li:dataPlatform:")[1].split(",")[0]
-                            if urn_platform:
-                                platforms.add(urn_platform)
-                        except:
-                            pass
+                    # Method 2: Platform instance reference  
+                    if entity.get("dataPlatformInstance") and entity["dataPlatformInstance"].get("platform"):
+                        platform_names.append(entity["dataPlatformInstance"]["platform"].get("name"))
+                    
+                    # Method 3: DataFlow platform (for DataJobs)
+                    if entity.get("dataFlow") and entity["dataFlow"].get("platform"):
+                        platform_names.append(entity["dataFlow"]["platform"].get("name"))
+                    
+                    # Add all found platform names
+                    for platform_name in platform_names:
+                        if platform_name:
+                            platforms.add(platform_name)
                             
+                    # Method 4: Extract from URN (multiple URN formats)
+                    if entity.get("urn"):
+                        urn = entity["urn"]
+                        try:
+                            # Format: urn:li:dataset:(urn:li:dataPlatform:platform_name,...)
+                            if "urn:li:dataPlatform:" in urn:
+                                urn_platform = urn.split("urn:li:dataPlatform:")[1].split(",")[0].split(")")[0]
+                                if urn_platform:
+                                    platforms.add(urn_platform)
+                            
+                            # Format: urn:li:dataFlow:(platform_name,...)
+                            elif urn.startswith("urn:li:dataFlow:("):
+                                urn_platform = urn.split("urn:li:dataFlow:(")[1].split(",")[0]
+                                if urn_platform:
+                                    platforms.add(urn_platform)
+                            
+                            # Format: urn:li:dataJob:(urn:li:dataFlow:(platform_name,...),...)
+                            elif "urn:li:dataFlow:(" in urn:
+                                urn_platform = urn.split("urn:li:dataFlow:(")[1].split(",")[0]
+                                if urn_platform:
+                                    platforms.add(urn_platform)
+                                    
+                        except Exception as e:
+                            logger.debug(f"Failed to extract platform from URN {urn}: {e}")
+                            pass
+                
+                logger.info(f"Fallback platform discovery completed: found {len(platforms)} platforms from {len(search_results)} entities")
+                    
         except Exception as e:
-            logger.warning(f"Could not fetch platforms from DataHub: {str(e)}")
-            # Fall back to common platforms
-            platforms.update(common_platforms)
+            logger.error(f"Error in platform discovery: {str(e)}")
         
-        # Ensure we have at least the common platforms
-        platforms.update(common_platforms)
-        
-        # Filter by entity type if specified
-        if entity_type:
-            entity_type_platforms = get_platform_list(client, entity_type)
-            if entity_type_platforms:
-                platforms = platforms.intersection(set(entity_type_platforms))
+        logger.info(f"Platform discovery final result: found {len(platforms)} unique platforms")
         
         # Convert to sorted list
         platform_list = sorted(list(platforms))
@@ -2128,21 +2185,32 @@ def get_structured_properties(request):
     """
     Get all structured properties from DataHub.
     This endpoint is used to build filters for the editable entities search.
-    Results are cached for 60 minutes.
+    Results are cached for 2 minutes per connection.
     """
     try:
-        # Check if we have a cached response
-        cache_key = "structured_properties_cache"
-        cached_data = cache.get(cache_key)
+        # Get current connection for connection-specific caching
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        connection_id = current_connection.id if current_connection else 'default'
         
-        if cached_data:
-            logger.info("Returning cached structured properties")
-            return JsonResponse(cached_data)
+        # Create connection-specific cache key
+        cache_key = f"structured_properties_cache_{connection_id}"
         
-        # Get client from environment
+        # Check if we should bypass cache (when connection_id or timestamp params are present)
+        force_refresh = request.GET.get('connection_id') or request.GET.get('t')
+        
+        if not force_refresh:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                logger.info(f"Returning cached structured properties for connection: {connection_id}")
+                return JsonResponse(cached_data)
+        
+        # Get client from session (connection-specific)
         client = get_client_from_session(request)
         if not client:
             return JsonResponse({"success": False, "error": "Could not connect to DataHub"})
+        
+        logger.info(f"Fetching fresh structured properties from DataHub for connection: {connection_id}")
         
         # Fetch structured properties from DataHub
         result = client.get_structured_properties(count=1000)
@@ -2155,15 +2223,15 @@ def get_structured_properties(request):
         # Log some information about the structured properties
         structured_properties = result.get("structured_properties", [])
         total = result.get("total", 0)
-        logger.info(f"Retrieved {len(structured_properties)} structured properties out of {total} total")
+        logger.info(f"Retrieved {len(structured_properties)} structured properties out of {total} total for connection: {connection_id}")
         
         if structured_properties and len(structured_properties) > 0:
             # Log a few examples
             examples = structured_properties[:3]
-            logger.info(f"Example structured properties: {examples}")
+            logger.info(f"Example structured properties for connection {connection_id}: {examples}")
         
-        # Cache the result for 60 minutes
-        cache.set(cache_key, result, 60 * 60)
+        # Cache the result for 2 minutes (connection-specific)
+        cache.set(cache_key, result, 2 * 60)
         
         return JsonResponse(result)
     except Exception as e:

@@ -16,7 +16,7 @@ sys.path.append(
 )
 
 from scripts.mcps.domain_actions import (
-    add_domain_to_staged_changes,
+    add_domain_to_staged_changes_legacy,
     setup_logging
 )
 
@@ -33,11 +33,12 @@ def parse_args():
     # Add domain to staged changes
     stage_parser = subparsers.add_parser("stage-domain", help="Add domain to staged changes")
     stage_parser.add_argument("--domain-file", required=True, help="JSON file with domain data")
-    stage_parser.add_argument("--environment", default="dev", help="Environment name")
+    stage_parser.add_argument("--environment", default="dev", help="Environment name (dev, staging, prod)")
     stage_parser.add_argument("--owner", default="admin", help="Owner username")
-    stage_parser.add_argument("--base-dir", default="metadata", help="Base directory for output")
+    stage_parser.add_argument("--base-dir", help="Base directory for output")
     stage_parser.add_argument("--include-all-aspects", action="store_true", default=True, help="Include all supported aspects")
     stage_parser.add_argument("--custom-aspects", help="JSON string with custom aspects")
+    stage_parser.add_argument("--mutation-name", help="Mutation name for deterministic URN generation")
     
     # General options
     parser.add_argument(
@@ -90,12 +91,16 @@ def main():
             domain_data = load_json_data(args.domain_file)
             custom_aspects = parse_custom_aspects(args.custom_aspects)
             
+            # Add mutation_name to domain_data if provided
+            if args.mutation_name:
+                domain_data["mutation_name"] = args.mutation_name
+            
             # Add to staged changes
-            result = add_domain_to_staged_changes(
+            result = add_domain_to_staged_changes_legacy(
                 domain_data=domain_data,
                 environment=args.environment,
                 owner=args.owner,
-                base_dir=args.base_dir,
+                base_dir=args.base_dir or "metadata-manager",
                 include_all_aspects=args.include_all_aspects,
                 custom_aspects=custom_aspects
             )

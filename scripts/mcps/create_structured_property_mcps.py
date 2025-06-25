@@ -80,6 +80,7 @@ def create_structured_property_definition_mcp(
     show_in_columns_table: bool = False,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for structured property definition
@@ -107,9 +108,13 @@ def create_structured_property_definition_mcp(
     Returns:
         Dictionary representation of the MCP
     """
-    property_urn = generate_deterministic_urn(
-        "structuredProperty", property_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create property URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        property_urn = custom_urn
+    else:
+        property_urn = generate_deterministic_urn(
+            "structuredProperty", property_id, environment=environment, mutation_name=mutation_name
+        )
 
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
@@ -417,6 +422,7 @@ def create_structured_property_staged_changes(
     custom_properties: Optional[Dict[str, str]] = None,
     include_all_aspects: bool = True,
     custom_aspects: Optional[Dict[str, Any]] = None,
+    custom_urn: Optional[str] = None,
     **kwargs
 ) -> List[Dict[str, Any]]:
     """
@@ -471,7 +477,8 @@ def create_structured_property_staged_changes(
         display_name=display_name,
         description=description,
         cardinality=cardinality,
-        allowedValues=allowedValues
+        allowedValues=allowedValues,
+        custom_urn=custom_urn
     )
     mcps.append(definition_mcp)
     

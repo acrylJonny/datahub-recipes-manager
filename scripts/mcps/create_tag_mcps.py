@@ -32,6 +32,14 @@ except ImportError:
 
 from utils.urn_utils import generate_deterministic_urn
 
+# Try to import the new URN generation utilities
+try:
+    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
+    from utils.urn_utils import generate_tag_urn, get_mutation_config_for_environment
+    HAS_NEW_URN_UTILS = True
+except ImportError:
+    HAS_NEW_URN_UTILS = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +120,9 @@ def create_tag_properties_mcp(
     tag_name: Optional[str] = None,
     description: Optional[str] = None,
     color_hex: Optional[str] = None,
-
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for tag properties
@@ -125,9 +133,9 @@ def create_tag_properties_mcp(
         tag_name: Display name for the tag (optional, defaults to tag_id)
         description: Description of the tag (optional)
         color_hex: Hex color code for the tag (optional)
-
         environment: Environment name (deprecated, use mutation_name instead)
         mutation_name: Mutation name for deterministic URN (optional)
+        custom_urn: Custom URN to use instead of generating one (optional)
 
     Returns:
         Dictionary representation of the MCP
@@ -136,10 +144,13 @@ def create_tag_properties_mcp(
     if tag_name is None:
         tag_name = tag_id
 
-    # Create tag URN using deterministic generation
-    tag_urn = generate_deterministic_urn(
-        "tag", tag_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create tag URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        tag_urn = custom_urn
+    else:
+        tag_urn = generate_deterministic_urn(
+            "tag", tag_id, environment=environment, mutation_name=mutation_name
+        )
 
     # Create audit stamp
     current_time = int(time.time() * 1000)  # Current time in milliseconds
@@ -174,6 +185,7 @@ def create_tag_ownership_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for tag ownership
@@ -183,14 +195,18 @@ def create_tag_ownership_mcp(
         owner: The owner of the tag
         environment: Environment name (deprecated, use mutation_name instead)
         mutation_name: Mutation name for deterministic URN (optional)
+        custom_urn: Custom URN to use instead of generating one (optional)
 
     Returns:
         Dictionary representation of the MCP
     """
-    # Create tag URN using deterministic generation
-    tag_urn = generate_deterministic_urn(
-        "tag", tag_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create tag URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        tag_urn = custom_urn
+    else:
+        tag_urn = generate_deterministic_urn(
+            "tag", tag_id, environment=environment, mutation_name=mutation_name
+        )
 
     # Create audit stamp
     current_time = int(time.time() * 1000)
@@ -360,6 +376,22 @@ def main():
     # Generate a filename-safe version of the tag_id
     safe_tag_id = tag_id.replace(" ", "_").lower()
     
+    # Get mutation configuration for environment-based URN generation
+    mutation_config = None
+    custom_urn = None
+    if HAS_NEW_URN_UTILS and env_name != "default":
+        try:
+            mutation_config = get_mutation_config_for_environment(env_name)
+            if mutation_config:
+                # Generate a temporary URN to test mutation
+                temp_urn = f"urn:li:tag:{tag_id}"
+                mutated_urn = generate_tag_urn(temp_urn, env_name, mutation_config)
+                if mutated_urn != temp_urn:
+                    custom_urn = mutated_urn
+                    logger.info(f"Using mutated URN for tag: {temp_urn} -> {mutated_urn}")
+        except Exception as e:
+            logger.warning(f"Could not get mutation config for environment '{env_name}': {e}")
+
     # Create properties MCP
     logger.info(f"Creating properties MCP for tag '{tag_id}'...")
     properties_mcp = create_tag_properties_mcp(
@@ -369,7 +401,8 @@ def main():
         description=args.description,
         color_hex=args.color_hex,
         environment=args.environment,
-        mutation_name=args.mutation_name
+        mutation_name=args.mutation_name,
+        custom_urn=custom_urn
     )
     
     # Save properties MCP
@@ -382,7 +415,8 @@ def main():
         tag_id=tag_id,
         owner=args.owner,
         environment=args.environment,
-        mutation_name=args.mutation_name
+        mutation_name=args.mutation_name,
+        custom_urn=custom_urn
     )
     
     # Save ownership MCP

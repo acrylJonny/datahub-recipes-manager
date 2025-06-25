@@ -4,6 +4,7 @@ from django.views import View
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods, require_POST
 from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 
 # Add project root to sys.path
 import sys
@@ -290,7 +291,8 @@ def get_data_contracts(request):
         }, status=500)
 
 
-@method_decorator(require_POST)
+@csrf_exempt
+@require_POST
 def sync_data_contract_to_local(request):
     """Sync a data contract from DataHub to local database"""
     try:
@@ -299,18 +301,35 @@ def sync_data_contract_to_local(request):
         from utils.datahub_utils import test_datahub_connection
         from web_ui.views import get_current_connection
         
+        logger.info(f"Sync contract to local called. Request content type: {request.content_type}")
+        logger.info(f"Request body: {request.body}")
+        
         # Get the data contract URN from the request
-        data = json.loads(request.body)
+        try:
+            data = json.loads(request.body)
+            logger.info(f"Parsed JSON data: {data}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
+            logger.error(f"Request body was: {request.body}")
+            return JsonResponse({
+                "success": False,
+                "error": f"Invalid JSON data: {str(e)}"
+            }, status=400)
+        
         contract_urn = data.get("urn")
         if not contract_urn:
+            logger.error("No URN provided in request")
             return JsonResponse({
                 "success": False,
                 "error": "Data contract URN is required"
             }, status=400)
         
+        logger.info(f"Processing contract URN: {contract_urn}")
+        
         # Get DataHub connection
         connected, client = test_datahub_connection(request)
         if not connected or not client:
+            logger.error("No DataHub connection available")
             return JsonResponse({
                 "success": False,
                 "error": "No active DataHub connection configured"
@@ -318,12 +337,15 @@ def sync_data_contract_to_local(request):
         
         # Get current connection for database storage
         connection = get_current_connection(request)
+        logger.info(f"Using connection: {connection}")
         
         # Fetch the data contract from DataHub
         try:
+            logger.info("Fetching data contracts from DataHub...")
             # Get data contracts using the existing method
             result = client.get_data_contracts(start=0, count=1000, query="*")
             if not result.get("success", False):
+                logger.error(f"Failed to fetch data contracts: {result}")
                 return JsonResponse({
                     "success": False,
                     "error": "Failed to fetch data contracts from DataHub"
@@ -331,18 +353,24 @@ def sync_data_contract_to_local(request):
             
             # Find the specific contract
             contract_data = None
-            for contract_result in result["data"].get("searchResults", []):
+            search_results = result["data"].get("searchResults", [])
+            logger.info(f"Found {len(search_results)} contracts in DataHub")
+            
+            for contract_result in search_results:
                 if contract_result and contract_result.get("entity", {}).get("urn") == contract_urn:
                     contract_data = contract_result.get("entity", {})
+                    logger.info(f"Found matching contract: {contract_data.get('urn')}")
                     break
             
             if not contract_data:
+                logger.error(f"Contract with URN {contract_urn} not found in {len(search_results)} results")
                 return JsonResponse({
                     "success": False,
                     "error": f"Data contract with URN {contract_urn} not found"
                 }, status=404)
                 
         except Exception as e:
+            logger.error(f"Error fetching data contract: {str(e)}")
             return JsonResponse({
                 "success": False,
                 "error": f"Error fetching data contract: {str(e)}"
@@ -350,7 +378,9 @@ def sync_data_contract_to_local(request):
         
         # Create or update the data contract in local database
         try:
+            logger.info("Creating/updating contract in local database...")
             contract = DataContract.create_from_datahub(contract_data, connection=connection)
+            logger.info(f"Successfully created/updated contract: {contract.id} - {contract.name}")
             
             return JsonResponse({
                 "success": True,
@@ -361,18 +391,17 @@ def sync_data_contract_to_local(request):
             
         except Exception as e:
             logger.error(f"Error creating/updating data contract in database: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return JsonResponse({
                 "success": False,
                 "error": f"Error saving to database: {str(e)}"
             }, status=500)
         
-    except json.JSONDecodeError:
-        return JsonResponse({
-            "success": False,
-            "error": "Invalid JSON data"
-        }, status=400)
     except Exception as e:
         logger.error(f"Error syncing data contract to local: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return JsonResponse({
             "success": False,
             "error": f"An error occurred: {str(e)}"
@@ -474,11 +503,32 @@ def add_data_contract_to_staged_changes(request):
         
         # Get the data contract URN from the request
         contract_urn = request.POST.get("contract_urn")
-        if not contract_urn:
+        contract_id = request.POST.get("contract_id")
+        
+        if not contract_urn and not contract_id:
             return JsonResponse({
                 "success": False,
-                "error": "Data contract URN is required"
+                "error": "Data contract URN or ID is required"
             }, status=400)
+        
+        # If we have a contract_id, get the contract from database
+        if contract_id:
+            try:
+                from .models import DataContract
+                contract = DataContract.objects.get(id=contract_id)
+                contract_urn = contract.urn
+                
+                if not contract_urn:
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Contract has no URN"
+                    }, status=400)
+                    
+            except DataContract.DoesNotExist:
+                return JsonResponse({
+                    "success": False,
+                    "error": f"Data contract with ID {contract_id} not found"
+                }, status=404)
         
         # Get DataHub connection
         from utils.datahub_utils import test_datahub_connection
@@ -504,12 +554,12 @@ def add_data_contract_to_staged_changes(request):
             }, status=500)
         
         # Extract contract ID from URN for file naming
-        contract_id = contract_urn.split(":")[-1] if ":" in contract_urn else contract_urn
+        contract_id_for_file = contract_urn.split(":")[-1] if ":" in contract_urn else contract_urn
         
         # Prepare data contract data
         properties = contract_data.get("properties", {})
         contract_data_processed = {
-            "id": contract_id,
+            "id": contract_id_for_file,
             "urn": contract_urn,
             "entity_urn": properties.get("entity", {}).get("urn") if properties.get("entity") else None,
             "properties": properties,
@@ -526,7 +576,7 @@ def add_data_contract_to_staged_changes(request):
         
         return JsonResponse({
             "success": True,
-            "message": f"Data contract '{contract_id}' added to staged changes",
+            "message": f"Data contract '{contract_id_for_file}' added to staged changes",
             "files_created": len(result),
             "file_paths": result
         })
@@ -539,4 +589,107 @@ def add_data_contract_to_staged_changes(request):
         return JsonResponse({
             "success": False,
             "error": f"An error occurred: {str(e)}"
-        }) 
+        })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DataContractAddAllToStagedChangesView(View):
+    """API view for adding all data contracts to staged changes"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            
+            data = json.loads(request.body)
+            environment = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current connection to filter contracts by connection
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Get all data contracts for current connection
+            from .models import DataContract
+            contracts = DataContract.objects.filter(connection=current_connection)
+            
+            if not contracts:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No data contracts found to add to staged changes for current connection'
+                }, status=400)
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.data_contract_actions import add_data_contract_to_staged_changes_legacy as add_contract_mcps
+            
+            success_count = 0
+            error_count = 0
+            files_created_count = 0
+            files_skipped_count = 0
+            errors = []
+            all_created_files = []
+            
+            for contract in contracts:
+                try:
+                    # Extract contract ID from URN for file naming
+                    contract_id_for_file = contract.urn.split(":")[-1] if contract.urn and ":" in contract.urn else str(contract.id)
+                    
+                    # Prepare data contract data
+                    contract_data_processed = {
+                        "id": contract_id_for_file,
+                        "urn": contract.urn,
+                        "entity_urn": contract.entity_urn,
+                        "properties": contract.properties_data or {},
+                        "sync_status": contract.sync_status,
+                    }
+                    
+                    # Add contract to staged changes
+                    created_files = add_contract_mcps(
+                        contract_data=contract_data_processed,
+                        environment=environment,
+                        owner=request.user.username if request.user.is_authenticated else "admin",
+                        base_dir="metadata-manager"
+                    )
+                    
+                    success_count += 1
+                    files_created_count += len(created_files)
+                    all_created_files.extend(created_files)
+                    
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"Contract {contract.name or contract.urn}: {str(e)}")
+                    logger.error(f"Error adding contract {contract.name or contract.urn} to staged changes: {str(e)}")
+            
+            # Calculate total files that could have been created
+            total_possible_files = success_count * 1  # single MCP file for each contract
+            files_skipped_count = total_possible_files - files_created_count
+            
+            message = f"Add all to staged changes completed: {success_count} contracts processed, {files_created_count} files created, {files_skipped_count} files skipped (unchanged), {error_count} failed"
+            if errors:
+                message += f". Errors: {'; '.join(errors[:5])}"  # Show first 5 errors
+                if len(errors) > 5:
+                    message += f" and {len(errors) - 5} more..."
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'success_count': success_count,
+                'error_count': error_count,
+                'files_created_count': files_created_count,
+                'files_skipped_count': files_skipped_count,
+                'errors': errors,
+                'files_created': all_created_files
+            })
+            
+        except Exception as e:
+            logger.error(f"Error adding all data contracts to staged changes: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500) 

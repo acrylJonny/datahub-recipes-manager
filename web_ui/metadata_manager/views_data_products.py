@@ -1561,7 +1561,7 @@ def add_data_product_to_staged_changes(request, data_product_id):
         return JsonResponse({
             "success": False,
             "error": f"An error occurred: {str(e)}"
-        })
+        }) 
 
 
 @method_decorator(csrf_exempt, name="dispatch")

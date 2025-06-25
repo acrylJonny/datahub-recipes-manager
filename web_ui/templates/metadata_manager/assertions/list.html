@@ -115,6 +115,7 @@
         font-size: 0.8rem;
     }
 
+    /* Table styling matching tags page */
     .table th {
         background-color: #f8f9fa;
         border-top: none;
@@ -198,96 +199,33 @@
     
     /* Larger text for better readability */
     .filter-stat .h5 {
-        font-size: 1.5rem;
-        font-weight: 600;
+        font-size: 1.1rem;
     }
     
-    .filter-stat .h6 {
-        font-size: 1.25rem;
-        font-weight: 600;
-    }
-    
-    .filter-stat .text-muted {
-        font-size: 0.9rem;
-        font-weight: 500;
-    }
-    
-    /* Training status turquoise color */
-    .clickable-stat[data-filter="status-training"].active {
-        background-color: #17a2b8 !important;
-        color: white !important;
-        border-color: #17a2b8 !important;
-    }
-    
-    /* Make training number white when selected */
-    .clickable-stat[data-filter="status-training"].active .h6 {
-        color: white !important;
-    }
-    
-    /* Make row headers bigger */
-    .filter-row .bg-light {
-        font-weight: 600;
+    /* Sticky table header */
+    .table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 10;
         background-color: #f8f9fa !important;
-        font-size: 1.2rem !important;
     }
     
-    /* Ensure table has horizontal scrolling */
-    .table-responsive {
-        overflow-x: auto;
-        max-width: 100%;
-    }
-    
-    /* Pagination styling */
-    .pagination-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        border-top: 1px solid #dee2e6;
-        background-color: #f8f9fa;
-    }
-    
-    .pagination-info {
-        color: #6c757d;
-        font-size: 0.9rem;
-    }
-    
-    .pagination .page-link {
-        color: #007bff;
-        border-color: #dee2e6;
-    }
-    
-    .pagination .page-item.active .page-link {
-        background-color: #007bff;
-        border-color: #007bff;
-        color: white !important;
-    }
-    
-    .pagination .page-item.disabled .page-link {
-        color: #6c757d;
-        pointer-events: none;
-        cursor: auto;
-        background-color: #fff;
-        border-color: #dee2e6;
-    }
-    
-    /* Bulk selection styling */
+    /* Bulk actions styling - matching tags page exactly */
     .bulk-actions-bar {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 0.375rem;
-        padding: 0.75rem 1rem;
-        margin-bottom: 1rem;
         display: none;
+        padding: 1rem;
+        background-color: #e3f2fd;
+        border-bottom: 1px solid #90caf9;
+        position: sticky;
+        top: 0;
+        z-index: 1020;
     }
     
     .bulk-actions-bar.show {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        display: block;
     }
     
-    /* Per-tab bulk actions styling - matching other pages */
+    /* Per-tab bulk actions styling - matching tags page */
     .bulk-actions {
         display: none;
         padding: 1rem;
@@ -302,11 +240,6 @@
     .selection-info {
         font-weight: 500;
         color: #495057;
-    }
-    
-    .bulk-actions {
-        display: flex;
-        gap: 0.5rem;
     }
     
     /* Checkbox styling */
@@ -334,6 +267,114 @@
     /* Dropdown for create assertion */
     .create-assertion-dropdown .dropdown-menu {
         min-width: 200px;
+    }
+
+    /* Table column width constraints - matching tags page */
+    .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
+        width: 40px;
+        max-width: 40px;
+    }
+    
+    .table th:nth-child(2), .table td:nth-child(2) { /* Name */
+        max-width: 180px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(3), .table td:nth-child(3) { /* Description */
+        max-width: 250px;
+        min-width: 150px;
+    }
+    
+    .table th:nth-child(4), .table td:nth-child(4) { /* Type */
+        width: 100px;
+        max-width: 100px;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* Entity */
+        max-width: 200px;
+        min-width: 120px;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* Status */
+        width: 100px;
+        max-width: 100px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* URN */
+        max-width: 140px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* Sync Status */
+        width: 120px;
+        max-width: 120px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(9), .table td:nth-child(9) { /* Actions */
+        width: 200px;
+        max-width: 200px;
+        text-align: left;
+    }
+    
+    /* Sortable table headers */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    /* Pagination styling */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        background-color: #f8f9fa;
+    }
+    
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .pagination .page-link {
+        color: #007bff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #007bff;
+        border-color: #007bff;
     }
 </style>
 {% endblock %}
@@ -592,10 +633,7 @@
                     <div class="tab-pane fade show active" id="synced-items" role="tabpanel" aria-labelledby="synced-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllSynced">
-                                    <h5 class="card-title mb-0">Synced Assertions</h5>
-                                </div>
+                                <h5 class="card-title mb-0">Synced Assertions</h5>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="synced-search" class="form-control" placeholder="Search synced assertions...">
@@ -641,10 +679,7 @@
                     <div class="tab-pane fade" id="local-items" role="tabpanel" aria-labelledby="local-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllLocal">
-                                    <h5 class="card-title mb-0">Local Only Assertions</h5>
-                                </div>
+                                <h5 class="card-title mb-0">Local Only Assertions</h5>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="local-search" class="form-control" placeholder="Search local assertions...">
@@ -687,10 +722,7 @@
                     <div class="tab-pane fade" id="remote-items" role="tabpanel" aria-labelledby="remote-tab">
                         <div class="card mb-4">
                             <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                                <div class="d-flex align-items-center">
-                                    <input type="checkbox" class="form-check-input select-all-checkbox" id="selectAllRemote">
-                                    <h5 class="card-title mb-0">Remote Only Assertions</h5>
-                                </div>
+                                <h5 class="card-title mb-0">Remote Only Assertions</h5>
                                 <div class="input-group" style="width: 300px;">
                                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                                     <input type="text" id="remote-search" class="form-control" placeholder="Search remote assertions...">
@@ -1162,6 +1194,12 @@ let currentPagination = {
     remote: { page: 1, perPage: 25 }
 };
 
+// Initialize environment information
+window.currentEnvironment = {
+    name: '{{ current_environment.name|default:"dev" }}',
+    mutation_name: '{{ current_environment.mutations.name|default:"" }}'
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     loadAssertionsData();
     
@@ -1299,6 +1337,11 @@ function loadAssertionsData(skipSyncValidation = false) {
         .finally(() => {
             showLoading(false);
         });
+}
+
+function refreshAssertionData() {
+    console.log('Refreshing assertion data after sync operation...');
+    loadAssertionsData();
 }
 
 function showLoading(show) {
@@ -1563,20 +1606,20 @@ function generateTableHTML(items, tabType) {
             <table class="table table-hover table-striped mb-0">
                 <thead>
                     <tr>
-                        <th class="checkbox-column">
+                        <th class="checkbox-column" width="3%">
                             <input type="checkbox" class="form-check-input select-all-table" data-tab="${tabType}">
                         </th>
-                        <th class="sortable-header" data-sort="urn">URN</th>
-                        <th class="sortable-header" data-sort="type">Type</th>
-                        <th>Logic</th>
-                        <th class="sortable-header" data-sort="status">Status</th>
-                        <th class="sortable-header" data-sort="asserteeUrn">Assertee URN</th>
-                        <th class="sortable-header" data-sort="parameters">Parameters</th>
-                        <th>Schedule</th>
-                        <th class="sortable-header" data-sort="tags">Tags</th>
-                        <th>Source</th>
-                        ${showSyncStatus ? '<th>Sync Status</th>' : ''}
-                        <th width="15%">Actions</th>
+                        <th class="sortable-header" data-sort="urn" width="12%">URN</th>
+                        <th class="sortable-header" data-sort="type" width="6%">Type</th>
+                        <th width="18%">Logic</th>
+                        <th class="sortable-header" data-sort="status" width="8%">Status</th>
+                        <th class="sortable-header" data-sort="asserteeUrn" width="15%">Assertee URN</th>
+                        <th class="sortable-header" data-sort="parameters" width="12%">Parameters</th>
+                        <th width="10%">Schedule</th>
+                        <th class="sortable-header" data-sort="tags" width="6%">Tags</th>
+                        <th width="5%">Source</th>
+                        ${showSyncStatus ? '<th width="6%">Sync Status</th>' : ''}
+                        <th width="10%">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1757,27 +1800,27 @@ function renderAssertionRow(assertion, tabType) {
                 <input type="checkbox" class="form-check-input assertion-checkbox" id="${checkboxId}" data-tab="${tabType}">
             </td>
             <td>
-                <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 40))}</code>
+                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 35))}</code>
             </td>
             <td>
-                <span class="badge bg-primary">${assertionType}</span>
+                <span class="badge bg-primary small">${assertionType}</span>
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 250px;">${logic}</div>
+                <div class="text-wrap" style="max-width: 300px;">${logic}</div>
             </td>
             <td>
                 ${status}
             </td>
             <td>
                 ${asserteeUrn ? `
-                    <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 30))}</code>
+                    <code class="small text-truncate d-block" style="max-width: 250px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 40))}</code>
                 ` : `<span class="text-muted">-</span>`}
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 200px;">${parameters}</div>
+                <div class="text-wrap" style="max-width: 180px;">${parameters}</div>
             </td>
             <td>
-                ${schedule}
+                <div class="text-wrap" style="max-width: 120px;">${schedule}</div>
             </td>
             <td>
                 ${tagsDisplay}
@@ -2320,11 +2363,139 @@ function bulkDownloadJson(tabType) {
 
 function bulkAddToPR(tabType) {
     const checkedBoxes = document.querySelectorAll(`#${tabType}-content .assertion-checkbox:checked`);
-    if (checkedBoxes.length === 0) return;
+    if (checkedBoxes.length === 0) {
+        showNotification('error', 'Please select assertions to add to staged changes.');
+        return;
+    }
     
-    if (confirm(`Are you sure you want to add ${checkedBoxes.length} assertion(s) to staged changes?`)) {
-        console.log(`Bulk add to staged changes ${checkedBoxes.length} assertions for ${tabType}`);
-        showSuccess(`Adding ${checkedBoxes.length} assertions to staged changes...`);
+    // Collect assertion data from checkboxes
+    const selectedAssertions = [];
+    checkedBoxes.forEach(checkbox => {
+        const row = checkbox.closest('tr');
+        if (row) {
+            try {
+                const itemData = JSON.parse(row.dataset.item);
+                selectedAssertions.push(itemData);
+            } catch (error) {
+                console.error('Error parsing assertion data:', error);
+            }
+        }
+    });
+    
+    if (selectedAssertions.length === 0) {
+        showNotification('error', 'No valid assertions found for staging.');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to add ${selectedAssertions.length} assertion(s) to staged changes?`)) {
+        console.log(`Bulk add ${selectedAssertions.length} assertions to staged changes for ${tabType}:`, selectedAssertions);
+        
+        // Show loading indicator
+        showNotification('success', `Starting to add ${selectedAssertions.length} assertions to staged changes...`);
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        // Process each assertion sequentially
+        let successCount = 0;
+        let errorCount = 0;
+        let processedCount = 0;
+        let createdFiles = [];
+        
+        // Create a function to process assertions one by one
+        function processNextAssertion(index) {
+            if (index >= selectedAssertions.length) {
+                // All assertions processed
+                if (successCount > 0) {
+                    showNotification('success', `Completed: ${successCount} assertions added to staged changes, ${errorCount} failed.`);
+                    if (createdFiles.length > 0) {
+                        console.log('Created files:', createdFiles);
+                    }
+                } else if (errorCount > 0) {
+                    showNotification('error', `Failed to add any assertions to staged changes. ${errorCount} errors occurred.`);
+                }
+                return;
+            }
+            
+            const assertion = selectedAssertions[index];
+            
+            // We need the ID for the API call
+            const assertionId = assertion.id || assertion.urn;
+            if (!assertionId) {
+                console.error('Cannot add assertion to staged changes without an ID:', assertion);
+                errorCount++;
+                processedCount++;
+                processNextAssertion(index + 1);
+                return;
+            }
+            
+            // Determine endpoint based on whether it's local or remote
+            let endpoint;
+            let body;
+            
+            if (tabType === 'remote') {
+                // Remote assertion
+                endpoint = '/metadata/tests/remote/stage_changes/';
+                body = JSON.stringify({
+                    test_urn: assertion.urn,
+                    environment: currentEnvironment.name,
+                    mutation_name: mutationName
+                });
+            } else {
+                // Local or synced assertion
+                endpoint = `/metadata/tests/${assertionId}/stage_changes/`;
+                body = JSON.stringify({
+                    environment: currentEnvironment.name,
+                    mutation_name: mutationName
+                });
+            }
+            
+            // Make the API call to add this assertion to staged changes
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: body
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to add assertion ${assertion.name || assertion.urn} to staged changes`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log(`Successfully added assertion to staged changes: ${assertion.name || assertion.urn}`);
+                successCount++;
+                processedCount++;
+                
+                // Track created files
+                if (data.files_created && data.files_created.length > 0) {
+                    createdFiles = [...createdFiles, ...data.files_created];
+                }
+                
+                // Update progress
+                if (processedCount % 5 === 0 || processedCount === selectedAssertions.length) {
+                    showNotification('success', `Progress: ${processedCount}/${selectedAssertions.length} assertions processed`);
+                }
+                
+                // Process the next assertion
+                processNextAssertion(index + 1);
+            })
+            .catch(error => {
+                console.error(`Error adding assertion ${assertion.name || assertion.urn} to staged changes:`, error);
+                errorCount++;
+                processedCount++;
+                
+                // Process the next assertion despite the error
+                processNextAssertion(index + 1);
+            });
+        }
+        
+        // Start processing assertions
+        processNextAssertion(0);
     }
 }
 
@@ -2503,8 +2674,39 @@ function showAssertionDetails(assertion) {
         relationshipsList.innerHTML = '<p class="text-muted">No relationships available</p>';
     }
     
-    // Raw JSON - Show comprehensive GraphQL data
-    const rawData = assertion.raw_data || assertion;
+    // Raw JSON - Show comprehensive data including all fields and metadata
+    const rawData = {
+        ...assertion,
+        // Ensure all important fields are included
+        urn: assertion.urn,
+        name: assertion.name,
+        description: assertion.description,
+        type: assertion.type,
+        category: assertion.category,
+        status: assertion.status,
+        sync_status: assertion.sync_status,
+        definition: assertion.definition,
+        definition_json: assertion.definition_json,
+        results: assertion.results,
+        relationships: assertion.relationships,
+        ownership: assertion.ownership,
+        properties: assertion.properties,
+        info: assertion.info,
+        raw_data: assertion.raw_data,
+        // Add metadata
+        _metadata: {
+            display_fields: {
+                urn: assertion.urn,
+                name: assertion.name,
+                description: assertion.description,
+                type: assertion.type || assertion.category,
+                status: assertion.status,
+                sync_status: assertion.sync_status
+            },
+            source: 'assertion_view_modal',
+            timestamp: new Date().toISOString()
+        }
+    };
     document.getElementById('modal-raw-json').innerHTML = `<code>${escapeHtml(JSON.stringify(rawData, null, 2))}</code>`;
     
     // Show modal
@@ -2631,14 +2833,8 @@ function showNotification(type, message) {
 }
 
 function showError(message) {
-    // Create and show error alert
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
+    // Use the same notification system as showNotification
+    showNotification('error', message);
 }
 
 // Action button event handlers
@@ -3001,21 +3197,8 @@ function deleteRemoteAssertion(assertionUrn, button) {
 }
 
 function showSuccess(message) {
-    // Create and show success alert
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-success alert-dismissible fade show';
-    alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    document.querySelector('.container-fluid').insertBefore(alert, document.querySelector('.row'));
-    
-    // Auto-dismiss after 5 seconds
-    setTimeout(() => {
-        if (alert.parentNode) {
-            alert.remove();
-        }
-    }, 5000);
+    // Use the same notification system as showNotification
+    showNotification('success', message);
 }
 
 // Helper functions for enhanced assertion display
@@ -3769,25 +3952,17 @@ function getSortValueFromRow(row, column) {
     
     switch(column) {
         case 'urn':
-            return cells[0]?.textContent?.trim().toLowerCase() || '';
-        case 'type':
             return cells[1]?.textContent?.trim().toLowerCase() || '';
-        case 'logic':
+        case 'type':
             return cells[2]?.textContent?.trim().toLowerCase() || '';
         case 'status':
-            return cells[3]?.textContent?.trim().toLowerCase() || '';
-        case 'asserteeUrn':
             return cells[4]?.textContent?.trim().toLowerCase() || '';
-        case 'parameters':
+        case 'asserteeUrn':
             return cells[5]?.textContent?.trim().toLowerCase() || '';
-        case 'schedule':
+        case 'parameters':
             return cells[6]?.textContent?.trim().toLowerCase() || '';
         case 'tags':
             return cells[8]?.textContent?.trim().toLowerCase() || '';
-        case 'source':
-            return cells[9]?.textContent?.trim().toLowerCase() || '';
-        case 'syncStatus':
-            return cells[10]?.textContent?.trim().toLowerCase() || '';
         default:
             return '';
     }
@@ -3971,8 +4146,8 @@ function addAssertionToPR(assertionUrn, assertionId, button) {
             if (data.success) {
                 showSuccess('Assertion synced successfully. Now adding to PR...');
                 
-                // Move assertion to synced tab
-                moveAssertionToSynced(assertionUrn, data.assertion_id);
+                // Refresh data to update tabs after sync
+                refreshAssertionData();
                 
                 // Now add to PR using the new assertion ID
                 performAddToPR(data.assertion_id, button, originalHtml);
@@ -3996,29 +4171,35 @@ function addAssertionToPR(assertionUrn, assertionId, button) {
 }
 
 function performAddToPR(assertionId, button, originalHtml) {
-    fetch(`/metadata/assertions/${assertionId}/add-to-pr/`, {
+    // Get current environment and mutation from global state or settings
+    const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+    const mutationName = currentEnvironment.mutation_name || null;
+    
+    fetch(`/metadata/tests/${assertionId}/stage_changes/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCsrfToken(),
         },
-        body: JSON.stringify({})
+        body: JSON.stringify({
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showSuccess(`Assertion added to PR successfully!<br>
-                        <strong>File:</strong> ${data.file_path}<br>
-                        <strong>Environment:</strong> ${data.environment}<br>
-                        <strong>Operation:</strong> ${data.operation}<br>
-                        <strong>Type:</strong> ${data.assertion_type}`);
+            showSuccess(`Assertion added to staged changes successfully!<br>
+                        <strong>Files:</strong> ${data.files_created ? data.files_created.join(', ') : 'N/A'}<br>
+                        <strong>Environment:</strong> ${currentEnvironment.name}<br>
+                        <strong>Mutation:</strong> ${mutationName || 'None'}`);
         } else {
-            showError('Failed to add assertion to PR: ' + (data.error || 'Unknown error'));
+            showError('Failed to add assertion to staged changes: ' + (data.error || 'Unknown error'));
         }
     })
     .catch(error => {
-        console.error('Error adding assertion to PR:', error);
-        showError('Error adding assertion to PR');
+        console.error('Error adding assertion to staged changes:', error);
+        showError('Error adding assertion to staged changes');
     })
     .finally(() => {
         button.innerHTML = originalHtml;

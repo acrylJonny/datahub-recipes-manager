@@ -83,6 +83,7 @@ def create_glossary_node_info_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for glossary node info using comprehensive backend data
@@ -102,10 +103,13 @@ def create_glossary_node_info_mcp(
     description = node_data.get("description", "")
     parent_urn = node_data.get("parent_urn")
     
-    # Create node URN using deterministic generation
-    node_urn = generate_deterministic_urn(
-        "glossaryNode", node_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create node URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        node_urn = custom_urn
+    else:
+        node_urn = generate_deterministic_urn(
+            "glossaryNode", node_id, environment=environment, mutation_name=mutation_name
+        )
 
     # Create glossary node info with all available data
     node_info = GlossaryNodeInfoClass(
@@ -132,6 +136,7 @@ def create_glossary_term_info_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for glossary term info using comprehensive backend data
@@ -152,10 +157,13 @@ def create_glossary_term_info_mcp(
     parent_urn = term_data.get("parent_urn")
     term_source = term_data.get("term_source", "INTERNAL")
     
-    # Create term URN using deterministic generation
-    term_urn = generate_deterministic_urn(
-        "glossaryTerm", term_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create term URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        term_urn = custom_urn
+    else:
+        term_urn = generate_deterministic_urn(
+            "glossaryTerm", term_id, environment=environment, mutation_name=mutation_name
+        )
 
     # Create glossary term info with all available data
     term_info = GlossaryTermInfoClass(
@@ -186,6 +194,7 @@ def create_glossary_ownership_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create an MCP for glossary entity ownership using comprehensive backend data
@@ -203,10 +212,13 @@ def create_glossary_ownership_mcp(
     # Extract entity ID
     entity_id = entity_data.get("id")
     
-    # Create entity URN using deterministic generation
-    entity_urn = generate_deterministic_urn(
-        entity_type, entity_id, environment=environment, mutation_name=mutation_name
-    )
+    # Create entity URN - use custom URN if provided, otherwise generate deterministic URN
+    if custom_urn:
+        entity_urn = custom_urn
+    else:
+        entity_urn = generate_deterministic_urn(
+            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        )
 
     # Create audit stamp
     current_time = int(time.time() * 1000)
@@ -372,6 +384,17 @@ def create_glossary_global_tags_mcp(
     """
     Create an MCP for glossary entity global tags using comprehensive backend data
     """
+    # Import URN utilities with graceful fallback
+    try:
+        from utils.urn_utils import (
+            get_mutation_config_for_environment,
+            generate_mutated_urn
+        )
+        urn_utils_available = True
+    except ImportError:
+        urn_utils_available = False
+        logger.warning("URN utilities not available - using original URNs")
+    
     # Extract entity ID and tags
     entity_id = entity_data.get("id")
     tags = entity_data.get("tags", [])
@@ -384,6 +407,12 @@ def create_glossary_global_tags_mcp(
         entity_type, entity_id, environment=environment, mutation_name=mutation_name
     )
 
+    # Get mutation configuration if URN utilities are available
+    mutation_config = None
+    if urn_utils_available and (environment or mutation_name):
+        env_name = environment or mutation_name
+        mutation_config = get_mutation_config_for_environment(env_name)
+
     current_time = int(time.time() * 1000)
     
     tag_associations = []
@@ -394,8 +423,16 @@ def create_glossary_global_tags_mcp(
             tag_name = str(tag)
         
         tag_urn = f"urn:li:tag:{tag_name}"
+        
+        # Apply URN mutation to the tag URN if utilities are available
+        if urn_utils_available and mutation_config and (environment or mutation_name):
+            env_name = environment or mutation_name
+            tag_urn = generate_mutated_urn(
+                tag_urn, env_name, 'tag', mutation_config
+            )
+        
         tag_associations.append(TagAssociationClass(
-            tag=tag_urn,
+            tag=tag_urn,  # Use mutated URN
             context=None,
             attribution=None
         ))
@@ -423,6 +460,17 @@ def create_glossary_terms_mcp(
     """
     Create an MCP for glossary entity terms associations using comprehensive backend data
     """
+    # Import URN utilities with graceful fallback
+    try:
+        from utils.urn_utils import (
+            get_mutation_config_for_environment,
+            generate_mutated_urn
+        )
+        urn_utils_available = True
+    except ImportError:
+        urn_utils_available = False
+        logger.warning("URN utilities not available - using original URNs")
+    
     # Extract entity ID and glossary terms
     entity_id = entity_data.get("id")
     glossary_terms = entity_data.get("glossary_terms", [])
@@ -434,6 +482,12 @@ def create_glossary_terms_mcp(
     entity_urn = generate_deterministic_urn(
         entity_type, entity_id, environment=environment, mutation_name=mutation_name
     )
+
+    # Get mutation configuration if URN utilities are available
+    mutation_config = None
+    if urn_utils_available and (environment or mutation_name):
+        env_name = environment or mutation_name
+        mutation_config = get_mutation_config_for_environment(env_name)
 
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
@@ -449,8 +503,16 @@ def create_glossary_terms_mcp(
             term_name = str(term)
         
         term_urn = f"urn:li:glossaryTerm:{term_name}"
+        
+        # Apply URN mutation to the glossary term URN if utilities are available
+        if urn_utils_available and mutation_config and (environment or mutation_name):
+            env_name = environment or mutation_name
+            term_urn = generate_mutated_urn(
+                term_urn, env_name, 'glossaryTerm', mutation_config
+            )
+        
         term_associations.append(GlossaryTermAssociationClass(
-            urn=term_urn,
+            urn=term_urn,  # Use mutated URN
             actor=f"urn:li:corpuser:{owner}",
             context=None,
             attribution=None
@@ -587,6 +649,23 @@ def create_glossary_related_terms_mcp(
         # Extract URNs from related terms
         related_term_urns = []
         
+        # Import URN utilities with graceful fallback
+        try:
+            from utils.urn_utils import (
+                get_mutation_config_for_environment,
+                generate_mutated_urn
+            )
+            urn_utils_available = True
+        except ImportError:
+            urn_utils_available = False
+            logger.warning("URN utilities not available - using original URNs")
+
+        # Get mutation configuration if URN utilities are available
+        mutation_config = None
+        if urn_utils_available and (environment or mutation_name):
+            env_name = environment or mutation_name
+            mutation_config = get_mutation_config_for_environment(env_name)
+
         # Handle related_terms field
         if related_terms:
             for term in related_terms:
@@ -594,6 +673,20 @@ def create_glossary_related_terms_mcp(
                     term_urn = term.get("urn", term.get("term", str(term)))
                 else:
                     term_urn = str(term)
+                
+                # Apply URN mutation to related term URN if utilities are available
+                if urn_utils_available and mutation_config and (environment or mutation_name):
+                    env_name = environment or mutation_name
+                    # Determine entity type from URN
+                    if term_urn.startswith('urn:li:glossaryTerm:'):
+                        term_urn = generate_mutated_urn(
+                            term_urn, env_name, 'glossaryTerm', mutation_config
+                        )
+                    elif term_urn.startswith('urn:li:glossaryNode:'):
+                        term_urn = generate_mutated_urn(
+                            term_urn, env_name, 'glossaryNode', mutation_config
+                        )
+                
                 related_term_urns.append(term_urn)
         
         # Handle relationships_data field
@@ -604,6 +697,17 @@ def create_glossary_related_terms_mcp(
                     if isinstance(relationship, dict):
                         related_urn = relationship.get("urn", relationship.get("entity", ""))
                         if related_urn:
+                            # Apply URN mutation to related URN if utilities are available
+                            if urn_utils_available and mutation_config and (environment or mutation_name):
+                                env_name = environment or mutation_name
+                                if related_urn.startswith('urn:li:glossaryTerm:'):
+                                    related_urn = generate_mutated_urn(
+                                        related_urn, env_name, 'glossaryTerm', mutation_config
+                                    )
+                                elif related_urn.startswith('urn:li:glossaryNode:'):
+                                    related_urn = generate_mutated_urn(
+                                        related_urn, env_name, 'glossaryNode', mutation_config
+                                    )
                             related_term_urns.append(related_urn)
             # If it's a dict, look for 'relationships' key
             elif isinstance(relationships_data, dict):
@@ -611,13 +715,24 @@ def create_glossary_related_terms_mcp(
                     if isinstance(relationship, dict):
                         related_urn = relationship.get("urn", relationship.get("entity", ""))
                         if related_urn:
+                            # Apply URN mutation to related URN if utilities are available
+                            if urn_utils_available and mutation_config and (environment or mutation_name):
+                                env_name = environment or mutation_name
+                                if related_urn.startswith('urn:li:glossaryTerm:'):
+                                    related_urn = generate_mutated_urn(
+                                        related_urn, env_name, 'glossaryTerm', mutation_config
+                                    )
+                                elif related_urn.startswith('urn:li:glossaryNode:'):
+                                    related_urn = generate_mutated_urn(
+                                        related_urn, env_name, 'glossaryNode', mutation_config
+                                    )
                             related_term_urns.append(related_urn)
             else:
                 logger.warning(f"Unexpected relationships_data format: {type(relationships_data)}: {relationships_data}")
 
         # Create related terms aspect
         related_terms_aspect = GlossaryRelatedTermsClass(
-            relatedTerms=related_term_urns,
+            relatedTerms=related_term_urns,  # Use mutated URNs
             isRelatedTerms=[],  # Can be used for "Is A" relationships if needed
             hasRelatedTerms=[],  # Can be used for "Has A" relationships if needed
             values=[]  # Can be used for "Has Value" relationships if needed
@@ -646,6 +761,17 @@ def create_glossary_domains_mcp(
     """
     Create an MCP for glossary term domains using comprehensive backend data
     """
+    # Import URN utilities with graceful fallback
+    try:
+        from utils.urn_utils import (
+            get_mutation_config_for_environment,
+            generate_mutated_urn
+        )
+        urn_utils_available = True
+    except ImportError:
+        urn_utils_available = False
+        logger.warning("URN utilities not available - using original URNs")
+    
     # Extract term ID and domain information
     term_id = term_data.get("id")
     domain_urn = term_data.get("domain_urn")
@@ -659,6 +785,12 @@ def create_glossary_domains_mcp(
         "glossaryTerm", term_id, environment=environment, mutation_name=mutation_name
     )
     
+    # Get mutation configuration if URN utilities are available
+    mutation_config = None
+    if urn_utils_available and (environment or mutation_name):
+        env_name = environment or mutation_name
+        mutation_config = get_mutation_config_for_environment(env_name)
+    
     # Determine domain URN
     final_domain_urn = domain_urn
     if not final_domain_urn and domain_data:
@@ -670,9 +802,16 @@ def create_glossary_domains_mcp(
     if not final_domain_urn:
         return None
     
+    # Apply URN mutation to the domain URN if utilities are available
+    if urn_utils_available and mutation_config and (environment or mutation_name):
+        env_name = environment or mutation_name
+        final_domain_urn = generate_mutated_urn(
+            final_domain_urn, env_name, 'domain', mutation_config
+        )
+    
     # Create domains aspect (just domains list)
     domains_aspect = DomainsClass(
-        domains=[final_domain_urn]
+        domains=[final_domain_urn]  # Use mutated URN
     )
 
     mcp = MetadataChangeProposalWrapper(
@@ -898,6 +1037,17 @@ def create_glossary_structured_properties_mcp(
     Create an MCP for glossary entity structured properties
     """
     try:
+        # Import URN utilities with graceful fallback
+        try:
+            from utils.urn_utils import (
+                get_mutation_config_for_environment,
+                generate_mutated_urn
+            )
+            urn_utils_available = True
+        except ImportError:
+            urn_utils_available = False
+            logger.warning("URN utilities not available - using original URNs")
+        
         # Extract entity ID and structured properties
         entity_id = entity_data.get("id")
         structured_props_data = entity_data.get("structured_properties", {})
@@ -909,6 +1059,12 @@ def create_glossary_structured_properties_mcp(
         entity_urn = generate_deterministic_urn(
             entity_type, entity_id, environment=environment, mutation_name=mutation_name
         )
+
+        # Get mutation configuration if URN utilities are available
+        mutation_config = None
+        if urn_utils_available and (environment or mutation_name):
+            env_name = environment or mutation_name
+            mutation_config = get_mutation_config_for_environment(env_name)
 
         # Create audit stamp
         current_time = int(time.time() * 1000)
@@ -923,6 +1079,14 @@ def create_glossary_structured_properties_mcp(
             if not isinstance(prop_values, list):
                 prop_values = [prop_values]
             
+            # Apply URN mutation to the property URN if utilities are available
+            mutated_prop_urn = prop_urn
+            if urn_utils_available and mutation_config and (environment or mutation_name):
+                env_name = environment or mutation_name
+                mutated_prop_urn = generate_mutated_urn(
+                    prop_urn, env_name, 'structuredProperty', mutation_config
+                )
+            
             # Convert values to appropriate types
             converted_values = []
             for value in prop_values:
@@ -933,7 +1097,7 @@ def create_glossary_structured_properties_mcp(
             
             if converted_values:
                 assignment = StructuredPropertyValueAssignmentClass(
-                    propertyUrn=prop_urn,
+                    propertyUrn=mutated_prop_urn,  # Use mutated URN
                     values=converted_values,
                     created=audit_stamp,
                     lastModified=audit_stamp
@@ -997,6 +1161,7 @@ def create_comprehensive_glossary_mcps(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
+    custom_urn: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Create comprehensive MCPs for a glossary entity using all available backend data
@@ -1020,11 +1185,11 @@ def create_comprehensive_glossary_mcps(
     try:
         if entity_type == "node":
             info_mcp = create_glossary_node_info_mcp(
-                entity_data, owner, environment, mutation_name
+                entity_data, owner, environment, mutation_name, custom_urn
             )
         else:
             info_mcp = create_glossary_term_info_mcp(
-                entity_data, owner, environment, mutation_name
+                entity_data, owner, environment, mutation_name, custom_urn
             )
         mcps.append(info_mcp)
         logger.info(f"Created info MCP for {entity_type} {entity_data.get('id', 'unknown')}")
@@ -1035,7 +1200,7 @@ def create_comprehensive_glossary_mcps(
     # 2. Ownership MCP (always created) - CORE ASPECT
     try:
         ownership_mcp = create_glossary_ownership_mcp(
-            entity_data, datahub_entity_type, owner, environment, mutation_name
+            entity_data, datahub_entity_type, owner, environment, mutation_name, custom_urn
         )
         mcps.append(ownership_mcp)
         logger.info(f"Created ownership MCP for {entity_type} {entity_data.get('id', 'unknown')}")

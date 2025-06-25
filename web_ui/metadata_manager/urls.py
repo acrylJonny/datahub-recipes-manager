@@ -492,6 +492,11 @@ urlpatterns = [
         views_data_contracts.add_data_contract_to_staged_changes,
         name="data_contract_add_to_staged_changes",
     ),
+    path(
+        "data-contracts/add_all_to_staged_changes/",
+        views_data_contracts.DataContractAddAllToStagedChangesView.as_view(),
+        name="data_contract_add_all_to_staged_changes",
+    ),
     # Data Products
     path(
         "data-products/",
@@ -650,6 +655,7 @@ urlpatterns = [
     path("tests/", views_tests.TestListView.as_view(), name="tests_list"),
     path("tests/data/", views_tests.TestListView.as_view(), name="tests_data"),
     path("tests/remote-data/", views_tests.get_remote_tests_data, name="get_remote_tests_data"),
+    path("tests/pull/", views_tests.TestPullView.as_view(), name="test_pull"),
     path("tests/create/", views_tests.TestDetailView.as_view(), name="test_create"),
     path(
         "tests/<str:test_urn>/",
@@ -681,6 +687,27 @@ urlpatterns = [
         "tests/remote/stage_changes/",
         views_tests.TestRemoteStageChangesView.as_view(),
         name="test_remote_stage_changes",
+    ),
+    # API endpoints for test actions
+    path(
+        "api/tests/<str:test_urn>/sync_to_local/",
+        views_tests.TestSyncToLocalView.as_view(),
+        name="test_sync_to_local_api"
+    ),
+    path(
+        "tests/<str:test_id>/sync_to_datahub/",
+        views_tests.TestSyncToDataHubView.as_view(),
+        name="test_sync_to_datahub"
+    ),
+    path(
+        "tests/<str:test_id>/resync/",
+        views_tests.TestResyncView.as_view(),
+        name="test_resync"
+    ),
+    path(
+        "tests/<str:test_id>/push_to_datahub/",
+        views_tests.TestPushToDataHubView.as_view(),
+        name="test_push_to_datahub"
     ),
     # Sync
     path("sync/", views_sync.SyncConfigListView.as_view(), name="sync_config_list"),
