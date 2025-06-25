@@ -5,6 +5,7 @@ from django.views import View
 from django.contrib import messages
 from django.utils import timezone
 from django.views.decorators.http import require_POST, require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import yaml
 import subprocess
@@ -1244,6 +1245,28 @@ def sync_assertion_to_local(request):
                                 if custom_assertion and isinstance(custom_assertion, dict) and "entityUrn" in custom_assertion:
                                     entity_urn = custom_assertion["entityUrn"]
         
+        # Extract platform instance and browse path from entity URN if available
+        platform_instance = None
+        browse_path = None
+        if entity_urn:
+            try:
+                # Get entity details to extract platform instance and browse path
+                entity_details_result = client.get_datasets_by_urns([entity_urn])
+                if entity_details_result.get("success") and entity_details_result.get("data", {}).get("searchResults"):
+                    entity_data = entity_details_result["data"]["searchResults"][0].get("entity", {})
+                    
+                    # Extract platform instance
+                    platform_instance_data = entity_data.get("dataPlatformInstance", {})
+                    if platform_instance_data and platform_instance_data.get("properties"):
+                        platform_instance = platform_instance_data["properties"].get("name")
+                    
+                    # Extract browse path
+                    browse_path = entity_data.get("computed_browse_path", "")
+                    
+                    logger.debug(f"Extracted platform instance: {platform_instance}, browse path: {browse_path} for entity: {entity_urn}")
+            except Exception as e:
+                logger.warning(f"Failed to extract platform instance and browse path for entity {entity_urn}: {str(e)}")
+        
         # Extract assertion type and handle $UNKNOWN enum case
         assertion_type = info.get("type", "UNKNOWN")
         
@@ -1350,6 +1373,7 @@ def sync_assertion_to_local(request):
             existing_assertion.urn = assertion_urn  # Use the actual DataHub URN
             existing_assertion.entity_urn = entity_urn
             existing_assertion.platform_name = platform_name
+            existing_assertion.platform_instance = platform_instance  # Store extracted platform instance
             existing_assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
             existing_assertion.removed = removed
             existing_assertion.sync_status = "SYNCED"
@@ -1400,6 +1424,7 @@ def sync_assertion_to_local(request):
                 # Entity and platform info
                 entity_urn=entity_urn,
                 platform_name=platform_name,
+                platform_instance=platform_instance,  # Store extracted platform instance
                 external_url=info.get("externalUrl") if isinstance(info, dict) else None,
                 
                 # Status
@@ -2510,3 +2535,183 @@ def edit_assertion(request, assertion_id):
             "success": False,
             "error": str(e)
         })
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AssertionAddToStagedChangesView(View):
+    """API endpoint to add a local/synced assertion to staged changes"""
+    
+    def post(self, request, assertion_id):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.assertion_actions import add_assertion_to_staged_changes
+            
+            # Get the assertion
+            assertion = get_object_or_404(Assertion, id=assertion_id)
+            
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            logger.info(f"Adding assertion '{assertion.name}' to staged changes...")
+            
+            # Add assertion to staged changes using the MCP pattern
+            result = add_assertion_to_staged_changes(
+                assertion_id=str(assertion.id),
+                assertion_urn=assertion.urn,
+                assertion_name=assertion.name,
+                assertion_type=assertion.assertion_type,
+                description=assertion.description,
+                entity_urn=assertion.entity_urn,
+                config=assertion.config or {},
+                environment=environment_name,
+                owner=owner,
+                mutation_name=mutation_name
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "success": False,
+                    "error": result.get("message", "Failed to add assertion to staged changes")
+                }, status=500)
+            
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
+            
+            message = f"Assertion added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'files_created': files_created,
+                'files_created_count': files_created_count,
+                'mcps_created': mcps_created,
+                'assertion_id': str(assertion.id),
+                'assertion_urn': assertion.urn
+            })
+            
+        except Assertion.DoesNotExist:
+            logger.error(f"Assertion with ID {assertion_id} not found")
+            return JsonResponse({
+                'success': False,
+                'error': 'Assertion data not found. Please refresh the page and try again.'
+            }, status=404)
+        except Exception as e:
+            logger.error(f"Error adding assertion to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AssertionRemoteAddToStagedChangesView(View):
+    """API endpoint to add a remote assertion to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.assertion_actions import add_assertion_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            assertion_data = data.get('item_data')
+            
+            if not assertion_data:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Assertion data is required"
+                }, status=400)
+            
+            assertion_urn = assertion_data.get('urn')
+            if not assertion_urn:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Assertion URN is required"
+                }, status=400)
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # Extract assertion ID from URN (last part after colon)
+            assertion_id = assertion_urn.split(':')[-1] if assertion_urn else None
+            if not assertion_id:
+                return JsonResponse({
+                    "status": "error",
+                    "error": "Could not extract assertion ID from URN"
+                }, status=400)
+            
+            # Extract assertion information from remote data
+            assertion_name = assertion_data.get('name', 'Unknown Assertion')
+            assertion_type = assertion_data.get('type', 'CUSTOM')
+            description = assertion_data.get('description', '')
+            entity_urn = assertion_data.get('entity_urn', '')
+            config = assertion_data.get('config') or assertion_data.get('definition', {})
+            
+            logger.info(f"Adding remote assertion '{assertion_name}' to staged changes...")
+            
+            # Add remote assertion to staged changes using the MCP pattern
+            result = add_assertion_to_staged_changes(
+                assertion_id=assertion_id,
+                assertion_urn=assertion_urn,
+                assertion_name=assertion_name,
+                assertion_type=assertion_type,
+                description=description,
+                entity_urn=entity_urn,
+                config=config,
+                environment=environment_name,
+                owner=owner,
+                mutation_name=mutation_name
+            )
+            
+            if not result.get("success"):
+                return JsonResponse({
+                    "status": "error",
+                    "error": result.get("message", "Failed to add remote assertion to staged changes")
+                }, status=500)
+            
+            # Provide feedback about the operation
+            files_created = result.get("files_saved", [])
+            files_created_count = len(files_created)
+            mcps_created = result.get("mcps_created", 0)
+            
+            message = f"Remote assertion added to staged changes: {mcps_created} MCPs created, {files_created_count} files saved"
+            
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "mcps_created": mcps_created,
+                "assertion_urn": assertion_urn
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding remote assertion to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)

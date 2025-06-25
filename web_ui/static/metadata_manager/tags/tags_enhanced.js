@@ -2960,20 +2960,7 @@ function setupActionButtonListeners() {
         } else if (clickedElement.classList.contains('add-to-staged') || clickedElement.closest('.add-to-staged')) {
             // Add to Staged Changes button clicked
             console.log('Add to Staged Changes clicked for tag:', tagData);
-            
-            // Check if this is a local/synced tag or a remote-only tag
-            const tagId = getDatabaseId(tagData);
-            
-            if (tagId) {
-                // Tag already exists locally (synced or local-only), add directly to staged changes
-                console.log('Tag has database ID, adding directly to staged changes');
-                addTagToStagedChanges(tagData);
-            } else {
-                // Remote-only tag - sync to local first, then add to staged changes
-                // (Tags don't have a remote staging endpoint, so we must sync first)
-                console.log('Remote-only tag, syncing to local first');
-                syncTagToLocal(tagData);
-            }
+            addTagToStagedChanges(tagData);
             e.preventDefault();
             e.stopPropagation();
         } else if (clickedElement.classList.contains('view-item') || clickedElement.closest('.view-item')) {

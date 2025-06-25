@@ -1940,7 +1940,7 @@ function getEnhancedActionButtons(item, tabType, datahubUrl) {
                     <i class="fas fa-file-download"></i>
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-primary add-to-pr" 
-                        data-assertion-urn="${escapeHtml(item.urn)}" title="Add to PR">
+                        data-assertion-id="${item.id}" data-assertion-urn="${escapeHtml(item.urn)}" title="Add to PR">
                     <i class="fab fa-github"></i>
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-danger delete-local-assertion" 
@@ -2436,15 +2436,15 @@ function bulkAddToPR(tabType) {
             
             if (tabType === 'remote') {
                 // Remote assertion
-                endpoint = '/metadata/tests/remote/stage_changes/';
+                endpoint = '/metadata/assertions/remote/stage_changes/';
                 body = JSON.stringify({
-                    test_urn: assertion.urn,
+                    item_data: assertion,
                     environment: currentEnvironment.name,
                     mutation_name: mutationName
                 });
             } else {
                 // Local or synced assertion
-                endpoint = `/metadata/tests/${assertionId}/stage_changes/`;
+                endpoint = `/metadata/assertions/${assertionId}/stage_changes/`;
                 body = JSON.stringify({
                     environment: currentEnvironment.name,
                     mutation_name: mutationName
@@ -2471,7 +2471,7 @@ function bulkAddToPR(tabType) {
                 successCount++;
                 processedCount++;
                 
-                // Track created files
+                // Track created files (handle both success formats)
                 if (data.files_created && data.files_created.length > 0) {
                     createdFiles = [...createdFiles, ...data.files_created];
                 }
@@ -4121,48 +4121,28 @@ function addAssertionToPR(assertionUrn, assertionId, button) {
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     button.disabled = true;
 
-    // If we have an assertion ID (synced assertion), go directly to add to PR
+    // If we have an assertion ID (synced assertion), go directly to add to staged changes
     if (assertionId) {
         performAddToPR(assertionId, button, originalHtml);
     } else if (assertionUrn) {
-        // Remote assertion - sync first, then add to PR
-        if (!confirm('This is a remote assertion. It will be synced to local storage first, then added to PR. Continue?')) {
+        // Remote assertion - add directly to staged changes using remote endpoint
+        console.log('Adding remote assertion to staged changes:', assertionUrn);
+        
+        // Find the assertion data from our local cache
+        let assertionData = null;
+        if (assertionsData && assertionsData.remote_only_items) {
+            assertionData = assertionsData.remote_only_items.find(item => item.urn === assertionUrn);
+        }
+        
+        if (!assertionData) {
+            showError('Assertion data not found. Please refresh the page and try again.');
             button.innerHTML = originalHtml;
             button.disabled = false;
             return;
         }
         
-        // First sync the assertion
-        fetch('/metadata/assertions/sync-to-local/', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCsrfToken(),
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ assertion_urn: assertionUrn })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showSuccess('Assertion synced successfully. Now adding to PR...');
-                
-                // Refresh data to update tabs after sync
-                refreshAssertionData();
-                
-                // Now add to PR using the new assertion ID
-                performAddToPR(data.assertion_id, button, originalHtml);
-            } else {
-                showError('Failed to sync assertion: ' + (data.error || 'Unknown error'));
-                button.innerHTML = originalHtml;
-                button.disabled = false;
-            }
-        })
-        .catch(error => {
-            console.error('Error syncing assertion:', error);
-            showError('Error syncing assertion before adding to PR');
-            button.innerHTML = originalHtml;
-            button.disabled = false;
-        });
+        // Add remote assertion directly to staged changes
+        performAddToPR(null, button, originalHtml, true, assertionData);
     } else {
         showError('No assertion ID or URN provided');
         button.innerHTML = originalHtml;
@@ -4170,25 +4150,41 @@ function addAssertionToPR(assertionUrn, assertionId, button) {
     }
 }
 
-function performAddToPR(assertionId, button, originalHtml) {
+function performAddToPR(assertionId, button, originalHtml, isRemote = false, assertionData = null) {
     // Get current environment and mutation from global state or settings
     const currentEnvironment = window.currentEnvironment || { name: 'dev' };
     const mutationName = currentEnvironment.mutation_name || null;
     
-    fetch(`/metadata/tests/${assertionId}/stage_changes/`, {
+    let endpoint, requestBody;
+    
+    if (isRemote && assertionData) {
+        // Remote assertion - use the remote assertion staging endpoint
+        endpoint = '/metadata/assertions/remote/stage_changes/';
+        requestBody = {
+            item_data: assertionData,
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        };
+    } else {
+        // Local or synced assertion - use the regular assertion endpoint
+        endpoint = `/metadata/assertions/${assertionId}/stage_changes/`;
+        requestBody = {
+            environment: currentEnvironment.name,
+            mutation_name: mutationName
+        };
+    }
+    
+    fetch(endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCsrfToken(),
         },
-        body: JSON.stringify({
-            environment: currentEnvironment.name,
-            mutation_name: mutationName
-        })
+        body: JSON.stringify(requestBody)
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
+        if (data.success || data.status === 'success') {
             showSuccess(`Assertion added to staged changes successfully!<br>
                         <strong>Files:</strong> ${data.files_created ? data.files_created.join(', ') : 'N/A'}<br>
                         <strong>Environment:</strong> ${currentEnvironment.name}<br>

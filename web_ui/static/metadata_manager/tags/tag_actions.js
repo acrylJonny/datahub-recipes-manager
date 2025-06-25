@@ -256,13 +256,84 @@ function addTagToStagedChanges(tag) {
     
     // Get tag data and environment
     const tagData = tag.combined || tag;
-    // IMPORTANT: We must use the database ID for the API endpoint, not the URN or datahub_id
+    const tagName = tagData.name || 'Unknown Tag';
+    
+    // Check if this is a remote-only tag that needs to be staged directly
+    if (tagData.sync_status === 'REMOTE_ONLY' || !getDatabaseId(tagData)) {
+        console.log(`Tag "${tagName}" is remote-only, staging directly...`);
+        
+        // Show loading notification
+        showNotification('info', `Adding remote tag "${tagName}" to staged changes...`);
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        // Use the remote staging endpoint
+        fetch('/metadata/tags/remote/stage_changes/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                tag_data: tagData,
+                environment: currentEnvironment.name,
+                mutation_name: mutationName
+            })
+        })
+        .then(response => {
+            console.log('Staged changes response status:', response.status);
+            console.log('Staged changes response headers:', Array.from(response.headers.entries()));
+            
+            // Check for non-JSON responses that might be returning HTML error pages
+            const contentType = response.headers.get('content-type');
+            console.log('Response content type:', contentType);
+            
+            if (contentType && contentType.indexOf('application/json') !== -1) {
+                // This is a JSON response, proceed normally
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.error || 'Failed to add remote tag to staged changes');
+                    });
+                }
+                return response.json();
+            } else {
+                // This is likely an HTML error page or unexpected response
+                console.error('Received non-JSON response:', contentType);
+                return response.text().then(text => {
+                    console.error('Staged changes response content (first 500 chars):', text.substring(0, 500) + '...');
+                    throw new Error('Server returned an unexpected response format. See console for details.');
+                });
+            }
+        })
+        .then(data => {
+            console.log('Remote staged changes success response data:', data);
+            if (data.status === 'success') {
+                showNotification('success', data.message || `Remote tag added to staged changes successfully`);
+                if (data.files_created && data.files_created.length > 0) {
+                    console.log('Created files:', data.files_created);
+                }
+            } else {
+                throw new Error(data.error || 'Failed to add remote tag to staged changes');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding remote tag to staged changes:', error);
+            showNotification('error', `Error adding remote tag to staged changes: ${error.message}`);
+        })
+        .finally(() => {
+            hideActionLoading('stage');
+        });
+        return;
+    }
+    
+    // For local/synced tags, use the regular staging endpoint
     const tagId = getDatabaseId(tagData);
     
-    // If we don't have an ID, we need to create the tag first
     if (!tagId) {
         console.error('Cannot add tag to staged changes without a database ID:', tagData);
-        showNotification('error', 'Error adding tag to staged changes: Missing tag database ID. This tag needs to be created locally first.');
+        showNotification('error', 'Error adding tag to staged changes: Missing tag database ID.');
         hideActionLoading('stage');
         return;
     }

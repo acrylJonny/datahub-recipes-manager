@@ -2237,6 +2237,148 @@ class TagAddToStagedChangesView(View):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class TagRemoteAddToStagedChangesView(View):
+    """API endpoint to add a remote tag to staged changes without syncing to local first"""
+    
+    def post(self, request):
+        try:
+            import json
+            import os
+            import sys
+            from pathlib import Path
+            
+            # Add project root to path to import our Python modules
+            sys.path.append(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            )
+            
+            # Import the function
+            from scripts.mcps.tag_actions import add_tag_to_staged_changes
+            
+            data = json.loads(request.body)
+            
+            # Get the tag data from the request
+            tag_data = data.get('tag_data')
+            if not tag_data:
+                return JsonResponse({
+                    "success": False,
+                    "error": "No tag_data provided"
+                }, status=400)
+            
+            # Get environment and mutation name
+            environment_name = data.get('environment', 'dev')
+            mutation_name = data.get('mutation_name')
+            
+            # Get current user as owner
+            owner = request.user.username if request.user.is_authenticated else "admin"
+            
+            # For remote tags, we need to ensure we have an ID for MCP creation
+            # If the remote tag doesn't have an ID, we'll generate one from the URN or name
+            tag_id = tag_data.get('id')
+            if not tag_id:
+                if tag_data.get('urn'):
+                    # Extract ID from URN
+                    urn_parts = tag_data['urn'].split(':')
+                    if len(urn_parts) >= 3:
+                        tag_id = urn_parts[-1]
+                    else:
+                        tag_id = tag_data['urn']
+                elif tag_data.get('name'):
+                    # Use name as ID
+                    tag_id = tag_data['name'].replace(' ', '_').lower()
+                else:
+                    return JsonResponse({
+                        "success": False,
+                        "error": "Remote tag must have either URN or name for ID generation"
+                    }, status=400)
+            
+            # Build the tag data dictionary for MCP creation
+            tag_mcp_data = {
+                "id": tag_id,
+                "name": tag_data.get('name', 'Unknown Tag'),
+                "description": tag_data.get('description', ''),
+                "color": tag_data.get('color') or tag_data.get('colorHex', '#1890FF'),
+                "urn": tag_data.get('urn'),
+                "properties": {
+                    "name": tag_data.get('name', 'Unknown Tag'),
+                    "description": tag_data.get('description', ''),
+                    "colorHex": tag_data.get('color') or tag_data.get('colorHex', '#1890FF')
+                }
+            }
+            
+            # Add ownership data if available
+            if tag_data.get('ownership_data'):
+                tag_mcp_data["ownership"] = tag_data['ownership_data']
+            elif tag_data.get('ownership'):
+                tag_mcp_data["ownership"] = tag_data['ownership']
+            
+            # Get environment
+            try:
+                environment = Environment.objects.get(name=environment_name)
+            except Environment.DoesNotExist:
+                # Create default environment if it doesn't exist
+                environment = Environment.objects.create(
+                    name=environment_name,
+                    description=f"Auto-created {environment_name} environment"
+                )
+            
+            # Build base directory path - find repo root and use correct location
+            current_dir = Path(os.getcwd())
+            if current_dir.name == "web_ui":
+                repo_root = current_dir.parent
+            else:
+                # Try to find repo root by looking for characteristic files
+                repo_root = current_dir
+                for _ in range(5):  # Search up to 5 levels
+                    if (repo_root / "README.md").exists() and (repo_root / "scripts").exists() and (repo_root / "web_ui").exists():
+                        break
+                    repo_root = repo_root.parent
+                else:
+                    # Fallback: assume current directory
+                    repo_root = current_dir
+            
+            base_dir = repo_root / "metadata-manager" / environment_name / "tags"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Using base directory for remote tag staged changes: {base_dir}")
+            
+            # Add remote tag to staged changes using the comprehensive function
+            result = add_tag_to_staged_changes(
+                tag_data=tag_mcp_data,
+                environment=environment_name,
+                owner=owner,
+                base_dir=str(base_dir),
+                mutation_name=mutation_name
+            )
+            
+            # Provide feedback about files created
+            files_created = list(result.values())
+            files_created_count = len(files_created)
+            
+            # Calculate expected files (now 1 combined MCP file instead of separate files)
+            expected_files = 1  # single combined MCP file
+            
+            files_skipped_count = expected_files - files_created_count
+            
+            if files_skipped_count > 0:
+                message = f"Remote tag added to staged changes: {files_created_count} file created, {files_skipped_count} file skipped (unchanged)"
+            else:
+                message = f"Remote tag added to staged changes: {files_created_count} file created"
+            
+            # Return success response
+            return JsonResponse({
+                "status": "success",
+                "message": message,
+                "files_created": files_created,
+                "files_created_count": files_created_count,
+                "files_skipped_count": files_skipped_count
+            })
+                
+        except Exception as e:
+            logger.error(f"Error adding remote tag to staged changes: {str(e)}")
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class TagSyncToDataHubView(View):
     """View to sync local tags to DataHub with ownership support"""
 

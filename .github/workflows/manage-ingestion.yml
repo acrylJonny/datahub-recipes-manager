@@ -57,7 +57,7 @@ jobs:
         run: |
           python scripts/list_ingestion_sources.py
         env:
-          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_URL: ${{ secrets.DATAHUB_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
       
       - name: Run ingestion source now
@@ -65,7 +65,7 @@ jobs:
         run: |
           python scripts/run_now.py --source-id ${{ github.event.inputs.source_id }}
         env:
-          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_URL: ${{ secrets.DATAHUB_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
       
       - name: Validate recipe file format
@@ -81,7 +81,7 @@ jobs:
         run: |
           python scripts/patch_ingestion_source.py --source-id ${{ github.event.inputs.source_id }} --recipe-file ${{ github.event.inputs.recipe_file }}
         env:
-          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_URL: ${{ secrets.DATAHUB_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -100,7 +100,7 @@ jobs:
         run: |
           python scripts/patch_ingestion_source.py --source-id ${{ github.event.inputs.source_id }} --schedule "${{ github.event.inputs.schedule }}"
         env:
-          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_URL: ${{ secrets.DATAHUB_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
       
       - name: Patch ingestion source (recipe and schedule)
@@ -108,7 +108,7 @@ jobs:
         run: |
           python scripts/patch_ingestion_source.py --source-id ${{ github.event.inputs.source_id }} --recipe-file ${{ github.event.inputs.recipe_file }} --schedule "${{ github.event.inputs.schedule }}"
         env:
-          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_URL: ${{ secrets.DATAHUB_URL }}
           DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}

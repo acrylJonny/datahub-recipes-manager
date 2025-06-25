@@ -260,6 +260,11 @@ urlpatterns = [
         views_tags.TagDeleteRemoteView.as_view(),
         name="tag_delete_remote_api"
     ),
+    path(
+        "tags/remote/stage_changes/",
+        views_tags.TagRemoteAddToStagedChangesView.as_view(),
+        name="tag_remote_add_to_staged_changes"
+    ),
     # Glossary
     path("glossary/", views_glossary.GlossaryListView.as_view(), name="glossary_list"),
     path(
@@ -651,6 +656,16 @@ urlpatterns = [
         "assertions/<uuid:assertion_id>/edit/",
         views_assertions.edit_assertion,
         name="edit_assertion",
+    ),
+    path(
+        "assertions/<uuid:assertion_id>/stage_changes/",
+        views_assertions.AssertionAddToStagedChangesView.as_view(),
+        name="assertion_add_to_staged_changes",
+    ),
+    path(
+        "assertions/remote/stage_changes/",
+        views_assertions.AssertionRemoteAddToStagedChangesView.as_view(),
+        name="assertion_remote_add_to_staged_changes",
     ),
     # Metadata Tests
     path("tests/", views_tests.TestListView.as_view(), name="tests_list"),

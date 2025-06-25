@@ -1,0 +1,182 @@
+name: Manage DataHub Tags
+
+on:
+  push:
+    paths:
+      - 'metadata-manager/**/tags/mcp_file.json'
+    branches:
+      - main
+      - develop
+  pull_request:
+    paths:
+      - 'metadata-manager/**/tags/mcp_file.json'
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to process tags for'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      dry_run:
+        description: 'Dry run - validate without executing'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.10'
+
+jobs:
+  process-tags:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        # Process each environment directory separately
+        include:
+          - environment: dev
+          - environment: staging  
+          - environment: prod
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install acryl-datahub[base]
+
+    - name: Check if tags file exists
+      id: check_file
+      run: |
+        FILE_PATH="metadata-manager/${{ matrix.environment }}/tags/mcp_file.json"
+        if [ -f "$FILE_PATH" ]; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "file_path=$FILE_PATH" >> $GITHUB_OUTPUT
+          
+          # Validate JSON format
+          if python -m json.tool "$FILE_PATH" > /dev/null 2>&1; then
+            echo "valid_json=true" >> $GITHUB_OUTPUT
+          else
+            echo "valid_json=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Validate JSON format
+      if: steps.check_file.outputs.exists == 'true' && steps.check_file.outputs.valid_json == 'false'
+      run: |
+        echo "❌ Invalid JSON format in tags file"
+        exit 1
+
+    - name: Create DataHub ingestion recipe
+      if: steps.check_file.outputs.exists == 'true'
+      run: |
+        cat > tags_recipe.yml << EOF
+        source:
+          type: file
+          config:
+            path: ${{ steps.check_file.outputs.file_path }}
+            
+        sink:
+          type: datahub-rest
+          config:
+            server: \${{ env.DATAHUB_URL }}
+            token: \${{ env.DATAHUB_TOKEN }}
+            
+        pipeline_name: tags_ingestion_${{ matrix.environment }}
+        EOF
+
+    - name: Run DataHub ingestion (dry run)
+      if: steps.check_file.outputs.exists == 'true' && (github.event.inputs.dry_run == 'true' || github.event_name == 'pull_request')
+      env:
+        DATAHUB_URL: ${{ secrets[format('DATAHUB_URL_{0}', matrix.environment)] || secrets.DATAHUB_URL }}
+        DATAHUB_TOKEN: ${{ secrets[format('DATAHUB_TOKEN_{0}', matrix.environment)] || secrets.DATAHUB_TOKEN }}
+      run: |
+        echo "🧪 Running DataHub ingestion in dry-run mode..."
+        datahub ingest --dry-run -c tags_recipe.yml
+
+    - name: Run DataHub ingestion
+      if: steps.check_file.outputs.exists == 'true' && github.event.inputs.dry_run != 'true' && github.event_name != 'pull_request'
+      env:
+        DATAHUB_URL: ${{ secrets[format('DATAHUB_URL_{0}', matrix.environment)] || secrets.DATAHUB_URL }}
+        DATAHUB_TOKEN: ${{ secrets[format('DATAHUB_TOKEN_{0}', matrix.environment)] || secrets.DATAHUB_TOKEN }}
+      run: |
+        echo "🚀 Running DataHub ingestion for tags..."
+        datahub ingest -c tags_recipe.yml
+
+    - name: Generate summary
+      if: steps.check_file.outputs.exists == 'true'
+      run: |
+        echo "📊 Tags Processing Summary" > tags_summary.md
+        echo "=========================" >> tags_summary.md
+        echo "" >> tags_summary.md
+        echo "**Environment:** ${{ matrix.environment }}" >> tags_summary.md
+        echo "**File:** ${{ steps.check_file.outputs.file_path }}" >> tags_summary.md
+        echo "**Dry Run:** ${{ github.event.inputs.dry_run || (github.event_name == 'pull_request') }}" >> tags_summary.md
+        echo "" >> tags_summary.md
+        
+        # Count entities in the file
+        ENTITY_COUNT=$(python -c "
+        import json
+        with open('${{ steps.check_file.outputs.file_path }}', 'r') as f:
+            data = json.load(f)
+        entities = set()
+        for item in data:
+            if 'entityUrn' in item:
+                entities.add(item['entityUrn'])
+        print(len(entities))
+        ")
+        
+        echo "**Tag Entities:** $ENTITY_COUNT" >> tags_summary.md
+        echo "" >> tags_summary.md
+        
+        if [ "${{ github.event.inputs.dry_run || (github.event_name == 'pull_request') }}" = "true" ]; then
+          echo "✅ Validation completed successfully" >> tags_summary.md
+        else
+          echo "✅ Tags ingested successfully" >> tags_summary.md
+        fi
+
+    - name: Comment on PR with results
+      if: github.event_name == 'pull_request' && steps.check_file.outputs.exists == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('tags_summary.md')) {
+            const summary = fs.readFileSync('tags_summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🏷️ Tags Processing Results\n\n${summary}`
+            });
+          }
+
+    - name: Upload processing artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: tags-processing-${{ matrix.environment }}
+        path: |
+          tags_recipe.yml
+          tags_summary.md
+        retention-days: 7 
