@@ -288,18 +288,51 @@ function addTagToStagedChanges(tag) {
         },
         body: JSON.stringify({
             environment: currentEnvironment.name,
-            mutation_name: mutationName
+            mutation_name: mutationName,
+            debug_info: true
         })
     })
     .then(response => {
-        if (!response.ok) {
-            throw new Error('Failed to add tag to staged changes');
+        console.log('Staged changes response status:', response.status);
+        console.log('Staged changes response headers:', Array.from(response.headers.entries()));
+        
+        // Check for non-JSON responses that might be returning HTML error pages
+        const contentType = response.headers.get('content-type');
+        console.log('Response content type:', contentType);
+        
+        if (contentType && contentType.indexOf('application/json') !== -1) {
+            // This is a JSON response, proceed normally
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Failed to add tag to staged changes');
+                });
+            }
+            return response.json();
+        } else {
+            // This is likely an HTML error page or unexpected response
+            console.error('Received non-JSON response:', contentType);
+            return response.text().then(text => {
+                console.error('Staged changes response content (first 500 chars):', text.substring(0, 500) + '...');
+                throw new Error('Server returned an unexpected response format. See console for details.');
+            });
         }
-        return response.json();
     })
     .then(data => {
-        // Show success notification
-        showNotification('success', `Tag successfully added to staged changes: ${data.files_created.join(', ')}`);
+        console.log('Staged changes success response data:', data);
+        if (data.success || data.files_created) {
+            // Handle both success formats for backward compatibility
+            const message = data.files_created ? 
+                `Tag successfully added to staged changes: ${data.files_created.join(', ')}` :
+                'Tag successfully added to staged changes';
+            showNotification('success', message);
+            
+            // Optionally refresh the data to show updated status
+            if (typeof loadTagsData === 'function') {
+                loadTagsData();
+            }
+        } else {
+            throw new Error(data.error || 'Failed to add tag to staged changes');
+        }
     })
     .catch(error => {
         console.error('Error adding tag to staged changes:', error);
