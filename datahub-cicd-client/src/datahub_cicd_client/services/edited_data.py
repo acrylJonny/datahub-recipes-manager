@@ -54,7 +54,9 @@ class EditedDataService(BaseInputOutputService):
     # INPUT OPERATIONS (Reading from DataHub)
     # ============================================
 
-    def list_editable_entities(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_editable_entities(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List editable entities in DataHub.
 
@@ -66,7 +68,9 @@ class EditedDataService(BaseInputOutputService):
         Returns:
             List of editable entity objects
         """
-        self.logger.info(f"Listing editable entities with query: {query}, start: {start}, count: {count}")
+        self.logger.info(
+            f"Listing editable entities with query: {query}, start: {start}, count: {count}"
+        )
 
         variables = {
             "input": {
@@ -95,7 +99,7 @@ class EditedDataService(BaseInputOutputService):
                     "urn": entity.get("urn"),
                     "type": entity.get("type"),
                     "properties": entity.get("properties", {}),
-                    "editableProperties": entity.get("editableProperties", {})
+                    "editableProperties": entity.get("editableProperties", {}),
                 }
 
                 entities.append(editable_entity)
@@ -132,11 +136,7 @@ class EditedDataService(BaseInputOutputService):
     # OUTPUT OPERATIONS (Writing to DataHub)
     # ============================================
 
-    def update_entity_description(
-        self,
-        entity_urn: str,
-        description: str
-    ) -> OperationResult:
+    def update_entity_description(self, entity_urn: str, description: str) -> OperationResult:
         """
         Update the description of an entity.
 
@@ -147,11 +147,11 @@ class EditedDataService(BaseInputOutputService):
         Returns:
             OperationResult with success status and details
         """
-        entity_data = {
-            "description": description
-        }
+        entity_data = {"description": description}
 
-        operation = self.create_operation("update_entity_description", entity_data, entity_urn=entity_urn)
+        operation = self.create_operation(
+            "update_entity_description", entity_data, entity_urn=entity_urn
+        )
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -159,22 +159,20 @@ class EditedDataService(BaseInputOutputService):
                 success=True,
                 operation_type="update_entity_description",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
     def update_entity_custom_properties(
-        self,
-        entity_urn: str,
-        custom_properties: Dict[str, str]
+        self, entity_urn: str, custom_properties: Dict[str, str]
     ) -> OperationResult:
         """Update custom properties of an entity."""
-        entity_data = {
-            "customProperties": custom_properties
-        }
+        entity_data = {"customProperties": custom_properties}
 
-        operation = self.create_operation("update_entity_custom_properties", entity_data, entity_urn=entity_urn)
+        operation = self.create_operation(
+            "update_entity_custom_properties", entity_data, entity_urn=entity_urn
+        )
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -182,24 +180,14 @@ class EditedDataService(BaseInputOutputService):
                 success=True,
                 operation_type="update_entity_custom_properties",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
-    def add_custom_property(
-        self,
-        entity_urn: str,
-        key: str,
-        value: str
-    ) -> OperationResult:
+    def add_custom_property(self, entity_urn: str, key: str, value: str) -> OperationResult:
         """Add a single custom property to an entity."""
-        entity_data = {
-            "customProperty": {
-                "key": key,
-                "value": value
-            }
-        }
+        entity_data = {"customProperty": {"key": key, "value": value}}
 
         operation = self.create_operation("add_custom_property", entity_data, entity_urn=entity_urn)
 
@@ -209,22 +197,18 @@ class EditedDataService(BaseInputOutputService):
                 success=True,
                 operation_type="add_custom_property",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
-    def remove_custom_property(
-        self,
-        entity_urn: str,
-        key: str
-    ) -> OperationResult:
+    def remove_custom_property(self, entity_urn: str, key: str) -> OperationResult:
         """Remove a custom property from an entity."""
-        entity_data = {
-            "customPropertyKey": key
-        }
+        entity_data = {"customPropertyKey": key}
 
-        operation = self.create_operation("remove_custom_property", entity_data, entity_urn=entity_urn)
+        operation = self.create_operation(
+            "remove_custom_property", entity_data, entity_urn=entity_urn
+        )
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -232,7 +216,7 @@ class EditedDataService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_custom_property",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -241,7 +225,7 @@ class EditedDataService(BaseInputOutputService):
         self,
         entity_urn: str,
         description: Optional[str] = None,
-        custom_properties: Optional[Dict[str, str]] = None
+        custom_properties: Optional[Dict[str, str]] = None,
     ) -> OperationResult:
         """Bulk update entity properties."""
         entity_data = {}
@@ -250,7 +234,9 @@ class EditedDataService(BaseInputOutputService):
         if custom_properties is not None:
             entity_data["customProperties"] = custom_properties
 
-        operation = self.create_operation("bulk_update_entity_properties", entity_data, entity_urn=entity_urn)
+        operation = self.create_operation(
+            "bulk_update_entity_properties", entity_data, entity_urn=entity_urn
+        )
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -258,7 +244,7 @@ class EditedDataService(BaseInputOutputService):
                 success=True,
                 operation_type="bulk_update_entity_properties",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -275,7 +261,7 @@ class EditedDataService(BaseInputOutputService):
             result = self.bulk_update_entity_properties(
                 entity_urn=update_data["urn"],
                 description=update_data.get("description"),
-                custom_properties=update_data.get("customProperties")
+                custom_properties=update_data.get("customProperties"),
             )
             results.append(result)
 
@@ -307,7 +293,7 @@ class EditedDataService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -332,18 +318,22 @@ class EditedDataService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
     # CONVENIENCE METHODS
     # ============================================
 
-    def import_entity_updates_from_json(self, json_data: List[Dict[str, Any]]) -> BatchOperationResult:
+    def import_entity_updates_from_json(
+        self, json_data: List[Dict[str, Any]]
+    ) -> BatchOperationResult:
         """Import entity updates from JSON data."""
         return self.bulk_update_entities(json_data)
 
-    def export_entity_updates_to_mcps(self, updates_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_entity_updates_to_mcps(
+        self, updates_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export entity updates as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode

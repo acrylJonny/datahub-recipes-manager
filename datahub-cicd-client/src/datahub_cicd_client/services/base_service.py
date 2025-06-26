@@ -56,7 +56,9 @@ class BaseInputOutputService(BaseDataHubClient, ABC):
         if output_dir:
             self.output_dir = output_dir
             self.mcp_emitter = self._create_mcp_emitter()
-        self.logger.info(f"Set output mode to {'file emission' if emit_to_file else 'direct emission'}")
+        self.logger.info(
+            f"Set output mode to {'file emission' if emit_to_file else 'direct emission'}"
+        )
 
     def set_batch_mode(self, batch: bool = False) -> None:
         """Set batch mode for collecting operations."""
@@ -144,7 +146,7 @@ class BaseInputOutputService(BaseDataHubClient, ABC):
             "batch_mode": self.batch_mode,
             "output_dir": str(self.output_dir) if self.output_dir else None,
             "pending_operations": len(self.pending_operations),
-            "pending_mcps": len(self.mcp_emitter.mcps)
+            "pending_mcps": len(self.mcp_emitter.mcps),
         }
 
 
@@ -157,7 +159,7 @@ class InputOutputMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.output_dir = kwargs.get('output_dir')
+        self.output_dir = kwargs.get("output_dir")
         self.sync_mode = True
         self.emit_to_file = False
         self.batch_mode = False
@@ -168,7 +170,7 @@ class InputOutputMixin:
         sync_mode: bool = True,
         emit_to_file: bool = False,
         batch_mode: bool = False,
-        output_dir: Optional[str] = None
+        output_dir: Optional[str] = None,
     ) -> None:
         """Configure output settings."""
         self.sync_mode = sync_mode
@@ -177,13 +179,12 @@ class InputOutputMixin:
         if output_dir:
             self.output_dir = output_dir
 
-        self.logger.info(f"Configured output: sync={sync_mode}, file={emit_to_file}, batch={batch_mode}")
+        self.logger.info(
+            f"Configured output: sync={sync_mode}, file={emit_to_file}, batch={batch_mode}"
+        )
 
     def create_operation(
-        self,
-        operation_type: str,
-        entity_data: Dict[str, Any],
-        **kwargs
+        self, operation_type: str, entity_data: Dict[str, Any], **kwargs
     ) -> Dict[str, Any]:
         """Create an operation descriptor."""
         return {
@@ -191,7 +192,7 @@ class InputOutputMixin:
             "data": entity_data,
             "timestamp": kwargs.get("timestamp"),
             "metadata": kwargs.get("metadata", {}),
-            **kwargs
+            **kwargs,
         }
 
 
@@ -206,7 +207,7 @@ class OperationResult:
         result_data: Optional[Any] = None,
         error_message: Optional[str] = None,
         mcps_generated: int = 0,
-        file_path: Optional[str] = None
+        file_path: Optional[str] = None,
     ):
         self.success = success
         self.operation_type = operation_type
@@ -225,7 +226,7 @@ class OperationResult:
             "result_data": self.result_data,
             "error_message": self.error_message,
             "mcps_generated": self.mcps_generated,
-            "file_path": self.file_path
+            "file_path": self.file_path,
         }
 
     def __repr__(self) -> str:
@@ -249,9 +250,11 @@ class BatchOperationResult:
             "total_operations": self.total_operations,
             "successful_operations": self.successful_operations,
             "failed_operations": self.failed_operations,
-            "success_rate": self.successful_operations / self.total_operations if self.total_operations > 0 else 0,
+            "success_rate": self.successful_operations / self.total_operations
+            if self.total_operations > 0
+            else 0,
             "total_mcps_generated": self.total_mcps,
-            "operation_types": list({r.operation_type for r in self.results})
+            "operation_types": list({r.operation_type for r in self.results}),
         }
 
     def get_failed_operations(self) -> List[OperationResult]:

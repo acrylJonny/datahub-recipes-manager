@@ -36,11 +36,7 @@ class ScriptsIntegration:
         This shows how existing script operations can be performed using
         the new input/output architecture.
         """
-        results = {
-            "sync_operations": [],
-            "async_operations": [],
-            "batch_operations": []
-        }
+        results = {"sync_operations": [], "async_operations": [], "batch_operations": []}
 
         # Example 1: Synchronous operations (immediate GraphQL execution)
         self.tag_service.set_sync_mode(True)
@@ -52,7 +48,7 @@ class ScriptsIntegration:
             name="Example Sync Tag",
             description="Created via synchronous operation",
             color_hex="#FF5733",
-            owner="datahub"
+            owner="datahub",
         )
         results["sync_operations"].append(sync_result.to_dict())
 
@@ -66,7 +62,7 @@ class ScriptsIntegration:
             name="Example Async Tag",
             description="Created via asynchronous operation",
             color_hex="#33FF57",
-            owner="datahub"
+            owner="datahub",
         )
         results["async_operations"].append(async_result.to_dict())
 
@@ -80,23 +76,21 @@ class ScriptsIntegration:
                 "name": f"Batch Tag {i}",
                 "description": f"Tag created in batch operation {i}",
                 "colorHex": f"#{'%06x' % (i * 111111 % 16777215)}",
-                "owner": "datahub"
+                "owner": "datahub",
             }
             for i in range(3)
         ]
 
         batch_result = self.tag_service.bulk_create_tags(batch_tags)
-        results["batch_operations"].append({
-            "operation": "bulk_create_tags",
-            "summary": batch_result.get_summary()
-        })
+        results["batch_operations"].append(
+            {"operation": "bulk_create_tags", "summary": batch_result.get_summary()}
+        )
 
         # Flush batch to execute all operations
         flush_results = self.tag_service.flush_batch()
-        results["batch_operations"].append({
-            "operation": "flush_batch",
-            "results_count": len(flush_results)
-        })
+        results["batch_operations"].append(
+            {"operation": "flush_batch", "results_count": len(flush_results)}
+        )
 
         # Emit any collected MCPs
         if self.tag_service.get_mcps():
@@ -132,11 +126,13 @@ class ScriptsIntegration:
                         self.tag_service.set_sync_mode(False)  # Use async for bulk import
                         batch_result = self.tag_service.import_tags_from_json(data)
 
-                        results["operations"].append({
-                            "file": str(json_file),
-                            "type": "tag_import",
-                            "summary": batch_result.get_summary()
-                        })
+                        results["operations"].append(
+                            {
+                                "file": str(json_file),
+                                "type": "tag_import",
+                                "summary": batch_result.get_summary(),
+                            }
+                        )
 
                 results["imported_files"].append(str(json_file))
 
@@ -173,7 +169,7 @@ class ScriptsIntegration:
                             "id": tag["urn"].split(":")[-1],
                             "name": tag["name"],
                             "description": tag.get("description", ""),
-                            "colorHex": tag.get("colorHex")
+                            "colorHex": tag.get("colorHex"),
                         }
                         if tag.get("owner_names"):
                             tag_export["owner"] = tag["owner_names"][0]
@@ -182,17 +178,14 @@ class ScriptsIntegration:
 
                     # Export as MCPs
                     mcp_file = self.tag_service.export_tags_to_mcps(
-                        export_data,
-                        f"{environment}_tags_export.json"
+                        export_data, f"{environment}_tags_export.json"
                     )
 
                     if mcp_file:
                         results["files"].append(mcp_file)
-                        results["exports"].append({
-                            "entity_type": "tags",
-                            "count": len(export_data),
-                            "file": mcp_file
-                        })
+                        results["exports"].append(
+                            {"entity_type": "tags", "count": len(export_data), "file": mcp_file}
+                        )
 
         return results
 
@@ -203,49 +196,45 @@ class ScriptsIntegration:
         results = {"patterns": []}
 
         # Pattern 1: Development workflow (sync operations)
-        results["patterns"].append({
-            "name": "development_workflow",
-            "description": "Interactive development with immediate feedback",
-            "config": {
-                "sync_mode": True,
-                "emit_to_file": False,
-                "batch_mode": False
+        results["patterns"].append(
+            {
+                "name": "development_workflow",
+                "description": "Interactive development with immediate feedback",
+                "config": {"sync_mode": True, "emit_to_file": False, "batch_mode": False},
             }
-        })
+        )
 
         # Pattern 2: Staging workflow (batch with file output)
-        results["patterns"].append({
-            "name": "staging_workflow",
-            "description": "Batch operations with file output for review",
-            "config": {
-                "sync_mode": False,
-                "emit_to_file": True,
-                "batch_mode": True
+        results["patterns"].append(
+            {
+                "name": "staging_workflow",
+                "description": "Batch operations with file output for review",
+                "config": {"sync_mode": False, "emit_to_file": True, "batch_mode": True},
             }
-        })
+        )
 
         # Pattern 3: Production workflow (async with direct emission)
-        results["patterns"].append({
-            "name": "production_workflow",
-            "description": "Asynchronous operations with direct emission",
-            "config": {
-                "sync_mode": False,
-                "emit_to_file": False,
-                "batch_mode": True
+        results["patterns"].append(
+            {
+                "name": "production_workflow",
+                "description": "Asynchronous operations with direct emission",
+                "config": {"sync_mode": False, "emit_to_file": False, "batch_mode": True},
             }
-        })
+        )
 
         # Pattern 4: CI/CD workflow (file-based with validation)
-        results["patterns"].append({
-            "name": "cicd_workflow",
-            "description": "File-based operations for automated pipelines",
-            "config": {
-                "sync_mode": False,
-                "emit_to_file": True,
-                "batch_mode": True,
-                "validation": True
+        results["patterns"].append(
+            {
+                "name": "cicd_workflow",
+                "description": "File-based operations for automated pipelines",
+                "config": {
+                    "sync_mode": False,
+                    "emit_to_file": True,
+                    "batch_mode": True,
+                    "validation": True,
+                },
             }
-        })
+        )
 
         return results
 
@@ -256,45 +245,45 @@ class ScriptsIntegration:
                 "input_operations": [
                     "Read existing data from DataHub",
                     "Query and search functionality",
-                    "Comprehensive data retrieval"
+                    "Comprehensive data retrieval",
                 ],
                 "output_operations": [
                     "Synchronous operations via GraphQL",
                     "Asynchronous operations via MCP generation",
                     "Batch processing capabilities",
-                    "File-based workflows"
+                    "File-based workflows",
                 ],
                 "integration_features": [
                     "Backward compatibility with existing scripts",
                     "Flexible operation modes",
                     "CI/CD pipeline support",
-                    "Error handling and validation"
-                ]
+                    "Error handling and validation",
+                ],
             },
             "benefits": {
                 "developer_experience": [
                     "Unified API for all operations",
                     "Flexible sync/async modes",
                     "Comprehensive error handling",
-                    "Built-in batch processing"
+                    "Built-in batch processing",
                 ],
                 "operational_benefits": [
                     "Improved performance with batch operations",
                     "Better error recovery",
                     "Audit trail and logging",
-                    "Standardized output formats"
+                    "Standardized output formats",
                 ],
                 "ci_cd_benefits": [
                     "File-based workflows for version control",
                     "Automated validation",
                     "Rollback capabilities",
-                    "Environment-specific configurations"
-                ]
+                    "Environment-specific configurations",
+                ],
             },
             "migration_path": [
                 "1. Install new enhanced services alongside existing scripts",
                 "2. Gradually migrate script functionality to enhanced services",
                 "3. Use integration layer for backward compatibility",
-                "4. Deprecate old scripts once migration is complete"
-            ]
+                "4. Deprecate old scripts once migration is complete",
+            ],
         }

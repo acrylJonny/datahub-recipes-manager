@@ -37,7 +37,9 @@ class BaseAsyncOutput(ABC):
         pass
 
     @abstractmethod
-    def update_entity_mcps(self, entity_urn: str, entity_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def update_entity_mcps(
+        self, entity_urn: str, entity_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Create MCPs for entity update."""
         pass
 
@@ -58,15 +60,11 @@ class BaseAsyncOutput(ABC):
                 success=True,
                 operation_type="create",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
         except Exception as e:
             self.logger.error(f"Error creating entity MCPs: {e}")
-            return OperationResult(
-                success=False,
-                operation_type="create",
-                error_message=str(e)
-            )
+            return OperationResult(success=False, operation_type="create", error_message=str(e))
 
     def update_entity(self, entity_urn: str, entity_data: Dict[str, Any]) -> OperationResult:
         """Update entity by generating MCPs."""
@@ -78,15 +76,12 @@ class BaseAsyncOutput(ABC):
                 success=True,
                 operation_type="update",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
         except Exception as e:
             self.logger.error(f"Error updating entity MCPs: {e}")
             return OperationResult(
-                success=False,
-                operation_type="update",
-                entity_urn=entity_urn,
-                error_message=str(e)
+                success=False, operation_type="update", entity_urn=entity_urn, error_message=str(e)
             )
 
     def delete_entity(self, entity_urn: str) -> OperationResult:
@@ -99,15 +94,12 @@ class BaseAsyncOutput(ABC):
                 success=True,
                 operation_type="delete",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
         except Exception as e:
             self.logger.error(f"Error deleting entity MCPs: {e}")
             return OperationResult(
-                success=False,
-                operation_type="delete",
-                entity_urn=entity_urn,
-                error_message=str(e)
+                success=False, operation_type="delete", entity_urn=entity_urn, error_message=str(e)
             )
 
     def batch_create_entities(self, entities_data: List[Dict[str, Any]]) -> List[OperationResult]:
@@ -169,12 +161,16 @@ class EntityRelationshipAsyncOutput(BaseAsyncOutput):
     """Base class for handling entity relationships asynchronously."""
 
     @abstractmethod
-    def add_owner_mcps(self, entity_urn: str, owner_urn: str, ownership_type: str) -> List[Dict[str, Any]]:
+    def add_owner_mcps(
+        self, entity_urn: str, owner_urn: str, ownership_type: str
+    ) -> List[Dict[str, Any]]:
         """Create MCPs for adding owner to entity."""
         pass
 
     @abstractmethod
-    def remove_owner_mcps(self, entity_urn: str, owner_urn: str, ownership_type: str) -> List[Dict[str, Any]]:
+    def remove_owner_mcps(
+        self, entity_urn: str, owner_urn: str, ownership_type: str
+    ) -> List[Dict[str, Any]]:
         """Create MCPs for removing owner from entity."""
         pass
 
@@ -188,7 +184,7 @@ class EntityRelationshipAsyncOutput(BaseAsyncOutput):
                 success=True,
                 operation_type="add_owner",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
         except Exception as e:
             self.logger.error(f"Error adding owner MCPs: {e}")
@@ -196,7 +192,7 @@ class EntityRelationshipAsyncOutput(BaseAsyncOutput):
                 success=False,
                 operation_type="add_owner",
                 entity_urn=entity_urn,
-                error_message=str(e)
+                error_message=str(e),
             )
 
     def remove_owner(self, entity_urn: str, owner_urn: str, ownership_type: str) -> OperationResult:
@@ -209,7 +205,7 @@ class EntityRelationshipAsyncOutput(BaseAsyncOutput):
                 success=True,
                 operation_type="remove_owner",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
         except Exception as e:
             self.logger.error(f"Error removing owner MCPs: {e}")
@@ -217,7 +213,7 @@ class EntityRelationshipAsyncOutput(BaseAsyncOutput):
                 success=False,
                 operation_type="remove_owner",
                 entity_urn=entity_urn,
-                error_message=str(e)
+                error_message=str(e),
             )
 
     def batch_add_owners(self, ownership_data: List[Dict[str, Any]]) -> List[OperationResult]:
@@ -227,7 +223,7 @@ class EntityRelationshipAsyncOutput(BaseAsyncOutput):
             result = self.add_owner(
                 data["entity_urn"],
                 data["owner_urn"],
-                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner")
+                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner"),
             )
             results.append(result)
         return results
@@ -239,7 +235,7 @@ class EntityRelationshipAsyncOutput(BaseAsyncOutput):
             result = self.remove_owner(
                 data["entity_urn"],
                 data["owner_urn"],
-                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner")
+                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner"),
             )
             results.append(result)
         return results
@@ -249,7 +245,9 @@ class MetadataAssignmentAsyncOutput(BaseAsyncOutput):
     """Base class for handling metadata assignments asynchronously."""
 
     @abstractmethod
-    def assign_to_entity_mcps(self, entity_urn: str, metadata_urn: str, **kwargs) -> List[Dict[str, Any]]:
+    def assign_to_entity_mcps(
+        self, entity_urn: str, metadata_urn: str, **kwargs
+    ) -> List[Dict[str, Any]]:
         """Create MCPs for assigning metadata to entity."""
         pass
 
@@ -268,7 +266,7 @@ class MetadataAssignmentAsyncOutput(BaseAsyncOutput):
                 success=True,
                 operation_type="assign_metadata",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
         except Exception as e:
             self.logger.error(f"Error assigning metadata MCPs: {e}")
@@ -276,7 +274,7 @@ class MetadataAssignmentAsyncOutput(BaseAsyncOutput):
                 success=False,
                 operation_type="assign_metadata",
                 entity_urn=entity_urn,
-                error_message=str(e)
+                error_message=str(e),
             )
 
     def remove_from_entity(self, entity_urn: str, metadata_urn: str) -> OperationResult:
@@ -289,7 +287,7 @@ class MetadataAssignmentAsyncOutput(BaseAsyncOutput):
                 success=True,
                 operation_type="remove_metadata",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
         except Exception as e:
             self.logger.error(f"Error removing metadata MCPs: {e}")
@@ -297,7 +295,7 @@ class MetadataAssignmentAsyncOutput(BaseAsyncOutput):
                 success=False,
                 operation_type="remove_metadata",
                 entity_urn=entity_urn,
-                error_message=str(e)
+                error_message=str(e),
             )
 
     def batch_assign_to_entities(self, assignments: List[Dict[str, Any]]) -> List[OperationResult]:
@@ -305,9 +303,7 @@ class MetadataAssignmentAsyncOutput(BaseAsyncOutput):
         results = []
         for assignment in assignments:
             result = self.assign_to_entity(
-                assignment["entity_urn"],
-                assignment["metadata_urn"],
-                **assignment.get("kwargs", {})
+                assignment["entity_urn"], assignment["metadata_urn"], **assignment.get("kwargs", {})
             )
             results.append(result)
         return results
@@ -316,9 +312,6 @@ class MetadataAssignmentAsyncOutput(BaseAsyncOutput):
         """Remove metadata from multiple entities by generating MCPs."""
         results = []
         for removal in removals:
-            result = self.remove_from_entity(
-                removal["entity_urn"],
-                removal["metadata_urn"]
-            )
+            result = self.remove_from_entity(removal["entity_urn"], removal["metadata_urn"])
             results.append(result)
         return results

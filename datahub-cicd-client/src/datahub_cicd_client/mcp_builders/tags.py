@@ -22,6 +22,7 @@ try:
         StatusClass,
         TagPropertiesClass,
     )
+
     DATAHUB_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"DataHub SDK not available: {e}")
@@ -43,7 +44,7 @@ class TagMCPBuilder(BaseMCPBuilder):
         name: str,
         description: Optional[str] = None,
         color_hex: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create tag properties MCP."""
         if not DATAHUB_AVAILABLE:
@@ -51,26 +52,17 @@ class TagMCPBuilder(BaseMCPBuilder):
             return None
 
         try:
-            properties = TagPropertiesClass(
-                name=name,
-                description=description,
-                colorHex=color_hex
-            )
+            properties = TagPropertiesClass(name=name, description=description, colorHex=color_hex)
 
             return self.create_mcp_wrapper(
-                entity_urn=tag_urn,
-                aspect=properties,
-                change_type="UPSERT"
+                entity_urn=tag_urn, aspect=properties, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating tag properties MCP: {e}")
             return None
 
     def create_ownership_mcp(
-        self,
-        tag_urn: str,
-        owners: List[str],
-        **kwargs
+        self, tag_urn: str, owners: List[str], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create tag ownership MCP."""
         if not DATAHUB_AVAILABLE:
@@ -84,31 +76,21 @@ class TagMCPBuilder(BaseMCPBuilder):
                     OwnerClass(
                         owner=owner_urn,
                         type=OwnershipTypeClass.DATAOWNER,
-                        source=OwnershipSourceClass(
-                            type=OwnershipSourceTypeClass.MANUAL
-                        )
+                        source=OwnershipSourceClass(type=OwnershipSourceTypeClass.MANUAL),
                     )
                 )
 
-            ownership = OwnershipClass(
-                owners=owner_objects,
-                lastModified=self.create_audit_stamp()
-            )
+            ownership = OwnershipClass(owners=owner_objects, lastModified=self.create_audit_stamp())
 
             return self.create_mcp_wrapper(
-                entity_urn=tag_urn,
-                aspect=ownership,
-                change_type="UPSERT"
+                entity_urn=tag_urn, aspect=ownership, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating tag ownership MCP: {e}")
             return None
 
     def create_status_mcp(
-        self,
-        tag_urn: str,
-        removed: bool = False,
-        **kwargs
+        self, tag_urn: str, removed: bool = False, **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create tag status MCP."""
         if not DATAHUB_AVAILABLE:
@@ -118,20 +100,13 @@ class TagMCPBuilder(BaseMCPBuilder):
         try:
             status = StatusClass(removed=removed)
 
-            return self.create_mcp_wrapper(
-                entity_urn=tag_urn,
-                aspect=status,
-                change_type="UPSERT"
-            )
+            return self.create_mcp_wrapper(entity_urn=tag_urn, aspect=status, change_type="UPSERT")
         except Exception as e:
             self.logger.error(f"Error creating tag status MCP: {e}")
             return None
 
     def create_entity_mcps(
-        self,
-        entity_data: Dict[str, Any],
-        include_all_aspects: bool = True,
-        **kwargs
+        self, entity_data: Dict[str, Any], include_all_aspects: bool = True, **kwargs
     ) -> List[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """
         Create all MCPs for a tag entity.
@@ -161,15 +136,14 @@ class TagMCPBuilder(BaseMCPBuilder):
                 tag_urn=tag_urn,
                 name=name,
                 description=entity_data.get("description"),
-                color_hex=entity_data.get("color_hex")
+                color_hex=entity_data.get("color_hex"),
             )
             if properties_mcp:
                 mcps.append(properties_mcp)
 
         # Status MCP (always include)
         status_mcp = self.create_status_mcp(
-            tag_urn=tag_urn,
-            removed=entity_data.get("removed", False)
+            tag_urn=tag_urn, removed=entity_data.get("removed", False)
         )
         if status_mcp:
             mcps.append(status_mcp)

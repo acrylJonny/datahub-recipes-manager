@@ -47,7 +47,9 @@ class EditedDataAsyncOutput(BaseAsyncOutput):
         """Create MCPs for entity deletion (not applicable for edited data)."""
         return []
 
-    def update_entity_mcps(self, entity_urn: str, entity_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def update_entity_mcps(
+        self, entity_urn: str, entity_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Create MCPs for entity updates."""
         mcps = []
 
@@ -55,7 +57,9 @@ class EditedDataAsyncOutput(BaseAsyncOutput):
             mcps.append(self.create_entity_description_mcp(entity_urn, entity_data["description"]))
 
         if "custom_properties" in entity_data:
-            mcps.append(self.create_custom_properties_mcp(entity_urn, entity_data["custom_properties"]))
+            mcps.append(
+                self.create_custom_properties_mcp(entity_urn, entity_data["custom_properties"])
+            )
 
         return mcps
 
@@ -75,12 +79,12 @@ class EditedDataAsyncOutput(BaseAsyncOutput):
             "entityUrn": entity_urn,
             "changeType": "UPSERT",
             "aspectName": "editableDatasetProperties",
-            "aspect": {
-                "description": description
-            }
+            "aspect": {"description": description},
         }
 
-    def create_custom_properties_mcp(self, entity_urn: str, custom_properties: Dict[str, str]) -> Dict[str, Any]:
+    def create_custom_properties_mcp(
+        self, entity_urn: str, custom_properties: Dict[str, str]
+    ) -> Dict[str, Any]:
         """
         Create MCP for updating an entity's custom properties.
 
@@ -96,13 +100,15 @@ class EditedDataAsyncOutput(BaseAsyncOutput):
             "entityUrn": entity_urn,
             "changeType": "UPSERT",
             "aspectName": "datasetProperties",
-            "aspect": {
-                "customProperties": custom_properties
-            }
+            "aspect": {"customProperties": custom_properties},
         }
 
-    def generate_entity_update_mcps(self, entity_urn: str, description: Optional[str] = None,
-                                  custom_properties: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    def generate_entity_update_mcps(
+        self,
+        entity_urn: str,
+        description: Optional[str] = None,
+        custom_properties: Optional[Dict[str, str]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Generate MCPs for entity updates.
 
@@ -124,7 +130,9 @@ class EditedDataAsyncOutput(BaseAsyncOutput):
 
         return mcps
 
-    def write_entity_updates_to_file(self, updates: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def write_entity_updates_to_file(
+        self, updates: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """
         Write entity updates to MCP file.
 
@@ -144,7 +152,9 @@ class EditedDataAsyncOutput(BaseAsyncOutput):
                 custom_properties = update.get("custom_properties")
 
                 if entity_urn:
-                    mcps = self.generate_entity_update_mcps(entity_urn, description, custom_properties)
+                    mcps = self.generate_entity_update_mcps(
+                        entity_urn, description, custom_properties
+                    )
                     all_mcps.extend(mcps)
 
             # Add MCPs to emitter
@@ -157,7 +167,9 @@ class EditedDataAsyncOutput(BaseAsyncOutput):
             self.logger.error(f"Error writing entity updates to file: {str(e)}")
             return None
 
-    def export_entity_updates(self, updates_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_entity_updates(
+        self, updates_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """
         Export entity updates to MCP file.
 

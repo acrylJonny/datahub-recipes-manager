@@ -33,7 +33,7 @@ class MCPEmitter:
         aspect_name: str,
         aspect_value: Dict[str, Any],
         change_type: str = "UPSERT",
-        system_metadata: Optional[Dict[str, Any]] = None
+        system_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Create a single MCP.
@@ -53,9 +53,7 @@ class MCPEmitter:
             "entityType": self._extract_entity_type(entity_urn),
             "changeType": change_type,
             "aspectName": aspect_name,
-            "aspect": {
-                "json": aspect_value
-            }
+            "aspect": {"json": aspect_value},
         }
 
         if system_metadata:
@@ -63,7 +61,7 @@ class MCPEmitter:
         else:
             mcp["systemMetadata"] = {
                 "lastObserved": int(datetime.now().timestamp() * 1000),
-                "runId": str(uuid.uuid4())
+                "runId": str(uuid.uuid4()),
             }
 
         return mcp
@@ -102,12 +100,12 @@ class MCPEmitter:
         filepath = self.output_dir / filename
 
         if format == "json":
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 json.dump(self.mcps, f, indent=2)
         elif format == "jsonl":
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 for mcp in self.mcps:
-                    f.write(json.dumps(mcp) + '\n')
+                    f.write(json.dumps(mcp) + "\n")
         else:
             raise ValueError(f"Unsupported format: {format}")
 
@@ -135,7 +133,7 @@ class MCPEmitter:
     def _extract_entity_type(self, entity_urn: str) -> str:
         """Extract entity type from URN."""
         # URN format: urn:li:entityType:entityId
-        parts = entity_urn.split(':')
+        parts = entity_urn.split(":")
         if len(parts) >= 3:
             return parts[2]
         return "unknown"
@@ -145,45 +143,32 @@ class TagMCPEmitter(MCPEmitter):
     """Specialized MCP emitter for tags."""
 
     def create_tag_mcp(
-        self,
-        tag_urn: str,
-        name: str,
-        description: str = "",
-        color_hex: Optional[str] = None
+        self, tag_urn: str, name: str, description: str = "", color_hex: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create MCP for tag creation/update."""
-        aspect_value = {
-            "name": name,
-            "description": description
-        }
+        aspect_value = {"name": name, "description": description}
 
         if color_hex:
             aspect_value["colorHex"] = color_hex
 
         return self.create_mcp(
-            entity_urn=tag_urn,
-            aspect_name="tagProperties",
-            aspect_value=aspect_value
+            entity_urn=tag_urn, aspect_name="tagProperties", aspect_value=aspect_value
         )
 
     def create_tag_ownership_mcp(
-        self,
-        tag_urn: str,
-        owners: List[Dict[str, Any]]
+        self, tag_urn: str, owners: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Create MCP for tag ownership."""
         aspect_value = {
             "owners": owners,
             "lastModified": {
                 "time": int(datetime.now().timestamp() * 1000),
-                "actor": "urn:li:corpuser:datahub"
-            }
+                "actor": "urn:li:corpuser:datahub",
+            },
         }
 
         return self.create_mcp(
-            entity_urn=tag_urn,
-            aspect_name="ownership",
-            aspect_value=aspect_value
+            entity_urn=tag_urn, aspect_name="ownership", aspect_value=aspect_value
         )
 
 
@@ -195,21 +180,16 @@ class DomainMCPEmitter(MCPEmitter):
         domain_urn: str,
         name: str,
         description: str = "",
-        parent_domain_urn: Optional[str] = None
+        parent_domain_urn: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create MCP for domain creation/update."""
-        aspect_value = {
-            "name": name,
-            "description": description
-        }
+        aspect_value = {"name": name, "description": description}
 
         if parent_domain_urn:
             aspect_value["parentDomain"] = parent_domain_urn
 
         return self.create_mcp(
-            entity_urn=domain_urn,
-            aspect_name="domainProperties",
-            aspect_value=aspect_value
+            entity_urn=domain_urn, aspect_name="domainProperties", aspect_value=aspect_value
         )
 
 
@@ -225,7 +205,7 @@ class StructuredPropertyMCPEmitter(MCPEmitter):
         cardinality: str = "SINGLE",
         description: str = "",
         entity_types: Optional[List[str]] = None,
-        allowed_values: Optional[List[Any]] = None
+        allowed_values: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
         """Create MCP for structured property creation/update."""
         aspect_value = {
@@ -233,7 +213,7 @@ class StructuredPropertyMCPEmitter(MCPEmitter):
             "displayName": display_name,
             "valueType": value_type,
             "cardinality": cardinality,
-            "description": description
+            "description": description,
         }
 
         if entity_types:
@@ -245,7 +225,7 @@ class StructuredPropertyMCPEmitter(MCPEmitter):
         return self.create_mcp(
             entity_urn=property_urn,
             aspect_name="structuredPropertyDefinition",
-            aspect_value=aspect_value
+            aspect_value=aspect_value,
         )
 
 
@@ -253,25 +233,16 @@ class GlossaryMCPEmitter(MCPEmitter):
     """Specialized MCP emitter for glossary entities."""
 
     def create_glossary_node_mcp(
-        self,
-        node_urn: str,
-        name: str,
-        description: str = "",
-        parent_node_urn: Optional[str] = None
+        self, node_urn: str, name: str, description: str = "", parent_node_urn: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create MCP for glossary node creation/update."""
-        aspect_value = {
-            "name": name,
-            "description": description
-        }
+        aspect_value = {"name": name, "description": description}
 
         if parent_node_urn:
             aspect_value["parentNode"] = parent_node_urn
 
         return self.create_mcp(
-            entity_urn=node_urn,
-            aspect_name="glossaryNodeInfo",
-            aspect_value=aspect_value
+            entity_urn=node_urn, aspect_name="glossaryNodeInfo", aspect_value=aspect_value
         )
 
     def create_glossary_term_mcp(
@@ -280,22 +251,16 @@ class GlossaryMCPEmitter(MCPEmitter):
         name: str,
         description: str = "",
         parent_node_urn: Optional[str] = None,
-        term_source: str = "INTERNAL"
+        term_source: str = "INTERNAL",
     ) -> Dict[str, Any]:
         """Create MCP for glossary term creation/update."""
-        aspect_value = {
-            "name": name,
-            "description": description,
-            "termSource": term_source
-        }
+        aspect_value = {"name": name, "description": description, "termSource": term_source}
 
         if parent_node_urn:
             aspect_value["parentNode"] = parent_node_urn
 
         return self.create_mcp(
-            entity_urn=term_urn,
-            aspect_name="glossaryTermInfo",
-            aspect_value=aspect_value
+            entity_urn=term_urn, aspect_name="glossaryTermInfo", aspect_value=aspect_value
         )
 
 
@@ -303,25 +268,16 @@ class DataProductMCPEmitter(MCPEmitter):
     """Specialized MCP emitter for data products."""
 
     def create_data_product_mcp(
-        self,
-        product_urn: str,
-        name: str,
-        description: str = "",
-        external_url: Optional[str] = None
+        self, product_urn: str, name: str, description: str = "", external_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create MCP for data product creation/update."""
-        aspect_value = {
-            "name": name,
-            "description": description
-        }
+        aspect_value = {"name": name, "description": description}
 
         if external_url:
             aspect_value["externalUrl"] = external_url
 
         return self.create_mcp(
-            entity_urn=product_urn,
-            aspect_name="dataProductProperties",
-            aspect_value=aspect_value
+            entity_urn=product_urn, aspect_name="dataProductProperties", aspect_value=aspect_value
         )
 
 
@@ -337,39 +293,38 @@ class IngestionMCPEmitter(MCPEmitter):
         schedule_interval: str = "0 0 * * *",
         timezone: str = "UTC",
         executor_id: str = "default",
-        debug_mode: bool = False
+        debug_mode: bool = False,
     ) -> List[Dict[str, Any]]:
         """Create MCPs for ingestion source creation/update."""
         mcps = []
 
         # Key aspect
-        key_aspect = {
-            "id": source_urn.split(":")[-1]
-        }
-        mcps.append(self.create_mcp(
-            entity_urn=source_urn,
-            aspect_name="dataHubIngestionSourceKey",
-            aspect_value=key_aspect
-        ))
+        key_aspect = {"id": source_urn.split(":")[-1]}
+        mcps.append(
+            self.create_mcp(
+                entity_urn=source_urn,
+                aspect_name="dataHubIngestionSourceKey",
+                aspect_value=key_aspect,
+            )
+        )
 
         # Info aspect
         info_aspect = {
             "name": name,
             "type": source_type,
-            "schedule": {
-                "interval": schedule_interval,
-                "timezone": timezone
-            },
+            "schedule": {"interval": schedule_interval, "timezone": timezone},
             "config": {
                 "recipe": json.dumps(recipe) if isinstance(recipe, dict) else recipe,
                 "executorId": executor_id,
-                "debugMode": debug_mode
-            }
+                "debugMode": debug_mode,
+            },
         }
-        mcps.append(self.create_mcp(
-            entity_urn=source_urn,
-            aspect_name="dataHubIngestionSourceInfo",
-            aspect_value=info_aspect
-        ))
+        mcps.append(
+            self.create_mcp(
+                entity_urn=source_urn,
+                aspect_name="dataHubIngestionSourceInfo",
+                aspect_value=info_aspect,
+            )
+        )
 
         return mcps

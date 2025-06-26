@@ -2,7 +2,6 @@
 GraphQL queries for tag operations.
 """
 
-
 # Query to list tags with comprehensive information
 LIST_TAGS_QUERY = """
 query GetTags($input: SearchAcrossEntitiesInput!) {

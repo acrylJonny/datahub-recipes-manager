@@ -30,13 +30,15 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
                         "id": entity_data["id"],
                         "name": entity_data["name"],
                         "description": entity_data.get("description", ""),
-                        "colorHex": entity_data.get("colorHex")
+                        "colorHex": entity_data.get("colorHex"),
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("create_tag", error_message="GraphQL errors occurred")
+                return self._create_error_result(
+                    "create_tag", error_message="GraphQL errors occurred"
+                )
 
             tag_urn = result["data"]["createTag"]
             return self._create_success_result("create_tag", tag_urn, result)
@@ -52,16 +54,13 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
             if "description" in entity_data:
                 result = self.execute_graphql(
                     UPDATE_TAG_DESCRIPTION_MUTATION,
-                    {
-                        "input": {
-                            "tagUrn": entity_urn,
-                            "description": entity_data["description"]
-                        }
-                    }
+                    {"input": {"tagUrn": entity_urn, "description": entity_data["description"]}},
                 )
 
                 if not self._check_graphql_errors(result):
-                    return self._create_error_result("update_tag", entity_urn, "Failed to update description")
+                    return self._create_error_result(
+                        "update_tag", entity_urn, "Failed to update description"
+                    )
 
             # Update color if provided
             if "colorHex" in entity_data:
@@ -78,13 +77,12 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
     def delete_entity(self, entity_urn: str) -> OperationResult:
         """Delete a tag."""
         try:
-            result = self.execute_graphql(
-                DELETE_TAG_MUTATION,
-                {"tagUrn": entity_urn}
-            )
+            result = self.execute_graphql(DELETE_TAG_MUTATION, {"tagUrn": entity_urn})
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("delete_tag", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "delete_tag", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("delete_tag", entity_urn, result)
 
@@ -96,17 +94,13 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
         """Set tag color."""
         try:
             result = self.execute_graphql(
-                SET_TAG_COLOR_MUTATION,
-                {
-                    "input": {
-                        "tagUrn": tag_urn,
-                        "colorHex": color_hex
-                    }
-                }
+                SET_TAG_COLOR_MUTATION, {"input": {"tagUrn": tag_urn, "colorHex": color_hex}}
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("set_tag_color", tag_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "set_tag_color", tag_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("set_tag_color", tag_urn, result)
 
@@ -122,16 +116,15 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
                 {
                     "input": {
                         "tagUrn": entity_urn,
-                        "owners": [{
-                            "ownerUrn": owner_urn,
-                            "type": ownership_type
-                        }]
+                        "owners": [{"ownerUrn": owner_urn, "type": ownership_type}],
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_tag_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_tag_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_tag_owner", entity_urn, result)
 
@@ -143,17 +136,13 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
         """Remove owner from tag."""
         try:
             result = self.execute_graphql(
-                REMOVE_TAG_OWNER_MUTATION,
-                {
-                    "input": {
-                        "tagUrn": entity_urn,
-                        "ownerUrn": owner_urn
-                    }
-                }
+                REMOVE_TAG_OWNER_MUTATION, {"input": {"tagUrn": entity_urn, "ownerUrn": owner_urn}}
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_tag_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_tag_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("remove_tag_owner", entity_urn, result)
 
@@ -166,16 +155,13 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
         try:
             result = self.execute_graphql(
                 ADD_TAG_TO_ENTITY_MUTATION,
-                {
-                    "input": {
-                        "resourceUrn": entity_urn,
-                        "tagUrns": [tag_urn]
-                    }
-                }
+                {"input": {"resourceUrn": entity_urn, "tagUrns": [tag_urn]}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_tag_to_entity", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_tag_to_entity", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_tag_to_entity", entity_urn, result)
 
@@ -188,16 +174,13 @@ class TagSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssign
         try:
             result = self.execute_graphql(
                 REMOVE_TAG_FROM_ENTITY_MUTATION,
-                {
-                    "input": {
-                        "resourceUrn": entity_urn,
-                        "tagUrn": tag_urn
-                    }
-                }
+                {"input": {"resourceUrn": entity_urn, "tagUrn": tag_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_tag_from_entity", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_tag_from_entity", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("remove_tag_from_entity", entity_urn, result)
 

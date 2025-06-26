@@ -90,7 +90,7 @@ class RecipeService(BaseInputOutputService):
         type: str,
         config: Dict[str, Any],
         platform_urn: Optional[str] = None,
-        schedule: Optional[Dict[str, Any]] = None
+        schedule: Optional[Dict[str, Any]] = None,
     ) -> OperationResult:
         """
         Create a new recipe.
@@ -110,7 +110,7 @@ class RecipeService(BaseInputOutputService):
             "type": type,
             "config": config,
             "platformUrn": platform_urn,
-            "schedule": schedule
+            "schedule": schedule,
         }
 
         operation = self.create_operation("create_recipe", entity_data)
@@ -121,7 +121,7 @@ class RecipeService(BaseInputOutputService):
                 success=True,
                 operation_type="create_recipe",
                 entity_urn=f"urn:li:dataHubIngestionSource:{name}",
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -131,7 +131,7 @@ class RecipeService(BaseInputOutputService):
         recipe_urn: str,
         name: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
-        schedule: Optional[Dict[str, Any]] = None
+        schedule: Optional[Dict[str, Any]] = None,
     ) -> OperationResult:
         """Update an existing recipe."""
         entity_data = {}
@@ -150,7 +150,7 @@ class RecipeService(BaseInputOutputService):
                 success=True,
                 operation_type="update_recipe",
                 entity_urn=recipe_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -165,7 +165,7 @@ class RecipeService(BaseInputOutputService):
                 success=True,
                 operation_type="delete_recipe",
                 entity_urn=recipe_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -180,7 +180,7 @@ class RecipeService(BaseInputOutputService):
                 success=True,
                 operation_type="execute_recipe",
                 entity_urn=recipe_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -199,7 +199,7 @@ class RecipeService(BaseInputOutputService):
                 type=recipe_data["type"],
                 config=recipe_data["config"],
                 platform_urn=recipe_data.get("platformUrn"),
-                schedule=recipe_data.get("schedule")
+                schedule=recipe_data.get("schedule"),
             )
             results.append(result)
 
@@ -237,7 +237,7 @@ class RecipeService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -258,7 +258,7 @@ class RecipeService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
@@ -269,7 +269,9 @@ class RecipeService(BaseInputOutputService):
         """Import recipes from JSON data."""
         return self.bulk_create_recipes(json_data)
 
-    def export_recipes_to_mcps(self, recipes_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_recipes_to_mcps(
+        self, recipes_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export recipes as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode
@@ -300,11 +302,7 @@ class RecipeService(BaseInputOutputService):
         Returns:
             Validation result with success status and any errors
         """
-        validation_result = {
-            "valid": True,
-            "errors": [],
-            "warnings": []
-        }
+        validation_result = {"valid": True, "errors": [], "warnings": []}
 
         # Basic validation logic
         if not config.get("source"):
@@ -319,7 +317,9 @@ class RecipeService(BaseInputOutputService):
 
         return validation_result
 
-    def get_recipe_execution_history(self, recipe_urn: str, start: int = 0, count: int = 10) -> List[Dict[str, Any]]:
+    def get_recipe_execution_history(
+        self, recipe_urn: str, start: int = 0, count: int = 10
+    ) -> List[Dict[str, Any]]:
         """Get execution history for a recipe."""
         try:
             variables = {"urn": recipe_urn, "start": start, "count": count}

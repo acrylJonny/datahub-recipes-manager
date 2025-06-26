@@ -11,12 +11,15 @@ from typing import Any, Dict, List, Optional, Union
 try:
     from datahub.emitter.mcp import MetadataChangeProposalWrapper
     from datahub.emitter.rest_emitter import DatahubRestEmitter
+
     DATAHUB_AVAILABLE = True
 except ImportError:
     logging.warning("DataHub SDK not available")
     DATAHUB_AVAILABLE = False
+
     class MetadataChangeProposalWrapper:
         pass
+
     class DatahubRestEmitter:
         pass
 
@@ -56,7 +59,7 @@ class DataHubEmitter:
     def emit(
         self,
         mcps: List[Union[MetadataChangeProposalWrapper, Dict[str, Any]]],
-        callback: Optional[callable] = None
+        callback: Optional[callable] = None,
     ) -> List[Dict[str, Any]]:
         """
         Emit MCPs to DataHub.
@@ -84,12 +87,14 @@ class DataHubEmitter:
 
                 # Emit the MCP
                 result = self.rest_emitter.emit_mcp(mcp)
-                results.append({
-                    "success": True,
-                    "entityUrn": mcp.entityUrn,
-                    "aspectName": mcp.aspectName,
-                    "result": result
-                })
+                results.append(
+                    {
+                        "success": True,
+                        "entityUrn": mcp.entityUrn,
+                        "aspectName": mcp.aspectName,
+                        "result": result,
+                    }
+                )
 
                 if callback:
                     callback(mcp, result, True)
@@ -97,9 +102,9 @@ class DataHubEmitter:
             except Exception as e:
                 error_result = {
                     "success": False,
-                    "entityUrn": getattr(mcp, 'entityUrn', 'unknown'),
-                    "aspectName": getattr(mcp, 'aspectName', 'unknown'),
-                    "error": str(e)
+                    "entityUrn": getattr(mcp, "entityUrn", "unknown"),
+                    "aspectName": getattr(mcp, "aspectName", "unknown"),
+                    "error": str(e),
                 }
                 results.append(error_result)
 
@@ -111,8 +116,7 @@ class DataHubEmitter:
         return results
 
     def emit_single(
-        self,
-        mcp: Union[MetadataChangeProposalWrapper, Dict[str, Any]]
+        self, mcp: Union[MetadataChangeProposalWrapper, Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Emit a single MCP to DataHub.
@@ -135,7 +139,7 @@ class DataHubEmitter:
         """
         try:
             # Use the rest emitter's test method if available
-            if hasattr(self.rest_emitter, 'test_connection'):
+            if hasattr(self.rest_emitter, "test_connection"):
                 return self.rest_emitter.test_connection()
             else:
                 # Fallback: try a simple operation
@@ -147,7 +151,7 @@ class DataHubEmitter:
     def close(self):
         """Close the emitter and clean up resources."""
         try:
-            if hasattr(self.rest_emitter, 'close'):
+            if hasattr(self.rest_emitter, "close"):
                 self.rest_emitter.close()
         except Exception as e:
             self.logger.error(f"Error closing emitter: {e}")

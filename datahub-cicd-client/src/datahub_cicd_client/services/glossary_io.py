@@ -55,11 +55,15 @@ class GlossaryIOService(BaseInputOutputService):
     # INPUT OPERATIONS (Reading from DataHub)
     # ============================================
 
-    def list_glossary_nodes(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_glossary_nodes(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """List glossary nodes from DataHub."""
         return self.input_service.list_glossary_nodes(query, start, count)
 
-    def list_glossary_terms(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_glossary_terms(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """List glossary terms from DataHub."""
         return self.input_service.list_glossary_terms(query, start, count)
 
@@ -71,11 +75,15 @@ class GlossaryIOService(BaseInputOutputService):
         """Get a single glossary term from DataHub."""
         return self.input_service.get_glossary_term(term_urn)
 
-    def get_comprehensive_glossary_data(self, query: str = "*", start: int = 0, count: int = 100) -> Dict[str, Any]:
+    def get_comprehensive_glossary_data(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> Dict[str, Any]:
         """Get comprehensive glossary data from DataHub."""
         return self.input_service.get_comprehensive_glossary_data(query, start, count)
 
-    def find_entities_with_glossary_term(self, term_urn: str, start: int = 0, count: int = 50) -> Dict[str, Any]:
+    def find_entities_with_glossary_term(
+        self, term_urn: str, start: int = 0, count: int = 50
+    ) -> Dict[str, Any]:
         """Find entities that have a specific glossary term."""
         return self.input_service.find_entities_with_glossary_term(term_urn, start, count)
 
@@ -89,7 +97,7 @@ class GlossaryIOService(BaseInputOutputService):
         name: str,
         description: str = "",
         parent_node: Optional[str] = None,
-        owner: Optional[str] = None
+        owner: Optional[str] = None,
     ) -> OperationResult:
         """
         Create a new glossary node using current operation mode.
@@ -110,7 +118,7 @@ class GlossaryIOService(BaseInputOutputService):
             "description": description,
             "parentNode": parent_node,
             "owner": owner,
-            "entity_type": "node"
+            "entity_type": "node",
         }
 
         operation = self.create_operation("create_glossary_node", entity_data)
@@ -121,7 +129,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="create_glossary_node",
                 entity_urn=f"urn:li:glossaryNode:{node_id}",
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -133,7 +141,7 @@ class GlossaryIOService(BaseInputOutputService):
         description: str = "",
         parent_node: Optional[str] = None,
         term_source: str = "INTERNAL",
-        owner: Optional[str] = None
+        owner: Optional[str] = None,
     ) -> OperationResult:
         """
         Create a new glossary term using current operation mode.
@@ -156,7 +164,7 @@ class GlossaryIOService(BaseInputOutputService):
             "parentNode": parent_node,
             "termSource": term_source,
             "owner": owner,
-            "entity_type": "term"
+            "entity_type": "term",
         }
 
         operation = self.create_operation("create_glossary_term", entity_data)
@@ -167,7 +175,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="create_glossary_term",
                 entity_urn=f"urn:li:glossaryTerm:{term_id}",
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -178,7 +186,7 @@ class GlossaryIOService(BaseInputOutputService):
         name: Optional[str] = None,
         description: Optional[str] = None,
         parent_node: Optional[str] = None,
-        term_source: Optional[str] = None
+        term_source: Optional[str] = None,
     ) -> OperationResult:
         """Update an existing glossary entity (node or term)."""
         entity_data = {}
@@ -191,7 +199,9 @@ class GlossaryIOService(BaseInputOutputService):
         if term_source is not None:
             entity_data["termSource"] = term_source
 
-        operation = self.create_operation("update_glossary_entity", entity_data, entity_urn=entity_urn)
+        operation = self.create_operation(
+            "update_glossary_entity", entity_data, entity_urn=entity_urn
+        )
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -199,7 +209,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="update_glossary_entity",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -214,7 +224,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="delete_glossary_entity",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -223,13 +233,13 @@ class GlossaryIOService(BaseInputOutputService):
         self,
         entity_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Add owner to glossary entity."""
         operation = self.create_operation(
             "add_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=entity_urn
+            entity_urn=entity_urn,
         )
 
         if self.batch_mode:
@@ -238,7 +248,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="add_glossary_owner",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -247,13 +257,13 @@ class GlossaryIOService(BaseInputOutputService):
         self,
         entity_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Remove owner from glossary entity."""
         operation = self.create_operation(
             "remove_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=entity_urn
+            entity_urn=entity_urn,
         )
 
         if self.batch_mode:
@@ -262,7 +272,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_glossary_owner",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -270,9 +280,7 @@ class GlossaryIOService(BaseInputOutputService):
     def assign_glossary_term_to_entity(self, entity_urn: str, term_urn: str) -> OperationResult:
         """Assign glossary term to entity."""
         operation = self.create_operation(
-            "assign_glossary_term",
-            {"term_urn": term_urn},
-            entity_urn=entity_urn
+            "assign_glossary_term", {"term_urn": term_urn}, entity_urn=entity_urn
         )
 
         if self.batch_mode:
@@ -281,7 +289,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="assign_glossary_term_to_entity",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -289,9 +297,7 @@ class GlossaryIOService(BaseInputOutputService):
     def remove_glossary_term_from_entity(self, entity_urn: str, term_urn: str) -> OperationResult:
         """Remove glossary term from entity."""
         operation = self.create_operation(
-            "remove_glossary_term",
-            {"term_urn": term_urn},
-            entity_urn=entity_urn
+            "remove_glossary_term", {"term_urn": term_urn}, entity_urn=entity_urn
         )
 
         if self.batch_mode:
@@ -300,7 +306,7 @@ class GlossaryIOService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_glossary_term_from_entity",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -309,7 +315,9 @@ class GlossaryIOService(BaseInputOutputService):
     # BATCH OPERATIONS
     # ============================================
 
-    def bulk_create_glossary_entities(self, entities_data: List[Dict[str, Any]]) -> BatchOperationResult:
+    def bulk_create_glossary_entities(
+        self, entities_data: List[Dict[str, Any]]
+    ) -> BatchOperationResult:
         """Create multiple glossary entities in batch."""
         results = []
 
@@ -322,7 +330,7 @@ class GlossaryIOService(BaseInputOutputService):
                     name=entity_data["name"],
                     description=entity_data.get("description", ""),
                     parent_node=entity_data.get("parentNode"),
-                    owner=entity_data.get("owner")
+                    owner=entity_data.get("owner"),
                 )
             else:
                 result = self.create_glossary_term(
@@ -331,14 +339,16 @@ class GlossaryIOService(BaseInputOutputService):
                     description=entity_data.get("description", ""),
                     parent_node=entity_data.get("parentNode"),
                     term_source=entity_data.get("termSource", "INTERNAL"),
-                    owner=entity_data.get("owner")
+                    owner=entity_data.get("owner"),
                 )
 
             results.append(result)
 
         return BatchOperationResult(results)
 
-    def bulk_assign_glossary_term(self, term_urn: str, entity_urns: List[str]) -> BatchOperationResult:
+    def bulk_assign_glossary_term(
+        self, term_urn: str, entity_urns: List[str]
+    ) -> BatchOperationResult:
         """Assign a glossary term to multiple entities."""
         results = []
 
@@ -357,20 +367,21 @@ class GlossaryIOService(BaseInputOutputService):
                     success=True,
                     operation_type="assign_glossary_term_to_entity",
                     entity_urn=entity_urn,
-                    mcps_generated=1
+                    mcps_generated=1,
                 )
                 results.append(result)
 
         return BatchOperationResult(results)
 
-    def bulk_entity_glossary_term_assignment(self, assignments: List[Dict[str, str]]) -> BatchOperationResult:
+    def bulk_entity_glossary_term_assignment(
+        self, assignments: List[Dict[str, str]]
+    ) -> BatchOperationResult:
         """Assign glossary terms to multiple entities based on assignment list."""
         results = []
 
         for assignment in assignments:
             result = self.assign_glossary_term_to_entity(
-                assignment["entity_urn"],
-                assignment["term_urn"]
+                assignment["entity_urn"], assignment["term_urn"]
             )
             results.append(result)
 
@@ -395,9 +406,7 @@ class GlossaryIOService(BaseInputOutputService):
         elif op_type == "delete_glossary_entity":
             return self.sync_output.delete_entity(entity_urn)
         elif op_type == "add_owner":
-            return self.sync_output.add_owner(
-                entity_urn, data["owner_urn"], data["ownership_type"]
-            )
+            return self.sync_output.add_owner(entity_urn, data["owner_urn"], data["ownership_type"])
         elif op_type == "remove_owner":
             return self.sync_output.remove_owner(
                 entity_urn, data["owner_urn"], data["ownership_type"]
@@ -410,7 +419,7 @@ class GlossaryIOService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -443,7 +452,7 @@ class GlossaryIOService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
@@ -454,7 +463,9 @@ class GlossaryIOService(BaseInputOutputService):
         """Import glossary entities from JSON data."""
         return self.bulk_create_glossary_entities(json_data)
 
-    def export_glossary_to_mcps(self, glossary_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_glossary_to_mcps(
+        self, glossary_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export glossary entities as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode
@@ -476,10 +487,12 @@ class GlossaryIOService(BaseInputOutputService):
         summary = self.get_operation_summary()
 
         # Add service-specific statistics
-        summary.update({
-            "sync_output_available": self.sync_output is not None,
-            "async_output_available": self.async_output is not None,
-            "async_mcp_count": self.async_output.get_mcp_count() if self.async_output else 0
-        })
+        summary.update(
+            {
+                "sync_output_available": self.sync_output is not None,
+                "async_output_available": self.async_output is not None,
+                "async_mcp_count": self.async_output.get_mcp_count() if self.async_output else 0,
+            }
+        )
 
         return summary

@@ -18,8 +18,9 @@ class AnalyticsService(BaseDataHubClient):
         super().__init__(connection)
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def aggregate_across_entities(self, query: str = "*", entity_types: List[str] = None,
-                                 aggregation_types: List[str] = None) -> Optional[Dict[str, Any]]:
+    def aggregate_across_entities(
+        self, query: str = "*", entity_types: List[str] = None, aggregation_types: List[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Aggregate data across entities.
 
@@ -38,7 +39,7 @@ class AnalyticsService(BaseDataHubClient):
                 "query": query,
                 "types": entity_types or ["DATASET", "DASHBOARD", "CHART"],
                 "start": 0,
-                "count": 1000
+                "count": 1000,
             }
         }
 

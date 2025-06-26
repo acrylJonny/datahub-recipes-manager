@@ -77,7 +77,7 @@ class IngestionService(BaseDataHubClient):
             "name": source_data.get("name"),
             "type": source_data.get("type"),
             "schedule": source_data.get("schedule", {}),
-            "platform": source_data.get("platform", {})
+            "platform": source_data.get("platform", {}),
         }
 
         # Process config
@@ -86,7 +86,7 @@ class IngestionService(BaseDataHubClient):
             "executorId": config.get("executorId", "default"),
             "debugMode": config.get("debugMode", False),
             "version": config.get("version", "0.8.42"),
-            "extraArgs": config.get("extraArgs", [])
+            "extraArgs": config.get("extraArgs", []),
         }
 
         # Parse recipe
@@ -105,7 +105,7 @@ class IngestionService(BaseDataHubClient):
                     "startTimeMs": latest_execution.get("result", {}).get("startTimeMs"),
                     "durationMs": latest_execution.get("result", {}).get("durationMs"),
                     "requestedAt": latest_execution.get("input", {}).get("requestedAt"),
-                    "actorUrn": latest_execution.get("input", {}).get("actorUrn")
+                    "actorUrn": latest_execution.get("input", {}).get("actorUrn"),
                 }
 
         return result
@@ -117,7 +117,7 @@ class IngestionService(BaseDataHubClient):
         start: int = 0,
         count: int = 100,
         include_executions: bool = True,
-        filters: Optional[List[Dict[str, Any]]] = None
+        filters: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         """
         List all ingestion sources.
@@ -135,15 +135,13 @@ class IngestionService(BaseDataHubClient):
         if filters is None:
             filters = [{"field": "sourceType", "values": ["SYSTEM"], "negated": True}]
 
-        variables = {
-            "input": {
-                "start": start,
-                "count": count,
-                "filters": filters
-            }
-        }
+        variables = {"input": {"start": start, "count": count, "filters": filters}}
 
-        query = LIST_INGESTION_SOURCES_QUERY if include_executions else LIST_INGESTION_SOURCES_SIMPLE_QUERY
+        query = (
+            LIST_INGESTION_SOURCES_QUERY
+            if include_executions
+            else LIST_INGESTION_SOURCES_SIMPLE_QUERY
+        )
 
         try:
             result = self.safe_execute_graphql(query, variables)
@@ -163,9 +161,7 @@ class IngestionService(BaseDataHubClient):
             raise DataHubError(f"Failed to list ingestion sources: {e}")
 
     def get_ingestion_source(
-        self,
-        source_id: str,
-        include_executions: bool = False
+        self, source_id: str, include_executions: bool = False
     ) -> Optional[Dict[str, Any]]:
         """
         Get a specific ingestion source by ID.
@@ -180,7 +176,11 @@ class IngestionService(BaseDataHubClient):
         source_urn = self._ensure_source_urn(source_id)
 
         variables = {"urn": source_urn}
-        query = GET_INGESTION_SOURCE_WITH_EXECUTIONS_QUERY if include_executions else GET_INGESTION_SOURCE_QUERY
+        query = (
+            GET_INGESTION_SOURCE_WITH_EXECUTIONS_QUERY
+            if include_executions
+            else GET_INGESTION_SOURCE_QUERY
+        )
 
         try:
             result = self.safe_execute_graphql(query, variables)
@@ -209,7 +209,7 @@ class IngestionService(BaseDataHubClient):
         source_id: Optional[str] = None,
         debug_mode: bool = False,
         extra_args: Optional[Dict[str, Any]] = None,
-        **kwargs
+        **kwargs,
     ) -> Optional[Dict[str, Any]]:
         """
         Create a new ingestion source.
@@ -253,7 +253,9 @@ class IngestionService(BaseDataHubClient):
             source_id = str(uuid.uuid4())
 
         if not name:
-            name = recipe_dict.get("source", {}).get("config", {}).get("name", f"source-{source_id}")
+            name = (
+                recipe_dict.get("source", {}).get("config", {}).get("name", f"source-{source_id}")
+            )
 
         if not source_type:
             source_type = recipe_dict.get("source", {}).get("type", "unknown")
@@ -266,15 +268,12 @@ class IngestionService(BaseDataHubClient):
                 "id": source_id,
                 "name": name,
                 "type": source_type,
-                "schedule": {
-                    "interval": schedule_interval,
-                    "timezone": timezone
-                },
+                "schedule": {"interval": schedule_interval, "timezone": timezone},
                 "config": {
                     "recipe": recipe_str,
                     "executorId": executor_id,
-                    "debugMode": debug_mode
-                }
+                    "debugMode": debug_mode,
+                },
             }
         }
 
@@ -301,8 +300,8 @@ class IngestionService(BaseDataHubClient):
                         "recipe": recipe_str,
                         "executorId": executor_id,
                         "debugMode": debug_mode,
-                        "extraArgs": extra_args
-                    }
+                        "extraArgs": extra_args,
+                    },
                 }
 
             return None
@@ -320,7 +319,7 @@ class IngestionService(BaseDataHubClient):
         timezone: Optional[str] = None,
         executor_id: Optional[str] = None,
         debug_mode: Optional[bool] = None,
-        extra_args: Optional[Dict[str, Any]] = None
+        extra_args: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Update an existing ingestion source.
@@ -380,10 +379,7 @@ class IngestionService(BaseDataHubClient):
             self.logger.warning("No updates provided for ingestion source")
             return self.get_ingestion_source(source_id)
 
-        variables = {
-            "urn": source_urn,
-            "input": update_input
-        }
+        variables = {"urn": source_urn, "input": update_input}
 
         try:
             result = self.safe_execute_graphql(UPDATE_INGESTION_SOURCE_MUTATION, variables)
@@ -439,15 +435,13 @@ class IngestionService(BaseDataHubClient):
         """
         source_urn = self._ensure_source_urn(source_id)
 
-        variables = {
-            "input": {
-                "ingestionSourceUrn": source_urn
-            }
-        }
+        variables = {"input": {"ingestionSourceUrn": source_urn}}
 
         try:
             # Try primary method first
-            result = self.safe_execute_graphql(CREATE_INGESTION_EXECUTION_REQUEST_MUTATION, variables)
+            result = self.safe_execute_graphql(
+                CREATE_INGESTION_EXECUTION_REQUEST_MUTATION, variables
+            )
 
             if self._log_graphql_errors(result):
                 self.logger.info(f"Successfully triggered ingestion for source: {source_id}")
@@ -459,7 +453,9 @@ class IngestionService(BaseDataHubClient):
             result = self.safe_execute_graphql(EXECUTE_INGESTION_SOURCE_MUTATION, legacy_variables)
 
             if self._log_graphql_errors(result):
-                self.logger.info(f"Successfully triggered ingestion using legacy method: {source_id}")
+                self.logger.info(
+                    f"Successfully triggered ingestion using legacy method: {source_id}"
+                )
                 return True
 
             return False
@@ -469,10 +465,7 @@ class IngestionService(BaseDataHubClient):
             return False
 
     def get_ingestion_executions(
-        self,
-        source_id: str,
-        start: int = 0,
-        count: int = 10
+        self, source_id: str, start: int = 0, count: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Get execution history for an ingestion source.
@@ -487,11 +480,7 @@ class IngestionService(BaseDataHubClient):
         """
         source_urn = self._ensure_source_urn(source_id)
 
-        variables = {
-            "urn": source_urn,
-            "start": start,
-            "count": count
-        }
+        variables = {"urn": source_urn, "start": start, "count": count}
 
         try:
             result = self.safe_execute_graphql(GET_INGESTION_EXECUTIONS_QUERY, variables)
@@ -516,7 +505,7 @@ class IngestionService(BaseDataHubClient):
                     "durationMs": req.get("result", {}).get("durationMs"),
                     "requestedAt": req.get("input", {}).get("requestedAt"),
                     "actorUrn": req.get("input", {}).get("actorUrn"),
-                    "structuredReport": req.get("result", {}).get("structuredReport")
+                    "structuredReport": req.get("result", {}).get("structuredReport"),
                 }
                 for req in execution_requests
             ]
@@ -555,7 +544,7 @@ class IngestionService(BaseDataHubClient):
                 "durationMs": execution_data.get("result", {}).get("durationMs"),
                 "requestedAt": execution_data.get("input", {}).get("requestedAt"),
                 "actorUrn": execution_data.get("input", {}).get("actorUrn"),
-                "structuredReport": execution_data.get("result", {}).get("structuredReport")
+                "structuredReport": execution_data.get("result", {}).get("structuredReport"),
             }
 
         except Exception as e:
@@ -565,10 +554,7 @@ class IngestionService(BaseDataHubClient):
     # Search and Filter Operations
 
     def find_ingestion_sources_by_platform(
-        self,
-        platform_urn: str,
-        start: int = 0,
-        count: int = 100
+        self, platform_urn: str, start: int = 0, count: int = 100
     ) -> List[Dict[str, Any]]:
         """
         Find ingestion sources by platform.
@@ -583,16 +569,10 @@ class IngestionService(BaseDataHubClient):
         """
         filters = [
             {"field": "platform", "values": [platform_urn]},
-            {"field": "sourceType", "values": ["SYSTEM"], "negated": True}
+            {"field": "sourceType", "values": ["SYSTEM"], "negated": True},
         ]
 
-        variables = {
-            "input": {
-                "start": start,
-                "count": count,
-                "filters": filters
-            }
-        }
+        variables = {"input": {"start": start, "count": count, "filters": filters}}
 
         try:
             result = self.safe_execute_graphql(FIND_INGESTION_SOURCES_BY_PLATFORM_QUERY, variables)
@@ -612,10 +592,7 @@ class IngestionService(BaseDataHubClient):
             return []
 
     def find_ingestion_sources_by_type(
-        self,
-        source_type: str,
-        start: int = 0,
-        count: int = 100
+        self, source_type: str, start: int = 0, count: int = 100
     ) -> List[Dict[str, Any]]:
         """
         Find ingestion sources by type.
@@ -630,16 +607,10 @@ class IngestionService(BaseDataHubClient):
         """
         filters = [
             {"field": "type", "values": [source_type]},
-            {"field": "sourceType", "values": ["SYSTEM"], "negated": True}
+            {"field": "sourceType", "values": ["SYSTEM"], "negated": True},
         ]
 
-        variables = {
-            "input": {
-                "start": start,
-                "count": count,
-                "filters": filters
-            }
-        }
+        variables = {"input": {"start": start, "count": count, "filters": filters}}
 
         try:
             result = self.safe_execute_graphql(FIND_INGESTION_SOURCES_BY_TYPE_QUERY, variables)
@@ -719,9 +690,11 @@ class IngestionService(BaseDataHubClient):
                 "successful_executions": successful_executions,
                 "failed_executions": failed_executions,
                 "running_executions": running_executions,
-                "success_rate": successful_executions / total_executions if total_executions > 0 else 0,
+                "success_rate": successful_executions / total_executions
+                if total_executions > 0
+                else 0,
                 "average_duration_ms": avg_duration,
-                "last_execution": execution_requests[0] if execution_requests else None
+                "last_execution": execution_requests[0] if execution_requests else None,
             }
 
         except Exception as e:
@@ -741,13 +714,7 @@ class IngestionService(BaseDataHubClient):
         if filters is None:
             filters = [{"field": "sourceType", "values": ["SYSTEM"], "negated": True}]
 
-        variables = {
-            "input": {
-                "start": 0,
-                "count": 1,
-                "filters": filters
-            }
-        }
+        variables = {"input": {"start": 0, "count": 1, "filters": filters}}
 
         try:
             result = self.safe_execute_graphql(COUNT_INGESTION_SOURCES_QUERY, variables)
@@ -764,11 +731,7 @@ class IngestionService(BaseDataHubClient):
 
     # Convenience Methods
 
-    def patch_ingestion_source(
-        self,
-        source_id: str,
-        **kwargs
-    ) -> Optional[Dict[str, Any]]:
+    def patch_ingestion_source(self, source_id: str, **kwargs) -> Optional[Dict[str, Any]]:
         """
         Patch (partially update) an ingestion source.
         This is an alias for update_ingestion_source for backward compatibility.

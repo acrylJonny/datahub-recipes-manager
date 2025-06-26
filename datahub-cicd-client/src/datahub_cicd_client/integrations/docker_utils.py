@@ -59,14 +59,11 @@ def should_apply_docker_networking():
     Only returns true if we're both in a testing environment and in/using Docker.
     """
     return is_testing_environment() and (
-        is_in_docker()
-        or os.environ.get("DOCKER_COMPOSE_MODE", "").lower() in ["true", "1", "yes"]
+        is_in_docker() or os.environ.get("DOCKER_COMPOSE_MODE", "").lower() in ["true", "1", "yes"]
     )
 
 
-def resolve_docker_host(
-    host: str, default_port: Optional[int] = None
-) -> Dict[str, Any]:
+def resolve_docker_host(host: str, default_port: Optional[int] = None) -> Dict[str, Any]:
     """
     Resolve a hostname in a Docker-aware way.
 
@@ -89,9 +86,7 @@ def resolve_docker_host(
         logger.debug("Not applying Docker networking (not in testing environment)")
         return connection_info
 
-    logger.info(
-        "Test environment with Docker detected, applying network adaptations..."
-    )
+    logger.info("Test environment with Docker detected, applying network adaptations...")
 
     # Check if we're in Docker environment
     docker_mode = is_in_docker()
@@ -145,9 +140,7 @@ def resolve_docker_host(
         try:
             socket.gethostbyname("host.docker.internal")
             connection_info["host"] = "host.docker.internal"
-            logger.info(
-                "Using host.docker.internal to access host from Docker container"
-            )
+            logger.info("Using host.docker.internal to access host from Docker container")
         except socket.gaierror:
             # Fallback to Docker gateway (older Docker)
             try:
@@ -165,9 +158,7 @@ def resolve_docker_host(
             except Exception as e:
                 logger.warning(f"Failed to determine Docker host gateway: {str(e)}")
                 # Keep localhost as is, but warn
-                logger.warning(
-                    "Using 'localhost' within Docker may not work as expected"
-                )
+                logger.warning("Using 'localhost' within Docker may not work as expected")
 
     logger.debug(f"Resolved connection info: {connection_info}")
     return connection_info

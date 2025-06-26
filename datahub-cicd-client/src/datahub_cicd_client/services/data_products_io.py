@@ -55,7 +55,9 @@ class DataProductIOService(BaseInputOutputService):
     # INPUT OPERATIONS (Reading from DataHub)
     # ============================================
 
-    def list_data_products(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_data_products(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """List data products from DataHub."""
         return self.input_service.list_data_products(query, start, count)
 
@@ -63,15 +65,21 @@ class DataProductIOService(BaseInputOutputService):
         """Get a single data product from DataHub."""
         return self.input_service.get_data_product(data_product_urn)
 
-    def get_data_product_assets(self, data_product_urn: str, start: int = 0, count: int = 100) -> Dict[str, Any]:
+    def get_data_product_assets(
+        self, data_product_urn: str, start: int = 0, count: int = 100
+    ) -> Dict[str, Any]:
         """Get assets for a data product."""
         return self.input_service.get_data_product_assets(data_product_urn, start, count)
 
-    def find_data_products_by_domain(self, domain_urn: str, start: int = 0, count: int = 50) -> Dict[str, Any]:
+    def find_data_products_by_domain(
+        self, domain_urn: str, start: int = 0, count: int = 50
+    ) -> Dict[str, Any]:
         """Find data products in a specific domain."""
         return self.input_service.find_data_products_by_domain(domain_urn, start, count)
 
-    def find_data_products_by_owner(self, owner_urn: str, start: int = 0, count: int = 50) -> Dict[str, Any]:
+    def find_data_products_by_owner(
+        self, owner_urn: str, start: int = 0, count: int = 50
+    ) -> Dict[str, Any]:
         """Find data products owned by a specific user."""
         return self.input_service.find_data_products_by_owner(owner_urn, start, count)
 
@@ -86,7 +94,7 @@ class DataProductIOService(BaseInputOutputService):
         description: str = "",
         domain: Optional[str] = None,
         assets: Optional[List[str]] = None,
-        owner: Optional[str] = None
+        owner: Optional[str] = None,
     ) -> OperationResult:
         """
         Create a new data product using current operation mode.
@@ -108,7 +116,7 @@ class DataProductIOService(BaseInputOutputService):
             "description": description,
             "domain": domain,
             "assets": assets or [],
-            "owner": owner
+            "owner": owner,
         }
 
         operation = self.create_operation("create_data_product", entity_data)
@@ -119,7 +127,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="create_data_product",
                 entity_urn=f"urn:li:dataProduct:{data_product_id}",
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -130,7 +138,7 @@ class DataProductIOService(BaseInputOutputService):
         name: Optional[str] = None,
         description: Optional[str] = None,
         domain: Optional[str] = None,
-        assets: Optional[List[str]] = None
+        assets: Optional[List[str]] = None,
     ) -> OperationResult:
         """Update an existing data product."""
         entity_data = {}
@@ -143,7 +151,9 @@ class DataProductIOService(BaseInputOutputService):
         if assets is not None:
             entity_data["assets"] = assets
 
-        operation = self.create_operation("update_data_product", entity_data, entity_urn=data_product_urn)
+        operation = self.create_operation(
+            "update_data_product", entity_data, entity_urn=data_product_urn
+        )
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -151,7 +161,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="update_data_product",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -166,7 +176,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="delete_data_product",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -175,13 +185,13 @@ class DataProductIOService(BaseInputOutputService):
         self,
         data_product_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Add owner to data product."""
         operation = self.create_operation(
             "add_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=data_product_urn
+            entity_urn=data_product_urn,
         )
 
         if self.batch_mode:
@@ -190,7 +200,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="add_data_product_owner",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -199,13 +209,13 @@ class DataProductIOService(BaseInputOutputService):
         self,
         data_product_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Remove owner from data product."""
         operation = self.create_operation(
             "remove_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=data_product_urn
+            entity_urn=data_product_urn,
         )
 
         if self.batch_mode:
@@ -214,7 +224,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_data_product_owner",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -222,9 +232,7 @@ class DataProductIOService(BaseInputOutputService):
     def add_data_product_tag(self, data_product_urn: str, tag_urn: str) -> OperationResult:
         """Add tag to data product."""
         operation = self.create_operation(
-            "add_tag",
-            {"tag_urn": tag_urn},
-            entity_urn=data_product_urn
+            "add_tag", {"tag_urn": tag_urn}, entity_urn=data_product_urn
         )
 
         if self.batch_mode:
@@ -233,7 +241,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="add_data_product_tag",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -241,9 +249,7 @@ class DataProductIOService(BaseInputOutputService):
     def remove_data_product_tag(self, data_product_urn: str, tag_urn: str) -> OperationResult:
         """Remove tag from data product."""
         operation = self.create_operation(
-            "remove_tag",
-            {"tag_urn": tag_urn},
-            entity_urn=data_product_urn
+            "remove_tag", {"tag_urn": tag_urn}, entity_urn=data_product_urn
         )
 
         if self.batch_mode:
@@ -252,17 +258,19 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_data_product_tag",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
-    def add_data_product_glossary_term(self, data_product_urn: str, glossary_term_urn: str) -> OperationResult:
+    def add_data_product_glossary_term(
+        self, data_product_urn: str, glossary_term_urn: str
+    ) -> OperationResult:
         """Add glossary term to data product."""
         operation = self.create_operation(
             "add_glossary_term",
             {"glossary_term_urn": glossary_term_urn},
-            entity_urn=data_product_urn
+            entity_urn=data_product_urn,
         )
 
         if self.batch_mode:
@@ -271,17 +279,19 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="add_data_product_glossary_term",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
-    def remove_data_product_glossary_term(self, data_product_urn: str, glossary_term_urn: str) -> OperationResult:
+    def remove_data_product_glossary_term(
+        self, data_product_urn: str, glossary_term_urn: str
+    ) -> OperationResult:
         """Remove glossary term from data product."""
         operation = self.create_operation(
             "remove_glossary_term",
             {"glossary_term_urn": glossary_term_urn},
-            entity_urn=data_product_urn
+            entity_urn=data_product_urn,
         )
 
         if self.batch_mode:
@@ -290,7 +300,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_data_product_glossary_term",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -298,9 +308,7 @@ class DataProductIOService(BaseInputOutputService):
     def set_data_product_domain(self, data_product_urn: str, domain_urn: str) -> OperationResult:
         """Set domain for data product."""
         operation = self.create_operation(
-            "set_domain",
-            {"domain_urn": domain_urn},
-            entity_urn=data_product_urn
+            "set_domain", {"domain_urn": domain_urn}, entity_urn=data_product_urn
         )
 
         if self.batch_mode:
@@ -309,18 +317,14 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="set_data_product_domain",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
     def unset_data_product_domain(self, data_product_urn: str) -> OperationResult:
         """Unset domain for data product."""
-        operation = self.create_operation(
-            "unset_domain",
-            {},
-            entity_urn=data_product_urn
-        )
+        operation = self.create_operation("unset_domain", {}, entity_urn=data_product_urn)
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -328,17 +332,17 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="unset_data_product_domain",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
-    def add_assets_to_data_product(self, data_product_urn: str, asset_urns: List[str]) -> OperationResult:
+    def add_assets_to_data_product(
+        self, data_product_urn: str, asset_urns: List[str]
+    ) -> OperationResult:
         """Add assets to data product."""
         operation = self.create_operation(
-            "add_assets",
-            {"asset_urns": asset_urns},
-            entity_urn=data_product_urn
+            "add_assets", {"asset_urns": asset_urns}, entity_urn=data_product_urn
         )
 
         if self.batch_mode:
@@ -347,17 +351,17 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="add_assets_to_data_product",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
-    def remove_assets_from_data_product(self, data_product_urn: str, asset_urns: List[str]) -> OperationResult:
+    def remove_assets_from_data_product(
+        self, data_product_urn: str, asset_urns: List[str]
+    ) -> OperationResult:
         """Remove assets from data product."""
         operation = self.create_operation(
-            "remove_assets",
-            {"asset_urns": asset_urns},
-            entity_urn=data_product_urn
+            "remove_assets", {"asset_urns": asset_urns}, entity_urn=data_product_urn
         )
 
         if self.batch_mode:
@@ -366,7 +370,7 @@ class DataProductIOService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_assets_from_data_product",
                 entity_urn=data_product_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -375,7 +379,9 @@ class DataProductIOService(BaseInputOutputService):
     # BATCH OPERATIONS
     # ============================================
 
-    def bulk_create_data_products(self, data_products_data: List[Dict[str, Any]]) -> BatchOperationResult:
+    def bulk_create_data_products(
+        self, data_products_data: List[Dict[str, Any]]
+    ) -> BatchOperationResult:
         """Create multiple data products in batch."""
         results = []
 
@@ -386,13 +392,15 @@ class DataProductIOService(BaseInputOutputService):
                 description=data_product_data.get("description", ""),
                 domain=data_product_data.get("domain"),
                 assets=data_product_data.get("assets", []),
-                owner=data_product_data.get("owner")
+                owner=data_product_data.get("owner"),
             )
             results.append(result)
 
         return BatchOperationResult(results)
 
-    def bulk_assign_assets_to_data_product(self, data_product_urn: str, asset_urns: List[str]) -> BatchOperationResult:
+    def bulk_assign_assets_to_data_product(
+        self, data_product_urn: str, asset_urns: List[str]
+    ) -> BatchOperationResult:
         """Assign multiple assets to a data product."""
         results = []
 
@@ -402,27 +410,30 @@ class DataProductIOService(BaseInputOutputService):
             results.append(result)
         else:
             # Use async output to create bulk MCPs
-            mcps = self.async_output.create_data_product_asset_assignment_mcps(data_product_urn, asset_urns)
+            mcps = self.async_output.create_data_product_asset_assignment_mcps(
+                data_product_urn, asset_urns
+            )
             self.async_output.mcp_emitter.add_mcps(mcps)
 
             result = OperationResult(
                 success=True,
                 operation_type="add_assets_to_data_product",
                 entity_urn=data_product_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
             results.append(result)
 
         return BatchOperationResult(results)
 
-    def bulk_data_product_domain_assignment(self, assignments: List[Dict[str, str]]) -> BatchOperationResult:
+    def bulk_data_product_domain_assignment(
+        self, assignments: List[Dict[str, str]]
+    ) -> BatchOperationResult:
         """Assign domains to multiple data products based on assignment list."""
         results = []
 
         for assignment in assignments:
             result = self.set_data_product_domain(
-                assignment["data_product_urn"],
-                assignment["domain_urn"]
+                assignment["data_product_urn"], assignment["domain_urn"]
             )
             results.append(result)
 
@@ -445,9 +456,7 @@ class DataProductIOService(BaseInputOutputService):
         elif op_type == "delete_data_product":
             return self.sync_output.delete_entity(entity_urn)
         elif op_type == "add_owner":
-            return self.sync_output.add_owner(
-                entity_urn, data["owner_urn"], data["ownership_type"]
-            )
+            return self.sync_output.add_owner(entity_urn, data["owner_urn"], data["ownership_type"])
         elif op_type == "remove_owner":
             return self.sync_output.remove_owner(
                 entity_urn, data["owner_urn"], data["ownership_type"]
@@ -472,7 +481,7 @@ class DataProductIOService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -515,18 +524,22 @@ class DataProductIOService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
     # CONVENIENCE METHODS
     # ============================================
 
-    def import_data_products_from_json(self, json_data: List[Dict[str, Any]]) -> BatchOperationResult:
+    def import_data_products_from_json(
+        self, json_data: List[Dict[str, Any]]
+    ) -> BatchOperationResult:
         """Import data products from JSON data."""
         return self.bulk_create_data_products(json_data)
 
-    def export_data_products_to_mcps(self, data_products_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_data_products_to_mcps(
+        self, data_products_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export data products as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode
@@ -548,10 +561,12 @@ class DataProductIOService(BaseInputOutputService):
         summary = self.get_operation_summary()
 
         # Add service-specific statistics
-        summary.update({
-            "sync_output_available": self.sync_output is not None,
-            "async_output_available": self.async_output is not None,
-            "async_mcp_count": self.async_output.get_mcp_count() if self.async_output else 0
-        })
+        summary.update(
+            {
+                "sync_output_available": self.sync_output is not None,
+                "async_output_available": self.async_output is not None,
+                "async_mcp_count": self.async_output.get_mcp_count() if self.async_output else 0,
+            }
+        )
 
         return summary

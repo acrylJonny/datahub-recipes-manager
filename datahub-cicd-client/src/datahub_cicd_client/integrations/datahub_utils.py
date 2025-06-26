@@ -40,11 +40,19 @@ def get_datahub_client(connection_id=None, request=None):
                 # Get specific connection
                 connection = Connection.objects.filter(id=connection_id, is_active=True).first()
                 logger.debug(f"Getting DataHub client for connection ID: {connection_id}")
-            elif request and hasattr(request, 'session') and 'current_connection_id' in request.session:
+            elif (
+                request
+                and hasattr(request, "session")
+                and "current_connection_id" in request.session
+            ):
                 # Get connection from session
-                session_connection_id = request.session['current_connection_id']
-                connection = Connection.objects.filter(id=session_connection_id, is_active=True).first()
-                logger.debug(f"Getting DataHub client for session connection ID: {session_connection_id}")
+                session_connection_id = request.session["current_connection_id"]
+                connection = Connection.objects.filter(
+                    id=session_connection_id, is_active=True
+                ).first()
+                logger.debug(
+                    f"Getting DataHub client for session connection ID: {session_connection_id}"
+                )
             else:
                 # Get default connection
                 connection = Connection.get_default()
@@ -82,7 +90,7 @@ def get_datahub_client(connection_id=None, request=None):
                     server_url=datahub_url,
                     token=datahub_token if datahub_token else None,
                     verify_ssl=verify_ssl,
-                    timeout=timeout
+                    timeout=timeout,
                 )
                 return client
 
@@ -147,9 +155,7 @@ def test_datahub_connection(request=None):
         try:
             # Test the connection (lightweight)
             connected = client.test_connection()
-            logger.info(
-                f"DataHub connection test result: {'Success' if connected else 'Failed'}"
-            )
+            logger.info(f"DataHub connection test result: {'Success' if connected else 'Failed'}")
 
             # Note: Removed automatic client info retrieval since Environment objects
             # don't have DataHub connection fields (datahub_gms_url, datahub_token).

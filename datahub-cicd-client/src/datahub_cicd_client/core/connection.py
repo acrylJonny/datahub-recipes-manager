@@ -19,8 +19,13 @@ class DataHubConnection:
     Handles authentication, session management, and basic HTTP operations.
     """
 
-    def __init__(self, server_url: str, token: Optional[str] = None,
-                 verify_ssl: bool = True, timeout: int = 30):
+    def __init__(
+        self,
+        server_url: str,
+        token: Optional[str] = None,
+        verify_ssl: bool = True,
+        timeout: int = 30,
+    ):
         """
         Initialize DataHub connection.
 
@@ -88,10 +93,7 @@ class DataHubConnection:
             True if connection successful, False otherwise
         """
         try:
-            response = self._session.get(
-                f"{self.server_url}/config",
-                timeout=self.timeout
-            )
+            response = self._session.get(f"{self.server_url}/config", timeout=self.timeout)
 
             if response.status_code == 401:
                 raise DataHubAuthenticationError("Invalid authentication token")
@@ -104,7 +106,9 @@ class DataHubConnection:
             self.logger.error(f"Connection test failed: {str(e)}")
             return False
 
-    def execute_graphql(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def execute_graphql(
+        self, query: str, variables: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Execute a GraphQL query.
 
@@ -124,11 +128,7 @@ class DataHubConnection:
             payload = {"query": query, "variables": variables or {}}
             graphql_url = f"{self.server_url}/api/graphql"
 
-            response = self._session.post(
-                graphql_url,
-                json=payload,
-                timeout=self.timeout
-            )
+            response = self._session.post(graphql_url, json=payload, timeout=self.timeout)
 
             if response.status_code == 401:
                 raise DataHubAuthenticationError("Invalid authentication token")

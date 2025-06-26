@@ -12,9 +12,11 @@ from typing import Any, Dict, List, Optional, Union
 
 try:
     from datahub.emitter.mcp import MetadataChangeProposalWrapper
+
     DATAHUB_AVAILABLE = True
 except ImportError:
     DATAHUB_AVAILABLE = False
+
     class MetadataChangeProposalWrapper:
         pass
 
@@ -46,7 +48,7 @@ class FileEmitter:
     def emit(
         self,
         mcps: List[Union[MetadataChangeProposalWrapper, Dict[str, Any]]],
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
     ) -> str:
         """
         Emit MCPs to a file.
@@ -60,6 +62,7 @@ class FileEmitter:
         """
         if filename is None:
             import time
+
             timestamp = int(time.time())
             filename = f"mcps_{timestamp}.json"
 
@@ -75,7 +78,7 @@ class FileEmitter:
                     "entityType": mcp.entityType,
                     "aspectName": mcp.aspectName,
                     "changeType": mcp.changeType,
-                    "aspect": mcp.aspect.to_obj() if hasattr(mcp.aspect, 'to_obj') else mcp.aspect
+                    "aspect": mcp.aspect.to_obj() if hasattr(mcp.aspect, "to_obj") else mcp.aspect,
                 }
             else:
                 # Already a dictionary
@@ -84,7 +87,7 @@ class FileEmitter:
             mcp_dicts.append(mcp_dict)
 
         # Write to file
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             json.dump(mcp_dicts, f, indent=2, default=str)
 
         self.logger.info(f"Emitted {len(mcp_dicts)} MCPs to {file_path}")
@@ -94,7 +97,7 @@ class FileEmitter:
         self,
         mcps: List[Union[MetadataChangeProposalWrapper, Dict[str, Any]]],
         entity_id: str,
-        environment: str = "dev"
+        environment: str = "dev",
     ) -> str:
         """
         Emit MCPs to a single mcp_file.json (following the pattern used by tags/properties).
@@ -116,7 +119,7 @@ class FileEmitter:
     def emit_batch(
         self,
         batch_mcps: Dict[str, List[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]],
-        environment: str = "dev"
+        environment: str = "dev",
     ) -> Dict[str, str]:
         """
         Emit multiple sets of MCPs for different entities.

@@ -14,7 +14,9 @@ from datahub_cicd_client.outputs.sync.base_sync_output import (
 from datahub_cicd_client.services.base_service import OperationResult
 
 
-class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssignmentSyncOutput):
+class DataProductSyncOutput(
+    BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssignmentSyncOutput
+):
     """Synchronous output operations for data products."""
 
     def __init__(self, connection: DataHubConnection):
@@ -31,13 +33,15 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
                         "name": entity_data["name"],
                         "description": entity_data.get("description", ""),
                         "domain": entity_data.get("domain"),
-                        "assets": entity_data.get("assets", [])
+                        "assets": entity_data.get("assets", []),
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("create_data_product", error_message="GraphQL errors occurred")
+                return self._create_error_result(
+                    "create_data_product", error_message="GraphQL errors occurred"
+                )
 
             data_product_urn = result["data"]["createDataProduct"]
             return self._create_success_result("create_data_product", data_product_urn, result)
@@ -56,43 +60,39 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
                     {
                         "input": {
                             "dataProductUrn": entity_urn,
-                            "description": entity_data["description"]
+                            "description": entity_data["description"],
                         }
-                    }
+                    },
                 )
 
                 if not self._check_graphql_errors(result):
-                    return self._create_error_result("update_data_product", entity_urn, "Failed to update description")
+                    return self._create_error_result(
+                        "update_data_product", entity_urn, "Failed to update description"
+                    )
 
             # Update domain if provided
             if "domain" in entity_data:
                 domain_result = self.execute_graphql(
                     SET_DATA_PRODUCT_DOMAIN_MUTATION,
-                    {
-                        "input": {
-                            "dataProductUrn": entity_urn,
-                            "domainUrn": entity_data["domain"]
-                        }
-                    }
+                    {"input": {"dataProductUrn": entity_urn, "domainUrn": entity_data["domain"]}},
                 )
 
                 if not self._check_graphql_errors(domain_result):
-                    return self._create_error_result("update_data_product", entity_urn, "Failed to update domain")
+                    return self._create_error_result(
+                        "update_data_product", entity_urn, "Failed to update domain"
+                    )
 
             # Update assets if provided
             if "assets" in entity_data:
                 assets_result = self.execute_graphql(
                     ADD_ASSETS_TO_DATA_PRODUCT_MUTATION,
-                    {
-                        "input": {
-                            "dataProductUrn": entity_urn,
-                            "assetUrns": entity_data["assets"]
-                        }
-                    }
+                    {"input": {"dataProductUrn": entity_urn, "assetUrns": entity_data["assets"]}},
                 )
 
                 if not self._check_graphql_errors(assets_result):
-                    return self._create_error_result("update_data_product", entity_urn, "Failed to update assets")
+                    return self._create_error_result(
+                        "update_data_product", entity_urn, "Failed to update assets"
+                    )
 
             return self._create_success_result("update_data_product", entity_urn)
 
@@ -104,12 +104,13 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         """Delete a data product."""
         try:
             result = self.execute_graphql(
-                DELETE_DATA_PRODUCT_MUTATION,
-                {"dataProductUrn": entity_urn}
+                DELETE_DATA_PRODUCT_MUTATION, {"dataProductUrn": entity_urn}
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("delete_data_product", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "delete_data_product", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("delete_data_product", entity_urn, result)
 
@@ -125,16 +126,15 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
                 {
                     "input": {
                         "dataProductUrn": entity_urn,
-                        "owners": [{
-                            "ownerUrn": owner_urn,
-                            "type": ownership_type
-                        }]
+                        "owners": [{"ownerUrn": owner_urn, "type": ownership_type}],
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_data_product_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_data_product_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_data_product_owner", entity_urn, result)
 
@@ -147,16 +147,13 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         try:
             result = self.execute_graphql(
                 REMOVE_DATA_PRODUCT_OWNER_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "ownerUrn": owner_urn
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "ownerUrn": owner_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_data_product_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_data_product_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("remove_data_product_owner", entity_urn, result)
 
@@ -169,16 +166,13 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         try:
             result = self.execute_graphql(
                 ADD_DATA_PRODUCT_TAG_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "tagUrns": [tag_urn]
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "tagUrns": [tag_urn]}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_data_product_tag", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_data_product_tag", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_data_product_tag", entity_urn, result)
 
@@ -191,16 +185,13 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         try:
             result = self.execute_graphql(
                 REMOVE_DATA_PRODUCT_TAG_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "tagUrn": tag_urn
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "tagUrn": tag_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_data_product_tag", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_data_product_tag", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("remove_data_product_tag", entity_urn, result)
 
@@ -213,16 +204,13 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         try:
             result = self.execute_graphql(
                 ADD_DATA_PRODUCT_GLOSSARY_TERM_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "glossaryTermUrns": [glossary_term_urn]
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "glossaryTermUrns": [glossary_term_urn]}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_data_product_glossary_term", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_data_product_glossary_term", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_data_product_glossary_term", entity_urn, result)
 
@@ -235,38 +223,36 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         try:
             result = self.execute_graphql(
                 REMOVE_DATA_PRODUCT_GLOSSARY_TERM_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "glossaryTermUrn": glossary_term_urn
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "glossaryTermUrn": glossary_term_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_data_product_glossary_term", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_data_product_glossary_term", entity_urn, "GraphQL errors occurred"
+                )
 
-            return self._create_success_result("remove_data_product_glossary_term", entity_urn, result)
+            return self._create_success_result(
+                "remove_data_product_glossary_term", entity_urn, result
+            )
 
         except Exception as e:
             self.logger.error(f"Error removing data product glossary term: {e}")
-            return self._create_error_result("remove_data_product_glossary_term", entity_urn, str(e))
+            return self._create_error_result(
+                "remove_data_product_glossary_term", entity_urn, str(e)
+            )
 
     def set_domain(self, entity_urn: str, domain_urn: str) -> OperationResult:
         """Set domain for data product."""
         try:
             result = self.execute_graphql(
                 SET_DATA_PRODUCT_DOMAIN_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "domainUrn": domain_urn
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "domainUrn": domain_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("set_data_product_domain", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "set_data_product_domain", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("set_data_product_domain", entity_urn, result)
 
@@ -278,16 +264,13 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         """Unset domain for data product."""
         try:
             result = self.execute_graphql(
-                UNSET_DATA_PRODUCT_DOMAIN_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn
-                    }
-                }
+                UNSET_DATA_PRODUCT_DOMAIN_MUTATION, {"input": {"dataProductUrn": entity_urn}}
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("unset_data_product_domain", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "unset_data_product_domain", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("unset_data_product_domain", entity_urn, result)
 
@@ -300,16 +283,13 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         try:
             result = self.execute_graphql(
                 ADD_ASSETS_TO_DATA_PRODUCT_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "assetUrns": asset_urns
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "assetUrns": asset_urns}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_assets_to_data_product", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_assets_to_data_product", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_assets_to_data_product", entity_urn, result)
 
@@ -322,18 +302,17 @@ class DataProductSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, Metada
         try:
             result = self.execute_graphql(
                 REMOVE_ASSETS_FROM_DATA_PRODUCT_MUTATION,
-                {
-                    "input": {
-                        "dataProductUrn": entity_urn,
-                        "assetUrns": asset_urns
-                    }
-                }
+                {"input": {"dataProductUrn": entity_urn, "assetUrns": asset_urns}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_assets_from_data_product", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_assets_from_data_product", entity_urn, "GraphQL errors occurred"
+                )
 
-            return self._create_success_result("remove_assets_from_data_product", entity_urn, result)
+            return self._create_success_result(
+                "remove_assets_from_data_product", entity_urn, result
+            )
 
         except Exception as e:
             self.logger.error(f"Error removing assets from data product: {e}")

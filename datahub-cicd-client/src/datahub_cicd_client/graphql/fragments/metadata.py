@@ -196,4 +196,4 @@ fragment CustomPropertiesFragment on CustomProperties {
         value
     }
 }
-""" 
+"""

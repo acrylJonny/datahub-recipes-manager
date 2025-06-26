@@ -33,7 +33,9 @@ class StructuredPropertiesService(BaseDataHubClient):
         """Initialize the Structured Properties service."""
         super().__init__(connection)
 
-    def list_structured_properties(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_structured_properties(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List structured properties in DataHub.
 
@@ -45,7 +47,9 @@ class StructuredPropertiesService(BaseDataHubClient):
         Returns:
             List of structured property objects
         """
-        self.logger.info(f"Listing structured properties with query: {query}, start: {start}, count: {count}")
+        self.logger.info(
+            f"Listing structured properties with query: {query}, start: {start}, count: {count}"
+        )
 
         # First test if structured properties are supported
         if not self._test_structured_property_support():
@@ -57,7 +61,7 @@ class StructuredPropertiesService(BaseDataHubClient):
                 "types": ["STRUCTURED_PROPERTY"],
                 "query": query,
                 "start": start,
-                "count": count
+                "count": count,
             }
         }
 
@@ -132,7 +136,7 @@ class StructuredPropertiesService(BaseDataHubClient):
                 "start": start,
                 "count": count,
                 "query": "*",
-                "types": ["STRUCTURED_PROPERTY"]
+                "types": ["STRUCTURED_PROPERTY"],
             }
         }
 
@@ -147,23 +151,27 @@ class StructuredPropertiesService(BaseDataHubClient):
                     entity = item.get("entity", {})
                     urn = entity.get("urn")
 
-                    if urn and ("urn:li:structuredProperty:" in urn or "urn:li:structuredproperty:" in urn):
+                    if urn and (
+                        "urn:li:structuredProperty:" in urn or "urn:li:structuredproperty:" in urn
+                    ):
                         # Extract the ID from the URN
                         if "urn:li:structuredProperty:" in urn:
                             property_id = urn.replace("urn:li:structuredProperty:", "")
                         else:
                             property_id = urn.replace("urn:li:structuredproperty:", "")
 
-                        structured_properties.append({
-                            "urn": urn,
-                            "id": property_id,
-                            "filter_field": f"structuredProperties.{property_id}"
-                        })
+                        structured_properties.append(
+                            {
+                                "urn": urn,
+                                "id": property_id,
+                                "filter_field": f"structuredProperties.{property_id}",
+                            }
+                        )
 
                 return {
                     "success": True,
                     "total": search_data.get("total", 0),
-                    "structured_properties": structured_properties
+                    "structured_properties": structured_properties,
                 }
 
             self._log_graphql_errors(result)
@@ -173,10 +181,17 @@ class StructuredPropertiesService(BaseDataHubClient):
             self.logger.error(f"Error getting structured property URNs: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    def create_structured_property(self, display_name: str, description: str = "",
-                                 value_type: str = "STRING", cardinality: str = "SINGLE",
-                                 entity_types: List[str] = None, allowed_values: List[Any] = None,
-                                 qualified_name: str = None, **kwargs) -> Optional[str]:
+    def create_structured_property(
+        self,
+        display_name: str,
+        description: str = "",
+        value_type: str = "STRING",
+        cardinality: str = "SINGLE",
+        entity_types: List[str] = None,
+        allowed_values: List[Any] = None,
+        qualified_name: str = None,
+        **kwargs,
+    ) -> Optional[str]:
         """
         Create a new structured property.
 
@@ -204,7 +219,7 @@ class StructuredPropertiesService(BaseDataHubClient):
             "description": description,
             "qualifiedName": qualified_name,
             "valueType": value_type,
-            "cardinality": cardinality
+            "cardinality": cardinality,
         }
 
         if entity_types:
@@ -225,7 +240,9 @@ class StructuredPropertiesService(BaseDataHubClient):
                 property_data = result["createStructuredProperty"]
                 property_urn = property_data.get("urn")
                 if property_urn:
-                    self.logger.info(f"Successfully created structured property {display_name} with URN: {property_urn}")
+                    self.logger.info(
+                        f"Successfully created structured property {display_name} with URN: {property_urn}"
+                    )
                     return property_urn
 
             self._log_graphql_errors(result)
@@ -265,8 +282,9 @@ class StructuredPropertiesService(BaseDataHubClient):
             self.logger.error(f"Error deleting structured property: {str(e)}")
             return False
 
-    def upsert_structured_properties(self, entity_urn: str,
-                                   structured_properties: List[Dict[str, Any]]) -> bool:
+    def upsert_structured_properties(
+        self, entity_urn: str, structured_properties: List[Dict[str, Any]]
+    ) -> bool:
         """
         Upsert structured properties on an entity.
 
@@ -282,7 +300,7 @@ class StructuredPropertiesService(BaseDataHubClient):
         variables = {
             "input": {
                 "entityUrn": entity_urn,
-                "structuredPropertyInputParams": structured_properties
+                "structuredPropertyInputParams": structured_properties,
             }
         }
 
@@ -290,7 +308,9 @@ class StructuredPropertiesService(BaseDataHubClient):
             result = self.safe_execute_graphql(UPSERT_STRUCTURED_PROPERTIES_MUTATION, variables)
 
             if result and "upsertStructuredProperties" in result:
-                self.logger.info(f"Successfully upserted structured properties for entity {entity_urn}")
+                self.logger.info(
+                    f"Successfully upserted structured properties for entity {entity_urn}"
+                )
                 return True
 
             self._log_graphql_errors(result)
@@ -313,12 +333,7 @@ class StructuredPropertiesService(BaseDataHubClient):
         """
         self.logger.info(f"Removing structured properties from entity {entity_urn}")
 
-        variables = {
-            "input": {
-                "entityUrn": entity_urn,
-                "structuredPropertyUrns": property_urns
-            }
-        }
+        variables = {"input": {"entityUrn": entity_urn, "structuredPropertyUrns": property_urns}}
 
         try:
             result = self.safe_execute_graphql(REMOVE_STRUCTURED_PROPERTIES_MUTATION, variables)
@@ -326,7 +341,9 @@ class StructuredPropertiesService(BaseDataHubClient):
             if result and "removeStructuredProperties" in result:
                 success = result["removeStructuredProperties"]
                 if success:
-                    self.logger.info(f"Successfully removed structured properties from entity {entity_urn}")
+                    self.logger.info(
+                        f"Successfully removed structured properties from entity {entity_urn}"
+                    )
                     return True
 
             self._log_graphql_errors(result)
@@ -340,12 +357,7 @@ class StructuredPropertiesService(BaseDataHubClient):
         """Test if structured properties are supported in this DataHub version."""
         try:
             variables = {
-                "input": {
-                    "types": ["STRUCTURED_PROPERTY"],
-                    "query": "*",
-                    "start": 0,
-                    "count": 1
-                }
+                "input": {"types": ["STRUCTURED_PROPERTY"], "query": "*", "start": 0, "count": 1}
             }
 
             result = self.safe_execute_graphql(TEST_STRUCTURED_PROPERTY_SUPPORT_QUERY, variables)
@@ -368,12 +380,7 @@ class StructuredPropertiesService(BaseDataHubClient):
             return 0
 
         variables = {
-            "input": {
-                "types": ["STRUCTURED_PROPERTY"],
-                "query": query,
-                "start": 0,
-                "count": 1
-            }
+            "input": {"types": ["STRUCTURED_PROPERTY"], "query": query, "start": 0, "count": 1}
         }
 
         try:

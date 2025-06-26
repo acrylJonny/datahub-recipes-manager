@@ -81,9 +81,7 @@ def apply_docker_networking(recipe: Dict[str, Any]) -> Dict[str, Any]:
         Updated recipe configuration
     """
     if not DOCKER_UTILS_AVAILABLE:
-        logger.warning(
-            "Docker utilities not available. Network adaptations will not be applied."
-        )
+        logger.warning("Docker utilities not available. Network adaptations will not be applied.")
         return recipe
 
     # Make a deep copy to avoid modifying the original
@@ -94,9 +92,7 @@ def apply_docker_networking(recipe: Dict[str, Any]) -> Dict[str, Any]:
         logger.debug("Docker networking not applied (not in testing environment)")
         return recipe
 
-    logger.info(
-        "Testing environment with Docker detected, applying networking adaptations..."
-    )
+    logger.info("Testing environment with Docker detected, applying networking adaptations...")
 
     # Handle source configuration based on source type
     if "source" in updated_recipe and "config" in updated_recipe["source"]:

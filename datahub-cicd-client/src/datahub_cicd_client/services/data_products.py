@@ -61,7 +61,9 @@ class DataProductService(BaseDataHubClient):
         Raises:
             DataHubError: If the operation fails
         """
-        self.logger.info(f"Listing data products with query='{query}', start={start}, count={count}, simple={simple}")
+        self.logger.info(
+            f"Listing data products with query='{query}', start={start}, count={count}, simple={simple}"
+        )
 
         variables = {
             "input": {
@@ -125,7 +127,9 @@ class DataProductService(BaseDataHubClient):
             result = self.safe_execute_graphql(GET_DATA_PRODUCT_QUERY, variables)
 
             if not result:
-                self.logger.warning(f"GraphQL query returned no data for data product: {data_product_urn}")
+                self.logger.warning(
+                    f"GraphQL query returned no data for data product: {data_product_urn}"
+                )
                 return None
 
             product_data = result.get("dataProduct")
@@ -268,7 +272,9 @@ class DataProductService(BaseDataHubClient):
             result = self.safe_execute_graphql(UPDATE_DATA_PRODUCT_DESCRIPTION_MUTATION, variables)
 
             if not result:
-                self.logger.error("Failed to update data product description - GraphQL query returned no data")
+                self.logger.error(
+                    "Failed to update data product description - GraphQL query returned no data"
+                )
                 return False
 
             success = result.get("updateDescription", False)
@@ -319,7 +325,9 @@ class DataProductService(BaseDataHubClient):
             result = self.safe_execute_graphql(ADD_DATA_PRODUCT_OWNER_MUTATION, variables)
 
             if not result:
-                self.logger.error("Failed to add owner to data product - GraphQL query returned no data")
+                self.logger.error(
+                    "Failed to add owner to data product - GraphQL query returned no data"
+                )
                 return False
 
             success = result.get("addOwner", False)
@@ -369,7 +377,9 @@ class DataProductService(BaseDataHubClient):
             result = self.safe_execute_graphql(REMOVE_DATA_PRODUCT_OWNER_MUTATION, variables)
 
             if not result:
-                self.logger.error("Failed to remove owner from data product - GraphQL query returned no data")
+                self.logger.error(
+                    "Failed to remove owner from data product - GraphQL query returned no data"
+                )
                 return False
 
             success = result.get("removeOwner", False)
@@ -525,13 +535,17 @@ class DataProductService(BaseDataHubClient):
         }
 
         try:
-            result = self.safe_execute_graphql(REMOVE_DATA_PRODUCT_GLOSSARY_TERM_MUTATION, variables)
+            result = self.safe_execute_graphql(
+                REMOVE_DATA_PRODUCT_GLOSSARY_TERM_MUTATION, variables
+            )
             success = result.get("removeTerm", False)
 
             if success:
                 self.logger.info(f"Removed glossary term from data product: {product_urn}")
             else:
-                self.logger.warning(f"Failed to remove glossary term from data product: {product_urn}")
+                self.logger.warning(
+                    f"Failed to remove glossary term from data product: {product_urn}"
+                )
 
             return success
 
@@ -719,7 +733,7 @@ class DataProductService(BaseDataHubClient):
                 "types": ["DATASET", "CHART", "DASHBOARD", "DATA_JOB", "DATA_FLOW"],
                 "start": start,
                 "count": count,
-            }
+            },
         }
 
         try:
@@ -892,7 +906,9 @@ class DataProductService(BaseDataHubClient):
             if success:
                 self.logger.info(f"Upserted structured properties for data product: {product_urn}")
             else:
-                self.logger.warning(f"Failed to upsert structured properties for data product: {product_urn}")
+                self.logger.warning(
+                    f"Failed to upsert structured properties for data product: {product_urn}"
+                )
 
             return success
 
@@ -992,9 +1008,7 @@ class DataProductService(BaseDataHubClient):
                     "urn": structured_property.get("urn"),
                     "displayName": prop_def.get("displayName", ""),
                     "qualifiedName": prop_def.get("qualifiedName", ""),
-                    "values": [
-                        v.get("stringValue") or v.get("numberValue") for v in values if v
-                    ],
+                    "values": [v.get("stringValue") or v.get("numberValue") for v in values if v],
                 }
                 structured_properties.append(prop_info)
 
@@ -1016,11 +1030,13 @@ class DataProductService(BaseDataHubClient):
                 if tag_data and tag_data.get("tag"):
                     tag_entity = tag_data["tag"]
                     tag_props = tag_entity.get("properties", {})
-                    tag_list.append({
-                        "urn": tag_entity.get("urn"),
-                        "name": tag_props.get("name", "Unknown"),
-                        "description": tag_props.get("description", ""),
-                    })
+                    tag_list.append(
+                        {
+                            "urn": tag_entity.get("urn"),
+                            "name": tag_props.get("name", "Unknown"),
+                            "description": tag_props.get("description", ""),
+                        }
+                    )
 
         # Process glossary terms
         term_list = []
@@ -1029,10 +1045,12 @@ class DataProductService(BaseDataHubClient):
                 if term_data and term_data.get("term"):
                     term_entity = term_data["term"]
                     term_props = term_entity.get("properties", {})
-                    term_list.append({
-                        "urn": term_entity.get("urn"),
-                        "name": term_props.get("name", "Unknown"),
-                    })
+                    term_list.append(
+                        {
+                            "urn": term_entity.get("urn"),
+                            "name": term_props.get("name", "Unknown"),
+                        }
+                    )
 
         return {
             "urn": entity.get("urn"),

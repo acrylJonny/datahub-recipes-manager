@@ -36,7 +36,9 @@ class DomainService(BaseDataHubClient):
         """Initialize the Domain service."""
         super().__init__(connection)
 
-    def list_domains(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_domains(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List domains in DataHub.
 
@@ -113,8 +115,9 @@ class DomainService(BaseDataHubClient):
             self.logger.error(f"Error getting domain {domain_urn}: {str(e)}")
             return None
 
-    def create_domain(self, domain_id: str, name: str, description: str = "",
-                     parent_domain_urn: str = None) -> Optional[str]:
+    def create_domain(
+        self, domain_id: str, name: str, description: str = "", parent_domain_urn: str = None
+    ) -> Optional[str]:
         """
         Create a new domain.
 
@@ -129,11 +132,7 @@ class DomainService(BaseDataHubClient):
         """
         self.logger.info(f"Creating domain: {name} with ID: {domain_id}")
 
-        input_data = {
-            "id": domain_id,
-            "name": name,
-            "description": description
-        }
+        input_data = {"id": domain_id, "name": name, "description": description}
 
         if parent_domain_urn:
             input_data["parentDomain"] = parent_domain_urn
@@ -187,8 +186,9 @@ class DomainService(BaseDataHubClient):
             self.logger.error(f"Error updating domain description: {str(e)}")
             return False
 
-    def update_domain_display_properties(self, domain_urn: str, color_hex: str = None,
-                                       icon: Dict[str, str] = None) -> bool:
+    def update_domain_display_properties(
+        self, domain_urn: str, color_hex: str = None, icon: Dict[str, str] = None
+    ) -> bool:
         """
         Update the display properties of a domain.
 
@@ -216,7 +216,9 @@ class DomainService(BaseDataHubClient):
             if result and "data" in result and "updateDisplayProperties" in result["data"]:
                 success = result["data"]["updateDisplayProperties"]
                 if success:
-                    self.logger.info(f"Successfully updated display properties for domain {domain_urn}")
+                    self.logger.info(
+                        f"Successfully updated display properties for domain {domain_urn}"
+                    )
                     return True
 
             self._log_graphql_errors(result)
@@ -226,8 +228,9 @@ class DomainService(BaseDataHubClient):
             self.logger.error(f"Error updating domain display properties: {str(e)}")
             return False
 
-    def update_domain_structured_properties(self, domain_urn: str,
-                                          structured_properties: List[Dict[str, Any]]) -> bool:
+    def update_domain_structured_properties(
+        self, domain_urn: str, structured_properties: List[Dict[str, Any]]
+    ) -> bool:
         """
         Update structured properties of a domain.
 
@@ -243,15 +246,19 @@ class DomainService(BaseDataHubClient):
         variables = {
             "input": {
                 "entityUrn": domain_urn,
-                "structuredPropertyInputParams": structured_properties
+                "structuredPropertyInputParams": structured_properties,
             }
         }
 
         try:
-            result = self.safe_execute_graphql(UPDATE_DOMAIN_STRUCTURED_PROPERTIES_MUTATION, variables)
+            result = self.safe_execute_graphql(
+                UPDATE_DOMAIN_STRUCTURED_PROPERTIES_MUTATION, variables
+            )
 
             if result and "data" in result and "upsertStructuredProperties" in result["data"]:
-                self.logger.info(f"Successfully updated structured properties for domain {domain_urn}")
+                self.logger.info(
+                    f"Successfully updated structured properties for domain {domain_urn}"
+                )
                 return True
 
             self._log_graphql_errors(result)
@@ -261,8 +268,12 @@ class DomainService(BaseDataHubClient):
             self.logger.error(f"Error updating domain structured properties: {str(e)}")
             return False
 
-    def add_domain_owner(self, domain_urn: str, owner_urn: str,
-                        ownership_type: str = "urn:li:ownershipType:__system__business_owner") -> bool:
+    def add_domain_owner(
+        self,
+        domain_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
         """
         Add an owner to a domain.
 
@@ -280,7 +291,7 @@ class DomainService(BaseDataHubClient):
             "input": {
                 "ownerUrn": owner_urn,
                 "resourceUrn": domain_urn,
-                "ownershipTypeUrn": ownership_type
+                "ownershipTypeUrn": ownership_type,
             }
         }
 
@@ -300,8 +311,12 @@ class DomainService(BaseDataHubClient):
             self.logger.error(f"Error adding domain owner: {str(e)}")
             return False
 
-    def remove_domain_owner(self, domain_urn: str, owner_urn: str,
-                           ownership_type: str = "urn:li:ownershipType:__system__business_owner") -> bool:
+    def remove_domain_owner(
+        self,
+        domain_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
         """
         Remove an owner from a domain.
 
@@ -319,7 +334,7 @@ class DomainService(BaseDataHubClient):
             "input": {
                 "ownerUrn": owner_urn,
                 "resourceUrn": domain_urn,
-                "ownershipTypeUrn": ownership_type
+                "ownershipTypeUrn": ownership_type,
             }
         }
 
@@ -369,7 +384,9 @@ class DomainService(BaseDataHubClient):
             self.logger.error(f"Error deleting domain: {str(e)}")
             return False
 
-    def find_entities_with_domain(self, domain_urn: str, start: int = 0, count: int = 50) -> Dict[str, Any]:
+    def find_entities_with_domain(
+        self, domain_urn: str, start: int = 0, count: int = 50
+    ) -> Dict[str, Any]:
         """
         Find entities within a domain.
 
@@ -389,12 +406,7 @@ class DomainService(BaseDataHubClient):
                 "query": "*",
                 "start": start,
                 "count": count,
-                "filters": [
-                    {
-                        "field": "domains",
-                        "values": [domain_urn]
-                    }
-                ]
+                "filters": [{"field": "domains", "values": [domain_urn]}],
             }
         }
 
@@ -413,7 +425,7 @@ class DomainService(BaseDataHubClient):
                     "entities": entities,
                     "start": search_data.get("start", 0),
                     "count": search_data.get("count", 0),
-                    "total": search_data.get("total", 0)
+                    "total": search_data.get("total", 0),
                 }
 
             self._log_graphql_errors(result)

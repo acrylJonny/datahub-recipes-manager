@@ -1,6 +1,7 @@
 """
 Base Pydantic models for the DataHub CI/CD client.
 """
+
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field, HttpUrl, validator
 
 class EntityType(str, Enum):
     """Supported DataHub entity types."""
+
     TAG = "tag"
     DOMAIN = "domain"
     GLOSSARY_NODE = "glossaryNode"
@@ -30,12 +32,14 @@ class EntityType(str, Enum):
 
 class OwnerType(str, Enum):
     """Owner types in DataHub."""
+
     USER = "corpuser"
     GROUP = "corpGroup"
 
 
 class OperationType(str, Enum):
     """Types of operations."""
+
     CREATE = "CREATE"
     UPDATE = "UPDATE"
     DELETE = "DELETE"
@@ -45,6 +49,7 @@ class OperationType(str, Enum):
 
 class GraphQLResponse(BaseModel):
     """GraphQL response model."""
+
     data: Optional[Dict[str, Any]] = None
     errors: Optional[List[Dict[str, Any]]] = None
     extensions: Optional[Dict[str, Any]] = None
@@ -59,11 +64,12 @@ class GraphQLResponse(BaseModel):
         """Get list of error messages."""
         if not self.has_errors:
             return []
-        return [error.get('message', 'Unknown error') for error in self.errors]
+        return [error.get("message", "Unknown error") for error in self.errors]
 
 
 class DataHubConnection(BaseModel):
     """DataHub connection configuration."""
+
     server_url: HttpUrl = Field(..., description="DataHub GMS server URL")
     token: Optional[str] = Field(None, description="DataHub access token")
     verify_ssl: bool = Field(True, description="Verify SSL certificates")
@@ -72,19 +78,21 @@ class DataHubConnection(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         validate_assignment = True
 
-    @validator('server_url')
+    @validator("server_url")
     def validate_server_url(cls, v):
         """Validate server URL format."""
         url_str = str(v)
-        if not url_str.endswith('/'):
+        if not url_str.endswith("/"):
             return f"{url_str}/"
         return url_str
 
 
 class BaseDataHubEntity(BaseModel):
     """Base model for all DataHub entities."""
+
     urn: Optional[str] = Field(None, description="Entity URN")
     name: str = Field(..., min_length=1, max_length=500, description="Entity name")
     description: Optional[str] = Field(None, max_length=10000, description="Entity description")
@@ -93,22 +101,22 @@ class BaseDataHubEntity(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         validate_assignment = True
         use_enum_values = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+        json_encoders = {datetime: lambda v: v.isoformat() if v else None}
 
-    @validator('urn')
+    @validator("urn")
     def validate_urn(cls, v):
         """Validate URN format."""
-        if v and not v.startswith('urn:li:'):
+        if v and not v.startswith("urn:li:"):
             raise ValueError('URN must start with "urn:li:"')
         return v
 
 
 class ValidationResult(BaseModel):
     """Validation result model."""
+
     valid: bool = Field(..., description="Whether validation passed")
     errors: List[str] = Field(default_factory=list, description="Validation errors")
     warnings: List[str] = Field(default_factory=list, description="Validation warnings")
@@ -117,6 +125,7 @@ class ValidationResult(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         use_enum_values = True
 
     @property
@@ -132,6 +141,7 @@ class ValidationResult(BaseModel):
 
 class OperationResult(BaseModel):
     """Operation result model."""
+
     success: bool = Field(..., description="Whether operation succeeded")
     message: str = Field(..., description="Operation result message")
     data: Optional[Dict[str, Any]] = Field(None, description="Operation result data")
@@ -144,6 +154,7 @@ class OperationResult(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         use_enum_values = True
 
     @property
@@ -159,18 +170,23 @@ class OperationResult(BaseModel):
 
 class BatchOperationResult(BaseModel):
     """Batch operation result model."""
+
     total_operations: int = Field(..., ge=0, description="Total number of operations")
     successful_operations: int = Field(..., ge=0, description="Number of successful operations")
     failed_operations: int = Field(..., ge=0, description="Number of failed operations")
-    results: List[OperationResult] = Field(default_factory=list, description="Individual operation results")
-    duration_ms: Optional[int] = Field(None, ge=0, description="Total batch duration in milliseconds")
+    results: List[OperationResult] = Field(
+        default_factory=list, description="Individual operation results"
+    )
+    duration_ms: Optional[int] = Field(
+        None, ge=0, description="Total batch duration in milliseconds"
+    )
 
-    @validator('successful_operations', 'failed_operations')
+    @validator("successful_operations", "failed_operations")
     def validate_operation_counts(cls, v, values):
         """Validate operation counts."""
-        total = values.get('total_operations', 0)
+        total = values.get("total_operations", 0)
         if v > total:
-            raise ValueError('Operation count cannot exceed total operations')
+            raise ValueError("Operation count cannot exceed total operations")
         return v
 
     @property
@@ -188,6 +204,7 @@ class BatchOperationResult(BaseModel):
 
 class PaginationInfo(BaseModel):
     """Pagination information model."""
+
     page: int = Field(1, ge=1, description="Current page number")
     page_size: int = Field(20, ge=1, le=1000, description="Number of items per page")
     total_items: Optional[int] = Field(None, ge=0, description="Total number of items")
@@ -195,14 +212,14 @@ class PaginationInfo(BaseModel):
     has_next: bool = Field(False, description="Whether there is a next page")
     has_previous: bool = Field(False, description="Whether there is a previous page")
 
-    @validator('total_pages')
+    @validator("total_pages")
     def calculate_total_pages(cls, v, values):
         """Calculate total pages if not provided."""
         if v is not None:
             return v
 
-        total_items = values.get('total_items')
-        page_size = values.get('page_size', 20)
+        total_items = values.get("total_items")
+        page_size = values.get("page_size", 20)
 
         if total_items is not None:
             return (total_items + page_size - 1) // page_size
@@ -212,7 +229,10 @@ class PaginationInfo(BaseModel):
 
 class SearchResult(BaseModel):
     """Search result model."""
-    entities: List[Dict[str, Any]] = Field(default_factory=list, description="Search result entities")
+
+    entities: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Search result entities"
+    )
     pagination: PaginationInfo = Field(..., description="Pagination information")
     facets: Optional[Dict[str, List[Dict[str, Any]]]] = Field(None, description="Search facets")
     query: str = Field(..., description="Search query")

@@ -63,11 +63,15 @@ class EnhancedTagService(BaseInputOutputService):
         """Get a single tag from DataHub."""
         return self.input_service.get_tag(tag_urn)
 
-    def get_remote_tags_data(self, query: str = "*", start: int = 0, count: int = 100) -> Dict[str, Any]:
+    def get_remote_tags_data(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> Dict[str, Any]:
         """Get comprehensive tags data from DataHub."""
         return self.input_service.get_remote_tags_data(query, start, count)
 
-    def find_entities_with_tag(self, tag_urn: str, start: int = 0, count: int = 50) -> Dict[str, Any]:
+    def find_entities_with_tag(
+        self, tag_urn: str, start: int = 0, count: int = 50
+    ) -> Dict[str, Any]:
         """Find entities that have a specific tag."""
         return self.input_service.find_entities_with_tag(tag_urn, start, count)
 
@@ -81,7 +85,7 @@ class EnhancedTagService(BaseInputOutputService):
         name: str,
         description: str = "",
         color_hex: Optional[str] = None,
-        owner: Optional[str] = None
+        owner: Optional[str] = None,
     ) -> OperationResult:
         """
         Create a new tag using current operation mode.
@@ -101,7 +105,7 @@ class EnhancedTagService(BaseInputOutputService):
             "name": name,
             "description": description,
             "colorHex": color_hex,
-            "owner": owner
+            "owner": owner,
         }
 
         operation = self.create_operation("create_tag", entity_data)
@@ -112,7 +116,7 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="create_tag",
                 entity_urn=f"urn:li:tag:{tag_id}",
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -122,7 +126,7 @@ class EnhancedTagService(BaseInputOutputService):
         tag_urn: str,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        color_hex: Optional[str] = None
+        color_hex: Optional[str] = None,
     ) -> OperationResult:
         """Update an existing tag."""
         entity_data = {}
@@ -141,7 +145,7 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="update_tag",
                 entity_urn=tag_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -156,7 +160,7 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="delete_tag",
                 entity_urn=tag_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -165,13 +169,13 @@ class EnhancedTagService(BaseInputOutputService):
         self,
         tag_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Add owner to tag."""
         operation = self.create_operation(
             "add_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=tag_urn
+            entity_urn=tag_urn,
         )
 
         if self.batch_mode:
@@ -180,7 +184,7 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="add_tag_owner",
                 entity_urn=tag_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -189,13 +193,13 @@ class EnhancedTagService(BaseInputOutputService):
         self,
         tag_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Remove owner from tag."""
         operation = self.create_operation(
             "remove_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=tag_urn
+            entity_urn=tag_urn,
         )
 
         if self.batch_mode:
@@ -204,18 +208,14 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_tag_owner",
                 entity_urn=tag_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
     def assign_tag_to_entity(self, entity_urn: str, tag_urn: str) -> OperationResult:
         """Assign tag to entity."""
-        operation = self.create_operation(
-            "assign_tag",
-            {"tag_urn": tag_urn},
-            entity_urn=entity_urn
-        )
+        operation = self.create_operation("assign_tag", {"tag_urn": tag_urn}, entity_urn=entity_urn)
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -223,18 +223,14 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="assign_tag_to_entity",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
 
     def remove_tag_from_entity(self, entity_urn: str, tag_urn: str) -> OperationResult:
         """Remove tag from entity."""
-        operation = self.create_operation(
-            "remove_tag",
-            {"tag_urn": tag_urn},
-            entity_urn=entity_urn
-        )
+        operation = self.create_operation("remove_tag", {"tag_urn": tag_urn}, entity_urn=entity_urn)
 
         if self.batch_mode:
             self.add_to_batch(operation)
@@ -242,7 +238,7 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="remove_tag_from_entity",
                 entity_urn=entity_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -261,7 +257,7 @@ class EnhancedTagService(BaseInputOutputService):
                 name=tag_data["name"],
                 description=tag_data.get("description", ""),
                 color_hex=tag_data.get("colorHex"),
-                owner=tag_data.get("owner")
+                owner=tag_data.get("owner"),
             )
             results.append(result)
 
@@ -285,7 +281,7 @@ class EnhancedTagService(BaseInputOutputService):
                 success=True,
                 operation_type="bulk_assign_tags",
                 entity_urn=entity_urn,
-                mcps_generated=len(mcps)
+                mcps_generated=len(mcps),
             )
             results.append(result)
 
@@ -310,7 +306,7 @@ class EnhancedTagService(BaseInputOutputService):
                     success=True,
                     operation_type="assign_tag_to_entity",
                     entity_urn=entity_urn,
-                    mcps_generated=1
+                    mcps_generated=1,
                 )
                 results.append(result)
 
@@ -333,9 +329,7 @@ class EnhancedTagService(BaseInputOutputService):
         elif op_type == "delete_tag":
             return self.sync_output.delete_entity(entity_urn)
         elif op_type == "add_owner":
-            return self.sync_output.add_owner(
-                entity_urn, data["owner_urn"], data["ownership_type"]
-            )
+            return self.sync_output.add_owner(entity_urn, data["owner_urn"], data["ownership_type"])
         elif op_type == "remove_owner":
             return self.sync_output.remove_owner(
                 entity_urn, data["owner_urn"], data["ownership_type"]
@@ -348,7 +342,7 @@ class EnhancedTagService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -379,7 +373,7 @@ class EnhancedTagService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
@@ -390,7 +384,9 @@ class EnhancedTagService(BaseInputOutputService):
         """Import tags from JSON data."""
         return self.bulk_create_tags(json_data)
 
-    def export_tags_to_mcps(self, tags_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_tags_to_mcps(
+        self, tags_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export tags as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode
@@ -412,10 +408,12 @@ class EnhancedTagService(BaseInputOutputService):
         summary = self.get_operation_summary()
 
         # Add service-specific statistics
-        summary.update({
-            "sync_output_available": self.sync_output is not None,
-            "async_output_available": self.async_output is not None,
-            "async_mcp_count": self.async_output.get_mcp_count() if self.async_output else 0
-        })
+        summary.update(
+            {
+                "sync_output_available": self.sync_output is not None,
+                "async_output_available": self.async_output is not None,
+                "async_mcp_count": self.async_output.get_mcp_count() if self.async_output else 0,
+            }
+        )
 
         return summary

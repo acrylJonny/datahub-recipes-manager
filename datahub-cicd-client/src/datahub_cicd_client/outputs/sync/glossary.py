@@ -14,7 +14,9 @@ from datahub_cicd_client.outputs.sync.base_sync_output import (
 from datahub_cicd_client.services.base_service import OperationResult
 
 
-class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssignmentSyncOutput):
+class GlossarySyncOutput(
+    BaseSyncOutput, EntityRelationshipSyncOutput, MetadataAssignmentSyncOutput
+):
     """Synchronous output operations for glossary entities."""
 
     def __init__(self, connection: DataHubConnection):
@@ -44,13 +46,15 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
                         "id": entity_data["id"],
                         "name": entity_data["name"],
                         "description": entity_data.get("description", ""),
-                        "parentNode": entity_data.get("parentNode")
+                        "parentNode": entity_data.get("parentNode"),
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("create_glossary_node", error_message="GraphQL errors occurred")
+                return self._create_error_result(
+                    "create_glossary_node", error_message="GraphQL errors occurred"
+                )
 
             node_urn = result["data"]["createGlossaryNode"]
             return self._create_success_result("create_glossary_node", node_urn, result)
@@ -70,13 +74,15 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
                         "name": entity_data["name"],
                         "description": entity_data.get("description", ""),
                         "parentNode": entity_data.get("parentNode"),
-                        "termSource": entity_data.get("termSource", "INTERNAL")
+                        "termSource": entity_data.get("termSource", "INTERNAL"),
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("create_glossary_term", error_message="GraphQL errors occurred")
+                return self._create_error_result(
+                    "create_glossary_term", error_message="GraphQL errors occurred"
+                )
 
             term_urn = result["data"]["createGlossaryTerm"]
             return self._create_success_result("create_glossary_term", term_urn, result)
@@ -95,7 +101,9 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
             elif entity_type == "glossaryTerm":
                 return self.update_glossary_term(entity_urn, entity_data)
             else:
-                return self._create_error_result("update_glossary_entity", entity_urn, f"Unknown entity type: {entity_type}")
+                return self._create_error_result(
+                    "update_glossary_entity", entity_urn, f"Unknown entity type: {entity_type}"
+                )
 
         except Exception as e:
             self.logger.error(f"Error updating glossary entity: {e}")
@@ -107,16 +115,13 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
             if "description" in entity_data:
                 result = self.execute_graphql(
                     UPDATE_GLOSSARY_NODE_DESCRIPTION_MUTATION,
-                    {
-                        "input": {
-                            "nodeUrn": node_urn,
-                            "description": entity_data["description"]
-                        }
-                    }
+                    {"input": {"nodeUrn": node_urn, "description": entity_data["description"]}},
                 )
 
                 if not self._check_graphql_errors(result):
-                    return self._create_error_result("update_glossary_node", node_urn, "Failed to update description")
+                    return self._create_error_result(
+                        "update_glossary_node", node_urn, "Failed to update description"
+                    )
 
             return self._create_success_result("update_glossary_node", node_urn)
 
@@ -130,16 +135,13 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
             if "description" in entity_data:
                 result = self.execute_graphql(
                     UPDATE_GLOSSARY_TERM_DESCRIPTION_MUTATION,
-                    {
-                        "input": {
-                            "termUrn": term_urn,
-                            "description": entity_data["description"]
-                        }
-                    }
+                    {"input": {"termUrn": term_urn, "description": entity_data["description"]}},
                 )
 
                 if not self._check_graphql_errors(result):
-                    return self._create_error_result("update_glossary_term", term_urn, "Failed to update description")
+                    return self._create_error_result(
+                        "update_glossary_term", term_urn, "Failed to update description"
+                    )
 
             return self._create_success_result("update_glossary_term", term_urn)
 
@@ -159,15 +161,16 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
                 mutation = DELETE_GLOSSARY_TERM_MUTATION
                 variable_name = "termUrn"
             else:
-                return self._create_error_result("delete_glossary_entity", entity_urn, f"Unknown entity type: {entity_type}")
+                return self._create_error_result(
+                    "delete_glossary_entity", entity_urn, f"Unknown entity type: {entity_type}"
+                )
 
-            result = self.execute_graphql(
-                mutation,
-                {variable_name: entity_urn}
-            )
+            result = self.execute_graphql(mutation, {variable_name: entity_urn})
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("delete_glossary_entity", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "delete_glossary_entity", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("delete_glossary_entity", entity_urn, result)
 
@@ -187,23 +190,24 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
                 mutation = ADD_GLOSSARY_TERM_OWNER_MUTATION
                 variable_name = "termUrn"
             else:
-                return self._create_error_result("add_glossary_owner", entity_urn, f"Unknown entity type: {entity_type}")
+                return self._create_error_result(
+                    "add_glossary_owner", entity_urn, f"Unknown entity type: {entity_type}"
+                )
 
             result = self.execute_graphql(
                 mutation,
                 {
                     "input": {
                         variable_name: entity_urn,
-                        "owners": [{
-                            "ownerUrn": owner_urn,
-                            "type": ownership_type
-                        }]
+                        "owners": [{"ownerUrn": owner_urn, "type": ownership_type}],
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_glossary_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_glossary_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_glossary_owner", entity_urn, result)
 
@@ -223,20 +227,18 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
                 mutation = REMOVE_GLOSSARY_TERM_OWNER_MUTATION
                 variable_name = "termUrn"
             else:
-                return self._create_error_result("remove_glossary_owner", entity_urn, f"Unknown entity type: {entity_type}")
+                return self._create_error_result(
+                    "remove_glossary_owner", entity_urn, f"Unknown entity type: {entity_type}"
+                )
 
             result = self.execute_graphql(
-                mutation,
-                {
-                    "input": {
-                        variable_name: entity_urn,
-                        "ownerUrn": owner_urn
-                    }
-                }
+                mutation, {"input": {variable_name: entity_urn, "ownerUrn": owner_urn}}
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_glossary_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_glossary_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("remove_glossary_owner", entity_urn, result)
 
@@ -244,21 +246,20 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
             self.logger.error(f"Error removing glossary owner: {e}")
             return self._create_error_result("remove_glossary_owner", entity_urn, str(e))
 
-    def assign_to_entity(self, entity_urn: str, glossary_term_urn: str, **kwargs) -> OperationResult:
+    def assign_to_entity(
+        self, entity_urn: str, glossary_term_urn: str, **kwargs
+    ) -> OperationResult:
         """Assign glossary term to entity."""
         try:
             result = self.execute_graphql(
                 ADD_GLOSSARY_TERM_TO_ENTITY_MUTATION,
-                {
-                    "input": {
-                        "resourceUrn": entity_urn,
-                        "glossaryTermUrns": [glossary_term_urn]
-                    }
-                }
+                {"input": {"resourceUrn": entity_urn, "glossaryTermUrns": [glossary_term_urn]}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_glossary_term_to_entity", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_glossary_term_to_entity", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_glossary_term_to_entity", entity_urn, result)
 
@@ -271,18 +272,17 @@ class GlossarySyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput, MetadataA
         try:
             result = self.execute_graphql(
                 REMOVE_GLOSSARY_TERM_FROM_ENTITY_MUTATION,
-                {
-                    "input": {
-                        "resourceUrn": entity_urn,
-                        "glossaryTermUrn": glossary_term_urn
-                    }
-                }
+                {"input": {"resourceUrn": entity_urn, "glossaryTermUrn": glossary_term_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_glossary_term_from_entity", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_glossary_term_from_entity", entity_urn, "GraphQL errors occurred"
+                )
 
-            return self._create_success_result("remove_glossary_term_from_entity", entity_urn, result)
+            return self._create_success_result(
+                "remove_glossary_term_from_entity", entity_urn, result
+            )
 
         except Exception as e:
             self.logger.error(f"Error removing glossary term from entity: {e}")

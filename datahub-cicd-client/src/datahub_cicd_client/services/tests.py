@@ -55,7 +55,9 @@ class MetadataTestService(BaseInputOutputService):
     # INPUT OPERATIONS (Reading from DataHub)
     # ============================================
 
-    def list_metadata_tests(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_metadata_tests(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List metadata tests in DataHub.
 
@@ -67,7 +69,9 @@ class MetadataTestService(BaseInputOutputService):
         Returns:
             List of metadata test objects
         """
-        self.logger.info(f"Listing metadata tests with query: {query}, start: {start}, count: {count}")
+        self.logger.info(
+            f"Listing metadata tests with query: {query}, start: {start}, count: {count}"
+        )
 
         variables = {
             "input": {
@@ -97,7 +101,7 @@ class MetadataTestService(BaseInputOutputService):
                     "urn": entity.get("urn"),
                     "type": entity.get("type"),
                     "properties": entity.get("properties", {}),
-                    "ownership": entity.get("ownership", {})
+                    "ownership": entity.get("ownership", {}),
                 }
 
                 tests.append(test)
@@ -141,7 +145,7 @@ class MetadataTestService(BaseInputOutputService):
         name: str,
         description: str = "",
         category: str = "METADATA",
-        custom_properties: Optional[Dict[str, str]] = None
+        custom_properties: Optional[Dict[str, str]] = None,
     ) -> OperationResult:
         """
         Create a new metadata test.
@@ -161,7 +165,7 @@ class MetadataTestService(BaseInputOutputService):
             "name": name,
             "description": description,
             "category": category,
-            "customProperties": custom_properties or {}
+            "customProperties": custom_properties or {},
         }
 
         operation = self.create_operation("create_metadata_test", entity_data)
@@ -172,7 +176,7 @@ class MetadataTestService(BaseInputOutputService):
                 success=True,
                 operation_type="create_metadata_test",
                 entity_urn=test_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -183,7 +187,7 @@ class MetadataTestService(BaseInputOutputService):
         name: Optional[str] = None,
         description: Optional[str] = None,
         category: Optional[str] = None,
-        custom_properties: Optional[Dict[str, str]] = None
+        custom_properties: Optional[Dict[str, str]] = None,
     ) -> OperationResult:
         """Update an existing metadata test."""
         entity_data = {}
@@ -204,7 +208,7 @@ class MetadataTestService(BaseInputOutputService):
                 success=True,
                 operation_type="update_metadata_test",
                 entity_urn=test_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -219,7 +223,7 @@ class MetadataTestService(BaseInputOutputService):
                 success=True,
                 operation_type="delete_metadata_test",
                 entity_urn=test_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -228,13 +232,13 @@ class MetadataTestService(BaseInputOutputService):
         self,
         test_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Add owner to metadata test."""
         operation = self.create_operation(
             "add_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=test_urn
+            entity_urn=test_urn,
         )
 
         if self.batch_mode:
@@ -243,7 +247,7 @@ class MetadataTestService(BaseInputOutputService):
                 success=True,
                 operation_type="add_metadata_test_owner",
                 entity_urn=test_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -262,7 +266,7 @@ class MetadataTestService(BaseInputOutputService):
                 name=test_data["name"],
                 description=test_data.get("description", ""),
                 category=test_data.get("category", "METADATA"),
-                custom_properties=test_data.get("customProperties")
+                custom_properties=test_data.get("customProperties"),
             )
             results.append(result)
 
@@ -285,14 +289,12 @@ class MetadataTestService(BaseInputOutputService):
         elif op_type == "delete_metadata_test":
             return self.sync_output.delete_entity(entity_urn)
         elif op_type == "add_owner":
-            return self.sync_output.add_owner(
-                entity_urn, data["owner_urn"], data["ownership_type"]
-            )
+            return self.sync_output.add_owner(entity_urn, data["owner_urn"], data["ownership_type"])
         else:
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -315,18 +317,22 @@ class MetadataTestService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
     # CONVENIENCE METHODS
     # ============================================
 
-    def import_metadata_tests_from_json(self, json_data: List[Dict[str, Any]]) -> BatchOperationResult:
+    def import_metadata_tests_from_json(
+        self, json_data: List[Dict[str, Any]]
+    ) -> BatchOperationResult:
         """Import metadata tests from JSON data."""
         return self.bulk_create_metadata_tests(json_data)
 
-    def export_metadata_tests_to_mcps(self, tests_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_metadata_tests_to_mcps(
+        self, tests_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export metadata tests as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode

@@ -28,7 +28,9 @@ class BaseDataHubClient(ABC):
         self.connection = connection
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def execute_graphql(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def execute_graphql(
+        self, query: str, variables: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Execute a GraphQL query.
 
@@ -51,8 +53,7 @@ class BaseDataHubClient(ABC):
         if "errors" in result and result["errors"]:
             error_messages = [error.get("message", "Unknown error") for error in result["errors"]]
             raise DataHubGraphQLError(
-                f"GraphQL query failed: {'; '.join(error_messages)}",
-                errors=result["errors"]
+                f"GraphQL query failed: {'; '.join(error_messages)}", errors=result["errors"]
             )
 
         # Return the data portion if it exists, otherwise return the full result
@@ -62,7 +63,9 @@ class BaseDataHubClient(ABC):
         else:
             return result
 
-    def _extract_search_results(self, data: Dict[str, Any], search_key: str = "searchAcrossEntities") -> List[Dict[str, Any]]:
+    def _extract_search_results(
+        self, data: Dict[str, Any], search_key: str = "searchAcrossEntities"
+    ) -> List[Dict[str, Any]]:
         """
         Extract search results from GraphQL response.
 
@@ -125,13 +128,15 @@ class BaseDataHubClient(ABC):
 
             for i, error in enumerate(result["errors"][:3]):  # Log first 3 errors
                 message = error.get("message", "Unknown error")
-                self.logger.debug(f"GraphQL error {i+1}: {message}")
+                self.logger.debug(f"GraphQL error {i + 1}: {message}")
 
     def test_connection(self) -> bool:
         """Test connection to DataHub."""
         return self.connection.test_connection()
 
-    def safe_execute_graphql(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def safe_execute_graphql(
+        self, query: str, variables: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Execute a GraphQL query with safe error handling.
 

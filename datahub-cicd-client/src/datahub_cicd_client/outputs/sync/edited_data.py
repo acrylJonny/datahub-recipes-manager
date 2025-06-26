@@ -32,8 +32,7 @@ class EditedDataSyncOutput(BaseSyncOutput):
     def create_entity(self, entity_data: Dict[str, Any]) -> OperationResult:
         """Create a new entity (not applicable for edited data)."""
         return self._create_error_result(
-            "create_entity",
-            error_message="Create entity not supported for edited data"
+            "create_entity", error_message="Create entity not supported for edited data"
         )
 
     def delete_entity(self, entity_urn: str) -> OperationResult:
@@ -41,7 +40,7 @@ class EditedDataSyncOutput(BaseSyncOutput):
         return self._create_error_result(
             "delete_entity",
             entity_urn=entity_urn,
-            error_message="Delete entity not supported for edited data"
+            error_message="Delete entity not supported for edited data",
         )
 
     def update_entity(self, entity_urn: str, entity_data: Dict[str, Any]) -> OperationResult:
@@ -61,42 +60,36 @@ class EditedDataSyncOutput(BaseSyncOutput):
         """
         try:
             variables = {
-                "input": {
-                    "urn": entity_urn,
-                    "editableProperties": {
-                        "description": description
-                    }
-                }
+                "input": {"urn": entity_urn, "editableProperties": {"description": description}}
             }
 
-            result = self.execute_graphql("""
+            result = self.execute_graphql(
+                """
                 mutation updateEditableProperties($input: EditablePropertiesUpdateInput!) {
                     updateEditableProperties(input: $input)
                 }
-            """, variables)
+            """,
+                variables,
+            )
 
             if result and result.get("updateEditableProperties"):
                 return self._create_success_result(
                     "update_entity_description",
                     entity_urn,
-                    f"Successfully updated description for {entity_urn}"
+                    f"Successfully updated description for {entity_urn}",
                 )
             else:
                 return self._create_error_result(
-                    "update_entity_description",
-                    entity_urn,
-                    "Failed to update description"
+                    "update_entity_description", entity_urn, "Failed to update description"
                 )
 
         except Exception as e:
             self.logger.error(f"Error updating entity description: {str(e)}")
-            return self._create_error_result(
-                "update_entity_description",
-                entity_urn,
-                str(e)
-            )
+            return self._create_error_result("update_entity_description", entity_urn, str(e))
 
-    def update_custom_properties(self, entity_urn: str, custom_properties: Dict[str, str]) -> OperationResult:
+    def update_custom_properties(
+        self, entity_urn: str, custom_properties: Dict[str, str]
+    ) -> OperationResult:
         """
         Update an entity's custom properties.
 
@@ -110,46 +103,41 @@ class EditedDataSyncOutput(BaseSyncOutput):
         try:
             # Convert custom properties to the format expected by DataHub
             custom_props_list = [
-                {"key": key, "value": value}
-                for key, value in custom_properties.items()
+                {"key": key, "value": value} for key, value in custom_properties.items()
             ]
 
-            variables = {
-                "input": {
-                    "urn": entity_urn,
-                    "customProperties": custom_props_list
-                }
-            }
+            variables = {"input": {"urn": entity_urn, "customProperties": custom_props_list}}
 
-            result = self.execute_graphql("""
+            result = self.execute_graphql(
+                """
                 mutation updateCustomProperties($input: CustomPropertiesUpdateInput!) {
                     updateCustomProperties(input: $input)
                 }
-            """, variables)
+            """,
+                variables,
+            )
 
             if result and result.get("updateCustomProperties"):
                 return self._create_success_result(
                     "update_custom_properties",
                     entity_urn,
-                    f"Successfully updated custom properties for {entity_urn}"
+                    f"Successfully updated custom properties for {entity_urn}",
                 )
             else:
                 return self._create_error_result(
-                    "update_custom_properties",
-                    entity_urn,
-                    "Failed to update custom properties"
+                    "update_custom_properties", entity_urn, "Failed to update custom properties"
                 )
 
         except Exception as e:
             self.logger.error(f"Error updating custom properties: {str(e)}")
-            return self._create_error_result(
-                "update_custom_properties",
-                entity_urn,
-                str(e)
-            )
+            return self._create_error_result("update_custom_properties", entity_urn, str(e))
 
-    def bulk_update_properties(self, entity_urn: str, description: Optional[str] = None,
-                             custom_properties: Optional[Dict[str, str]] = None) -> OperationResult:
+    def bulk_update_properties(
+        self,
+        entity_urn: str,
+        description: Optional[str] = None,
+        custom_properties: Optional[Dict[str, str]] = None,
+    ) -> OperationResult:
         """
         Bulk update multiple properties for an entity.
 
@@ -194,19 +182,15 @@ class EditedDataSyncOutput(BaseSyncOutput):
                 return self._create_success_result(
                     "bulk_update_properties",
                     entity_urn,
-                    "; ".join(message) if message else "No operations performed"
+                    "; ".join(message) if message else "No operations performed",
                 )
             else:
                 return self._create_error_result(
                     "bulk_update_properties",
                     entity_urn,
-                    "; ".join(failed_operations) if failed_operations else "Unknown error"
+                    "; ".join(failed_operations) if failed_operations else "Unknown error",
                 )
 
         except Exception as e:
             self.logger.error(f"Error in bulk update properties: {str(e)}")
-            return self._create_error_result(
-                "bulk_update_properties",
-                entity_urn,
-                str(e)
-            )
+            return self._create_error_result("bulk_update_properties", entity_urn, str(e))

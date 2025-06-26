@@ -40,12 +40,7 @@ class OwnershipTypeService(BaseDataHubClient):
 
         # Try the GraphQL queries first, but fallback to defaults if schema doesn't support it
         try:
-            variables = {
-                "input": {
-                    "start": start,
-                    "count": count
-                }
-            }
+            variables = {"input": {"start": start, "count": count}}
 
             # Try the dedicated listOwnershipTypes query first
             data = self.safe_execute_graphql(LIST_OWNERSHIP_TYPES_QUERY, variables)
@@ -53,7 +48,9 @@ class OwnershipTypeService(BaseDataHubClient):
             if data and "listOwnershipTypes" in data:
                 ownership_types_data = data["listOwnershipTypes"]
                 ownership_types = ownership_types_data.get("ownershipTypes", [])
-                self.logger.info(f"Retrieved {len(ownership_types)} ownership types using listOwnershipTypes")
+                self.logger.info(
+                    f"Retrieved {len(ownership_types)} ownership types using listOwnershipTypes"
+                )
                 return ownership_types
             else:
                 # Fallback to search-based approach
@@ -65,7 +62,9 @@ class OwnershipTypeService(BaseDataHubClient):
             # Return default ownership types since the schema doesn't support querying them
             return self.get_default_ownership_types()
 
-    def _list_ownership_types_search(self, start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def _list_ownership_types_search(
+        self, start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List ownership types using search query as fallback.
 
@@ -82,7 +81,7 @@ class OwnershipTypeService(BaseDataHubClient):
                 "query": "*",
                 "start": start,
                 "count": count,
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -90,7 +89,9 @@ class OwnershipTypeService(BaseDataHubClient):
             data = self.safe_execute_graphql(LIST_OWNERSHIP_TYPES_SEARCH_QUERY, variables)
 
             if not data or "searchAcrossEntities" not in data:
-                self.logger.warning("No searchAcrossEntities data in response, using default ownership types")
+                self.logger.warning(
+                    "No searchAcrossEntities data in response, using default ownership types"
+                )
                 return self.get_default_ownership_types()
 
             search_results = data["searchAcrossEntities"].get("searchResults", [])
@@ -109,7 +110,9 @@ class OwnershipTypeService(BaseDataHubClient):
                 return self.get_default_ownership_types()
 
         except Exception as e:
-            self.logger.error(f"Error listing ownership types with search, using defaults: {str(e)}")
+            self.logger.error(
+                f"Error listing ownership types with search, using defaults: {str(e)}"
+            )
             return self.get_default_ownership_types()
 
     def get_ownership_type(self, ownership_type_urn: str) -> Optional[Dict[str, Any]]:
@@ -153,7 +156,7 @@ class OwnershipTypeService(BaseDataHubClient):
         variables = {
             "input": {
                 "start": 0,
-                "count": 1  # We only need the total count
+                "count": 1,  # We only need the total count
             }
         }
 
@@ -180,13 +183,7 @@ class OwnershipTypeService(BaseDataHubClient):
             Number of ownership types
         """
         variables = {
-            "input": {
-                "type": "OWNERSHIP_TYPE",
-                "query": "*",
-                "start": 0,
-                "count": 1,
-                "filters": []
-            }
+            "input": {"type": "OWNERSHIP_TYPE", "query": "*", "start": 0, "count": 1, "filters": []}
         }
 
         try:
@@ -203,7 +200,9 @@ class OwnershipTypeService(BaseDataHubClient):
             self.logger.error(f"Error counting ownership types with search: {str(e)}")
             return 0
 
-    def search_ownership_types(self, query: str, start: int = 0, count: int = 100) -> Dict[str, Any]:
+    def search_ownership_types(
+        self, query: str, start: int = 0, count: int = 100
+    ) -> Dict[str, Any]:
         """
         Search for ownership types with detailed response.
 
@@ -223,7 +222,7 @@ class OwnershipTypeService(BaseDataHubClient):
                 "query": query,
                 "start": start,
                 "count": count,
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -245,10 +244,12 @@ class OwnershipTypeService(BaseDataHubClient):
                 "ownership_types": ownership_types,
                 "total": search_data.get("total", 0),
                 "start": search_data.get("start", start),
-                "count": search_data.get("count", len(ownership_types))
+                "count": search_data.get("count", len(ownership_types)),
             }
 
-            self.logger.info(f"Search returned {len(ownership_types)} ownership types out of {response['total']} total")
+            self.logger.info(
+                f"Search returned {len(ownership_types)} ownership types out of {response['total']} total"
+            )
             return response
 
         except Exception as e:
@@ -267,27 +268,18 @@ class OwnershipTypeService(BaseDataHubClient):
             {
                 "urn": "urn:li:ownershipType:__system__business_owner",
                 "name": "__system__business_owner",
-                "info": {
-                    "name": "Business Owner",
-                    "description": "Business owner of the entity"
-                }
+                "info": {"name": "Business Owner", "description": "Business owner of the entity"},
             },
             {
                 "urn": "urn:li:ownershipType:__system__technical_owner",
                 "name": "__system__technical_owner",
-                "info": {
-                    "name": "Technical Owner",
-                    "description": "Technical owner of the entity"
-                }
+                "info": {"name": "Technical Owner", "description": "Technical owner of the entity"},
             },
             {
                 "urn": "urn:li:ownershipType:__system__data_steward",
                 "name": "__system__data_steward",
-                "info": {
-                    "name": "Data Steward",
-                    "description": "Data steward of the entity"
-                }
-            }
+                "info": {"name": "Data Steward", "description": "Data steward of the entity"},
+            },
         ]
 
         self.logger.info("Returning default ownership types")
@@ -295,7 +287,9 @@ class OwnershipTypeService(BaseDataHubClient):
 
     # Utility Methods
 
-    def format_ownership_type_for_display(self, ownership_type_data: Dict[str, Any]) -> Dict[str, Any]:
+    def format_ownership_type_for_display(
+        self, ownership_type_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Format ownership type data for display in UI.
 
@@ -314,7 +308,7 @@ class OwnershipTypeService(BaseDataHubClient):
             "urn": ownership_type_data.get("urn", ""),
             "name": ownership_type_data.get("name", ""),
             "display_name": info.get("name", ownership_type_data.get("name", "Unknown")),
-            "description": info.get("description", "")
+            "description": info.get("description", ""),
         }
 
     def get_ownership_type_by_name(self, type_name: str) -> Optional[Dict[str, Any]]:
@@ -344,8 +338,10 @@ class OwnershipTypeService(BaseDataHubClient):
         ownership_types = search_result.get("ownership_types", [])
 
         for ownership_type in ownership_types:
-            if (ownership_type.get("name") == type_name or
-                ownership_type.get("info", {}).get("name") == type_name):
+            if (
+                ownership_type.get("name") == type_name
+                or ownership_type.get("info", {}).get("name") == type_name
+            ):
                 return ownership_type
 
         return None

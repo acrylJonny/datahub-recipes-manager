@@ -71,7 +71,7 @@ class TagService(BaseDataHubClient):
                     "name": properties.get("name"),
                     "description": properties.get("description"),
                     "colorHex": properties.get("colorHex"),
-                    "properties": properties
+                    "properties": properties,
                 }
 
                 # Add ownership information
@@ -134,7 +134,9 @@ class TagService(BaseDataHubClient):
             self.logger.error(f"Error getting tag {tag_urn}: {str(e)}")
             return None
 
-    def get_remote_tags_data(self, query: str = "*", start: int = 0, count: int = 100) -> Dict[str, Any]:
+    def get_remote_tags_data(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> Dict[str, Any]:
         """
         Get remote tags data for async loading with comprehensive information.
 
@@ -169,9 +171,11 @@ class TagService(BaseDataHubClient):
                         "owned_tags": len(owned_tags),
                         "tags_with_relationships": len(tags_with_relationships),
                         "ownership_percentage": (len(owned_tags) / len(tags) * 100) if tags else 0,
-                        "relationship_percentage": (len(tags_with_relationships) / len(tags) * 100) if tags else 0,
-                    }
-                }
+                        "relationship_percentage": (len(tags_with_relationships) / len(tags) * 100)
+                        if tags
+                        else 0,
+                    },
+                },
             }
         except Exception as e:
             self.logger.error(f"Error getting remote tags data: {str(e)}")
@@ -190,13 +194,7 @@ class TagService(BaseDataHubClient):
             Created tag URN or None if failed
         """
         try:
-            variables = {
-                "input": {
-                    "id": tag_id,
-                    "name": name,
-                    "description": description
-                }
-            }
+            variables = {"input": {"id": tag_id, "name": name, "description": description}}
 
             data = self.safe_execute_graphql(CREATE_TAG_MUTATION, variables)
 
@@ -256,12 +254,7 @@ class TagService(BaseDataHubClient):
             True if successful, False otherwise
         """
         try:
-            variables = {
-                "urn": tag_urn,
-                "input": {
-                    "colorHex": color_hex
-                }
-            }
+            variables = {"urn": tag_urn, "input": {"colorHex": color_hex}}
 
             data = self.safe_execute_graphql(SET_TAG_COLOR_MUTATION, variables)
             return data is not None
@@ -282,12 +275,7 @@ class TagService(BaseDataHubClient):
             True if successful, False otherwise
         """
         try:
-            variables = {
-                "urn": tag_urn,
-                "input": {
-                    "description": description
-                }
-            }
+            variables = {"urn": tag_urn, "input": {"description": description}}
 
             data = self.safe_execute_graphql(UPDATE_TAG_DESCRIPTION_MUTATION, variables)
             return data is not None
@@ -296,8 +284,12 @@ class TagService(BaseDataHubClient):
             self.logger.error(f"Error updating tag description for {tag_urn}: {str(e)}")
             return False
 
-    def add_tag_owner(self, tag_urn: str, owner_urn: str,
-                     ownership_type: str = "urn:li:ownershipType:__system__business_owner") -> bool:
+    def add_tag_owner(
+        self,
+        tag_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
         """
         Add an owner to a tag.
 
@@ -314,7 +306,7 @@ class TagService(BaseDataHubClient):
                 "input": {
                     "ownerUrn": owner_urn,
                     "resourceUrn": tag_urn,
-                    "ownershipTypeUrn": ownership_type
+                    "ownershipTypeUrn": ownership_type,
                 }
             }
 
@@ -325,8 +317,12 @@ class TagService(BaseDataHubClient):
             self.logger.error(f"Error adding owner to tag {tag_urn}: {str(e)}")
             return False
 
-    def remove_tag_owner(self, tag_urn: str, owner_urn: str,
-                        ownership_type: str = "urn:li:ownershipType:__system__business_owner") -> bool:
+    def remove_tag_owner(
+        self,
+        tag_urn: str,
+        owner_urn: str,
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
+    ) -> bool:
         """
         Remove an owner from a tag.
 
@@ -343,7 +339,7 @@ class TagService(BaseDataHubClient):
                 "input": {
                     "ownerUrn": owner_urn,
                     "resourceUrn": tag_urn,
-                    "ownershipTypeUrn": ownership_type
+                    "ownershipTypeUrn": ownership_type,
                 }
             }
 
@@ -371,12 +367,7 @@ class TagService(BaseDataHubClient):
             if color_hex:
                 tag_input["context"] = color_hex
 
-            variables = {
-                "input": {
-                    "resourceUrn": entity_urn,
-                    "tags": [tag_input]
-                }
-            }
+            variables = {"input": {"resourceUrn": entity_urn, "tags": [tag_input]}}
 
             data = self.safe_execute_graphql(ADD_TAG_TO_ENTITY_MUTATION, variables)
             return data is not None
@@ -397,12 +388,7 @@ class TagService(BaseDataHubClient):
             True if successful, False otherwise
         """
         try:
-            variables = {
-                "input": {
-                    "resourceUrn": entity_urn,
-                    "tagUrns": [tag_urn]
-                }
-            }
+            variables = {"input": {"resourceUrn": entity_urn, "tagUrns": [tag_urn]}}
 
             data = self.safe_execute_graphql(REMOVE_TAG_FROM_ENTITY_MUTATION, variables)
             return data is not None
@@ -411,7 +397,9 @@ class TagService(BaseDataHubClient):
             self.logger.error(f"Error removing tag {tag_urn} from entity {entity_urn}: {str(e)}")
             return False
 
-    def find_entities_with_tag(self, tag_urn: str, start: int = 0, count: int = 50) -> Dict[str, Any]:
+    def find_entities_with_tag(
+        self, tag_urn: str, start: int = 0, count: int = 50
+    ) -> Dict[str, Any]:
         """
         Find entities that have a specific tag.
 
@@ -430,13 +418,7 @@ class TagService(BaseDataHubClient):
                     "query": "*",
                     "start": start,
                     "count": count,
-                    "filters": [
-                        {
-                            "field": "tags",
-                            "value": tag_urn,
-                            "condition": "EQUAL"
-                        }
-                    ]
+                    "filters": [{"field": "tags", "value": tag_urn, "condition": "EQUAL"}],
                 }
             }
 
@@ -450,7 +432,7 @@ class TagService(BaseDataHubClient):
                 "entities": search_data.get("searchResults", []),
                 "total": search_data.get("total", 0),
                 "start": search_data.get("start", 0),
-                "count": search_data.get("count", 0)
+                "count": search_data.get("count", 0),
             }
 
         except Exception as e:

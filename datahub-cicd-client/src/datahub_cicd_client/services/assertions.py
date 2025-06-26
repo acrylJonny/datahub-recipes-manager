@@ -55,7 +55,9 @@ class AssertionService(BaseInputOutputService):
     # INPUT OPERATIONS (Reading from DataHub)
     # ============================================
 
-    def list_assertions(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_assertions(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List assertions in DataHub.
 
@@ -97,7 +99,7 @@ class AssertionService(BaseInputOutputService):
                     "urn": entity.get("urn"),
                     "type": entity.get("type"),
                     "info": entity.get("info", {}),
-                    "ownership": entity.get("ownership", {})
+                    "ownership": entity.get("ownership", {}),
                 }
 
                 assertions.append(assertion)
@@ -140,7 +142,7 @@ class AssertionService(BaseInputOutputService):
         assertion_urn: str,
         assertion_type: str,
         description: str = "",
-        custom_properties: Optional[Dict[str, str]] = None
+        custom_properties: Optional[Dict[str, str]] = None,
     ) -> OperationResult:
         """
         Create a new assertion.
@@ -158,7 +160,7 @@ class AssertionService(BaseInputOutputService):
             "urn": assertion_urn,
             "type": assertion_type,
             "description": description,
-            "customProperties": custom_properties or {}
+            "customProperties": custom_properties or {},
         }
 
         operation = self.create_operation("create_assertion", entity_data)
@@ -169,7 +171,7 @@ class AssertionService(BaseInputOutputService):
                 success=True,
                 operation_type="create_assertion",
                 entity_urn=assertion_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -178,7 +180,7 @@ class AssertionService(BaseInputOutputService):
         self,
         assertion_urn: str,
         description: Optional[str] = None,
-        custom_properties: Optional[Dict[str, str]] = None
+        custom_properties: Optional[Dict[str, str]] = None,
     ) -> OperationResult:
         """Update an existing assertion."""
         entity_data = {}
@@ -195,7 +197,7 @@ class AssertionService(BaseInputOutputService):
                 success=True,
                 operation_type="update_assertion",
                 entity_urn=assertion_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -210,7 +212,7 @@ class AssertionService(BaseInputOutputService):
                 success=True,
                 operation_type="delete_assertion",
                 entity_urn=assertion_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -219,13 +221,13 @@ class AssertionService(BaseInputOutputService):
         self,
         assertion_urn: str,
         owner_urn: str,
-        ownership_type: str = "urn:li:ownershipType:__system__business_owner"
+        ownership_type: str = "urn:li:ownershipType:__system__business_owner",
     ) -> OperationResult:
         """Add owner to assertion."""
         operation = self.create_operation(
             "add_owner",
             {"owner_urn": owner_urn, "ownership_type": ownership_type},
-            entity_urn=assertion_urn
+            entity_urn=assertion_urn,
         )
 
         if self.batch_mode:
@@ -234,7 +236,7 @@ class AssertionService(BaseInputOutputService):
                 success=True,
                 operation_type="add_assertion_owner",
                 entity_urn=assertion_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -252,7 +254,7 @@ class AssertionService(BaseInputOutputService):
                 assertion_urn=assertion_data["urn"],
                 assertion_type=assertion_data["type"],
                 description=assertion_data.get("description", ""),
-                custom_properties=assertion_data.get("customProperties")
+                custom_properties=assertion_data.get("customProperties"),
             )
             results.append(result)
 
@@ -275,14 +277,12 @@ class AssertionService(BaseInputOutputService):
         elif op_type == "delete_assertion":
             return self.sync_output.delete_entity(entity_urn)
         elif op_type == "add_owner":
-            return self.sync_output.add_owner(
-                entity_urn, data["owner_urn"], data["ownership_type"]
-            )
+            return self.sync_output.add_owner(entity_urn, data["owner_urn"], data["ownership_type"])
         else:
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -305,7 +305,7 @@ class AssertionService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
@@ -316,7 +316,9 @@ class AssertionService(BaseInputOutputService):
         """Import assertions from JSON data."""
         return self.bulk_create_assertions(json_data)
 
-    def export_assertions_to_mcps(self, assertions_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_assertions_to_mcps(
+        self, assertions_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export assertions as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode

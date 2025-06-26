@@ -26,7 +26,9 @@ class UserService(BaseDataHubClient):
 
     # Input Operations (Read/Query)
 
-    def list_users(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_users(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List users from DataHub.
 
@@ -46,7 +48,7 @@ class UserService(BaseDataHubClient):
                 "query": query,
                 "start": start,
                 "count": count,
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -119,7 +121,7 @@ class UserService(BaseDataHubClient):
                 "query": query,
                 "start": 0,
                 "count": 1,  # We only need the total count
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -137,7 +139,9 @@ class UserService(BaseDataHubClient):
             self.logger.error(f"Error counting users: {str(e)}")
             return 0
 
-    def search_users(self, query: str = "*", start: int = 0, count: int = 200) -> List[Dict[str, Any]]:
+    def search_users(
+        self, query: str = "*", start: int = 0, count: int = 200
+    ) -> List[Dict[str, Any]]:
         """
         Search for users.
 
@@ -157,7 +161,7 @@ class UserService(BaseDataHubClient):
                 "query": query,
                 "start": start,
                 "count": count,
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -220,28 +224,20 @@ class UserService(BaseDataHubClient):
             "urn": user_data.get("urn", ""),
             "username": user_data.get("username", ""),
             "display_name": (
-                properties.get("displayName") or
-                info.get("displayName") or
-                editable_properties.get("displayName") or
-                user_data.get("username", "Unknown")
+                properties.get("displayName")
+                or info.get("displayName")
+                or editable_properties.get("displayName")
+                or user_data.get("username", "Unknown")
             ),
-            "full_name": (
-                properties.get("fullName") or
-                info.get("fullName") or
-                ""
-            ),
-            "email": (
-                properties.get("email") or
-                info.get("email") or
-                ""
-            ),
+            "full_name": (properties.get("fullName") or info.get("fullName") or ""),
+            "email": (properties.get("email") or info.get("email") or ""),
             "title": properties.get("title", ""),
             "department": properties.get("departmentName", ""),
             "manager_urn": properties.get("managerUrn", ""),
             "teams": editable_properties.get("teams", []),
             "skills": editable_properties.get("skills", []),
             "picture_link": editable_properties.get("pictureLink", ""),
-            "status": user_data.get("status", {})
+            "status": user_data.get("status", {}),
         }
 
     def is_user_active(self, user_data: Dict[str, Any]) -> bool:

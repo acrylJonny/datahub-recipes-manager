@@ -59,7 +59,9 @@ class GlossaryService(BaseDataHubClient):
         Raises:
             DataHubError: If the operation fails
         """
-        self.logger.info(f"Listing glossary nodes with query='{query}', start={start}, count={count}")
+        self.logger.info(
+            f"Listing glossary nodes with query='{query}', start={start}, count={count}"
+        )
 
         variables = {
             "input": {
@@ -280,7 +282,9 @@ class GlossaryService(BaseDataHubClient):
         Raises:
             DataHubError: If the operation fails
         """
-        self.logger.info(f"Listing glossary terms with query='{query}', start={start}, count={count}, node_urn={node_urn}")
+        self.logger.info(
+            f"Listing glossary terms with query='{query}', start={start}, count={count}, node_urn={node_urn}"
+        )
 
         # Build search query string
         search_string = query
@@ -494,7 +498,9 @@ class GlossaryService(BaseDataHubClient):
         Raises:
             DataHubError: If the operation fails
         """
-        self.logger.info(f"Getting comprehensive glossary data with query='{query}', start={start}, count={count}")
+        self.logger.info(
+            f"Getting comprehensive glossary data with query='{query}', start={start}, count={count}"
+        )
 
         variables = {
             "input": {
@@ -808,13 +814,17 @@ class GlossaryService(BaseDataHubClient):
             if success:
                 self.logger.info(f"Upserted structured properties for glossary node: {node_urn}")
             else:
-                self.logger.warning(f"Failed to upsert structured properties for glossary node: {node_urn}")
+                self.logger.warning(
+                    f"Failed to upsert structured properties for glossary node: {node_urn}"
+                )
 
             return success
 
         except Exception as e:
             self.logger.error(f"Error upserting structured properties for glossary node: {str(e)}")
-            raise DataHubError(f"Failed to upsert structured properties for glossary node: {str(e)}")
+            raise DataHubError(
+                f"Failed to upsert structured properties for glossary node: {str(e)}"
+            )
 
     def upsert_glossary_term_structured_properties(
         self, term_urn: str, structured_properties: List[Dict[str, Any]]
@@ -851,13 +861,17 @@ class GlossaryService(BaseDataHubClient):
             if success:
                 self.logger.info(f"Upserted structured properties for glossary term: {term_urn}")
             else:
-                self.logger.warning(f"Failed to upsert structured properties for glossary term: {term_urn}")
+                self.logger.warning(
+                    f"Failed to upsert structured properties for glossary term: {term_urn}"
+                )
 
             return success
 
         except Exception as e:
             self.logger.error(f"Error upserting structured properties for glossary term: {str(e)}")
-            raise DataHubError(f"Failed to upsert structured properties for glossary term: {str(e)}")
+            raise DataHubError(
+                f"Failed to upsert structured properties for glossary term: {str(e)}"
+            )
 
     # Utility Methods
     def count_glossary_nodes(self, query: str = "*") -> int:
@@ -977,9 +991,7 @@ class GlossaryService(BaseDataHubClient):
                     "urn": structured_property.get("urn"),
                     "displayName": prop_def.get("displayName", ""),
                     "qualifiedName": prop_def.get("qualifiedName", ""),
-                    "values": [
-                        v.get("stringValue") or v.get("numberValue") for v in values if v
-                    ],
+                    "values": [v.get("stringValue") or v.get("numberValue") for v in values if v],
                 }
                 structured_properties.append(prop_info)
 
@@ -1058,9 +1070,7 @@ class GlossaryService(BaseDataHubClient):
                     "urn": structured_property.get("urn"),
                     "displayName": prop_def.get("displayName", ""),
                     "qualifiedName": prop_def.get("qualifiedName", ""),
-                    "values": [
-                        v.get("stringValue") or v.get("numberValue") for v in values if v
-                    ],
+                    "values": [v.get("stringValue") or v.get("numberValue") for v in values if v],
                 }
                 structured_properties.append(prop_info)
 
@@ -1071,10 +1081,12 @@ class GlossaryService(BaseDataHubClient):
                 if rel and rel.get("entity"):
                     rel_entity = rel["entity"]
                     rel_props = rel_entity.get("properties", {})
-                    is_related.append({
-                        "urn": rel_entity.get("urn"),
-                        "name": rel_props.get("name", "Unknown"),
-                    })
+                    is_related.append(
+                        {
+                            "urn": rel_entity.get("urn"),
+                            "name": rel_props.get("name", "Unknown"),
+                        }
+                    )
 
         has_related = []
         if has_related_terms and has_related_terms.get("relationships"):
@@ -1082,10 +1094,12 @@ class GlossaryService(BaseDataHubClient):
                 if rel and rel.get("entity"):
                     rel_entity = rel["entity"]
                     rel_props = rel_entity.get("properties", {})
-                    has_related.append({
-                        "urn": rel_entity.get("urn"),
-                        "name": rel_props.get("name", "Unknown"),
-                    })
+                    has_related.append(
+                        {
+                            "urn": rel_entity.get("urn"),
+                            "name": rel_props.get("name", "Unknown"),
+                        }
+                    )
 
         # Process domain
         domain_info = None

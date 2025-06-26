@@ -2,7 +2,6 @@
 GraphQL queries for domain operations.
 """
 
-
 # Query to list domains with comprehensive information
 LIST_DOMAINS_QUERY = """
 query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {

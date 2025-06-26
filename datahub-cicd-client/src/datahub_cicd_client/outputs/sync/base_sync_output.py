@@ -25,7 +25,9 @@ class BaseSyncOutput(ABC):
         self.connection = connection
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def execute_graphql(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def execute_graphql(
+        self, query: str, variables: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """Execute GraphQL query/mutation."""
         return self.connection.execute_graphql(query, variables)
 
@@ -83,31 +85,28 @@ class BaseSyncOutput(ABC):
         return results
 
     def _create_success_result(
-        self,
-        operation_type: str,
-        entity_urn: str,
-        result_data: Any = None
+        self, operation_type: str, entity_urn: str, result_data: Any = None
     ) -> OperationResult:
         """Create a successful operation result."""
         return OperationResult(
             success=True,
             operation_type=operation_type,
             entity_urn=entity_urn,
-            result_data=result_data
+            result_data=result_data,
         )
 
     def _create_error_result(
         self,
         operation_type: str,
         entity_urn: Optional[str] = None,
-        error_message: str = "Unknown error"
+        error_message: str = "Unknown error",
     ) -> OperationResult:
         """Create a failed operation result."""
         return OperationResult(
             success=False,
             operation_type=operation_type,
             entity_urn=entity_urn,
-            error_message=error_message
+            error_message=error_message,
         )
 
 
@@ -131,7 +130,7 @@ class EntityRelationshipSyncOutput(BaseSyncOutput):
             result = self.add_owner(
                 data["entity_urn"],
                 data["owner_urn"],
-                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner")
+                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner"),
             )
             results.append(result)
         return results
@@ -143,7 +142,7 @@ class EntityRelationshipSyncOutput(BaseSyncOutput):
             result = self.remove_owner(
                 data["entity_urn"],
                 data["owner_urn"],
-                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner")
+                data.get("ownership_type", "urn:li:ownershipType:__system__business_owner"),
             )
             results.append(result)
         return results
@@ -167,9 +166,7 @@ class MetadataAssignmentSyncOutput(BaseSyncOutput):
         results = []
         for assignment in assignments:
             result = self.assign_to_entity(
-                assignment["entity_urn"],
-                assignment["metadata_urn"],
-                **assignment.get("kwargs", {})
+                assignment["entity_urn"], assignment["metadata_urn"], **assignment.get("kwargs", {})
             )
             results.append(result)
         return results
@@ -178,9 +175,6 @@ class MetadataAssignmentSyncOutput(BaseSyncOutput):
         """Remove metadata from multiple entities in batch."""
         results = []
         for removal in removals:
-            result = self.remove_from_entity(
-                removal["entity_urn"],
-                removal["metadata_urn"]
-            )
+            result = self.remove_from_entity(removal["entity_urn"], removal["metadata_urn"])
             results.append(result)
         return results

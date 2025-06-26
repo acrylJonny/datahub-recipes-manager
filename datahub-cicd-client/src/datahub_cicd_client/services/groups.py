@@ -26,7 +26,9 @@ class GroupService(BaseDataHubClient):
 
     # Input Operations (Read/Query)
 
-    def list_groups(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_groups(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List groups from DataHub.
 
@@ -46,7 +48,7 @@ class GroupService(BaseDataHubClient):
                 "query": query,
                 "start": start,
                 "count": count,
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -119,7 +121,7 @@ class GroupService(BaseDataHubClient):
                 "query": query,
                 "start": 0,
                 "count": 1,  # We only need the total count
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -137,7 +139,9 @@ class GroupService(BaseDataHubClient):
             self.logger.error(f"Error counting groups: {str(e)}")
             return 0
 
-    def search_groups(self, query: str = "*", start: int = 0, count: int = 200) -> List[Dict[str, Any]]:
+    def search_groups(
+        self, query: str = "*", start: int = 0, count: int = 200
+    ) -> List[Dict[str, Any]]:
         """
         Search for groups.
 
@@ -157,7 +161,7 @@ class GroupService(BaseDataHubClient):
                 "query": query,
                 "start": start,
                 "count": count,
-                "filters": []
+                "filters": [],
             }
         }
 
@@ -249,25 +253,21 @@ class GroupService(BaseDataHubClient):
             "urn": group_data.get("urn", ""),
             "name": group_data.get("name", ""),
             "display_name": (
-                properties.get("displayName") or
-                info.get("displayName") or
-                editable_properties.get("displayName") or
-                group_data.get("name", "Unknown")
+                properties.get("displayName")
+                or info.get("displayName")
+                or editable_properties.get("displayName")
+                or group_data.get("name", "Unknown")
             ),
             "description": (
-                properties.get("description") or
-                info.get("description") or
-                editable_properties.get("description") or
-                ""
+                properties.get("description")
+                or info.get("description")
+                or editable_properties.get("description")
+                or ""
             ),
-            "email": (
-                properties.get("email") or
-                info.get("email") or
-                ""
-            ),
+            "email": (properties.get("email") or info.get("email") or ""),
             "picture_link": editable_properties.get("pictureLink", ""),
             "member_count": members.get("total", 0),
-            "status": group_data.get("status", {})
+            "status": group_data.get("status", {}),
         }
 
     def is_group_active(self, group_data: Dict[str, Any]) -> bool:

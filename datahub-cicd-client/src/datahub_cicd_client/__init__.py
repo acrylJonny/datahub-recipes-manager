@@ -16,10 +16,9 @@ from .emitters import (
 )
 
 # MCP Builders
-from .mcp_builders import (
+from .mcp_builders import (  # Other builders will be added as they're implemented
     DataProductMCPBuilder,
     TagMCPBuilder,
-    # Other builders will be added as they're implemented
 )
 
 # Services
@@ -47,7 +46,6 @@ __all__ = [
     # Core
     "DataHubConnection",
     "BaseDataHubClient",
-
     # Services
     "TagService",
     "DomainService",
@@ -64,11 +62,9 @@ __all__ = [
     "DataContractService",
     "SchemaService",
     "AnalyticsService",
-
     # MCP Builders
     "DataProductMCPBuilder",
     "TagMCPBuilder",
-
     # Emitters
     "FileEmitter",
     "DataHubEmitter",

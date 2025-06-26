@@ -13,11 +13,10 @@ from .base import BaseMCPBuilder
 
 try:
     from datahub.emitter.mcp import MetadataChangeProposalWrapper
-    from datahub.metadata.schema_classes import (
+    from datahub.metadata.schema_classes import (  # Data Product specific classes; Common aspect classes
         AuditStampClass,
         BrowsePathsClass,
         ChangeTypeClass,
-        # Data Product specific classes
         DataProductPropertiesClass,
         DeprecationClass,
         DomainsClass,
@@ -27,7 +26,6 @@ try:
         InstitutionalMemoryClass,
         InstitutionalMemoryMetadataClass,
         OwnerClass,
-        # Common aspect classes
         OwnershipClass,
         OwnershipSourceClass,
         OwnershipSourceTypeClass,
@@ -38,6 +36,7 @@ try:
         SubTypesClass,
         TagAssociationClass,
     )
+
     DATAHUB_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"DataHub SDK not available: {e}")
@@ -60,7 +59,7 @@ class DataProductMCPBuilder(BaseMCPBuilder):
         description: Optional[str] = None,
         external_url: Optional[str] = None,
         custom_properties: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product properties MCP."""
         if not DATAHUB_AVAILABLE:
@@ -72,23 +71,18 @@ class DataProductMCPBuilder(BaseMCPBuilder):
                 name=name,
                 description=description,
                 externalUrl=external_url,
-                customProperties=custom_properties or {}
+                customProperties=custom_properties or {},
             )
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=properties,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=properties, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product properties MCP: {e}")
             return None
 
     def create_ownership_mcp(
-        self,
-        data_product_urn: str,
-        owners: List[str],
-        **kwargs
+        self, data_product_urn: str, owners: List[str], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product ownership MCP."""
         if not DATAHUB_AVAILABLE:
@@ -102,31 +96,21 @@ class DataProductMCPBuilder(BaseMCPBuilder):
                     OwnerClass(
                         owner=owner_urn,
                         type=OwnershipTypeClass.DATAOWNER,
-                        source=OwnershipSourceClass(
-                            type=OwnershipSourceTypeClass.MANUAL
-                        )
+                        source=OwnershipSourceClass(type=OwnershipSourceTypeClass.MANUAL),
                     )
                 )
 
-            ownership = OwnershipClass(
-                owners=owner_objects,
-                lastModified=self.create_audit_stamp()
-            )
+            ownership = OwnershipClass(owners=owner_objects, lastModified=self.create_audit_stamp())
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=ownership,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=ownership, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product ownership MCP: {e}")
             return None
 
     def create_status_mcp(
-        self,
-        data_product_urn: str,
-        removed: bool = False,
-        **kwargs
+        self, data_product_urn: str, removed: bool = False, **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product status MCP."""
         if not DATAHUB_AVAILABLE:
@@ -137,19 +121,14 @@ class DataProductMCPBuilder(BaseMCPBuilder):
             status = StatusClass(removed=removed)
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=status,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=status, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product status MCP: {e}")
             return None
 
     def create_global_tags_mcp(
-        self,
-        data_product_urn: str,
-        tags: List[str],
-        **kwargs
+        self, data_product_urn: str, tags: List[str], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product global tags MCP."""
         if not DATAHUB_AVAILABLE:
@@ -164,19 +143,14 @@ class DataProductMCPBuilder(BaseMCPBuilder):
             global_tags = GlobalTagsClass(tags=tag_associations)
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=global_tags,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=global_tags, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product global tags MCP: {e}")
             return None
 
     def create_glossary_terms_mcp(
-        self,
-        data_product_urn: str,
-        terms: List[str],
-        **kwargs
+        self, data_product_urn: str, terms: List[str], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product glossary terms MCP."""
         if not DATAHUB_AVAILABLE:
@@ -189,24 +163,18 @@ class DataProductMCPBuilder(BaseMCPBuilder):
                 term_associations.append(GlossaryTermAssociationClass(urn=term_urn))
 
             glossary_terms = GlossaryTermsClass(
-                terms=term_associations,
-                auditStamp=self.create_audit_stamp()
+                terms=term_associations, auditStamp=self.create_audit_stamp()
             )
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=glossary_terms,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=glossary_terms, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product glossary terms MCP: {e}")
             return None
 
     def create_institutional_memory_mcp(
-        self,
-        data_product_urn: str,
-        links: List[Dict[str, str]],
-        **kwargs
+        self, data_product_urn: str, links: List[Dict[str, str]], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product institutional memory MCP."""
         if not DATAHUB_AVAILABLE:
@@ -220,26 +188,21 @@ class DataProductMCPBuilder(BaseMCPBuilder):
                     InstitutionalMemoryMetadataClass(
                         url=link.get("url", ""),
                         description=link.get("description", ""),
-                        createStamp=self.create_audit_stamp()
+                        createStamp=self.create_audit_stamp(),
                     )
                 )
 
             institutional_memory = InstitutionalMemoryClass(elements=elements)
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=institutional_memory,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=institutional_memory, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product institutional memory MCP: {e}")
             return None
 
     def create_structured_properties_mcp(
-        self,
-        data_product_urn: str,
-        structured_properties: List[Dict[str, Any]],
-        **kwargs
+        self, data_product_urn: str, structured_properties: List[Dict[str, Any]], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product structured properties MCP."""
         if not DATAHUB_AVAILABLE:
@@ -257,19 +220,14 @@ class DataProductMCPBuilder(BaseMCPBuilder):
             structured_props = StructuredPropertiesClass(properties=properties)
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=structured_props,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=structured_props, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product structured properties MCP: {e}")
             return None
 
     def create_domains_mcp(
-        self,
-        data_product_urn: str,
-        domains: List[str],
-        **kwargs
+        self, data_product_urn: str, domains: List[str], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product domains MCP."""
         if not DATAHUB_AVAILABLE:
@@ -280,19 +238,14 @@ class DataProductMCPBuilder(BaseMCPBuilder):
             domains_aspect = DomainsClass(domains=domains)
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=domains_aspect,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=domains_aspect, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product domains MCP: {e}")
             return None
 
     def create_sub_types_mcp(
-        self,
-        data_product_urn: str,
-        sub_types: List[str],
-        **kwargs
+        self, data_product_urn: str, sub_types: List[str], **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product sub types MCP."""
         if not DATAHUB_AVAILABLE:
@@ -303,20 +256,14 @@ class DataProductMCPBuilder(BaseMCPBuilder):
             sub_types_aspect = SubTypesClass(typeNames=sub_types)
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=sub_types_aspect,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=sub_types_aspect, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product sub types MCP: {e}")
             return None
 
     def create_deprecation_mcp(
-        self,
-        data_product_urn: str,
-        deprecated: bool = False,
-        deprecation_note: str = "",
-        **kwargs
+        self, data_product_urn: str, deprecated: bool = False, deprecation_note: str = "", **kwargs
     ) -> Optional[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """Create data product deprecation MCP."""
         if not DATAHUB_AVAILABLE:
@@ -327,13 +274,11 @@ class DataProductMCPBuilder(BaseMCPBuilder):
             deprecation = DeprecationClass(
                 deprecated=deprecated,
                 note=deprecation_note,
-                decommissionTime=int(time.time() * 1000) if deprecated else None
+                decommissionTime=int(time.time() * 1000) if deprecated else None,
             )
 
             return self.create_mcp_wrapper(
-                entity_urn=data_product_urn,
-                aspect=deprecation,
-                change_type="UPSERT"
+                entity_urn=data_product_urn, aspect=deprecation, change_type="UPSERT"
             )
         except Exception as e:
             self.logger.error(f"Error creating data product deprecation MCP: {e}")
@@ -344,7 +289,7 @@ class DataProductMCPBuilder(BaseMCPBuilder):
         entity_data: Dict[str, Any],
         include_all_aspects: bool = True,
         custom_aspects: Optional[Dict[str, Any]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[Union[MetadataChangeProposalWrapper, Dict[str, Any]]]:
         """
         Create all MCPs for a data product entity.
@@ -376,15 +321,14 @@ class DataProductMCPBuilder(BaseMCPBuilder):
                 name=name,
                 description=entity_data.get("description"),
                 external_url=entity_data.get("external_url"),
-                custom_properties=entity_data.get("custom_properties")
+                custom_properties=entity_data.get("custom_properties"),
             )
             if properties_mcp:
                 mcps.append(properties_mcp)
 
         # Status MCP (always include)
         status_mcp = self.create_status_mcp(
-            data_product_urn=data_product_urn,
-            removed=entity_data.get("removed", False)
+            data_product_urn=data_product_urn, removed=entity_data.get("removed", False)
         )
         if status_mcp:
             mcps.append(status_mcp)
@@ -421,7 +365,9 @@ class DataProductMCPBuilder(BaseMCPBuilder):
             # Structured properties MCP
             structured_properties = entity_data.get("structured_properties")
             if structured_properties:
-                props_mcp = self.create_structured_properties_mcp(data_product_urn, structured_properties)
+                props_mcp = self.create_structured_properties_mcp(
+                    data_product_urn, structured_properties
+                )
                 if props_mcp:
                     mcps.append(props_mcp)
 
@@ -444,7 +390,7 @@ class DataProductMCPBuilder(BaseMCPBuilder):
                 deprecation_mcp = self.create_deprecation_mcp(
                     data_product_urn=data_product_urn,
                     deprecated=True,
-                    deprecation_note=entity_data.get("deprecation_note", "")
+                    deprecation_note=entity_data.get("deprecation_note", ""),
                 )
                 if deprecation_mcp:
                     mcps.append(deprecation_mcp)

@@ -55,7 +55,9 @@ class PolicyService(BaseInputOutputService):
     # INPUT OPERATIONS (Reading from DataHub)
     # ============================================
 
-    def list_policies(self, query: str = "*", start: int = 0, count: int = 100) -> List[Dict[str, Any]]:
+    def list_policies(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         List policies in DataHub.
 
@@ -116,7 +118,7 @@ class PolicyService(BaseInputOutputService):
         state: str = "ACTIVE",
         privileges: Optional[List[str]] = None,
         actors: Optional[Dict[str, Any]] = None,
-        resources: Optional[Dict[str, Any]] = None
+        resources: Optional[Dict[str, Any]] = None,
     ) -> OperationResult:
         """
         Create a new policy.
@@ -140,7 +142,7 @@ class PolicyService(BaseInputOutputService):
             "state": state,
             "privileges": privileges or [],
             "actors": actors or {},
-            "resources": resources or {}
+            "resources": resources or {},
         }
 
         operation = self.create_operation("create_policy", entity_data)
@@ -151,7 +153,7 @@ class PolicyService(BaseInputOutputService):
                 success=True,
                 operation_type="create_policy",
                 entity_urn=f"urn:li:dataHubPolicy:{name}",
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -164,7 +166,7 @@ class PolicyService(BaseInputOutputService):
         state: Optional[str] = None,
         privileges: Optional[List[str]] = None,
         actors: Optional[Dict[str, Any]] = None,
-        resources: Optional[Dict[str, Any]] = None
+        resources: Optional[Dict[str, Any]] = None,
     ) -> OperationResult:
         """Update an existing policy."""
         entity_data = {}
@@ -189,7 +191,7 @@ class PolicyService(BaseInputOutputService):
                 success=True,
                 operation_type="update_policy",
                 entity_urn=policy_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -204,7 +206,7 @@ class PolicyService(BaseInputOutputService):
                 success=True,
                 operation_type="delete_policy",
                 entity_urn=policy_urn,
-                result_data="Added to batch"
+                result_data="Added to batch",
             )
         else:
             return self._execute_operation(operation)
@@ -233,7 +235,7 @@ class PolicyService(BaseInputOutputService):
                 state=policy_data.get("state", "ACTIVE"),
                 privileges=policy_data.get("privileges"),
                 actors=policy_data.get("actors"),
-                resources=policy_data.get("resources")
+                resources=policy_data.get("resources"),
             )
             results.append(result)
 
@@ -259,7 +261,7 @@ class PolicyService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     def _execute_async_operation(self, operation: Dict[str, Any]) -> OperationResult:
@@ -278,7 +280,7 @@ class PolicyService(BaseInputOutputService):
             return OperationResult(
                 success=False,
                 operation_type=op_type,
-                error_message=f"Unknown operation type: {op_type}"
+                error_message=f"Unknown operation type: {op_type}",
             )
 
     # ============================================
@@ -289,7 +291,9 @@ class PolicyService(BaseInputOutputService):
         """Import policies from JSON data."""
         return self.bulk_create_policies(json_data)
 
-    def export_policies_to_mcps(self, policies_data: List[Dict[str, Any]], filename: Optional[str] = None) -> Optional[str]:
+    def export_policies_to_mcps(
+        self, policies_data: List[Dict[str, Any]], filename: Optional[str] = None
+    ) -> Optional[str]:
         """Export policies as MCPs to file."""
         # Switch to async mode temporarily
         original_sync_mode = self.sync_mode

@@ -1,6 +1,7 @@
 """
 Pydantic models for the DataHub CI/CD client.
 """
+
 from .base import (
     BaseDataHubEntity,
     DataHubConnection,
@@ -28,32 +29,30 @@ from .metadata import EntityMetadata, GlobalTag, Owner, Relationship, Structured
 
 __all__ = [
     # Base models
-    'BaseDataHubEntity',
-    'DataHubConnection',
-    'GraphQLResponse',
-    'EntityType',
-    'OwnerType',
-    'OperationType',
-    'ValidationResult',
-    'OperationResult',
-
+    "BaseDataHubEntity",
+    "DataHubConnection",
+    "GraphQLResponse",
+    "EntityType",
+    "OwnerType",
+    "OperationType",
+    "ValidationResult",
+    "OperationResult",
     # Entity models
-    'Tag',
-    'Domain',
-    'GlossaryNode',
-    'GlossaryTerm',
-    'DataProduct',
-    'DataContract',
-    'Assertion',
-    'Test',
-    'StructuredPropertyDefinition',
-    'IngestionSource',
-    'IngestionExecution',
-
+    "Tag",
+    "Domain",
+    "GlossaryNode",
+    "GlossaryTerm",
+    "DataProduct",
+    "DataContract",
+    "Assertion",
+    "Test",
+    "StructuredPropertyDefinition",
+    "IngestionSource",
+    "IngestionExecution",
     # Metadata models
-    'Owner',
-    'StructuredProperty',
-    'GlobalTag',
-    'EntityMetadata',
-    'Relationship'
+    "Owner",
+    "StructuredProperty",
+    "GlobalTag",
+    "EntityMetadata",
+    "Relationship",
 ]

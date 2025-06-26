@@ -29,13 +29,15 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
                         "id": entity_data["id"],
                         "name": entity_data["name"],
                         "description": entity_data.get("description", ""),
-                        "parentDomain": entity_data.get("parentDomain")
+                        "parentDomain": entity_data.get("parentDomain"),
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("create_domain", error_message="GraphQL errors occurred")
+                return self._create_error_result(
+                    "create_domain", error_message="GraphQL errors occurred"
+                )
 
             domain_urn = result["data"]["createDomain"]
             return self._create_success_result("create_domain", domain_urn, result)
@@ -51,16 +53,13 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
             if "description" in entity_data:
                 result = self.execute_graphql(
                     UPDATE_DOMAIN_DESCRIPTION_MUTATION,
-                    {
-                        "input": {
-                            "domainUrn": entity_urn,
-                            "description": entity_data["description"]
-                        }
-                    }
+                    {"input": {"domainUrn": entity_urn, "description": entity_data["description"]}},
                 )
 
                 if not self._check_graphql_errors(result):
-                    return self._create_error_result("update_domain", entity_urn, "Failed to update description")
+                    return self._create_error_result(
+                        "update_domain", entity_urn, "Failed to update description"
+                    )
 
             # Update parent domain if provided
             if "parentDomain" in entity_data:
@@ -69,13 +68,15 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
                     {
                         "input": {
                             "domainUrn": entity_urn,
-                            "parentDomainUrn": entity_data["parentDomain"]
+                            "parentDomainUrn": entity_data["parentDomain"],
                         }
-                    }
+                    },
                 )
 
                 if not self._check_graphql_errors(parent_result):
-                    return self._create_error_result("update_domain", entity_urn, "Failed to update parent domain")
+                    return self._create_error_result(
+                        "update_domain", entity_urn, "Failed to update parent domain"
+                    )
 
             return self._create_success_result("update_domain", entity_urn)
 
@@ -86,13 +87,12 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
     def delete_entity(self, entity_urn: str) -> OperationResult:
         """Delete a domain."""
         try:
-            result = self.execute_graphql(
-                DELETE_DOMAIN_MUTATION,
-                {"domainUrn": entity_urn}
-            )
+            result = self.execute_graphql(DELETE_DOMAIN_MUTATION, {"domainUrn": entity_urn})
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("delete_domain", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "delete_domain", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("delete_domain", entity_urn, result)
 
@@ -108,16 +108,15 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
                 {
                     "input": {
                         "domainUrn": entity_urn,
-                        "owners": [{
-                            "ownerUrn": owner_urn,
-                            "type": ownership_type
-                        }]
+                        "owners": [{"ownerUrn": owner_urn, "type": ownership_type}],
                     }
-                }
+                },
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("add_domain_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "add_domain_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("add_domain_owner", entity_urn, result)
 
@@ -130,16 +129,13 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
         try:
             result = self.execute_graphql(
                 REMOVE_DOMAIN_OWNER_MUTATION,
-                {
-                    "input": {
-                        "domainUrn": entity_urn,
-                        "ownerUrn": owner_urn
-                    }
-                }
+                {"input": {"domainUrn": entity_urn, "ownerUrn": owner_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("remove_domain_owner", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "remove_domain_owner", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("remove_domain_owner", entity_urn, result)
 
@@ -152,16 +148,13 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
         try:
             result = self.execute_graphql(
                 SET_ENTITY_DOMAIN_MUTATION,
-                {
-                    "input": {
-                        "entityUrn": entity_urn,
-                        "domainUrn": domain_urn
-                    }
-                }
+                {"input": {"entityUrn": entity_urn, "domainUrn": domain_urn}},
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("set_entity_domain", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "set_entity_domain", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("set_entity_domain", entity_urn, result)
 
@@ -173,16 +166,13 @@ class DomainSyncOutput(BaseSyncOutput, EntityRelationshipSyncOutput):
         """Remove domain from entity."""
         try:
             result = self.execute_graphql(
-                UNSET_ENTITY_DOMAIN_MUTATION,
-                {
-                    "input": {
-                        "entityUrn": entity_urn
-                    }
-                }
+                UNSET_ENTITY_DOMAIN_MUTATION, {"input": {"entityUrn": entity_urn}}
             )
 
             if not self._check_graphql_errors(result):
-                return self._create_error_result("unset_entity_domain", entity_urn, "GraphQL errors occurred")
+                return self._create_error_result(
+                    "unset_entity_domain", entity_urn, "GraphQL errors occurred"
+                )
 
             return self._create_success_result("unset_entity_domain", entity_urn, result)
 
