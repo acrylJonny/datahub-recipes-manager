@@ -28,7 +28,7 @@ from django.views.decorators.csrf import csrf_exempt
 import time
 from random import randint
 import uuid
-from utils.datahub_utils import get_datahub_client, get_datahub_client_from_request, test_datahub_connection
+from utils.datahub_client_adapter import get_datahub_client, get_datahub_client_from_request, test_datahub_connection
 from .datahub_utils import get_datahub_client_info, refresh_all_client_info, test_datahub_connection as test_env_connection
 from web_ui.models import AppSettings, GitSettings
 
@@ -49,7 +49,7 @@ from .forms import (
 
 # Try to import the DataHub client
 try:
-    from utils.datahub_rest_client import DataHubRestClient
+    from utils.datahub_client_adapter import DataHubRestClient
 
     DATAHUB_CLIENT_AVAILABLE = True
 except ImportError:
@@ -140,7 +140,7 @@ def dashboard_data(request):
 
                 # Get policies using cached data (only for dashboard)
                 try:
-                    from utils.datahub_utils import get_cached_policies
+                    from utils.datahub_client_adapter import get_cached_policies
                     
                     all_policies = get_cached_policies()
                     if all_policies:
@@ -365,7 +365,7 @@ def recipes_data(request):
     if client and client.test_connection():
         connected = True
         try:
-            from utils.datahub_utils import get_cached_recipes
+            from utils.datahub_client_adapter import get_cached_recipes
             
             recipes_list = get_cached_recipes(force_refresh=force_refresh)
 
@@ -458,7 +458,7 @@ def recipe_create(request):
 
                     if result:
                         # Invalidate recipes cache
-                        from utils.datahub_utils import invalidate_recipes_cache
+                        from utils.datahub_client_adapter import invalidate_recipes_cache
                         invalidate_recipes_cache()
                         
                         messages.success(request, "Recipe created successfully")
@@ -688,7 +688,7 @@ def recipe_delete(request, recipe_id):
         result = client.delete_ingestion_source(recipe_id)
         if result:
             # Invalidate recipes cache
-            from utils.datahub_utils import invalidate_recipes_cache
+            from utils.datahub_client_adapter import invalidate_recipes_cache
             invalidate_recipes_cache()
             
             if is_ajax:
@@ -946,7 +946,7 @@ def policies_data(request):
         # Get policies from cached data
         server_policies = []
         if connected:
-            from utils.datahub_utils import get_cached_policies
+            from utils.datahub_client_adapter import get_cached_policies
             
             server_policies = get_cached_policies(force_refresh=force_refresh)
 
@@ -1074,7 +1074,7 @@ def policy_create(request):
                     result = client.create_policy(policy_data)
                     if result:
                         # Invalidate policies cache
-                        from utils.datahub_utils import invalidate_policies_cache
+                        from utils.datahub_client_adapter import invalidate_policies_cache
                         invalidate_policies_cache()
                         
                         messages.success(
@@ -1341,7 +1341,7 @@ def policy_delete(request, policy_id):
         result = client.delete_policy(policy_id)
         if result:
             # Invalidate policies cache
-            from utils.datahub_utils import invalidate_policies_cache
+            from utils.datahub_client_adapter import invalidate_policies_cache
             invalidate_policies_cache()
             
             messages.success(request, f"Policy '{policy_id}' deleted successfully")

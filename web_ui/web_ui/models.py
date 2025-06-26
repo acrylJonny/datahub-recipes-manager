@@ -480,7 +480,7 @@ class Connection(models.Model):
     def test_connection(self):
         """Test the connection to DataHub."""
         try:
-            from utils.datahub_rest_client import DataHubRestClient
+            from utils.datahub_client_adapter import DataHubRestClient
             
             client = DataHubRestClient(
                 server_url=self.datahub_url,
@@ -512,7 +512,7 @@ class Connection(models.Model):
     def get_client(self):
         """Get a DataHub client for this connection."""
         try:
-            from utils.datahub_rest_client import DataHubRestClient
+            from utils.datahub_client_adapter import DataHubRestClient
             
             return DataHubRestClient(
                 server_url=self.datahub_url,

@@ -6,7 +6,7 @@ Handles environment-specific transformations for CI/CD processes.
 import logging
 from typing import Dict, Any, List, Optional
 from django.db.models import Model
-from utils.urn_utils import apply_entity_mutation
+from datahub_cicd_client.integrations.urn_utils import apply_entity_mutation
 
 logger = logging.getLogger(__name__)
 

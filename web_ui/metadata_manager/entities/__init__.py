@@ -1,0 +1,1 @@
+# Entity-specific implementations using common base classes 

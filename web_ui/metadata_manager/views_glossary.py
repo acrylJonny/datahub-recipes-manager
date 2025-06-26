@@ -19,8 +19,8 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name, get_parent_path
-from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
+from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name, get_parent_path
+from utils.datahub_client_adapter import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import Environment as DjangoEnvironment
 from web_ui.models import GitSettings, GitIntegration

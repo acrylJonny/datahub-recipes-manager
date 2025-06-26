@@ -9,7 +9,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 )
 
-from utils.datahub_utils import test_datahub_connection
+from utils.datahub_client_adapter import test_datahub_connection
 from metadata_manager.models import Test
 
 logger = logging.getLogger(__name__)

@@ -27,7 +27,7 @@ class DataHubConnectionMiddleware:
         if "datahub_connected" not in request.session:
             try:
                 # Import here to avoid issues during project setup
-                from utils.datahub_rest_client import DataHubRestClient
+                from utils.datahub_client_adapter import DataHubRestClient
 
                 # Get DataHub connection details from environment
                 datahub_url = os.environ.get("DATAHUB_GMS_URL", "")

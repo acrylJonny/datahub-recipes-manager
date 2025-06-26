@@ -12,7 +12,7 @@ import os
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from utils.datahub_utils import get_datahub_client, test_datahub_connection
+from utils.datahub_client_adapter import get_datahub_client, test_datahub_connection
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class DataContractListView(View):
 
             # Get DataHub connection info (quick test only)
             logger.debug("Testing DataHub connection from DataContractListView")
-            from utils.datahub_utils import test_datahub_connection
+            from utils.datahub_client_adapter import test_datahub_connection
             connected, client = test_datahub_connection(request)
             logger.debug(f"DataHub connection test result: {connected}")
 
@@ -56,7 +56,7 @@ def get_remote_data_contracts_data(request):
         logger.info("Loading data contracts data via AJAX")
 
         # Get DataHub connection using connection system
-        from utils.datahub_utils import test_datahub_connection
+        from utils.datahub_client_adapter import test_datahub_connection
         from web_ui.views import get_current_connection
         connected, client = test_datahub_connection(request)
         if not connected or not client:
@@ -244,7 +244,7 @@ def get_data_contracts(request):
         logger.info(f"Getting Data Contracts: query='{query}', start={start}, count={count}")
         
         # Get client using connection system
-        from utils.datahub_utils import get_datahub_client_from_request
+        from utils.datahub_client_adapter import get_datahub_client_from_request
         client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse({
@@ -298,7 +298,7 @@ def sync_data_contract_to_local(request):
     try:
         import json
         from .models import DataContract
-        from utils.datahub_utils import test_datahub_connection
+        from utils.datahub_client_adapter import test_datahub_connection
         from web_ui.views import get_current_connection
         
         logger.info(f"Sync contract to local called. Request content type: {request.content_type}")
@@ -413,7 +413,7 @@ def resync_data_contract(request, contract_id):
     """Resync a data contract from DataHub"""
     try:
         from .models import DataContract
-        from utils.datahub_utils import test_datahub_connection
+        from utils.datahub_client_adapter import test_datahub_connection
         
         # Get the contract
         try:
@@ -531,7 +531,7 @@ def add_data_contract_to_staged_changes(request):
                 }, status=404)
         
         # Get DataHub connection
-        from utils.datahub_utils import test_datahub_connection
+        from utils.datahub_client_adapter import test_datahub_connection
         connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({

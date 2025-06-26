@@ -1,0 +1,73 @@
+{
+  "domains": [
+    {
+      "id": "test-domain",
+      "name": "Test Domain",
+      "description": "A test domain for integration testing",
+      "urn": "urn:li:domain:test-domain"
+    }
+  ],
+  "tags": [
+    {
+      "id": "test-tag",
+      "name": "Test Tag",
+      "description": "A test tag for integration testing",
+      "colorHex": "#FF0000",
+      "urn": "urn:li:tag:test-tag"
+    }
+  ],
+  "glossaryTerms": [
+    {
+      "id": "test-term",
+      "name": "Test Term",
+      "description": "A test glossary term",
+      "entity_type": "term",
+      "urn": "urn:li:glossaryTerm:test-term"
+    }
+  ],
+  "glossaryNodes": [
+    {
+      "id": "test-node",
+      "name": "Test Node",
+      "description": "A test glossary node",
+      "entity_type": "node",
+      "urn": "urn:li:glossaryNode:test-node"
+    }
+  ],
+  "dataProducts": [
+    {
+      "id": "test-product",
+      "name": "Test Data Product",
+      "description": "A test data product",
+      "urn": "urn:li:dataProduct:test-product"
+    }
+  ],
+  "dataContracts": [
+    {
+      "id": "test-contract",
+      "name": "Test Data Contract",
+      "description": "A test data contract",
+      "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:postgres,test_db.public.users,PROD)",
+      "urn": "urn:li:dataContract:test-contract"
+    }
+  ],
+  "metadataTests": [
+    {
+      "id": "test-metadata-test",
+      "name": "Test Metadata Test",
+      "description": "A test metadata test",
+      "category": "DATA_QUALITY",
+      "type": "CUSTOM",
+      "urn": "urn:li:test:test-metadata-test"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "test-assertion",
+      "name": "Test Assertion",
+      "description": "A test assertion",
+      "type": "DATASET",
+      "urn": "urn:li:assertion:test-assertion"
+    }
+  ]
+} 

@@ -21,9 +21,9 @@ project_root = os.path.dirname(
 sys.path.append(project_root)
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import test_datahub_connection, get_datahub_client, get_datahub_client_from_request
-from utils.datahub_rest_client import DataHubRestClient
+from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
+from utils.datahub_client_adapter import test_datahub_connection, get_datahub_client, get_datahub_client_from_request
+from utils.datahub_client_adapter import DataHubRestClient
 from .models import Assertion, AssertionResult, Domain, Environment
 from web_ui.models import Environment as DjangoEnvironment
 
@@ -1140,17 +1140,21 @@ def run_remote_assertion(request):
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
         # Import the metadata API client for running assertions
-        from utils.datahub_metadata_api import DataHubMetadataApiClient
+        # TODO: Implement DataHubMetadataApiClient in new package
+        # from utils.datahub_metadata_api import DataHubMetadataApiClient
         
         # Create metadata API client
-        metadata_client = DataHubMetadataApiClient(
-            server_url=client.server_url,
-            token=client.token,
-            verify_ssl=client.verify_ssl
-        )
+        # TODO: Implement metadata API client
+        # metadata_client = DataHubMetadataApiClient(
+        #     server_url=client.server_url,
+        #     token=client.token,
+        #     verify_ssl=client.verify_ssl
+        # )
         
         # Run the assertion
-        result = metadata_client.run_assertion(assertion_urn, save_result=True)
+        # TODO: Implement assertion running with new client
+        # result = metadata_client.run_assertion(assertion_urn, save_result=True)
+        result = None  # Placeholder until metadata API client is implemented
         
         if result:
             logger.info(f"Successfully ran remote assertion: {assertion_urn}")
@@ -1474,14 +1478,16 @@ def push_assertion_to_datahub(request, assertion_id):
             return JsonResponse({"success": False, "error": "Not connected to DataHub"})
         
         # Import the metadata API client
-        from utils.datahub_metadata_api import DataHubMetadataApiClient
+        # TODO: Implement DataHubMetadataApiClient in new package
+        # from utils.datahub_metadata_api import DataHubMetadataApiClient
         
         # Create metadata API client
-        metadata_client = DataHubMetadataApiClient(
-            server_url=client.server_url,
-            token=client.token,
-            verify_ssl=client.verify_ssl
-        )
+        # TODO: Implement metadata API client
+        # metadata_client = DataHubMetadataApiClient(
+        #     server_url=client.server_url,
+        #     token=client.token,
+        #     verify_ssl=client.verify_ssl
+        # )
         
         # Convert local assertion to DataHub format and create
         # This is a simplified implementation - you may need to enhance based on assertion type
@@ -1490,13 +1496,15 @@ def push_assertion_to_datahub(request, assertion_id):
             dataset_urn = config.get("dataset_urn", "urn:li:dataset:(urn:li:dataPlatform:unknown,unknown,PROD)")
             sql_statement = config.get("query", "SELECT 1")
             
-            result_urn = metadata_client.create_sql_assertion(
-                dataset_urn=dataset_urn,
-                sql_statement=sql_statement,
-                operator="EQUAL_TO",
-                value="1",
-                description=assertion.description or assertion.name
-            )
+            # TODO: Implement assertion creation with new client
+            # result_urn = metadata_client.create_sql_assertion(
+            #     dataset_urn=dataset_urn,
+            #     sql_statement=sql_statement,
+            #     operator="EQUAL_TO",
+            #     value="1",
+            #     description=assertion.description or assertion.name
+            # )
+            result_urn = None  # Placeholder until metadata API client is implemented
             
             if result_urn:
                 # Update local assertion with DataHub URN
@@ -1763,14 +1771,16 @@ def create_datahub_assertion(request):
             })
         
         # Import the metadata API client
-        from utils.datahub_metadata_api import DataHubMetadataApiClient
+        # TODO: Implement DataHubMetadataApiClient in new package
+        # from utils.datahub_metadata_api import DataHubMetadataApiClient
         
         # Create metadata API client
-        metadata_client = DataHubMetadataApiClient(
-            server_url=client.server_url,
-            token=client.token,
-            verify_ssl=client.verify_ssl
-        )
+        # TODO: Implement metadata API client
+        # metadata_client = DataHubMetadataApiClient(
+        #     server_url=client.server_url,
+        #     token=client.token,
+        #     verify_ssl=client.verify_ssl
+        # )
         
         assertion_urn = None
         
@@ -1789,18 +1799,20 @@ def create_datahub_assertion(request):
                     "error": "Field path and operator are required for field assertions"
                 })
             
-            assertion_urn = metadata_client.create_field_assertion(
-                dataset_urn=dataset_urn,
-                field_path=field_path,
-                field_type=field_type,
-                native_type=native_type,
-                operator=field_operator,
-                value=field_value or "0",
-                fail_threshold=fail_threshold,
-                timezone=timezone,
-                cron=cron_expression,
-                description=description
-            )
+            # TODO: Implement field assertion creation with new client
+            # # assertion_urn = metadata_client.create_field_assertion(
+            #                 dataset_urn=dataset_urn,
+            #                 field_path=field_path,
+            #                 field_type=field_type,
+            #                 native_type=native_type,
+            #                 operator=field_operator,
+            #                 value=field_value or "0",
+            #                 fail_threshold=fail_threshold,
+            #                 timezone=timezone,
+            #                 cron=cron_expression,
+            #                 description=description
+            #             )
+            assertion_urn = None  # Placeholder until metadata API client is implemented
             
         elif assertion_type == "SQL":
             sql_statement = request.POST.get("sql_statement")
@@ -1813,15 +1825,17 @@ def create_datahub_assertion(request):
                     "error": "SQL statement is required for SQL assertions"
                 })
             
-            assertion_urn = metadata_client.create_sql_assertion(
-                dataset_urn=dataset_urn,
-                sql_statement=sql_statement,
-                operator=sql_operator,
-                value=sql_value,
-                timezone=timezone,
-                cron=cron_expression,
-                description=description
-            )
+            # TODO: Implement SQL assertion creation with new client
+            # assertion_urn = metadata_client.create_sql_assertion(
+            #     dataset_urn=dataset_urn,
+            #     sql_statement=sql_statement,
+            #     operator=sql_operator,
+            #     value=sql_value,
+            #     timezone=timezone,
+            #     cron=cron_expression,
+            #     description=description
+            # )
+            assertion_urn = None  # Placeholder until metadata API client is implemented
             
         elif assertion_type == "VOLUME":
             volume_operator = request.POST.get("volume_operator")
@@ -1848,25 +1862,28 @@ def create_datahub_assertion(request):
             else:
                 kwargs["value"] = volume_value
             
-            assertion_urn = metadata_client.create_volume_assertion(**kwargs)
+            # TODO: Implement volume assertion creation with new client
+            # assertion_urn = metadata_client.create_volume_assertion(**kwargs)
+            assertion_urn = None  # Placeholder until metadata API client is implemented
+            
             
         elif assertion_type == "FRESHNESS":
             freshness_interval = int(request.POST.get("freshness_interval", 24))
             freshness_unit = request.POST.get("freshness_unit", "HOUR")
-            
-            assertion_urn = metadata_client.create_freshness_assertion(
-                dataset_urn=dataset_urn,
-                schedule_interval=freshness_interval,
-                schedule_unit=freshness_unit,
-                timezone=timezone,
-                cron=cron_expression,
-                description=description
-            )
-            
+            #             
+            #             # assertion_urn = metadata_client.create_freshness_assertion(
+            #                 dataset_urn=dataset_urn,
+            #                 schedule_interval=freshness_interval,
+            #                 schedule_unit=freshness_unit,
+            #                 timezone=timezone,
+            #                 cron=cron_expression,
+            #                 description=description
+            assertion_urn = None  # Placeholder until metadata API client is implemented            #             )
+            assertion_urn = None  # Placeholder until metadata API client is implemented            #             
         elif assertion_type == "SCHEMA":
             schema_compatibility = request.POST.get("schema_compatibility", "EXACT_MATCH")
             expected_fields = request.POST.get("expected_fields", "")
-            
+            assertion_urn = None  # Placeholder until metadata API client is implemented            assertion_urn = None  # Placeholder until metadata API client is implemented            
             if not expected_fields:
                 return JsonResponse({
                     "success": False,
@@ -1882,16 +1899,19 @@ def create_datahub_assertion(request):
                         "path": field_name.strip(),
                         "type": field_type.strip()
                     })
-            
-            assertion_urn = metadata_client.create_schema_assertion(
-                dataset_urn=dataset_urn,
-                fields=fields,
-                compatibility=schema_compatibility,
-                description=description
-            )
+            #             
+            #             # assertion_urn = metadata_client.create_schema_assertion(
+            #                 dataset_urn=dataset_urn,
+            #                 fields=fields,
+            #                 compatibility=schema_compatibility,
+            #                 description=description
+            #             )
+            #             
             
         elif assertion_type == "CUSTOM":
             custom_logic = request.POST.get("custom_logic")
+            
+            assertion_urn = None  # Placeholder until metadata API client is implemented
             
             if not custom_logic:
                 return JsonResponse({

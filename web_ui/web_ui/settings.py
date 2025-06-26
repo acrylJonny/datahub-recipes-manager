@@ -17,7 +17,7 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Add project root to Python path so that imports like 'from utils.urn_utils import ...' 
+# Add project root to Python path so that imports like 'from datahub_cicd_client.integrations.urn_utils import ...' 
 # resolve to the root-level utils module instead of web_ui/utils
 PROJECT_ROOT = BASE_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:

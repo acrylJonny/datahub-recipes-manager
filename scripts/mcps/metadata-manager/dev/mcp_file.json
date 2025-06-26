@@ -1,0 +1,22 @@
+[
+  {
+    "entityUrn": "urn:li:dataProduct:migrated_product",
+    "entityType": "dataProduct",
+    "aspectName": "dataProductProperties",
+    "changeType": "UPSERT",
+    "aspect": {
+      "customProperties": {},
+      "name": "Migrated Data Product",
+      "description": "This was created with the new architecture"
+    }
+  },
+  {
+    "entityUrn": "urn:li:dataProduct:migrated_product",
+    "entityType": "dataProduct",
+    "aspectName": "status",
+    "changeType": "UPSERT",
+    "aspect": {
+      "removed": false
+    }
+  }
+]

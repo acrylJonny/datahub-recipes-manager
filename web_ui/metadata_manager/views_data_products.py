@@ -19,8 +19,8 @@ import sys
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from utils.datahub_utils import test_datahub_connection, get_datahub_client
-from utils.urn_utils import get_full_urn_from_name
+from utils.datahub_client_adapter import test_datahub_connection, get_datahub_client
+from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
 from .models import DataProduct, Environment
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ def get_remote_data_products_data(request):
         logger.info("Loading remote data products data via AJAX")
 
         # Get DataHub connection using connection system
-        from utils.datahub_utils import test_datahub_connection
+        from utils.datahub_client_adapter import test_datahub_connection
         connected, client = test_datahub_connection(request)
         if not connected or not client:
             return JsonResponse({"success": False, "error": "No active DataHub connection configured"})
@@ -1454,7 +1454,7 @@ def get_data_products(request):
         logger.info(f"Getting Data Products: query='{query}', start={start}, count={count}")
         
         # Get client using connection system
-        from utils.datahub_utils import get_datahub_client_from_request
+        from utils.datahub_client_adapter import get_datahub_client_from_request
         client = get_datahub_client_from_request(request)
         if not client:
             return JsonResponse({

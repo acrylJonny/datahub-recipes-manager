@@ -7,7 +7,7 @@ import os
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
 )
-from utils.datahub_utils import test_datahub_connection
+from utils.datahub_client_adapter import test_datahub_connection
 import logging
 
 # Configure logging

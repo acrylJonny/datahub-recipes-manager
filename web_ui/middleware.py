@@ -1,7 +1,7 @@
 import os
 import dotenv
 from django.conf import settings
-from utils.datahub_rest_client import DataHubRestClient
+from utils.datahub_client_adapter import DataHubRestClient
 
 
 class DataHubConnectionMiddleware:

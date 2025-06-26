@@ -1,0 +1,113 @@
+[
+  {
+    "entityUrn": "urn:li:dataProduct:customer_analytics_product",
+    "entityType": "dataProduct",
+    "aspectName": "dataProductProperties",
+    "changeType": "UPSERT",
+    "aspect": {
+      "customProperties": {
+        "team": "Data Engineering",
+        "criticality": "high"
+      },
+      "externalUrl": "https://wiki.company.com/customer-analytics",
+      "name": "Customer Analytics Data Product",
+      "description": "Comprehensive analytics for customer behavior and segmentation"
+    }
+  },
+  {
+    "entityUrn": "urn:li:dataProduct:customer_analytics_product",
+    "entityType": "dataProduct",
+    "aspectName": "status",
+    "changeType": "UPSERT",
+    "aspect": {
+      "removed": false
+    }
+  },
+  {
+    "entityUrn": "urn:li:dataProduct:customer_analytics_product",
+    "entityType": "dataProduct",
+    "aspectName": "ownership",
+    "changeType": "UPSERT",
+    "aspect": {
+      "owners": [
+        {
+          "owner": "urn:li:corpuser:data_team",
+          "type": "DATAOWNER",
+          "source": {
+            "type": "MANUAL"
+          }
+        }
+      ],
+      "ownerTypes": {},
+      "lastModified": {
+        "time": 1750949575276,
+        "actor": "urn:li:corpuser:datahub"
+      }
+    }
+  },
+  {
+    "entityUrn": "urn:li:dataProduct:customer_analytics_product",
+    "entityType": "dataProduct",
+    "aspectName": "globalTags",
+    "changeType": "UPSERT",
+    "aspect": {
+      "tags": [
+        {
+          "tag": "urn:li:tag:analytics"
+        },
+        {
+          "tag": "urn:li:tag:customer"
+        }
+      ]
+    }
+  },
+  {
+    "entityUrn": "urn:li:dataProduct:customer_analytics_product",
+    "entityType": "dataProduct",
+    "aspectName": "glossaryTerms",
+    "changeType": "UPSERT",
+    "aspect": {
+      "terms": [
+        {
+          "urn": "urn:li:glossaryTerm:customer"
+        },
+        {
+          "urn": "urn:li:glossaryTerm:analytics"
+        }
+      ],
+      "auditStamp": {
+        "time": 1750949575276,
+        "actor": "urn:li:corpuser:datahub"
+      }
+    }
+  },
+  {
+    "entityUrn": "urn:li:dataProduct:customer_analytics_product",
+    "entityType": "dataProduct",
+    "aspectName": "institutionalMemory",
+    "changeType": "UPSERT",
+    "aspect": {
+      "elements": [
+        {
+          "url": "https://docs.company.com/customer-analytics",
+          "description": "Data Product Documentation",
+          "createStamp": {
+            "time": 1750949575276,
+            "actor": "urn:li:corpuser:datahub"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "entityUrn": "urn:li:dataProduct:customer_analytics_product",
+    "entityType": "dataProduct",
+    "aspectName": "domains",
+    "changeType": "UPSERT",
+    "aspect": {
+      "domains": [
+        "urn:li:domain:marketing"
+      ]
+    }
+  }
+]

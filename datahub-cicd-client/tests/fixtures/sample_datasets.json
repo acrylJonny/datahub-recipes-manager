@@ -1,0 +1,78 @@
+[
+  {
+    "entityType": "dataset",
+    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:postgres,test_db.public.users,PROD)",
+    "aspectName": "datasetProperties",
+    "aspect": {
+      "customProperties": {
+        "test_property": "test_value"
+      },
+      "description": "User information table",
+      "name": "users",
+      "qualifiedName": "test_db.public.users",
+      "tags": []
+    }
+  },
+  {
+    "entityType": "dataset",
+    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:postgres,test_db.public.orders,PROD)",
+    "aspectName": "datasetProperties",
+    "aspect": {
+      "customProperties": {
+        "test_property": "test_value"
+      },
+      "description": "Order transaction data",
+      "name": "orders",
+      "qualifiedName": "test_db.public.orders",
+      "tags": []
+    }
+  },
+  {
+    "entityType": "dataset",
+    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.analytics_summary,PROD)",
+    "aspectName": "datasetProperties",
+    "aspect": {
+      "customProperties": {
+        "test_property": "analytics_value"
+      },
+      "description": "Analytics summary table",
+      "name": "analytics_summary",
+      "qualifiedName": "project.dataset.analytics_summary",
+      "tags": []
+    }
+  },
+  {
+    "entityType": "dataset",
+    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:postgres,test_db.public.users,PROD)",
+    "aspectName": "ownership",
+    "aspect": {
+      "owners": [
+        {
+          "owner": "urn:li:corpuser:test_user",
+          "type": "DATAOWNER"
+        }
+      ],
+      "lastModified": {
+        "time": 1640995200000,
+        "actor": "urn:li:corpuser:datahub"
+      }
+    }
+  },
+  {
+    "entityType": "dataset",
+    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:postgres,test_db.public.orders,PROD)",
+    "aspectName": "ownership",
+    "aspect": {
+      "owners": [
+        {
+          "owner": "urn:li:corpuser:test_user",
+          "type": "DATAOWNER"
+        }
+      ],
+      "lastModified": {
+        "time": 1640995200000,
+        "actor": "urn:li:corpuser:datahub"
+      }
+    }
+  }
+] 

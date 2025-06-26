@@ -17,7 +17,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from utils.datahub_utils import test_datahub_connection
+from utils.datahub_client_adapter import test_datahub_connection
 from web_ui.models import (
     GitSettings,
     Environment,
@@ -377,7 +377,7 @@ def get_remote_tests_data(request):
         logger.info("Loading comprehensive tests data via AJAX")
         
         # Get DataHub client using connection system (this handles connection switching)
-        from utils.datahub_utils import get_datahub_client_from_request
+        from utils.datahub_client_adapter import get_datahub_client_from_request
         client = get_datahub_client_from_request(request)
         
         if not client:
@@ -1167,7 +1167,7 @@ class TestPullView(View):
         """Pull tests from DataHub and sync them to local database"""
         try:
             # Get DataHub client
-            from utils.datahub_utils import get_datahub_client_from_request
+            from utils.datahub_client_adapter import get_datahub_client_from_request
             client = get_datahub_client_from_request(request)
             
             if not client:
@@ -1316,7 +1316,7 @@ class TestSyncToLocalView(View):
         """Sync a specific remote test to local database"""
         try:
             # Get DataHub client
-            from utils.datahub_utils import get_datahub_client_from_request
+            from utils.datahub_client_adapter import get_datahub_client_from_request
             client = get_datahub_client_from_request(request)
             
             if not client:

@@ -804,7 +804,7 @@ class DataProduct(BaseMetadataModel):
     def create_from_datahub(cls, product_data, connection=None):
         """Create or update a data product from DataHub data"""
         from django.utils import timezone
-        from utils.urn_utils import get_full_urn_from_name
+        from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
         
         # Extract basic properties
         properties = product_data.get('properties', {}) or {}

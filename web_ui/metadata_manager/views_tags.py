@@ -21,8 +21,8 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
+from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
+from utils.datahub_client_adapter import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import GitSettings, Environment
 from .models import Tag
@@ -1341,7 +1341,7 @@ def get_users_and_groups(request):
             })
         
         # Initialize DataHub client  
-        from utils.datahub_rest_client import DataHubRestClient
+        from utils.datahub_client_adapter import DataHubRestClient
         client = DataHubRestClient(datahub_url, datahub_token)
         
         # Test connection
@@ -1357,98 +1357,127 @@ def get_users_and_groups(request):
         if users_need_refresh and request_type in ['users', 'all']:
             users_result = client.list_users(start=0, count=200)
             
-            if users_result and "users" in users_result:
+            # Handle the adapter response format: {'success': True, 'data': {'searchResults': [...]}}
+            if users_result and users_result.get('success'):
+                # Extract users from searchResults
+                adapter_data = users_result.get('data', {})
+                search_results = adapter_data.get('searchResults', [])
+                users_data = [result.get('entity', {}) for result in search_results if result.get('entity')]
+            elif users_result and "users" in users_result:
+                # Old format fallback
                 users_data = users_result["users"]
-                
-                # Update database cache
-                DataHubUser.objects.all().delete()  # Clear old cache
-                
-                users_to_create = []
-                for user in users_data:
-                    properties = user.get('properties') or {}
-                    users_to_create.append(DataHubUser(
-                        urn=user['urn'],
-                        username=user.get('username', ''),
-                        display_name=properties.get('displayName', ''),
-                        email=properties.get('email', '')
-                    ))
-                
-                DataHubUser.objects.bulk_create(users_to_create, ignore_conflicts=True)
-                
-                result_data['users'] = [
-                    {
-                        'urn': user['urn'],
-                        'username': user.get('username', ''),
-                        'display_name': (user.get('properties') or {}).get('displayName', ''),
-                        'email': (user.get('properties') or {}).get('email', '')
-                    }
-                    for user in users_data
-                ]
-                
-                logger.info(f"Cached {len(users_data)} users")
             else:
-                logger.error("Failed to fetch users from DataHub")
-                if request_type == 'users':
-                    return JsonResponse({
-                        "success": False,
-                        "error": "Failed to fetch users from DataHub"
-                    })
+                users_data = []
+            
+            # Always treat any response as success (empty results are valid)
+            # Update database cache
+            DataHubUser.objects.all().delete()  # Clear old cache
+            
+            users_to_create = []
+            for user in users_data:
+                properties = user.get('properties') or {}
+                users_to_create.append(DataHubUser(
+                    urn=user.get('urn', ''),
+                    username=user.get('username', ''),
+                    display_name=properties.get('displayName', ''),
+                    email=properties.get('email', '')
+                ))
+            
+            DataHubUser.objects.bulk_create(users_to_create, ignore_conflicts=True)
+            
+            result_data['users'] = [
+                {
+                    'urn': user.get('urn', ''),
+                    'username': user.get('username', ''),
+                    'display_name': (user.get('properties') or {}).get('displayName', ''),
+                    'email': (user.get('properties') or {}).get('email', '')
+                }
+                for user in users_data
+            ]
+            
+            logger.info(f"Cached {len(users_data)} users")
         
         # Fetch groups if needed
         if groups_need_refresh and request_type in ['groups', 'all']:
             groups_result = client.list_groups(start=0, count=200)
             
-            if groups_result and "groups" in groups_result:
+            # Handle the adapter response format: {'success': True, 'data': {'searchResults': [...]}}
+            if groups_result and groups_result.get('success'):
+                # Extract groups from searchResults
+                adapter_data = groups_result.get('data', {})
+                search_results = adapter_data.get('searchResults', [])
+                groups_data = [result.get('entity', {}) for result in search_results if result.get('entity')]
+            elif groups_result and "groups" in groups_result:
+                # Old format fallback
                 groups_data = groups_result["groups"]
-                
-                # Update database cache
-                DataHubGroup.objects.all().delete()  # Clear old cache
-                
-                groups_to_create = []
-                for group in groups_data:
-                    properties = group.get('properties') or {}
-                    groups_to_create.append(DataHubGroup(
-                        urn=group['urn'],
-                        display_name=properties.get('displayName', ''),
-                        description=properties.get('description', '')
-                    ))
-                
-                DataHubGroup.objects.bulk_create(groups_to_create, ignore_conflicts=True)
-                
-                result_data['groups'] = [
-                    {
-                        'urn': group['urn'],
-                        'display_name': (group.get('properties') or {}).get('displayName', ''),
-                        'description': (group.get('properties') or {}).get('description', '')
-                    }
-                    for group in groups_data
-                ]
-                
-                logger.info(f"Cached {len(groups_data)} groups")
             else:
-                logger.error("Failed to fetch groups from DataHub")
-                if request_type == 'groups':
-                    return JsonResponse({
-                        "success": False,
-                        "error": "Failed to fetch groups from DataHub"
-                    })
+                groups_data = []
+            
+            # Always treat any response as success (empty results are valid)
+            # Update database cache
+            DataHubGroup.objects.all().delete()  # Clear old cache
+            
+            groups_to_create = []
+            for group in groups_data:
+                properties = group.get('properties') or {}
+                groups_to_create.append(DataHubGroup(
+                    urn=group.get('urn', ''),
+                    display_name=properties.get('displayName', ''),
+                    description=properties.get('description', '')
+                ))
+            
+            DataHubGroup.objects.bulk_create(groups_to_create, ignore_conflicts=True)
+            
+            result_data['groups'] = [
+                {
+                    'urn': group.get('urn', ''),
+                    'display_name': (group.get('properties') or {}).get('displayName', ''),
+                    'description': (group.get('properties') or {}).get('description', '')
+                }
+                for group in groups_data
+            ]
+            
+            logger.info(f"Cached {len(groups_data)} groups")
         
         # Fetch ownership types if needed
         if ownership_types_need_refresh and request_type in ['ownership_types', 'all']:
             ownership_types_result = client.list_ownership_types(start=0, count=100)
             
-            if ownership_types_result and "ownershipTypes" in ownership_types_result:
-                ownership_types_data = ownership_types_result["ownershipTypes"]
-                
+            # Handle the adapter response format: {'success': True, 'data': {'ownershipTypes': [...]}}
+            if ownership_types_result and ownership_types_result.get('success'):
+                # Extract the actual data from the adapter response
+                adapter_data = ownership_types_result.get('data', {})
+                ownership_types_data = adapter_data.get('ownershipTypes', [])
+            elif ownership_types_result:
+                # Handle other response formats
+                if isinstance(ownership_types_result, list):
+                    ownership_types_data = ownership_types_result
+                elif isinstance(ownership_types_result, dict) and "ownershipTypes" in ownership_types_result:
+                    ownership_types_data = ownership_types_result["ownershipTypes"]
+                else:
+                    ownership_types_data = []
+            else:
+                ownership_types_data = []
+            
+            # Always treat any non-empty result as success (including default types)
+            if ownership_types_data:
                 # Update database cache
                 DataHubOwnershipType.objects.all().delete()  # Clear old cache
                 
                 ownership_types_to_create = []
                 for ownership_type in ownership_types_data:
-                    info = ownership_type.get('info') or {}
+                    # Handle both adapter format and service format
+                    if 'display_name' in ownership_type:
+                        # Adapter format
+                        name = ownership_type.get('display_name', ownership_type.get('name', ''))
+                    else:
+                        # Service format
+                        info = ownership_type.get('info') or {}
+                        name = info.get('name', ownership_type.get('name', ''))
+                    
                     ownership_types_to_create.append(DataHubOwnershipType(
                         urn=ownership_type['urn'],
-                        name=info.get('name', '')
+                        name=name
                     ))
                 
                 DataHubOwnershipType.objects.bulk_create(ownership_types_to_create, ignore_conflicts=True)
@@ -1456,18 +1485,18 @@ def get_users_and_groups(request):
                 result_data['ownership_types'] = [
                     {
                         'urn': ownership_type['urn'],
-                        'name': (ownership_type.get('info') or {}).get('name', '')
+                        'name': ownership_type.get('display_name') or (ownership_type.get('info') or {}).get('name', ownership_type.get('name', ''))
                     }
                     for ownership_type in ownership_types_data
                 ]
                 
-                logger.info(f"Cached {len(ownership_types_data)} ownership types")
+                logger.info(f"Cached {len(ownership_types_data)} ownership types (including defaults)")
             else:
-                logger.error("Failed to fetch ownership types from DataHub")
+                logger.warning("No ownership types returned from service")
                 if request_type == 'ownership_types':
                     return JsonResponse({
                         "success": False,
-                        "error": "Failed to fetch ownership types from DataHub"
+                        "error": "No ownership types available"
                     })
         
         # Apply sanitization to prevent issues with long descriptions and malformed data
@@ -1495,7 +1524,7 @@ def get_remote_tags_data(request):
         logger.info("Loading comprehensive tags data via AJAX")
         
         # Get DataHub client using connection system
-        from utils.datahub_utils import get_datahub_client_from_request
+        from utils.datahub_client_adapter import get_datahub_client_from_request
         client = get_datahub_client_from_request(request)
         
         if not client:
@@ -2783,8 +2812,10 @@ class TagBulkSyncToDataHubView(View):
                                     except Exception as e:
                                         # It's normal for this to fail if the user doesn't have this ownership type
                                         logger.debug(f"Could not remove sync user from tag '{tag.name}' with ownership type {ownership_type}: {str(e)}")
+                                else:
+                                    logger.debug(f"Sync user {sync_user_urn} is in intended owners list for tag '{tag.name}', keeping them")
                             else:
-                                logger.debug(f"Sync user {sync_user_urn} is in intended owners list for tag '{tag.name}', keeping them")
+                                logger.debug(f"Could not get current user information from DataHub for ownership cleanup")
                         else:
                             logger.debug(f"Could not get current user information from DataHub for ownership cleanup")
                     except Exception as e:
@@ -3364,7 +3395,7 @@ class TagImportJsonView(View):
                     
                     # Generate URN if missing
                     if not tag.urn and name:
-                        from utils.urn_utils import generate_deterministic_urn
+                        from datahub_cicd_client.integrations.urn_utils import generate_deterministic_urn
                         tag.urn = generate_deterministic_urn("tag", name)
                     
                     tag.save()

@@ -18,8 +18,8 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
+from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
+from utils.datahub_client_adapter import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from web_ui.models import GitSettings
 from .models import StructuredProperty
 # Git integration imports - handle gracefully if not available
@@ -312,7 +312,7 @@ class PropertyListView(View):
             logger.debug(f"Filtered to {len(local_properties)} properties relevant to current connection")
             
             # Check connection to DataHub for remote properties
-            from utils.datahub_utils import test_datahub_connection
+            from utils.datahub_client_adapter import test_datahub_connection
             connected, client = test_datahub_connection(request)
             remote_properties = []
             datahub_url = None

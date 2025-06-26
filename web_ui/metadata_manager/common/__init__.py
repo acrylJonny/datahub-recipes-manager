@@ -1,0 +1,1 @@
+# Common reusable components for metadata manager views 

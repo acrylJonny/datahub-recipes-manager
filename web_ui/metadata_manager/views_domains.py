@@ -17,8 +17,8 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
-from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
+from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
+from utils.datahub_client_adapter import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.token_utils import get_token_from_env
 from .models import Domain
 from web_ui.models import GitSettings
@@ -1451,7 +1451,7 @@ def sync_domain_to_local(request, domain_id=None):
         current_connection = get_current_connection(request)
 
         # Generate deterministic URN for local storage
-        from utils.urn_utils import get_full_urn_from_name
+        from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
         deterministic_urn = get_full_urn_from_name("domain", domain_name)
 
         # Prepare ownership data
@@ -1527,7 +1527,7 @@ def sync_domain_to_local(request, domain_id=None):
                             parent_name = remote_parent.get("properties", {}).get("name")
                             if parent_name:
                                 # Generate deterministic URN for the parent
-                                from utils.urn_utils import get_full_urn_from_name
+                                from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
                                 parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
                                 
                                 # Check if a domain with this deterministic URN exists
@@ -1691,7 +1691,7 @@ def resync_domain(request, domain_id):
                             parent_name = remote_parent.get("properties", {}).get("name")
                             if parent_name:
                                 # Generate deterministic URN for the parent
-                                from utils.urn_utils import get_full_urn_from_name
+                                from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
                                 parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
                                 
                                 # Check if a domain with this deterministic URN exists
@@ -2079,7 +2079,7 @@ def bulk_sync_domains_to_local(request):
                 datahub_id = domain_urn.split(":")[-1] if domain_urn else None
                 
                 # Generate deterministic URN for local storage
-                from utils.urn_utils import get_full_urn_from_name
+                from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
                 deterministic_urn = get_full_urn_from_name("domain", domain_name)
                 
                 # Prepare ownership data
@@ -2155,7 +2155,7 @@ def bulk_sync_domains_to_local(request):
                                     parent_name = remote_parent.get("properties", {}).get("name")
                                     if parent_name:
                                         # Generate deterministic URN for the parent
-                                        from utils.urn_utils import get_full_urn_from_name
+                                        from datahub_cicd_client.integrations.urn_utils import get_full_urn_from_name
                                         parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
                                         
                                         # Check if a domain with this deterministic URN exists
