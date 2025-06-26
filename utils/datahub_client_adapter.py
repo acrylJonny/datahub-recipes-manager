@@ -408,13 +408,27 @@ class DataHubRestClient:
 
     # Tag methods
     def list_tags(self, query="*", start=0, count=100):
-        return self.tag_service.list_tags(query=query, start=start, count=count)
+        try:
+            result = self.tag_service.list_tags(query=query, start=start, count=count)
+            return result if result is not None else []
+        except Exception as e:
+            logger.error(f"Error listing tags: {str(e)}")
+            return []
 
     def get_remote_tags_data(self, query="*", start=0, count=100):
-        return self.tag_service.get_remote_tags_data(query=query, start=start, count=count)
+        try:
+            result = self.tag_service.get_remote_tags_data(query=query, start=start, count=count)
+            return result if result is not None else {"searchResults": [], "total": 0, "start": start, "count": 0}
+        except Exception as e:
+            logger.error(f"Error getting remote tags data: {str(e)}")
+            return {"searchResults": [], "total": 0, "start": start, "count": 0}
 
     def get_tag(self, tag_urn: str):
-        return self.tag_service.get_tag(tag_urn)
+        try:
+            return self.tag_service.get_tag(tag_urn)
+        except Exception as e:
+            logger.error(f"Error getting tag {tag_urn}: {str(e)}")
+            return None
 
     def create_tag(self, tag_id: str, name: str, description: str = ""):
         return self.tag_service.create_tag(tag_id, name, description)
@@ -452,10 +466,19 @@ class DataHubRestClient:
 
     # Domain methods
     def list_domains(self, query="*", start=0, count=100):
-        return self.domain_service.list_domains(query=query, start=start, count=count)
+        try:
+            result = self.domain_service.list_domains(query=query, start=start, count=count)
+            return result if result is not None else []
+        except Exception as e:
+            logger.error(f"Error listing domains: {str(e)}")
+            return []
 
     def get_domain(self, domain_urn: str):
-        return self.domain_service.get_domain(domain_urn)
+        try:
+            return self.domain_service.get_domain(domain_urn)
+        except Exception as e:
+            logger.error(f"Error getting domain {domain_urn}: {str(e)}")
+            return None
 
     def create_domain(self, domain_id: str, name: str, description: str = "", parent_domain_urn: str = None):
         return self.domain_service.create_domain(domain_id, name, description, parent_domain_urn)
@@ -480,13 +503,27 @@ class DataHubRestClient:
 
     # Structured Properties methods
     def list_structured_properties(self, query="*", start=0, count=100):
-        return self.properties_service.list_structured_properties(query=query, start=start, count=count)
+        try:
+            result = self.properties_service.list_structured_properties(query=query, start=start, count=count)
+            return result if result is not None else []
+        except Exception as e:
+            logger.error(f"Error listing structured properties: {str(e)}")
+            return []
 
     def get_structured_properties(self, start=0, count=1000):
-        return self.properties_service.list_structured_properties(start=start, count=count)
+        try:
+            result = self.properties_service.list_structured_properties(start=start, count=count)
+            return result if result is not None else []
+        except Exception as e:
+            logger.error(f"Error getting structured properties: {str(e)}")
+            return []
 
     def get_structured_property(self, property_urn: str):
-        return self.properties_service.get_structured_property(property_urn)
+        try:
+            return self.properties_service.get_structured_property(property_urn)
+        except Exception as e:
+            logger.error(f"Error getting structured property {property_urn}: {str(e)}")
+            return None
 
     def create_structured_property(self, display_name: str, description: str = "", value_type: str = "STRING", cardinality: str = "SINGLE", entity_types: list = None, allowedValues: list = None, qualified_name: str = None, **kwargs):
         return self.properties_service.create_structured_property(
@@ -506,10 +543,19 @@ class DataHubRestClient:
 
     # Glossary methods
     def list_glossary_nodes(self, query=None, count=100, start=0):
-        return self.glossary_service.list_glossary_nodes(query=query, count=count, start=start)
+        try:
+            result = self.glossary_service.list_glossary_nodes(query=query, count=count, start=start)
+            return result if result is not None else []
+        except Exception as e:
+            logger.error(f"Error listing glossary nodes: {str(e)}")
+            return []
 
     def get_glossary_node(self, node_urn):
-        return self.glossary_service.get_glossary_node(node_urn)
+        try:
+            return self.glossary_service.get_glossary_node(node_urn)
+        except Exception as e:
+            logger.error(f"Error getting glossary node {node_urn}: {str(e)}")
+            return None
 
     def create_glossary_node(self, node_id, name, description="", parent_urn=None):
         return self.glossary_service.create_glossary_node(node_id, name, description, parent_urn)
@@ -518,10 +564,19 @@ class DataHubRestClient:
         return self.glossary_service.delete_glossary_node(node_urn)
 
     def list_glossary_terms(self, node_urn=None, query=None, count=100, start=0):
-        return self.glossary_service.list_glossary_terms(node_urn=node_urn, query=query, count=count, start=start)
+        try:
+            result = self.glossary_service.list_glossary_terms(node_urn=node_urn, query=query, count=count, start=start)
+            return result if result is not None else []
+        except Exception as e:
+            logger.error(f"Error listing glossary terms: {str(e)}")
+            return []
 
     def get_glossary_term(self, term_urn):
-        return self.glossary_service.get_glossary_term(term_urn)
+        try:
+            return self.glossary_service.get_glossary_term(term_urn)
+        except Exception as e:
+            logger.error(f"Error getting glossary term {term_urn}: {str(e)}")
+            return None
 
     def create_glossary_term(self, term_id, name, description="", parent_node_urn=None, term_source="INTERNAL"):
         return self.glossary_service.create_glossary_term(term_id, name, description, parent_node_urn, term_source)
@@ -530,7 +585,43 @@ class DataHubRestClient:
         return self.glossary_service.delete_glossary_term(term_urn)
 
     def get_comprehensive_glossary_data(self, query="*", start=0, count=100):
-        return self.glossary_service.get_comprehensive_glossary_data(query=query, start=start, count=count)
+        """
+        Get comprehensive glossary data including nodes and terms with all metadata.
+        
+        Args:
+            query (str): Search query to filter results
+            start (int): Starting offset for pagination
+            count (int): Number of items to return
+            
+        Returns:
+            dict: Dictionary containing nodes and terms with comprehensive metadata
+        """
+        try:
+            result = self.glossary_service.get_comprehensive_glossary_data(query=query, start=start, count=count)
+            
+            # Ensure result is never None and has the expected structure
+            if result is None:
+                logger.warning("Glossary service returned None, returning empty structure")
+                return {"nodes": [], "terms": [], "total": 0, "start": start, "count": 0}
+            
+            # Ensure all required keys exist
+            if not isinstance(result, dict):
+                logger.warning(f"Glossary service returned unexpected type: {type(result)}")
+                return {"nodes": [], "terms": [], "total": 0, "start": start, "count": 0}
+            
+            # Ensure all required keys are present with default values
+            return {
+                "nodes": result.get("nodes", []),
+                "terms": result.get("terms", []),
+                "total": result.get("total", 0),
+                "start": result.get("start", start),
+                "count": result.get("count", 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting comprehensive glossary data: {str(e)}")
+            # Always return the expected structure, never None
+            return {"nodes": [], "terms": [], "total": 0, "start": start, "count": 0}
 
     def add_glossary_term_to_entity(self, entity_urn: str, term_urn: str):
         return self.glossary_service.add_glossary_term_to_entity(entity_urn, term_urn)
@@ -831,13 +922,34 @@ class DataHubRestClient:
             
             # Use the actual DataContractService to get data contracts with proper structure
             result = self.data_contract_service.get_data_contracts(query=query, start=start, count=count)
+            
+            # Ensure result has the expected structure
+            if result is None:
+                logger.warning("Data contract service returned None")
+                return {
+                    "success": False,
+                    "error": "No data returned from service",
+                    "data": {
+                        "start": start,
+                        "count": 0,
+                        "total": 0,
+                        "searchResults": []
+                    }
+                }
+            
             return result
             
         except Exception as e:
             logger.error(f"Error getting data contracts: {str(e)}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "data": {
+                    "start": start,
+                    "count": 0,
+                    "total": 0,
+                    "searchResults": []
+                }
             }
 
     def get_data_contract(self, contract_urn: str):
@@ -927,13 +1039,28 @@ class DataHubRestClient:
             
             # Use the data contract service to get datasets by URNs
             result = self.data_contract_service.get_datasets_by_urns(urns)
+            
+            # Ensure result has the expected structure
+            if result is None:
+                logger.warning("Data contract service returned None for datasets by URNs")
+                return {
+                    "success": False,
+                    "error": "No data returned from service",
+                    "data": {
+                        "searchResults": []
+                    }
+                }
+            
             return result
             
         except Exception as e:
             logger.error(f"Error getting datasets by URNs: {str(e)}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "data": {
+                    "searchResults": []
+                }
             }
 
 
