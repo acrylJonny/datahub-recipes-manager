@@ -1327,28 +1327,14 @@ def get_users_and_groups(request):
         # Need to refresh from DataHub
         logger.info("Refreshing users and groups from DataHub")
         
-        # Get DataHub configuration from current connection
-        from web_ui.views import get_current_connection
-        current_connection = get_current_connection(request)
+        # Get DataHub client using proper connection system
+        from utils.datahub_client_adapter import test_datahub_connection
+        connected, client = test_datahub_connection(request)
         
-        datahub_url = current_connection.datahub_url if current_connection and current_connection.datahub_url else ""
-        datahub_token = current_connection.datahub_token if current_connection and current_connection.datahub_token else ""
-        
-        if not datahub_url:
+        if not connected or not client:
             return JsonResponse({
                 "success": False,
-                "error": "DataHub URL is not configured. Please configure it in the Configuration tab."
-            })
-        
-        # Initialize DataHub client  
-        from utils.datahub_client_adapter import DataHubRestClient
-        client = DataHubRestClient(datahub_url, datahub_token)
-        
-        # Test connection
-        if not client.test_connection():
-            return JsonResponse({
-                "success": False,
-                "error": "Cannot connect to DataHub"
+                "error": "No active DataHub connection configured. Please configure a connection."
             })
         
         result_data = {}

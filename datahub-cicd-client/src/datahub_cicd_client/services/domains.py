@@ -435,8 +435,16 @@ class DomainService(BaseDataHubClient):
             self.logger.error(f"Error finding entities with domain: {str(e)}")
             return {"entities": [], "start": 0, "count": 0, "total": 0}
 
-    def _get_domains_count(self, query: str = "*") -> int:
-        """Get total count of domains matching query."""
+    def count_domains(self, query: str = "*") -> int:
+        """
+        Get the count of domains matching the query.
+        
+        Args:
+            query: Search query to filter domains
+            
+        Returns:
+            Number of domains matching the query
+        """
         variables = {
             "input": {
                 "types": ["DOMAIN"],
@@ -458,6 +466,10 @@ class DomainService(BaseDataHubClient):
         except Exception as e:
             self.logger.error(f"Error getting domains count: {str(e)}")
             return 0
+
+    def _get_domains_count(self, query: str = "*") -> int:
+        """Get total count of domains matching query."""
+        return self.count_domains(query)
 
     def _process_domain_entity(self, entity: Dict[str, Any]) -> Dict[str, Any]:
         """Process domain entity data from GraphQL response."""

@@ -439,8 +439,16 @@ class TagService(BaseDataHubClient):
             self.logger.error(f"Error finding entities with tag {tag_urn}: {str(e)}")
             return {"entities": [], "total": 0}
 
-    def _get_tags_count(self, query: str = "*") -> int:
-        """Get total count of tags."""
+    def count_tags(self, query: str = "*") -> int:
+        """
+        Get the count of tags matching the query.
+        
+        Args:
+            query: Search query to filter tags
+            
+        Returns:
+            Number of tags matching the query
+        """
         try:
             variables = {
                 "input": {
@@ -462,3 +470,7 @@ class TagService(BaseDataHubClient):
         except Exception as e:
             self.logger.error(f"Error getting tags count: {str(e)}")
             return 0
+
+    def _get_tags_count(self, query: str = "*") -> int:
+        """Get total count of tags."""
+        return self.count_tags(query)

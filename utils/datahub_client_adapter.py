@@ -457,6 +457,14 @@ class DataHubRestClient:
     def remove_tag_from_entity(self, entity_urn: str, tag_urn: str):
         return self.tag_service.remove_tag_from_entity(entity_urn, tag_urn)
 
+    def count_tags(self, query="*"):
+        """Count tags matching the query."""
+        try:
+            return self.tag_service.count_tags(query=query)
+        except Exception as e:
+            logger.error(f"Error counting tags: {str(e)}")
+            return 0
+
     def find_entities_with_metadata(self, field_type: str, metadata_urn: str, start: int = 0, count: int = 10):
         if field_type.lower() == "tag":
             return self.tag_service.find_entities_with_tag(metadata_urn, start, count)
@@ -501,6 +509,14 @@ class DataHubRestClient:
     def find_entities_with_domain(self, domain_urn: str, start: int = 0, count: int = 50):
         return self.domain_service.find_entities_with_domain(domain_urn, start, count)
 
+    def count_domains(self, query="*"):
+        """Count domains matching the query."""
+        try:
+            return self.domain_service.count_domains(query=query)
+        except Exception as e:
+            logger.error(f"Error counting domains: {str(e)}")
+            return 0
+
     # Structured Properties methods
     def list_structured_properties(self, query="*", start=0, count=100):
         try:
@@ -540,6 +556,14 @@ class DataHubRestClient:
 
     def remove_structured_properties(self, entity_urn: str, property_urns: list):
         return self.properties_service.remove_structured_properties(entity_urn, property_urns)
+
+    def count_structured_properties(self, query="*"):
+        """Count structured properties matching the query."""
+        try:
+            return self.properties_service.count_structured_properties(query=query)
+        except Exception as e:
+            logger.error(f"Error counting structured properties: {str(e)}")
+            return 0
 
     # Glossary methods
     def list_glossary_nodes(self, query=None, count=100, start=0):
@@ -584,6 +608,22 @@ class DataHubRestClient:
     def delete_glossary_term(self, term_urn: str):
         return self.glossary_service.delete_glossary_term(term_urn)
 
+    def count_glossary_nodes(self, query="*"):
+        """Count glossary nodes matching the query."""
+        try:
+            return self.glossary_service.count_glossary_nodes(query=query)
+        except Exception as e:
+            logger.error(f"Error counting glossary nodes: {str(e)}")
+            return 0
+
+    def count_glossary_terms(self, query="*"):
+        """Count glossary terms matching the query."""
+        try:
+            return self.glossary_service.count_glossary_terms(query=query)
+        except Exception as e:
+            logger.error(f"Error counting glossary terms: {str(e)}")
+            return 0
+
     def get_comprehensive_glossary_data(self, query="*", start=0, count=100):
         """
         Get comprehensive glossary data including nodes and terms with all metadata.
@@ -594,7 +634,7 @@ class DataHubRestClient:
             count (int): Number of items to return
             
         Returns:
-            dict: Dictionary containing nodes and terms with comprehensive metadata
+            dict: Dictionary containing nodes and terms with comprehensive metadata in UI-expected format
         """
         try:
             result = self.glossary_service.get_comprehensive_glossary_data(query=query, start=start, count=count)
@@ -602,26 +642,52 @@ class DataHubRestClient:
             # Ensure result is never None and has the expected structure
             if result is None:
                 logger.warning("Glossary service returned None, returning empty structure")
-                return {"nodes": [], "terms": [], "total": 0, "start": start, "count": 0}
+                return {
+                    "glossary_nodes": [], 
+                    "glossary_terms": [], 
+                    "total_nodes": 0, 
+                    "total_terms": 0,
+                    "count": 0,
+                    "start": start
+                }
             
             # Ensure all required keys exist
             if not isinstance(result, dict):
                 logger.warning(f"Glossary service returned unexpected type: {type(result)}")
-                return {"nodes": [], "terms": [], "total": 0, "start": start, "count": 0}
+                return {
+                    "glossary_nodes": [], 
+                    "glossary_terms": [], 
+                    "total_nodes": 0, 
+                    "total_terms": 0,
+                    "count": 0,
+                    "start": start
+                }
             
-            # Ensure all required keys are present with default values
+            # Transform the service result to match UI expectations
+            nodes = result.get("nodes", [])
+            terms = result.get("terms", [])
+            
+            # Ensure all required keys are present with default values in UI format
             return {
-                "nodes": result.get("nodes", []),
-                "terms": result.get("terms", []),
-                "total": result.get("total", 0),
-                "start": result.get("start", start),
-                "count": result.get("count", 0)
+                "glossary_nodes": nodes if isinstance(nodes, list) else [],
+                "glossary_terms": terms if isinstance(terms, list) else [],
+                "total_nodes": len(nodes) if isinstance(nodes, list) else 0,
+                "total_terms": len(terms) if isinstance(terms, list) else 0,
+                "count": result.get("count", 0),
+                "start": result.get("start", start)
             }
             
         except Exception as e:
             logger.error(f"Error getting comprehensive glossary data: {str(e)}")
             # Always return the expected structure, never None
-            return {"nodes": [], "terms": [], "total": 0, "start": start, "count": 0}
+            return {
+                "glossary_nodes": [], 
+                "glossary_terms": [], 
+                "total_nodes": 0, 
+                "total_terms": 0,
+                "count": 0,
+                "start": start
+            }
 
     def add_glossary_term_to_entity(self, entity_urn: str, term_urn: str):
         return self.glossary_service.add_glossary_term_to_entity(entity_urn, term_urn)
@@ -662,6 +728,14 @@ class DataHubRestClient:
 
     def remove_data_product_owner(self, product_urn: str, owner_urn: str, ownership_type: str = "urn:li:ownershipType:__system__business_owner"):
         return self.data_product_service.remove_data_product_owner(product_urn, owner_urn, ownership_type)
+
+    def count_data_products(self, query="*"):
+        """Count data products matching the query."""
+        try:
+            return self.data_product_service.count_data_products(query=query)
+        except Exception as e:
+            logger.error(f"Error counting data products: {str(e)}")
+            return 0
 
     # Assertion methods
     def get_assertions(self, start: int = 0, count: int = 100, query: str = "*", 
@@ -716,6 +790,14 @@ class DataHubRestClient:
                     "searchResults": []
                 }
             }
+
+    def count_assertions(self, query="*"):
+        """Count assertions matching the query."""
+        try:
+            return self.assertion_service.count_assertions(query=query)
+        except Exception as e:
+            logger.error(f"Error counting assertions: {str(e)}")
+            return 0
 
     # Ingestion methods
     def list_ingestion_sources(self):
@@ -962,6 +1044,14 @@ class DataHubRestClient:
             logger.error(f"Error getting data contract {contract_urn}: {str(e)}")
             return None
 
+    def count_data_contracts(self, query="*"):
+        """Count data contracts matching the query."""
+        try:
+            return self.data_contract_service.count_data_contracts(query=query)
+        except Exception as e:
+            logger.error(f"Error counting data contracts: {str(e)}")
+            return 0
+
     # Test methods
     def list_tests(self, query: str = "*", start: int = 0, count: int = 100):
         """
@@ -985,6 +1075,16 @@ class DataHubRestClient:
         except Exception as e:
             logger.error(f"Error listing tests: {str(e)}")
             return []
+
+    def count_tests(self, query="*"):
+        """Count tests matching the query."""
+        try:
+            # Since we don't have a direct count method, count the list
+            tests = self.list_tests(query=query, start=0, count=10000)
+            return len(tests) if tests else 0
+        except Exception as e:
+            logger.error(f"Error counting tests: {str(e)}")
+            return 0
 
     def get_dataset_info(self, dataset_urn: str):
         """Get dataset information."""

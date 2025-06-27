@@ -941,6 +941,12 @@ class DataProductService(BaseDataHubClient):
 
         try:
             result = self.safe_execute_graphql(COUNT_DATA_PRODUCTS_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning("GraphQL query returned None for count data products")
+                return 0
+                
             search_data = result.get("searchAcrossEntities", {})
             return search_data.get("total", 0)
 

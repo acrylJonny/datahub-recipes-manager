@@ -334,3 +334,23 @@ class AssertionService(BaseInputOutputService):
         finally:
             # Restore original mode
             self.set_sync_mode(original_sync_mode)
+
+    def count_assertions(self, query: str = "*") -> int:
+        """
+        Get the count of assertions matching the query.
+        
+        Args:
+            query: Search query to filter assertions
+            
+        Returns:
+            Number of assertions matching the query
+        """
+        try:
+            assertions = self.list_assertions(query=query, start=0, count=1)
+            # Since we don't have a direct count query, we'll need to get all and count
+            # This is not optimal but works for the UI
+            all_assertions = self.list_assertions(query=query, start=0, count=10000)
+            return len(all_assertions) if all_assertions else 0
+        except Exception as e:
+            self.logger.error(f"Error counting assertions: {str(e)}")
+            return 0

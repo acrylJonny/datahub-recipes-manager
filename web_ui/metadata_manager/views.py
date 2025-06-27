@@ -156,9 +156,15 @@ def editable_properties_view(request):
                     {"page_title": "Editable Properties"},
                 )
 
-            client = DataHubRestClient(
-                default_connection.datahub_url, default_connection.datahub_token
-            )
+            from utils.datahub_client_adapter import test_datahub_connection
+            connected, client = test_datahub_connection(request)
+            if not connected or not client:
+                logger.warning("Cannot connect to DataHub with default connection")
+                return render(
+                    request,
+                    "metadata_manager/entities/editable_properties.html",
+                    {"page_title": "Editable Properties"},
+                )
             connection_working = client.test_connection()
             logger.info(
                 f"DataHub connection test result: {'SUCCESS' if connection_working else 'FAILED'}"
@@ -1174,13 +1180,13 @@ def update_entity_properties(request):
                 {"success": False, "error": "No active environment configured"}
             )
         
-        # Initialize DataHub client
-        default_connection = Connection.get_default()
-        if not default_connection:
-            logger.warning("No default DataHub connection configured for client creation!")
-            return JsonResponse({'error': 'No DataHub connection configured'}, status=500)
+        # Get DataHub client using proper connection system
+        from utils.datahub_client_adapter import test_datahub_connection
+        connected, client = test_datahub_connection(request)
         
-        client = DataHubRestClient(default_connection.datahub_url, default_connection.datahub_token)
+        if not connected or not client:
+            logger.warning("No active DataHub connection configured!")
+            return JsonResponse({'error': 'No DataHub connection configured'}, status=500)
         
         # Get entity details from request
         entity_urn = request.POST.get("entityUrn")

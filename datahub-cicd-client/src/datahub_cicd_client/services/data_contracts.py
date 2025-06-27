@@ -481,3 +481,25 @@ class DataContractService(BaseInputOutputService):
         finally:
             # Restore original mode
             self.set_sync_mode(original_sync_mode)
+
+    def count_data_contracts(self, query: str = "*") -> int:
+        """
+        Get the count of data contracts matching the query.
+        
+        Args:
+            query: Search query to filter data contracts
+            
+        Returns:
+            Number of data contracts matching the query
+        """
+        try:
+            # Get data contracts using the existing method
+            result = self.get_data_contracts(query=query, start=0, count=1)
+            
+            if isinstance(result, dict) and "data" in result and "searchResults" in result["data"]:
+                return result["data"].get("total", 0)
+            
+            return 0
+        except Exception as e:
+            self.logger.error(f"Error counting data contracts: {str(e)}")
+            return 0

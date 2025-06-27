@@ -302,6 +302,12 @@ class GlossaryService(BaseDataHubClient):
 
         try:
             result = self.safe_execute_graphql(LIST_GLOSSARY_TERMS_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning("GraphQL query returned None for list glossary terms")
+                return []
+                
             search_data = result.get("searchAcrossEntities", {})
 
             if not search_data:
@@ -343,6 +349,12 @@ class GlossaryService(BaseDataHubClient):
 
         try:
             result = self.safe_execute_graphql(GET_GLOSSARY_TERM_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning(f"GraphQL query returned None for glossary term: {term_urn}")
+                return None
+                
             term_data = result.get("glossaryTerm")
 
             if not term_data:
@@ -513,6 +525,12 @@ class GlossaryService(BaseDataHubClient):
 
         try:
             result = self.safe_execute_graphql(GET_COMPREHENSIVE_GLOSSARY_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning("GraphQL query returned None, returning empty glossary data")
+                return {"nodes": [], "terms": [], "total": 0, "start": 0, "count": 0}
+            
             search_data = result.get("searchAcrossEntities", {})
 
             if not search_data:
@@ -523,7 +541,16 @@ class GlossaryService(BaseDataHubClient):
             terms = []
 
             for result_item in search_results:
+                # Add None check for result_item
+                if result_item is None:
+                    continue
+                    
                 entity = result_item.get("entity", {})
+                
+                # Add None check for entity
+                if entity is None:
+                    continue
+                    
                 entity_type = entity.get("type")
 
                 if entity_type == "GLOSSARY_NODE":
@@ -898,6 +925,12 @@ class GlossaryService(BaseDataHubClient):
 
         try:
             result = self.safe_execute_graphql(COUNT_GLOSSARY_NODES_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning("GraphQL query returned None for count glossary nodes")
+                return 0
+                
             search_data = result.get("searchAcrossEntities", {})
             return search_data.get("total", 0)
 
@@ -929,6 +962,12 @@ class GlossaryService(BaseDataHubClient):
 
         try:
             result = self.safe_execute_graphql(COUNT_GLOSSARY_TERMS_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning("GraphQL query returned None for count glossary terms")
+                return 0
+                
             search_data = result.get("searchAcrossEntities", {})
             return search_data.get("total", 0)
 

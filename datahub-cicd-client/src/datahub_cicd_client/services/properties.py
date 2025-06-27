@@ -374,8 +374,16 @@ class StructuredPropertiesService(BaseDataHubClient):
         except Exception:
             return False
 
-    def _get_structured_properties_count(self, query: str = "*") -> int:
-        """Get total count of structured properties matching query."""
+    def count_structured_properties(self, query: str = "*") -> int:
+        """
+        Get the count of structured properties matching the query.
+        
+        Args:
+            query: Search query to filter structured properties
+            
+        Returns:
+            Number of structured properties matching the query
+        """
         if not self._test_structured_property_support():
             return 0
 
@@ -394,3 +402,7 @@ class StructuredPropertiesService(BaseDataHubClient):
         except Exception as e:
             self.logger.error(f"Error getting structured properties count: {str(e)}")
             return 0
+
+    def _get_structured_properties_count(self, query: str = "*") -> int:
+        """Get total count of structured properties matching query."""
+        return self.count_structured_properties(query)
