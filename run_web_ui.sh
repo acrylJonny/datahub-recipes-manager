@@ -102,6 +102,11 @@ install_dependencies() {
     
     print_info "Installing/upgrading dependencies..."
     pip install -r requirements-web.txt
+    
+    # Install local datahub-cicd-client package in editable mode
+    print_info "Installing local datahub-cicd-client package..."
+    pip install -e ./datahub-cicd-client
+    
     print_status "Dependencies installed"
 }
 
