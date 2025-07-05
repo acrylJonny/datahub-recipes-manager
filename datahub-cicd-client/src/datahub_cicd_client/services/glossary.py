@@ -1144,7 +1144,7 @@ class GlossaryService(BaseDataHubClient):
         domain_info = None
         if domain and domain.get("domain"):
             domain_entity = domain["domain"]
-            domain_props = domain_entity.get("properties", {})
+            domain_props = domain_entity.get("properties", {}) or {}
             domain_info = {
                 "urn": domain_entity.get("urn"),
                 "name": domain_props.get("name", "Unknown"),
@@ -1173,7 +1173,7 @@ class GlossaryService(BaseDataHubClient):
             "domain": domain_info,
             "isRelatedTerms": is_related,
             "hasRelatedTerms": has_related,
-            "deprecated": entity.get("deprecation", {}).get("deprecated", False),
+            "deprecated": entity.get("deprecation", {}).get("deprecated", False) if entity.get("deprecation") else False,
             "properties": properties,
         }
 

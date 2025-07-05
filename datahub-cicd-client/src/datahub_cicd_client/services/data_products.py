@@ -919,166 +919,174 @@ class DataProductService(BaseDataHubClient):
     # Utility Methods
     def count_data_products(self, query: str = "*") -> int:
         """
-        Count the total number of data products matching a query.
+        Count data products matching the query.
 
         Args:
             query: Search query to filter data products
 
         Returns:
-            Total count of matching data products
+            Number of data products matching the query
 
         Raises:
             DataHubError: If the operation fails
         """
+        self.logger.info(f"Counting data products with query: {query}")
+
         variables = {
             "input": {
                 "query": query,
                 "types": ["DATA_PRODUCT"],
                 "start": 0,
                 "count": 1,
+                "filters": [],
             }
         }
 
         try:
             result = self.safe_execute_graphql(COUNT_DATA_PRODUCTS_QUERY, variables)
-            
-            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
-            if result is None:
-                self.logger.warning("GraphQL query returned None for count data products")
+
+            if not result:
                 return 0
-                
+
             search_data = result.get("searchAcrossEntities", {})
             return search_data.get("total", 0)
 
         except Exception as e:
             self.logger.error(f"Error counting data products: {str(e)}")
-            raise DataHubError(f"Failed to count data products: {str(e)}")
+            return 0
+
+    def get_comprehensive_data_products_data(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive data product data with all metadata.
+
+        Args:
+            query: Search query to filter data products
+            start: Starting offset for pagination
+            count: Number of data products to return
+
+        Returns:
+            Dictionary containing data products with comprehensive metadata
+        """
+        self.logger.info(
+            f"Getting comprehensive data product data with query='{query}', start={start}, count={count}"
+        )
+
+        variables = {
+            "input": {
+                "query": query,
+                "types": ["DATA_PRODUCT"],
+                "start": start,
+                "count": count,
+            }
+        }
+
+        try:
+            result = self.safe_execute_graphql(LIST_DATA_PRODUCTS_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning("GraphQL query returned None, returning empty data product data")
+                return {"data_products": [], "total": 0, "start": 0, "count": 0}
+            
+            search_data = result.get("searchAcrossEntities", {})
+
+            if not search_data:
+                return {"data_products": [], "total": 0, "start": 0, "count": 0}
+
+            search_results = search_data.get("searchResults", [])
+            data_products = []
+
+            for result_item in search_results:
+                # Add None check for result_item
+                if result_item is None:
+                    continue
+                    
+                entity = result_item.get("entity", {})
+                
+                # Add None check for entity
+                if entity is None:
+                    continue
+                    
+                entity_type = entity.get("type")
+
+                if entity_type == "DATA_PRODUCT":
+                    processed_product = self._process_data_product(entity)
+                    if processed_product:
+                        data_products.append(processed_product)
+
+            result_data = {
+                "data_products": data_products,
+                "total": search_data.get("total", 0),
+                "start": search_data.get("start", 0),
+                "count": search_data.get("count", 0),
+            }
+
+            self.logger.info(f"Retrieved {len(data_products)} data products")
+            return result_data
+
+        except Exception as e:
+            self.logger.error(f"Error getting comprehensive data product data: {str(e)}")
+            raise DataHubError(f"Failed to get comprehensive data product data: {str(e)}")
 
     # Private helper methods
     def _process_data_product(self, entity: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Process a data product entity into standardized format."""
-        if not entity or not entity.get("urn"):
+        """Process data product entity data from GraphQL response."""
+        if not entity:
             return None
 
-        properties = entity.get("properties", {}) or {}
-        ownership = entity.get("ownership", {}) or {}
-        structured_props = entity.get("structuredProperties", {}) or {}
-        domain = entity.get("domain", {})
-        tags = entity.get("tags", {})
-        glossary_terms = entity.get("glossaryTerms", {})
-
-        # Process ownership
-        owners = []
-        owner_names = []
-        ownership_owners = ownership.get("owners", []) if ownership else []
-        for owner_data in ownership_owners:
-            if owner_data:
-                owner = owner_data.get("owner", {}) or {}
-                ownership_type = owner_data.get("ownershipType", {}) or {}
-                owner_properties = owner.get("properties", {}) or {}
-                ownership_info = ownership_type.get("info", {}) or {}
-
-                # Extract name from URN if not available in properties
-                owner_name = owner.get("username") or owner.get("name")
-                if not owner_name and owner.get("urn"):
-                    urn_parts = owner.get("urn").split(":")
-                    if len(urn_parts) >= 4:
-                        owner_name = urn_parts[-1]
-
-                display_name = owner_properties.get("displayName") or owner_name or "Unknown"
-                owner_names.append(display_name)
-
-                owner_info = {
-                    "urn": owner.get("urn"),
-                    "type": owner.get("type"),
-                    "name": owner_name or "Unknown",
-                    "displayName": display_name,
-                    "email": owner_properties.get("email", ""),
-                    "ownershipType": {
-                        "urn": ownership_type.get("urn"),
-                        "name": ownership_info.get("name", "Unknown"),
-                    },
-                }
-                owners.append(owner_info)
-
-        # Process structured properties
-        structured_properties = []
-        structured_props_list = structured_props.get("properties", []) if structured_props else []
-        for prop_data in structured_props_list:
-            if prop_data:
-                structured_property = prop_data.get("structuredProperty", {}) or {}
-                prop_def = structured_property.get("definition", {}) or {}
-                values = prop_data.get("values", []) or []
-
-                prop_info = {
-                    "urn": structured_property.get("urn"),
-                    "displayName": prop_def.get("displayName", ""),
-                    "qualifiedName": prop_def.get("qualifiedName", ""),
-                    "values": [v.get("stringValue") or v.get("numberValue") for v in values if v],
-                }
-                structured_properties.append(prop_info)
-
-        # Process domain
-        domain_info = None
-        if domain and domain.get("domain"):
-            domain_entity = domain["domain"]
-            domain_props = domain_entity.get("properties", {})
-            domain_info = {
-                "urn": domain_entity.get("urn"),
-                "name": domain_props.get("name", "Unknown"),
-                "description": domain_props.get("description", ""),
-            }
-
-        # Process tags
-        tag_list = []
-        if tags and tags.get("tags"):
-            for tag_data in tags["tags"]:
-                if tag_data and tag_data.get("tag"):
-                    tag_entity = tag_data["tag"]
-                    tag_props = tag_entity.get("properties", {})
-                    tag_list.append(
-                        {
-                            "urn": tag_entity.get("urn"),
-                            "name": tag_props.get("name", "Unknown"),
-                            "description": tag_props.get("description", ""),
-                        }
-                    )
-
-        # Process glossary terms
-        term_list = []
-        if glossary_terms and glossary_terms.get("terms"):
-            for term_data in glossary_terms["terms"]:
-                if term_data and term_data.get("term"):
-                    term_entity = term_data["term"]
-                    term_props = term_entity.get("properties", {})
-                    term_list.append(
-                        {
-                            "urn": term_entity.get("urn"),
-                            "name": term_props.get("name", "Unknown"),
-                        }
-                    )
-
-        return {
-            "urn": entity.get("urn"),
+        properties = entity.get("properties", {})
+        urn = entity.get("urn")
+        data_product = {
+            "urn": urn,
             "type": entity.get("type"),
-            "name": properties.get("name", "Unknown"),
-            "description": properties.get("description", ""),
-            "externalUrl": properties.get("externalUrl", ""),
-            "numAssets": properties.get("numAssets", 0),
+            "name": properties.get("name"),
+            "description": properties.get("description"),
+            "external_url": properties.get("externalUrl"),
+            "numAssets": properties.get("numAssets"),
             "customProperties": properties.get("customProperties", []),
-            "owners": owners,
-            "owners_count": len(owners),
-            "owner_names": owner_names,
-            "structuredProperties": structured_properties,
-            "structured_properties_count": len(structured_properties),
-            "domain": domain_info,
-            "tags": tag_list,
-            "tags_count": len(tag_list),
-            "glossaryTerms": term_list,
-            "glossary_terms_count": len(term_list),
-            "deprecated": entity.get("deprecation", {}).get("deprecated", False),
-            "properties": properties,
-            "ownership": ownership,
-            "institutionalMemory": entity.get("institutionalMemory"),
+            "ownership": entity.get("ownership"),
+            "glossaryTerms": entity.get("glossaryTerms"),
+            "tags": entity.get("tags"),
+            "structuredProperties": entity.get("structuredProperties"),
             "application": entity.get("application"),
         }
+
+        # Extract domain info
+        domain_info = entity.get("domain", {}).get("domain")
+        if domain_info:
+            data_product["domain_urn"] = domain_info.get("urn")
+            props = domain_info.get("properties", {})
+            data_product["domain_name"] = props.get("name")
+            data_product["domain_description"] = props.get("description")
+        else:
+            data_product["domain_urn"] = None
+            data_product["domain_name"] = None
+            data_product["domain_description"] = None
+
+        # Fetch assets/entities for this data product
+        try:
+            variables = {
+                "urn": urn,
+                "input": {
+                    "query": "*",
+                    "types": ["DATASET", "DASHBOARD", "CHART", "DATA_JOB", "DATA_FLOW"],
+                    "start": 0,
+                    "count": 100,
+                    "filters": [],
+                },
+            }
+            assets_result = self.safe_execute_graphql(GET_DATA_PRODUCT_ASSETS_QUERY, variables)
+            assets = []
+            if assets_result and "searchAcrossEntities" in assets_result:
+                for item in assets_result["searchAcrossEntities"].get("searchResults", []):
+                    asset_entity = item.get("entity")
+                    if asset_entity:
+                        assets.append(asset_entity)
+            data_product["assets"] = assets
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch assets for data product {urn}: {e}")
+            data_product["assets"] = []
+
+        return data_product

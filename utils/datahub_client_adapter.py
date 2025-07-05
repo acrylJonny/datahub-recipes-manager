@@ -33,19 +33,21 @@ class DataHubRestClient:
     This delegates to the new modular service architecture while maintaining the same API.
     """
 
-    def __init__(self, server_url: str, token: str, verify_ssl: bool = True):
+    def __init__(self, server_url: str, token: str, verify_ssl: bool = True, timeout: int = 1):
         if not server_url:
             raise ValueError("server_url cannot be None or empty")
         
         self.server_url = server_url
         self.token = token
         self.verify_ssl = verify_ssl
+        self.timeout = timeout
         
         # Initialize connection
         self.connection = DataHubConnection(
             server_url=server_url,
             token=token,
-            verify_ssl=verify_ssl
+            verify_ssl=verify_ssl,
+            timeout=timeout
         )
         
         # Initialize services (lazy-loaded)
@@ -158,7 +160,9 @@ class DataHubRestClient:
     def test_connection(self) -> bool:
         return self.connection.test_connection()
 
-    def execute_graphql(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def execute_graphql(self, query: str, variables: Optional[dict] = None):
+        logger = logging.getLogger("DataHubRestClient")
+        logger.info(f"Executing GraphQL query from UI:\nQuery: {query[:200]}...\nVariables: {variables}")
         return self.connection.execute_graphql(query, variables)
     
     def safe_execute_graphql(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -673,18 +677,127 @@ class DataHubRestClient:
                 "glossary_terms": terms if isinstance(terms, list) else [],
                 "total_nodes": len(nodes) if isinstance(nodes, list) else 0,
                 "total_terms": len(terms) if isinstance(terms, list) else 0,
-                "count": result.get("count", 0),
-                "start": result.get("start", start)
+                "count": len(nodes) + len(terms) if isinstance(nodes, list) and isinstance(terms, list) else 0,
+                "start": start
             }
             
         except Exception as e:
             logger.error(f"Error getting comprehensive glossary data: {str(e)}")
-            # Always return the expected structure, never None
             return {
                 "glossary_nodes": [], 
                 "glossary_terms": [], 
                 "total_nodes": 0, 
                 "total_terms": 0,
+                "count": 0,
+                "start": start
+            }
+
+    def get_comprehensive_domains_data(self, query="*", start=0, count=100):
+        """
+        Get comprehensive domain data with all metadata.
+        
+        Args:
+            query (str): Search query to filter results
+            start (int): Starting offset for pagination
+            count (int): Number of items to return
+            
+        Returns:
+            dict: Dictionary containing domains with comprehensive metadata in UI-expected format
+        """
+        try:
+            result = self.domain_service.get_comprehensive_domains_data(query=query, start=start, count=count)
+            
+            # Ensure result is never None and has the expected structure
+            if result is None:
+                logger.warning("Domain service returned None, returning empty structure")
+                return {
+                    "domains": [], 
+                    "total": 0,
+                    "count": 0,
+                    "start": start
+                }
+            
+            # Ensure all required keys exist
+            if not isinstance(result, dict):
+                logger.warning(f"Domain service returned unexpected type: {type(result)}")
+                return {
+                    "domains": [], 
+                    "total": 0,
+                    "count": 0,
+                    "start": start
+                }
+            
+            # Transform the service result to match UI expectations
+            domains = result.get("domains", [])
+            
+            # Ensure all required keys are present with default values in UI format
+            return {
+                "domains": domains if isinstance(domains, list) else [],
+                "total": len(domains) if isinstance(domains, list) else 0,
+                "count": len(domains) if isinstance(domains, list) else 0,
+                "start": start
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting comprehensive domain data: {str(e)}")
+            return {
+                "domains": [], 
+                "total": 0,
+                "count": 0,
+                "start": start
+            }
+
+    def get_comprehensive_data_products_data(self, query="*", start=0, count=100):
+        """
+        Get comprehensive data product data with all metadata.
+        
+        Args:
+            query (str): Search query to filter results
+            start (int): Starting offset for pagination
+            count (int): Number of items to return
+            
+        Returns:
+            dict: Dictionary containing data products with comprehensive metadata in UI-expected format
+        """
+        try:
+            result = self.data_product_service.get_comprehensive_data_products_data(query=query, start=start, count=count)
+            
+            # Ensure result is never None and has the expected structure
+            if result is None:
+                logger.warning("Data product service returned None, returning empty structure")
+                return {
+                    "data_products": [], 
+                    "total": 0,
+                    "count": 0,
+                    "start": start
+                }
+            
+            # Ensure all required keys exist
+            if not isinstance(result, dict):
+                logger.warning(f"Data product service returned unexpected type: {type(result)}")
+                return {
+                    "data_products": [], 
+                    "total": 0,
+                    "count": 0,
+                    "start": start
+                }
+            
+            # Transform the service result to match UI expectations
+            data_products = result.get("data_products", [])
+            
+            # Ensure all required keys are present with default values in UI format
+            return {
+                "data_products": data_products if isinstance(data_products, list) else [],
+                "total": len(data_products) if isinstance(data_products, list) else 0,
+                "count": len(data_products) if isinstance(data_products, list) else 0,
+                "start": start
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting comprehensive data product data: {str(e)}")
+            return {
+                "data_products": [], 
+                "total": 0,
                 "count": 0,
                 "start": start
             }

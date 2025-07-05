@@ -100,15 +100,7 @@ query GetTag($urn: String!) {
           actor
         }
       }
-      institutionalMemory {
-        elements {
-          url
-          description
-          createStamp {
-            time
-            actor
-          }
-        }
+    }
       }
     }
   }

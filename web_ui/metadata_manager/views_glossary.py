@@ -1766,8 +1766,10 @@ def get_remote_glossary_data(request):
         # Get comprehensive remote data with all metadata including structured properties and ownership
         try:
             comprehensive_data = client.get_comprehensive_glossary_data(query="*", count=10000)
-            remote_nodes = comprehensive_data.get("nodes", [])
-            remote_terms = comprehensive_data.get("terms", [])
+            logger.debug(f"comprehensive_data keys: {list(comprehensive_data.keys()) if comprehensive_data else 'None'}")
+            logger.debug(f"comprehensive_data structure: {comprehensive_data}")
+            remote_nodes = comprehensive_data.get("glossary_nodes", [])
+            remote_terms = comprehensive_data.get("glossary_terms", [])
             
             if remote_nodes is None:
                 remote_nodes = []
@@ -1780,9 +1782,31 @@ def get_remote_glossary_data(request):
             
         logger.debug(f"Found {len(remote_nodes)} remote nodes and {len(remote_terms)} remote terms")
         
+        # Debug: Print first node and term structure
+        if remote_nodes:
+            logger.debug(f"First remote node structure: {remote_nodes[0]}")
+        if remote_terms:
+            logger.debug(f"First remote term structure: {remote_terms[0]}")
+        
         # Create URN mappings for quick lookup
-        remote_nodes_dict = {node.get("urn"): node for node in remote_nodes if node and node.get("urn")}
-        remote_terms_dict = {term.get("urn"): term for term in remote_terms if term and term.get("urn")}
+        remote_nodes_dict = {}
+        for node in remote_nodes:
+            urn = node.get("urn")
+            if not urn:
+                # Assign a synthetic URN if missing
+                urn = f"urn:li:glossaryNode:{node.get('properties', {}).get('name', 'unknown').replace(' ', '_')}"
+                node["urn"] = urn
+            remote_nodes_dict[urn] = node
+        logger.debug(f"remote_nodes_dict keys: {list(remote_nodes_dict.keys())}")
+
+        remote_terms_dict = {}
+        for term in remote_terms:
+            urn = term.get("urn")
+            if not urn:
+                urn = f"urn:li:glossaryTerm:{term.get('properties', {}).get('name', 'unknown').replace(' ', '_')}"
+                term["urn"] = urn
+            remote_terms_dict[urn] = term
+        logger.debug(f"remote_terms_dict keys: {list(remote_terms_dict.keys())}")
         
         # Categorize items
         synced_items = []
@@ -2207,6 +2231,12 @@ def search_domains(request):
         start = input_data.get('start', 0)
         count = input_data.get('count', 100)
         types = input_data.get('types', ['DOMAIN'])
+        
+        # Convert string types to proper enum format for GraphQL
+        # GraphQL expects enum values without quotes, but we receive them as strings
+        if isinstance(types, list):
+            # Remove quotes from enum values if they exist
+            types = [t.strip('"\'') if isinstance(t, str) else t for t in types]
         
         # Get DataHub client
         client = get_datahub_client_from_request(request)

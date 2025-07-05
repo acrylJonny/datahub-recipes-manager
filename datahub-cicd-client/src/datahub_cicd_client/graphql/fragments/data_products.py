@@ -50,26 +50,6 @@ fragment DataProductFragment on DataProduct {
       time
     }
   }
-  institutionalMemory {
-    elements {
-      url
-      label
-      actor {
-        ... on CorpUser {
-          urn
-          username
-        }
-        ... on CorpGroup {
-          urn
-          name
-        }
-      }
-      created {
-        actor
-        time
-      }
-    }
-  }
   glossaryTerms {
     terms {
       term {

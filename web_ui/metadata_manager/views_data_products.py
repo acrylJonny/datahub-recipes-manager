@@ -131,39 +131,88 @@ def get_remote_data_products_data(request):
             if datahub_url.endswith("/api/gms"):
                 datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
 
-            # Get data products from DataHub using the new method
-            result = client.list_data_products(start=0, count=1000, query="*")
+            # Get data products from DataHub using the comprehensive method
+            comprehensive_data = client.get_comprehensive_data_products_data(query="*", count=1000)
+            logger.debug(f"comprehensive_data keys: {list(comprehensive_data.keys()) if comprehensive_data else 'None'}")
+            logger.debug(f"comprehensive_data structure: {comprehensive_data}")
+            remote_data_products_data = comprehensive_data.get("data_products", [])
+            
+            if remote_data_products_data is None:
+                remote_data_products_data = []
 
-            if result:
-                remote_data_products_data = result
+            if remote_data_products_data:
                 logger.debug(f"Fetched {len(remote_data_products_data)} remote data products")
 
                 # Process the data products
-                if remote_data_products_data:
-                    for product_data in remote_data_products_data:
-                        try:
-                            if product_data:
-                                # Calculate statistics for each product
-                                product_data['owners_count'] = product_data.get('owners_count', 0)
-                                product_data['relationships_count'] = 0  # Not available in current query
-                                product_data['entities_count'] = product_data.get('numAssets', 0)
-                                
-                                # Add sync status
-                                product_data['sync_status'] = 'REMOTE_ONLY'
-                                product_data['sync_status_display'] = 'Remote Only'
-                                
-                                remote_data_products.append(product_data)
-                        except Exception as e:
-                            logger.warning(f"Error processing remote data product: {str(e)}")
-                            continue
+                for product_data in remote_data_products_data:
+                    try:
+                        if product_data:
+                            # Calculate statistics for each product
+                            # Count owners from ownership data
+                            ownership = product_data.get('ownership', {})
+                            owners_list = ownership.get('owners', []) if ownership else []
+                            product_data['owners_count'] = len(owners_list)
+                            product_data['relationships_count'] = 0  # Not available in current query
+                            
+
+                            
+
+                            
+                            # Get assets count from the assets array
+                            assets = product_data.get('assets', [])
+                            product_data['entities_count'] = len(assets)
+                            product_data['numAssets'] = len(assets)
+                            
+                            # Calculate structured properties count
+                            structured_properties = product_data.get('structuredProperties', {})
+                            if structured_properties and isinstance(structured_properties, dict):
+                                properties_list = structured_properties.get('properties', [])
+                                product_data['structured_properties_count'] = len(properties_list)
+                            else:
+                                product_data['structured_properties_count'] = 0
+                            
+                            # Extract domain information
+                            product_data['domain_name'] = product_data.get('domain_name')
+                            product_data['domain_description'] = product_data.get('domain_description')
+                            product_data['domain_urn'] = product_data.get('domain_urn')
+                            
+                            # Add sync status
+                            product_data['sync_status'] = 'REMOTE_ONLY'
+                            product_data['sync_status_display'] = 'Remote Only'
+                            
+                            # Remove any properties that don't map correctly
+                            # Keep only the essential properties that are used in the UI
+                            cleaned_product = {
+                                'urn': product_data.get('urn'),
+                                'name': product_data.get('name'),
+                                'description': product_data.get('description'),
+                                'external_url': product_data.get('external_url'),
+                                'domain_name': product_data.get('domain_name'),
+                                'domain_description': product_data.get('domain_description'),
+                                'domain_urn': product_data.get('domain_urn'),
+                                'entities_count': product_data.get('entities_count', 0),
+                                'numAssets': product_data.get('numAssets', 0),
+                                'owners_count': product_data.get('owners_count', 0),
+                                'structured_properties_count': product_data.get('structured_properties_count', 0),
+                                'sync_status': product_data.get('sync_status'),
+                                'sync_status_display': product_data.get('sync_status_display'),
+                                'assets': product_data.get('assets', []),
+                                'ownership': product_data.get('ownership'),
+                                'glossaryTerms': product_data.get('glossaryTerms'),
+                                'tags': product_data.get('tags'),
+                                'structuredProperties': product_data.get('structuredProperties'),
+                                'application': product_data.get('application'),
+                                'type': product_data.get('type'),
+                                'customProperties': product_data.get('customProperties', [])
+                            }
+                            
+                            remote_data_products.append(cleaned_product)
+                    except Exception as e:
+                        logger.warning(f"Error processing remote data product: {str(e)}")
+                        continue
 
             else:
-                error_msg = "Unknown error"
-                if result:
-                    error_msg = result.get('error', 'Unknown error')
-                else:
-                    error_msg = "No response from DataHub"
-                logger.warning(f"Failed to fetch remote data products: {error_msg}")
+                logger.warning("No remote data products returned from DataHub")
 
             # Process local and synced data
             synced_items = []
@@ -178,6 +227,30 @@ def get_remote_data_products_data(request):
                 local_dict['sync_status_display'] = dict(DataProduct.SYNC_STATUS_CHOICES).get(
                     local_dp.sync_status, local_dp.sync_status
                 )
+                
+                # Calculate counts for local data products
+                # Count owners from ownership data
+                ownership_data = local_dp.ownership_data
+                if ownership_data and isinstance(ownership_data, dict):
+                    owners_list = ownership_data.get('owners', [])
+                    local_dict['owners_count'] = len(owners_list)
+                else:
+                    local_dict['owners_count'] = 0
+                
+                # Count entities from entity_urns
+                entity_urns = local_dp.entity_urns or []
+                local_dict['entities_count'] = len(entity_urns)
+                local_dict['numAssets'] = len(entity_urns)
+                
+                # Count structured properties from structured_properties_data
+                structured_properties_data = local_dp.structured_properties_data
+                if structured_properties_data and isinstance(structured_properties_data, dict):
+                    properties_list = structured_properties_data.get('properties', [])
+                    local_dict['structured_properties_count'] = len(properties_list)
+                else:
+                    local_dict['structured_properties_count'] = 0
+                
+
                 
                 logger.debug(f"Processing local product: {local_dp.name}, urn: {local_dp.urn}, sync_status: {local_dp.sync_status}")
                 
@@ -213,9 +286,10 @@ def get_remote_data_products_data(request):
             
             logger.debug(f"Final counts - Local: {total_local}, Remote: {total_remote}, Synced: {total_synced}, Local-only: {total_local_only}, Remote-only: {total_remote_only}")
             
-            # Count products with relationships and owners
+            # Count products with owners, structured properties, and entities
             owned_count = 0
-            relationships_count = 0
+            structured_properties_count = 0
+            entities_count = 0
             
             for item in synced_items + local_only_items + remote_only_items:
                 try:
@@ -223,19 +297,22 @@ def get_remote_data_products_data(request):
                         data = item.get('combined', item) if item else {}
                         if data and data.get('owners_count', 0) > 0:
                             owned_count += 1
-                        if data and data.get('relationships_count', 0) > 0:
-                            relationships_count += 1
+                        if data and data.get('structured_properties_count', 0) > 0:
+                            structured_properties_count += 1
+                        if data and data.get('entities_count', 0) > 0:
+                            entities_count += 1
                 except Exception as e:
                     logger.warning(f"Error processing item for statistics: {e}")
                     continue
 
             statistics = {
-                'total_items': max(total_local, total_remote),
-                'synced_count': total_synced,
-                'local_only_count': total_local_only,
-                'remote_only_count': total_remote_only,
-                'owned_items': owned_count,
-                'items_with_relationships': relationships_count,
+                'total': max(total_local, total_remote),
+                'synced': total_synced,
+                'local_only': total_local_only,
+                'remote_only': total_remote_only,
+                'with_owners': owned_count,
+                'with_structured_properties': structured_properties_count,
+                'with_entities': entities_count,
             }
 
             return JsonResponse(

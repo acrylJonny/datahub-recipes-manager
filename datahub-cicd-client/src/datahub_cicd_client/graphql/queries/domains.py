@@ -11,8 +11,9 @@ query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
     total
     searchResults {
       entity {
+        urn
+        type
         ... on Domain {
-          urn
           id
           properties {
             name
@@ -57,33 +58,6 @@ query getSearchResultsForMultiple($input: SearchAcrossEntitiesInput!) {
             lastModified {
               time
               actor
-            }
-          }
-          institutionalMemory {
-            elements {
-              url
-              label
-              actor {
-                ... on CorpUser {
-                  urn
-                  username
-                  properties {
-                    displayName
-                    fullName
-                  }
-                }
-                ... on CorpGroup {
-                  urn
-                  name
-                  properties {
-                    displayName
-                  }
-                }
-              }
-              created {
-                time
-                actor
-              }
             }
           }
           structuredProperties {

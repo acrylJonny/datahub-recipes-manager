@@ -437,14 +437,108 @@ class DomainService(BaseDataHubClient):
 
     def count_domains(self, query: str = "*") -> int:
         """
-        Get the count of domains matching the query.
-        
+        Count domains matching the query.
+
         Args:
             query: Search query to filter domains
-            
+
         Returns:
             Number of domains matching the query
         """
+        try:
+            return self._get_domains_count(query)
+        except Exception as e:
+            self.logger.error(f"Error counting domains: {str(e)}")
+            return 0
+
+    def get_comprehensive_domains_data(
+        self, query: str = "*", start: int = 0, count: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive domain data with all metadata.
+
+        Args:
+            query: Search query to filter domains
+            start: Starting offset for pagination
+            count: Number of domains to return
+
+        Returns:
+            Dictionary containing domains with comprehensive metadata
+        """
+        self.logger.info(
+            f"Getting comprehensive domain data with query='{query}', start={start}, count={count}"
+        )
+
+        variables = {
+            "input": {
+                "query": query,
+                "types": ["DOMAIN"],
+                "start": start,
+                "count": count,
+            }
+        }
+
+        try:
+            result = self.safe_execute_graphql(LIST_DOMAINS_QUERY, variables)
+            
+            # Add explicit None check to prevent 'NoneType' object has no attribute 'get' error
+            if result is None:
+                self.logger.warning("GraphQL query returned None, returning empty domain data")
+                return {"domains": [], "total": 0, "start": 0, "count": 0}
+            
+            self.logger.debug(f"GraphQL result: {result}")
+            
+            search_data = result.get("searchAcrossEntities", {})
+            self.logger.debug(f"search_data: {search_data}")
+
+            if not search_data:
+                return {"domains": [], "total": 0, "start": 0, "count": 0}
+
+            search_results = search_data.get("searchResults", [])
+            self.logger.debug(f"search_results count: {len(search_results)}")
+            domains = []
+
+            for i, result_item in enumerate(search_results):
+                # Add None check for result_item
+                if result_item is None:
+                    self.logger.debug(f"Result item {i} is None, skipping")
+                    continue
+                    
+                entity = result_item.get("entity", {})
+                self.logger.debug(f"Result item {i} entity: {entity}")
+                
+                # Add None check for entity
+                if entity is None:
+                    self.logger.debug(f"Result item {i} entity is None, skipping")
+                    continue
+                    
+                entity_type = entity.get("type")
+                self.logger.debug(f"Result item {i} entity_type: {entity_type}")
+
+                if entity_type == "DOMAIN":
+                    processed_domain = self._process_domain_entity(entity)
+                    self.logger.debug(f"Processed domain {i}: {processed_domain}")
+                    if processed_domain:
+                        domains.append(processed_domain)
+                else:
+                    self.logger.debug(f"Result item {i} is not a DOMAIN, skipping")
+
+            result_data = {
+                "domains": domains,
+                "total": search_data.get("total", 0),
+                "start": search_data.get("start", 0),
+                "count": search_data.get("count", 0),
+            }
+
+            self.logger.info(f"Retrieved {len(domains)} domains")
+            return result_data
+
+        except Exception as e:
+            self.logger.error(f"Error getting comprehensive domain data: {str(e)}")
+            raise Exception(f"Failed to get comprehensive domain data: {str(e)}")
+
+    def _get_domains_count(self, query: str = "*") -> int:
+        """Get total count of domains matching query."""
         variables = {
             "input": {
                 "types": ["DOMAIN"],
@@ -466,10 +560,6 @@ class DomainService(BaseDataHubClient):
         except Exception as e:
             self.logger.error(f"Error getting domains count: {str(e)}")
             return 0
-
-    def _get_domains_count(self, query: str = "*") -> int:
-        """Get total count of domains matching query."""
-        return self.count_domains(query)
 
     def _process_domain_entity(self, entity: Dict[str, Any]) -> Dict[str, Any]:
         """Process domain entity data from GraphQL response."""

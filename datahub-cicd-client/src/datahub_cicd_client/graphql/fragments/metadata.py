@@ -159,15 +159,7 @@ fragment EntityMetadataFragment on Entity {
         editableProperties {
             description
         }
-        institutionalMemory {
-            elements {
-                url
-                description
-                createStamp {
-                    time
-                    actor
-                }
-            }
+      }
         }
         status {
             removed

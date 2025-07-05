@@ -44,7 +44,10 @@ class BaseDataHubClient(ABC):
         Raises:
             DataHubGraphQLError: If GraphQL execution fails
         """
-        result = self.connection.execute_graphql(query, variables)
+        # Process variables to handle enum types properly
+        processed_variables = self._process_variables(variables)
+        
+        result = self.connection.execute_graphql(query, processed_variables)
 
         if result is None:
             return None
@@ -62,6 +65,32 @@ class BaseDataHubClient(ABC):
             return result["data"]
         else:
             return result
+
+    def _process_variables(self, variables: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Process variables to handle enum types properly.
+        
+        Args:
+            variables: Original variables
+            
+        Returns:
+            Processed variables with proper enum handling
+        """
+        if not variables:
+            return variables
+            
+        def process_value(value):
+            if isinstance(value, dict):
+                return {k: process_value(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [process_value(v) for v in value]
+            elif isinstance(value, str) and value in ["GLOSSARY_NODE", "GLOSSARY_TERM", "DOMAIN", "TAG", "ASSERTION", "DATA_PRODUCT"]:
+                # Convert string enum values to proper GraphQL enum format
+                return value  # Keep as string, GraphQL will handle it
+            else:
+                return value
+                
+        return process_value(variables)
 
     def _extract_search_results(
         self, data: Dict[str, Any], search_key: str = "searchAcrossEntities"
@@ -156,4 +185,28 @@ class BaseDataHubClient(ABC):
             return result if result is not None else {}
         except Exception as e:
             self.logger.error(f"GraphQL query failed: {str(e)}")
+            return {}
+
+    def _execute_mutation(
+        self, mutation: str, variables: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a GraphQL mutation with safe error handling.
+
+        Args:
+            mutation: GraphQL mutation string
+            variables: Mutation variables
+
+        Returns:
+            GraphQL response data or empty dict if failed
+
+        Note:
+            This method never returns None, making it safe to call .get() on the result.
+            If the mutation fails, it returns an empty dict and logs the error.
+        """
+        try:
+            result = self.execute_graphql(mutation, variables)
+            return result if result is not None else {}
+        except Exception as e:
+            self.logger.error(f"GraphQL mutation failed: {str(e)}")
             return {}

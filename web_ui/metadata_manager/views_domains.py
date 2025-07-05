@@ -1032,7 +1032,14 @@ def get_remote_domains_data(request):
                 datahub_url = datahub_url[:-8]  # Remove /api/gms to get base URL
 
             # Get all remote domains from DataHub with enhanced data
-            remote_domains = client.list_domains(count=1000)
+            comprehensive_data = client.get_comprehensive_domains_data(query="*", count=1000)
+            logger.debug(f"comprehensive_data keys: {list(comprehensive_data.keys()) if comprehensive_data else 'None'}")
+            logger.debug(f"comprehensive_data structure: {comprehensive_data}")
+            remote_domains = comprehensive_data.get("domains", [])
+            
+            if remote_domains is None:
+                remote_domains = []
+                
             remote_domains_count = len(remote_domains) if remote_domains else 0
             logger.debug(f"Fetched {remote_domains_count} remote domains")
             

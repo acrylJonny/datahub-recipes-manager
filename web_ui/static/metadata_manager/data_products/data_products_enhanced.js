@@ -360,21 +360,21 @@ function generateTableHTML(items, tabType) {
     
     return `
         <div class="table-responsive">
-            <table class="table table-striped table-hover">
+            <table class="table table-hover mb-0">
                 <thead>
                     <tr>
                         <th width="40">
                             <input type="checkbox" class="form-check-input select-all-checkbox" 
                                    onchange="toggleSelectAll('${tabType}', this)">
                         </th>
-                        <th class="sortable-header" data-column="name">Name</th>
-                        <th class="sortable-header" data-column="description">Description</th>
-                        <th class="sortable-header" data-column="entities_count">Entities</th>
-                        <th class="sortable-header" data-column="owners_count">Owners</th>
-                        <th class="sortable-header" data-column="domain">Domain</th>
-                        <th class="sortable-header" data-column="urn">URN</th>
-                        <th class="sortable-header" data-column="sync_status">Status</th>
-                        <th width="200">Actions</th>
+                        <th class="sortable-header" data-sort="name" data-tab="${tabType}">Name</th>
+                        <th>Description</th>
+                        <th class="sortable-header text-center" data-sort="owners" data-tab="${tabType}">Owners</th>
+                        <th class="sortable-header text-center" data-sort="structured_properties" data-tab="${tabType}">Structured<br/>Properties</th>
+                        <th class="sortable-header text-center" data-sort="entities" data-tab="${tabType}">Entities</th>
+                        <th>URN</th>
+                        ${tabType === 'synced' ? '<th class="sortable-header text-center" data-sort="sync_status">Sync Status</th>' : ''}
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -387,6 +387,18 @@ function generateTableHTML(items, tabType) {
 
 function renderProductRow(product, tabType) {
     const safeProduct = DataUtils.createDisplaySafeItem(product);
+    
+    // Get asset count from assets array or fallback to entities_count
+    const assetCount = product.assets ? product.assets.length : (product.entities_count || 0);
+    
+    // Get domain display name
+    const domainDisplay = product.domain_name ? 
+        `<span class="badge bg-info" title="${DataUtils.safeEscapeHtml(product.domain_description || '')}">${DataUtils.safeEscapeHtml(product.domain_name)}</span>` : 
+        '-';
+    
+    const ownersCount = product.owners_count || 0;
+    const structuredPropertiesCount = product.structured_properties_count || 0;
+    const entitiesCount = assetCount;
     
     return `
         <tr data-item='${DataUtils.safeJsonStringify(product)}'>
@@ -408,20 +420,22 @@ function renderProductRow(product, tabType) {
                 </div>
             </td>
             <td class="text-center">
-                ${product.entities_count || 0}
+                ${ownersCount > 0 ? `<i class="fas fa-users text-info me-1"></i><span class="badge bg-info">${ownersCount}</span>` : '<span class="text-muted">None</span>'}
             </td>
             <td class="text-center">
-                ${product.owners_count || 0}
+                <span class="badge bg-success">${structuredPropertiesCount}</span>
             </td>
-            <td>
-                ${product.domain_name ? `<span class="badge bg-info">${DataUtils.safeEscapeHtml(product.domain_name)}</span>` : '-'}
+            <td class="text-center">
+                <span class="badge bg-secondary" title="${entitiesCount} entities">
+                    ${entitiesCount}
+                </span>
             </td>
             <td>
                 <code class="small">${DataUtils.safeEscapeHtml(truncateUrn(product.urn, 40))}</code>
             </td>
-            <td class="text-center">
+            ${tabType === 'synced' ? `<td class="text-center">
                 <span class="badge ${getStatusBadgeClass(product.sync_status)}">${product.sync_status_display || product.sync_status}</span>
-            </td>
+            </td>` : ''}
             <td>
                 ${getActionButtons(product, tabType)}
             </td>
@@ -635,7 +649,7 @@ function attachPaginationHandlers(content, tabType) {
 function attachSortingHandlers(content, tabType) {
     content.querySelectorAll('.sortable-header').forEach(header => {
         header.addEventListener('click', function() {
-            const column = this.getAttribute('data-column');
+            const column = this.getAttribute('data-sort');
             
             if (currentSort.column === column && currentSort.tabType === tabType) {
                 currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
@@ -653,7 +667,7 @@ function attachSortingHandlers(content, tabType) {
 
 function restoreSortState(content, tabType) {
     if (currentSort.column && currentSort.tabType === tabType) {
-        const header = content.querySelector(`[data-column="${currentSort.column}"]`);
+        const header = content.querySelector(`[data-sort="${currentSort.column}"]`);
         if (header) {
             header.classList.add(`sort-${currentSort.direction}`);
         }
@@ -683,8 +697,9 @@ function getSortValue(product, column) {
     switch (column) {
         case 'name': return product.name || '';
         case 'description': return product.description || '';
-        case 'entities_count': return product.entities_count || 0;
-        case 'owners_count': return product.owners_count || 0;
+        case 'entities': return product.entities_count || 0;
+        case 'owners': return product.owners_count || 0;
+        case 'structured_properties': return product.structured_properties_count || 0;
         case 'domain': return product.domain_name || '';
         case 'urn': return product.urn || '';
         case 'sync_status': return product.sync_status || '';
@@ -760,13 +775,11 @@ function updateStatistics(stats) {
     // Update filter statistics
     const entitiesElement = document.getElementById('products-with-entities');
     const ownersElement = document.getElementById('products-with-owners');
-    const domainElement = document.getElementById('products-with-domain');
-    const urlElement = document.getElementById('products-with-external-url');
+    const structuredPropsElement = document.getElementById('products-with-structured-properties');
     
     if (entitiesElement) entitiesElement.textContent = stats.with_entities || 0;
     if (ownersElement) ownersElement.textContent = stats.with_owners || 0;
-    if (domainElement) domainElement.textContent = stats.with_domain || 0;
-    if (urlElement) urlElement.textContent = stats.with_external_url || 0;
+    if (structuredPropsElement) structuredPropsElement.textContent = stats.with_structured_properties || 0;
 }
 
 // Note: Duplicate showNotification function removed - using MetadataNotifications.show() instead
@@ -805,14 +818,14 @@ function setupActionButtonListeners() {
 
 // Action functions for data products
 function showProductDetails(product) {
-    const modal = document.getElementById('productViewModal');
+    const modal = document.getElementById('viewDataProductModal');
     if (!modal) return;
     
     // Populate basic information
     document.getElementById('modal-product-name').textContent = product.name || '-';
     document.getElementById('modal-product-description').textContent = product.description || '-';
     document.getElementById('modal-product-domain').textContent = product.domain_name || '-';
-    document.getElementById('modal-product-entities').textContent = product.entities_count || '0';
+    document.getElementById('modal-product-external-url').textContent = product.external_url || '-';
     document.getElementById('modal-product-urn').textContent = product.urn || '-';
     
     // Update status badge
@@ -838,6 +851,110 @@ function showProductDetails(product) {
         } else {
             ownersElement.innerHTML = '<p class="text-muted">No ownership information available</p>';
         }
+    }
+    
+    // Update entities/assets list
+    const entitiesElement = document.getElementById('modal-entities-list');
+    if (entitiesElement) {
+        const assets = product.assets || [];
+        if (assets.length > 0) {
+            const assetsHtml = assets.map(asset => {
+                const assetName = asset.properties?.name || asset.urn || 'Unknown Asset';
+                const assetType = asset.type || 'Unknown';
+                const assetUrn = asset.urn || '';
+                return `
+                    <div class="asset-item mb-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${DataUtils.safeEscapeHtml(assetName)}</strong>
+                                <span class="badge bg-secondary ms-2">${DataUtils.safeEscapeHtml(assetType)}</span>
+                            </div>
+                            ${assetUrn ? `<a href="${getDataHubUrl(assetUrn, assetType.toLowerCase())}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-external-link-alt"></i></a>` : ''}
+                        </div>
+                        ${asset.properties?.description ? `<small class="text-muted">${DataUtils.safeEscapeHtml(asset.properties.description)}</small>` : ''}
+                    </div>
+                `;
+            }).join('');
+            entitiesElement.innerHTML = assetsHtml;
+        } else {
+            entitiesElement.innerHTML = '<p class="text-muted">No entities assigned</p>';
+        }
+    }
+    
+    // Update tags list
+    const tagsElement = document.getElementById('modal-tags-list');
+    if (tagsElement) {
+        const tags = product.tags?.tags || [];
+        if (tags.length > 0) {
+            const tagsHtml = tags.map(tag => {
+                const tagName = tag.tag?.properties?.name || tag.tag?.urn || 'Unknown Tag';
+                return `<span class="badge bg-info me-1 mb-1">${DataUtils.safeEscapeHtml(tagName)}</span>`;
+            }).join('');
+            tagsElement.innerHTML = tagsHtml;
+        } else {
+            tagsElement.innerHTML = '<p class="text-muted">No tags assigned</p>';
+        }
+    }
+    
+    // Update glossary terms list
+    const glossaryElement = document.getElementById('modal-glossary-list');
+    if (glossaryElement) {
+        const terms = product.glossaryTerms?.terms || [];
+        if (terms.length > 0) {
+            const termsHtml = terms.map(term => {
+                const termName = term.term?.properties?.name || term.term?.urn || 'Unknown Term';
+                return `<span class="badge bg-warning me-1 mb-1">${DataUtils.safeEscapeHtml(termName)}</span>`;
+            }).join('');
+            glossaryElement.innerHTML = termsHtml;
+        } else {
+            glossaryElement.innerHTML = '<p class="text-muted">No glossary terms assigned</p>';
+        }
+    }
+    
+    // Update structured properties
+    const structuredPropsElement = document.getElementById('modal-structured-properties');
+    if (structuredPropsElement) {
+        const structuredProps = product.structuredProperties?.properties || [];
+        if (structuredProps.length > 0) {
+            const propsHtml = structuredProps.map(prop => {
+                const propName = prop.structuredProperty?.definition?.displayName || prop.structuredProperty?.urn || 'Unknown Property';
+                const propValues = prop.values?.map(v => v.stringValue || v.numberValue || 'Unknown').join(', ') || 'No values';
+                return `
+                    <div class="mb-2">
+                        <strong>${DataUtils.safeEscapeHtml(propName)}:</strong>
+                        <span class="text-muted">${DataUtils.safeEscapeHtml(propValues)}</span>
+                    </div>
+                `;
+            }).join('');
+            structuredPropsElement.innerHTML = propsHtml;
+        } else {
+            structuredPropsElement.innerHTML = '<p class="text-muted">No structured properties assigned</p>';
+        }
+    }
+    
+    // Update properties
+    const propertiesElement = document.getElementById('modal-product-properties');
+    if (propertiesElement) {
+        const customProps = product.customProperties || [];
+        if (customProps.length > 0) {
+            const propsHtml = customProps.map(prop => {
+                return `
+                    <div class="mb-2">
+                        <strong>${DataUtils.safeEscapeHtml(prop.key || 'Unknown')}:</strong>
+                        <span class="text-muted">${DataUtils.safeEscapeHtml(prop.value || '')}</span>
+                    </div>
+                `;
+            }).join('');
+            propertiesElement.innerHTML = propsHtml;
+        } else {
+            propertiesElement.innerHTML = '<p class="text-muted">No additional properties</p>';
+        }
+    }
+    
+    // Update raw JSON
+    const rawJsonElement = document.getElementById('modal-raw-json');
+    if (rawJsonElement) {
+        rawJsonElement.innerHTML = `<code>${DataUtils.safeEscapeHtml(DataUtils.safeJsonStringify(product))}</code>`;
     }
     
     // Show the modal

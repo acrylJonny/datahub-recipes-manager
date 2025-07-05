@@ -82,31 +82,6 @@ fragment GlossaryNodeFragment on GlossaryNode {
       }
     }
   }
-  institutionalMemory {
-    elements {
-      url
-      label
-      actor {
-        ... on CorpUser {
-          urn
-        }
-        ... on CorpGroup {
-          urn
-        }
-      }
-      created {
-        actor
-        time
-      }
-      updated {
-        actor
-        time
-      }
-      settings {
-        showInAssetPreview
-      }
-    }
-  }
 }
 """
 
@@ -203,31 +178,6 @@ fragment GlossaryTermFragment on GlossaryTerm {
       urn
       properties {
         name
-      }
-    }
-  }
-  institutionalMemory {
-    elements {
-      url
-      label
-      actor {
-        ... on CorpUser {
-          urn
-        }
-        ... on CorpGroup {
-          urn
-        }
-      }
-      created {
-        actor
-        time
-      }
-      updated {
-        actor
-        time
-      }
-      settings {
-        showInAssetPreview
       }
     }
   }

@@ -100,6 +100,40 @@
     .clickable-stat.active .text-muted {
         color: rgba(255, 255, 255, 0.8) !important;
     }
+    
+    /* Sortable table headers - matching domains page */
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 20px !important;
+    }
+    
+    .sortable-header:hover {
+        background-color: #e9ecef !important;
+    }
+    
+    .sortable-header::after {
+        content: "⇅";
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.5;
+        font-size: 12px;
+    }
+    
+    .sortable-header.sort-asc::after {
+        content: "↑";
+        opacity: 1;
+        color: #007bff;
+    }
+    
+    .sortable-header.sort-desc::after {
+        content: "↓";
+        opacity: 1;
+        color: #007bff;
+    }
 </style>
 {% endblock %}
 
@@ -219,28 +253,22 @@
                                 <div class="col-md-2 d-flex align-items-center justify-content-center bg-light border-end">
                                     <strong class="text-muted">Filters</strong>
                                 </div>
-                                <div class="col-md-2-5 border-end">
-                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-entities" data-category="content">
-                                        <div class="h6 mb-0" id="products-with-entities">0</div>
-                                        <div class="text-muted">With Entities</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-2-5 border-end">
+                                <div class="col-md-3 border-end">
                                     <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-owners" data-category="content">
                                         <div class="h6 mb-0" id="products-with-owners">0</div>
-                                        <div class="text-muted">With Owners</div>
+                                        <div class="text-muted small">With Owners</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5 border-end">
-                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-domain" data-category="content">
-                                        <div class="h6 mb-0" id="products-with-domain">0</div>
-                                        <div class="text-muted">With Domain</div>
+                                <div class="col-md-3 border-end">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-structured-properties" data-category="content">
+                                        <div class="h6 mb-0" id="products-with-structured-properties">0</div>
+                                        <div class="text-muted small">With Structured Properties</div>
                                     </div>
                                 </div>
-                                <div class="col-md-2-5">
-                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-external-url" data-category="content">
-                                        <div class="h6 mb-0" id="products-with-external-url">0</div>
-                                        <div class="text-muted">With External URL</div>
+                                <div class="col-md-4">
+                                    <div class="filter-stat text-center clickable-stat multi-select" data-filter="has-entities" data-category="content">
+                                        <div class="h6 mb-0" id="products-with-entities">0</div>
+                                        <div class="text-muted small">With Entities</div>
                                     </div>
                                 </div>
                             </div>
