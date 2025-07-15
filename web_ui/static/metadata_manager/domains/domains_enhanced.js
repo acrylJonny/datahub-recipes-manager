@@ -1893,25 +1893,124 @@ function bulkAddToPR(tabType) {
         return;
     }
     
-    // Process each domain sequentially
+    // Show loading indicator
+    showNotification('info', `Starting to add ${selectedDomains.length} domain(s) to staged changes...`);
+    
+    // Process each domain sequentially to avoid database locks
     let successCount = 0;
     let errorCount = 0;
+    let processedCount = 0;
     
-    selectedDomains.forEach(domain => {
-        try {
-            addDomainToStagedChanges(domain);
-            successCount++;
-        } catch (error) {
-            console.error(`Error adding domain ${domain.name} to staged changes:`, error);
-            errorCount++;
+    // Create a function to process domains one by one
+    function processNextDomain(index) {
+        if (index >= selectedDomains.length) {
+            // All domains processed
+            if (successCount > 0) {
+                showNotification('success', `Successfully added ${successCount} domain(s) to staged changes`);
+                if (errorCount > 0) {
+                    showNotification('warning', `Completed with ${errorCount} error(s)`);
+                }
+                // Reload the domain data to reflect any status changes
+                loadDomainsData();
+            } else if (errorCount > 0) {
+                showNotification('error', `Failed to add ${errorCount} domain(s) to staged changes`);
+            }
+            return;
         }
-    });
-    
-    if (errorCount > 0) {
-        showNotification('warning', `Added ${successCount} domains to staged changes, ${errorCount} errors`);
-    } else {
-        showNotification('success', `Added ${successCount} domains to staged changes`);
+        
+        const domain = selectedDomains[index];
+        const domainName = domain.name || 'Unknown';
+        
+        try {
+            // For remote-only domains, we need to handle them differently
+            if (domain.sync_status === 'REMOTE_ONLY' || !domain.id) {
+                // Show progress notification
+                showNotification('info', `Processing domain ${index + 1}/${selectedDomains.length}: Syncing "${domainName}" to local first...`);
+                
+                // First sync the domain to local
+                fetch('/metadata/domains/sync/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': getCsrfToken(),
+                    },
+                    body: `domain_urn=${encodeURIComponent(domain.urn)}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Create a new domain object with the local ID
+                        const syncedDomain = {
+                            id: data.domain_id,
+                            name: data.domain_name || domainName,
+                            urn: domain.urn,
+                            sync_status: 'SYNCED'
+                        };
+                        
+                        // Now add the synced domain to staged changes
+                        return addDomainToStagedChangesPromise(syncedDomain);
+                    } else {
+                        throw new Error(data.error || 'Failed to sync domain to local');
+                    }
+                })
+                .then(() => {
+                    successCount++;
+                    processedCount++;
+                    
+                    // Update progress
+                    if (processedCount % 5 === 0 || processedCount === selectedDomains.length) {
+                        showNotification('info', `Progress: ${processedCount}/${selectedDomains.length} domains processed`);
+                    }
+                    
+                    // Add delay before processing next domain to prevent database locks
+                    setTimeout(() => processNextDomain(index + 1), 500);
+                })
+                .catch(error => {
+                    console.error(`Error processing domain ${domainName}:`, error);
+                    errorCount++;
+                    processedCount++;
+                    
+                    // Add delay before processing next domain despite error
+                    setTimeout(() => processNextDomain(index + 1), 500);
+                });
+            } else {
+                // For local domains, add directly to staged changes
+                showNotification('info', `Processing domain ${index + 1}/${selectedDomains.length}: Adding "${domainName}" to staged changes...`);
+                
+                addDomainToStagedChangesPromise(domain)
+                .then(() => {
+                    successCount++;
+                    processedCount++;
+                    
+                    // Update progress
+                    if (processedCount % 5 === 0 || processedCount === selectedDomains.length) {
+                        showNotification('info', `Progress: ${processedCount}/${selectedDomains.length} domains processed`);
+                    }
+                    
+                    // Add delay before processing next domain to prevent database locks
+                    setTimeout(() => processNextDomain(index + 1), 500);
+                })
+                .catch(error => {
+                    console.error(`Error adding domain ${domainName} to staged changes:`, error);
+                    errorCount++;
+                    processedCount++;
+                    
+                    // Add delay before processing next domain despite error
+                    setTimeout(() => processNextDomain(index + 1), 500);
+                });
+            }
+        } catch (error) {
+            console.error(`Error processing domain ${domainName}:`, error);
+            errorCount++;
+            processedCount++;
+            
+            // Add delay before processing next domain despite error
+            setTimeout(() => processNextDomain(index + 1), 500);
+        }
     }
+    
+    // Start processing domains
+    processNextDomain(0);
 }
 
 function bulkDeleteLocal(tabType) {
@@ -2195,7 +2294,7 @@ function addDomainToStagedChanges(domain) {
         const currentEnvironment = window.currentEnvironment || { name: 'dev' };
         const mutationName = currentEnvironment.mutation_name || null;
         
-        // Use the remote staging endpoint
+        // Use the remote staging endpoint (like tags do)
         fetch('/metadata/domains/remote/stage_changes/', {
             method: 'POST',
             headers: {
@@ -2231,6 +2330,15 @@ function addDomainToStagedChanges(domain) {
         });
         return;
     }
+    
+    // For local domains, use the dedicated function
+    addDomainToStagedChangesLocal(domain);
+}
+
+function addDomainToStagedChangesLocal(domain) {
+    console.log('addDomainToStagedChangesLocal called with:', domain);
+    
+    const domainName = domain.name || 'Unknown';
     
     if (!domain.id) {
         console.error('Cannot add domain to staged changes without an ID:', domain);
@@ -2277,6 +2385,59 @@ function addDomainToStagedChanges(domain) {
     .catch(error => {
         console.error('Error adding domain to staged changes:', error);
         showNotification('error', `Error adding domain to staged changes: ${error.message}`);
+    });
+}
+
+function addDomainToStagedChangesPromise(domain) {
+    console.log('addDomainToStagedChangesPromise called with:', domain);
+    
+    const domainName = domain.name || 'Unknown';
+    
+    return new Promise((resolve, reject) => {
+        if (!domain.id) {
+            const error = new Error('Cannot add domain to staged changes without an ID');
+            console.error(error.message, domain);
+            reject(error);
+            return;
+        }
+        
+        // Get current environment and mutation from global state or settings
+        const currentEnvironment = window.currentEnvironment || { name: 'dev' };
+        const mutationName = currentEnvironment.mutation_name || null;
+        
+        // Use the staged changes endpoint
+        fetch(`/metadata/domains/${domain.id}/stage_changes/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                environment: currentEnvironment.name,
+                mutation_name: mutationName
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Add domain to staged changes response:', data);
+            if (data.status === 'success') {
+                if (data.files_created && data.files_created.length > 0) {
+                    console.log('Created files:', data.files_created);
+                }
+                resolve(data);
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding domain to staged changes:', error);
+            reject(error);
+        });
     });
 }
 
@@ -3376,6 +3537,20 @@ function showOwnershipSection(containerId, labelId, helpTextId) {
     if (addButton) {
         addButton.innerHTML = '<i class="fas fa-plus me-1"></i> Add Owner';
         addButton.className = 'btn btn-sm btn-outline-primary mt-2';
+    }
+}
+
+/**
+ * Show notification to user
+ * @param {string} type - The notification type (success, error, info, warning)
+ * @param {string} message - The message to display
+ */
+function showNotification(type, message) {
+    // Use global notification system
+    if (typeof showToast === 'function') {
+        showToast(type, message);
+    } else {
+        console.log(`${type.toUpperCase()}: ${message}`);
     }
 }
 

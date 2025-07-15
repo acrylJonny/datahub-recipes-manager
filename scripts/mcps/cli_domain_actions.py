@@ -17,6 +17,7 @@ sys.path.append(
 
 from scripts.mcps.domain_actions import (
     add_domain_to_staged_changes_legacy,
+    sync_domain_to_local,
     setup_logging
 )
 
@@ -39,6 +40,11 @@ def parse_args():
     stage_parser.add_argument("--include-all-aspects", action="store_true", default=True, help="Include all supported aspects")
     stage_parser.add_argument("--custom-aspects", help="JSON string with custom aspects")
     stage_parser.add_argument("--mutation-name", help="Mutation name for deterministic URN generation")
+    
+    # Sync domain to local
+    sync_parser = subparsers.add_parser("sync-domain", help="Sync domain to local database")
+    sync_parser.add_argument("--domain-file", required=True, help="JSON file with domain data")
+    sync_parser.add_argument("--local-db-path", help="Local database path for sync action")
     
     # General options
     parser.add_argument(
@@ -120,6 +126,18 @@ def main():
             else:
                 print(f"❌ Failed to add domain to staged changes: {result.get('message')}")
                 sys.exit(1)
+        
+        elif args.action == "sync-domain":
+            # Load domain data
+            domain_data = load_json_data(args.domain_file)
+            
+            # Sync to local database
+            success = sync_domain_to_local(domain_data, args.local_db_path)
+            if success:
+                print("✅ Domain synced to local database successfully")
+            else:
+                print("❌ Failed to sync domain to local database")
+                sys.exit(1)
     
     except Exception as e:
         logger.error(f"Error: {str(e)}")
@@ -127,4 +145,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
+
+
+# Export functions for direct import by other Python modules
+__all__ = ['sync_domain_to_local', 'add_domain_to_staged_changes_legacy'] 

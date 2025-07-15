@@ -50,6 +50,70 @@ def setup_logging(log_level="INFO"):
     )
 
 
+def extract_domain_id_from_urn(urn: str) -> str:
+    """
+    Extract domain ID from a DataHub URN
+
+    Args:
+        urn: DataHub domain URN (e.g., 'urn:li:domain:1234')
+
+    Returns:
+        Domain ID/key
+    """
+    if not urn or not urn.startswith("urn:li:domain:"):
+        raise ValueError(f"Invalid domain URN: {urn}")
+    
+    return urn.split(":")[-1]
+
+
+def sync_domain_to_local(domain_data: Dict[str, Any], local_db_path: Optional[str] = None) -> bool:
+    """
+    Sync domain data to local database
+
+    Args:
+        domain_data: Domain data as a dictionary
+        local_db_path: Optional path to local database (defaults to environment setting)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Determine local database path if not provided
+        if not local_db_path:
+            # TODO: Get from environment or config
+            local_db_path = os.getenv("DATAHUB_LOCAL_DB_PATH", "local_db/domains.json")
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(local_db_path), exist_ok=True)
+        
+        # Load existing database or create new one
+        try:
+            with open(local_db_path, "r") as f:
+                local_db = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            local_db = {"domains": {}}
+        
+        # Extract domain ID from URN
+        domain_urn = domain_data.get("urn")
+        if not domain_urn:
+            raise ValueError("Domain URN not found in domain data")
+        
+        domain_id = extract_domain_id_from_urn(domain_urn)
+        
+        # Add or update domain in database
+        local_db["domains"][domain_id] = domain_data
+        
+        # Save updated database
+        with open(local_db_path, "w") as f:
+            json.dump(local_db, f, indent=2)
+        
+        logger.info(f"Domain {domain_id} synced to local database")
+        return True
+    except Exception as e:
+        logger.error(f"Error syncing domain to local database: {str(e)}")
+        return False
+
+
 def add_domain_to_staged_changes(
     domain_id: str,
     name: str,

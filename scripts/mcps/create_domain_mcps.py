@@ -94,10 +94,16 @@ def create_domain_properties_mcp(
         "domain", domain_id, environment=environment, mutation_name=mutation_name
     )
 
+    # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
+    if owner.startswith("urn:li:corpuser:"):
+        owner_urn = owner
+    else:
+        owner_urn = f"urn:li:corpuser:{owner}"
+
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
         time=current_time,
-        actor=f"urn:li:corpuser:{owner}"
+        actor=owner_urn
     )
 
     domain_properties = DomainPropertiesClass(
@@ -125,7 +131,7 @@ def create_domain_ownership_mcp(
     ownership_type: str = "urn:li:ownershipType:__system__technical_owner",
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain ownership
     """
@@ -133,10 +139,16 @@ def create_domain_ownership_mcp(
         "domain", domain_id, environment=environment, mutation_name=mutation_name
     )
 
+    # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
+    if owner.startswith("urn:li:corpuser:"):
+        owner_urn = owner
+    else:
+        owner_urn = f"urn:li:corpuser:{owner}"
+
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
         time=current_time,
-        actor=f"urn:li:corpuser:{owner}"
+        actor=owner_urn
     )
 
     # Convert ownership type string to enum
@@ -149,7 +161,7 @@ def create_domain_ownership_mcp(
     ownership = OwnershipClass(
         owners=[
             OwnerClass(
-                owner=f"urn:li:corpuser:{owner}",
+                owner=owner_urn,
                 type=ownership_type_enum,
                 source=None
             )
@@ -165,7 +177,7 @@ def create_domain_ownership_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_status_mcp(
@@ -173,7 +185,7 @@ def create_domain_status_mcp(
     removed: bool = False,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain status (soft delete)
     """
@@ -191,7 +203,7 @@ def create_domain_status_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_global_tags_mcp(
@@ -200,7 +212,7 @@ def create_domain_global_tags_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain global tags
     """
@@ -252,7 +264,7 @@ def create_domain_global_tags_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_glossary_terms_mcp(
@@ -261,7 +273,7 @@ def create_domain_glossary_terms_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain glossary terms associations
     """
@@ -286,10 +298,16 @@ def create_domain_glossary_terms_mcp(
         env_name = environment or mutation_name
         mutation_config = get_mutation_config_for_environment(env_name)
 
+    # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
+    if owner.startswith("urn:li:corpuser:"):
+        owner_urn = owner
+    else:
+        owner_urn = f"urn:li:corpuser:{owner}"
+
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
         time=current_time,
-        actor=f"urn:li:corpuser:{owner}"
+        actor=owner_urn
     )
     
     term_associations = []
@@ -305,7 +323,7 @@ def create_domain_glossary_terms_mcp(
         
         term_associations.append(GlossaryTermAssociationClass(
             urn=term_urn,  # Use mutated URN
-            actor=f"urn:li:corpuser:{owner}",
+            actor=owner_urn,
             context=None,
             attribution=None
         ))
@@ -323,7 +341,7 @@ def create_domain_glossary_terms_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_browse_paths_mcp(
@@ -358,7 +376,7 @@ def create_domain_institutional_memory_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain institutional memory
     """
@@ -366,10 +384,16 @@ def create_domain_institutional_memory_mcp(
         "domain", domain_id, environment=environment, mutation_name=mutation_name
     )
 
+    # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
+    if owner.startswith("urn:li:corpuser:"):
+        owner_urn = owner
+    else:
+        owner_urn = f"urn:li:corpuser:{owner}"
+
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
         time=current_time,
-        actor=f"urn:li:corpuser:{owner}"
+        actor=owner_urn
     )
     
     memory_metadata = []
@@ -390,7 +414,7 @@ def create_domain_institutional_memory_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_structured_properties_mcp(
@@ -399,7 +423,7 @@ def create_domain_structured_properties_mcp(
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain structured properties
     """
@@ -424,10 +448,16 @@ def create_domain_structured_properties_mcp(
         env_name = environment or mutation_name
         mutation_config = get_mutation_config_for_environment(env_name)
 
+    # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
+    if owner.startswith("urn:li:corpuser:"):
+        owner_urn = owner
+    else:
+        owner_urn = f"urn:li:corpuser:{owner}"
+
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
         time=current_time,
-        actor=f"urn:li:corpuser:{owner}"
+        actor=owner_urn
     )
     
     property_assignments = []
@@ -458,7 +488,7 @@ def create_domain_structured_properties_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_forms_mcp(
@@ -467,7 +497,7 @@ def create_domain_forms_mcp(
     mutation_name: Optional[str] = None,
     incomplete_forms: List[str] = None,
     completed_forms: List[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain forms
     """
@@ -507,7 +537,7 @@ def create_domain_forms_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_test_results_mcp(
@@ -517,7 +547,7 @@ def create_domain_test_results_mcp(
     mutation_name: Optional[str] = None,
     failing_tests: List[str] = None,
     passing_tests: List[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain test results
     """
@@ -525,10 +555,16 @@ def create_domain_test_results_mcp(
         "domain", domain_id, environment=environment, mutation_name=mutation_name
     )
 
+    # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
+    if owner.startswith("urn:li:corpuser:"):
+        owner_urn = owner
+    else:
+        owner_urn = f"urn:li:corpuser:{owner}"
+
     current_time = int(time.time() * 1000)
     audit_stamp = AuditStampClass(
         time=current_time,
-        actor=f"urn:li:corpuser:{owner}"
+        actor=owner_urn
     )
 
     failing_test_results = []
@@ -564,7 +600,7 @@ def create_domain_test_results_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def create_domain_display_properties_mcp(
@@ -575,7 +611,7 @@ def create_domain_display_properties_mcp(
     icon_style: Optional[str] = None,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
-) -> MetadataChangeProposalWrapper:
+) -> Dict[str, Any]:
     """
     Create an MCP for domain display properties
     """
@@ -604,7 +640,7 @@ def create_domain_display_properties_mcp(
         changeType=ChangeTypeClass.UPSERT
     )
 
-    return mcp
+    return mcp.to_obj()
 
 
 def save_mcp_to_file(mcp: Dict[str, Any], output_path: str, enable_dedup: bool = True) -> bool:
@@ -1012,14 +1048,8 @@ def save_mcps_to_files(
             logger.warning(f"Could not load existing MCP file: {e}. Creating new file.")
             existing_mcps = []
     
-    # Convert MCPs to dictionaries if needed
-    new_mcps = []
-    for mcp in mcps:
-        if isinstance(mcp, dict):
-            mcp_dict = mcp
-        else:
-            mcp_dict = mcp.to_obj() if hasattr(mcp, "to_obj") else dict(mcp)
-        new_mcps.append(mcp_dict)
+    # All MCPs are now dictionaries, so no conversion needed
+    new_mcps = mcps
     
     # Remove any existing MCPs for this domain to avoid duplicates
     # Get the domain URN from the first MCP
