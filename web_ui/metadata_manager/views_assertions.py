@@ -1484,9 +1484,12 @@ def push_assertion_to_datahub(request, assertion_id):
         )
         
         # Convert local assertion to DataHub format and create
-        # This is a simplified implementation - you may need to enhance based on assertion type
-        if assertion.type == "sql":
-            config = assertion.config or {}
+        # Handle different assertion types
+        assertion_type = assertion.type.lower() if assertion.type else "unknown"
+        config = assertion.config or {}
+        result_urn = None
+        
+        if assertion_type == "sql":
             dataset_urn = config.get("dataset_urn", "urn:li:dataset:(urn:li:dataPlatform:unknown,unknown,PROD)")
             sql_statement = config.get("query", "SELECT 1")
             
@@ -1498,22 +1501,53 @@ def push_assertion_to_datahub(request, assertion_id):
                 description=assertion.description or assertion.name
             )
             
-            if result_urn:
-                # Update local assertion with DataHub URN
-                assertion.config = assertion.config or {}
-                assertion.config["datahub_urn"] = result_urn
-                assertion.save()
-                
-                logger.info(f"Successfully pushed assertion to DataHub: {assertion.id} -> {result_urn}")
-                return JsonResponse({
-                    "success": True,
-                    "message": "Assertion pushed to DataHub successfully",
-                    "datahub_urn": result_urn
-                })
-            else:
-                return JsonResponse({"success": False, "error": "Failed to create assertion in DataHub"})
+        elif assertion_type == "freshness":
+            dataset_urn = config.get("dataset_urn", "urn:li:dataset:(urn:li:dataPlatform:unknown,unknown,PROD)")
+            schedule_interval = config.get("schedule_interval", 24)
+            schedule_unit = config.get("schedule_unit", "HOUR")
+            assertion_timezone = config.get("timezone", "UTC")
+            cron = config.get("cron_expression", "0 0 * * *")
+            source_type = config.get("source_type", "INFORMATION_SCHEMA")
+            
+            result_urn = metadata_client.create_freshness_assertion(
+                dataset_urn=dataset_urn,
+                schedule_interval=schedule_interval,
+                schedule_unit=schedule_unit,
+                timezone=assertion_timezone,
+                cron=cron,
+                source_type=source_type,
+                description=assertion.description or assertion.name
+            )
+            
         else:
-            return JsonResponse({"success": False, "error": f"Pushing {assertion.type} assertions is not yet implemented"})
+            return JsonResponse({"success": False, "error": f"Pushing {assertion_type} assertions is not yet implemented"})
+        
+        if result_urn:
+            # Update local assertion with DataHub URN and connection
+            assertion.config = assertion.config or {}
+            assertion.config["datahub_urn"] = result_urn
+            assertion.sync_status = "SYNCED"
+            assertion.last_synced = timezone.now()
+            assertion.urn = result_urn  # Update URN to match DataHub URN
+            
+            # Set connection for proper categorization
+            from web_ui.views import get_current_connection
+            try:
+                current_connection = get_current_connection(request)
+                assertion.connection = current_connection
+            except Exception as e:
+                logger.warning(f"Could not get current connection: {str(e)}")
+                
+            assertion.save()
+            
+            logger.info(f"Successfully pushed {assertion_type} assertion to DataHub: {assertion.id} -> {result_urn}")
+            return JsonResponse({
+                "success": True,
+                "message": f"{assertion_type.title()} assertion pushed to DataHub successfully",
+                "datahub_urn": result_urn
+            })
+        else:
+            return JsonResponse({"success": False, "error": f"Failed to create {assertion_type} assertion in DataHub"})
             
     except Exception as e:
         logger.error(f"Error pushing assertion to DataHub: {str(e)}")

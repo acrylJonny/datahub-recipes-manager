@@ -6131,7 +6131,6 @@ def mutation_create(request):
     if request.method == "POST":
         name = request.POST.get("name")
         description = request.POST.get("description")
-        platform_instance = request.POST.get("platform_instance")
         env = request.POST.get("env")
         custom_properties = request.POST.get("custom_properties", "{}")
         platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
@@ -6160,12 +6159,11 @@ def mutation_create(request):
                 },
             )
 
-        # Create the mutation - use default values for platform_instance and env since they're handled via mapping
+        # Create the mutation - env field is deprecated and handled via platform_instance_mapping
         Mutation.objects.create(
             name=name,
             description=description,
-            platform_instance=platform_instance or "default",  # Provide default value since field is removed from form
-            env=env or "default",  # Provide default value since field is removed from form
+            env=env or "default",  # Provide default value since field is deprecated
             custom_properties=custom_props,
             platform_instance_mapping=platform_mapping,
             apply_to_tags=apply_to_tags,
@@ -6189,8 +6187,7 @@ def mutation_edit(request, mutation_id):
     if request.method == "POST":
         mutation.name = request.POST.get("name")
         mutation.description = request.POST.get("description")
-        # Keep existing values for platform_instance and env since they're handled via mapping
-        mutation.platform_instance = request.POST.get("platform_instance") or mutation.platform_instance
+        # Keep existing value for env since it's handled via mapping
         mutation.env = request.POST.get("env") or mutation.env
         custom_properties = request.POST.get("custom_properties", "{}")
         platform_instance_mapping = request.POST.get("platform_instance_mapping", "{}")
@@ -6229,10 +6226,9 @@ def mutation_edit(request, mutation_id):
     mutation_data = {
         'name': mutation.name,
         'description': mutation.description,
-        'platform_instance': mutation.platform_instance,
         'env': mutation.env,
-        'custom_properties': json.dumps(mutation.custom_properties, indent=2) if mutation.custom_properties else '{}',
-        'platform_instance_mapping': json.dumps(mutation.platform_instance_mapping, indent=2) if mutation.platform_instance_mapping else '{}'
+        'custom_properties': json.dumps(mutation.custom_properties) if mutation.custom_properties else '{}',
+        'platform_instance_mapping': json.dumps(mutation.platform_instance_mapping) if mutation.platform_instance_mapping else '{}'
     }
     
     return render(

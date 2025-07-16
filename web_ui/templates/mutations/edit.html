@@ -146,7 +146,7 @@
                     </button>
                     
                     <!-- Hidden field to store JSON -->
-                    <input type="hidden" id="platform_instance_mapping" name="platform_instance_mapping" value="{{ mutation.platform_instance_mapping|default:'{}'|safe }}">
+                    <input type="hidden" id="platform_instance_mapping" name="platform_instance_mapping" value="{{ mutation_data.platform_instance_mapping|default:'{}' }}">
                 </div>
 
                 <div class="mb-3">
@@ -165,7 +165,7 @@
                     </button>
                     
                     <!-- Hidden field to store JSON -->
-                    <input type="hidden" id="custom_properties" name="custom_properties" value="{{ mutation.custom_properties|default:'{}'|safe }}">
+                    <input type="hidden" id="custom_properties" name="custom_properties" value="{{ mutation_data.custom_properties|default:'{}' }}">
                 </div>
 
                 <div class="d-flex justify-content-end">
@@ -371,7 +371,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load existing mappings
     function loadExistingMappings() {
-        const existingMappings = JSON.parse(mappingHiddenInput.value || '{}');
+        let existingMappings = {};
+        try {
+            existingMappings = JSON.parse(mappingHiddenInput.value || '{}');
+        } catch (e) {
+            console.error('Error parsing mappings JSON:', e);
+            existingMappings = {};
+        }
         
         // Clear container
         mappingContainer.innerHTML = '';

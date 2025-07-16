@@ -2053,57 +2053,73 @@ class DataHubMetadataApiClient:
 
         try:
             query = """
-            mutation upsertDatasetFreshnessAssertionMonitor(
-                $entityUrn: String!,
-                $scheduleType: ScheduleType!,
-                $scheduleUnit: IntervalUnit!,
-                $scheduleMultiple: Int!,
-                $timezone: String!,
-                $cron: String!,
-                $sourceType: AssertionEvaluationSourceType!,
-                $description: String
-            ) {
+            mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: UpsertDatasetFreshnessAssertionMonitorInput!) {
               upsertDatasetFreshnessAssertionMonitor(
-                input: {
-                  entityUrn: $entityUrn
-                  schedule: {
-                    type: $scheduleType
-                    fixedInterval: { unit: $scheduleUnit, multiple: $scheduleMultiple }
-                  }
-                  evaluationSchedule: {
-                    timezone: $timezone
-                    cron: $cron
-                  }
-                  evaluationParameters: { sourceType: $sourceType }
-                  mode: ACTIVE
-                  description: $description
-                }
+                assertionUrn: $assertionUrn
+                input: $input
               ) {
                 urn
+                type
+                info {
+                  type
+                  description
+                  freshnessAssertion {
+                    type
+                    entityUrn
+                    schedule {
+                      type
+                      cron {
+                        cron
+                        timezone
+                      }
+                      fixedInterval {
+                        unit
+                        multiple
+                      }
+                    }
+                  }
+                }
               }
             }
             """
 
             variables = {
-                "entityUrn": dataset_urn,
-                "scheduleType": "FIXED_INTERVAL",
-                "scheduleUnit": schedule_unit,
-                "scheduleMultiple": schedule_interval,
-                "timezone": timezone,
-                "cron": cron,
-                "sourceType": source_type,
-                "description": description,
+                "assertionUrn": None,  # For creating new assertions
+                "input": {
+                    "schedule": {
+                        "type": "FIXED_INTERVAL",
+                        "fixedInterval": {
+                            "unit": schedule_unit,
+                            "multiple": schedule_interval
+                        }
+                    },
+                    "evaluationSchedule": {
+                        "cron": cron,
+                        "timezone": timezone
+                    },
+                    "evaluationParameters": {
+                        "sourceType": source_type
+                    },
+                    "mode": "ACTIVE",
+                    "entityUrn": dataset_urn,
+                    "description": description
+                }
             }
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (
-                result
-                and "data" in result
-                and "upsertDatasetFreshnessAssertionMonitor" in result["data"]
-                and "urn" in result["data"]["upsertDatasetFreshnessAssertionMonitor"]
-            ):
-                return result["data"]["upsertDatasetFreshnessAssertionMonitor"]["urn"]
+            # Handle both response formats (direct and wrapped)
+            if result:
+                # Check for direct response format (what we're seeing in logs)
+                if ("upsertDatasetFreshnessAssertionMonitor" in result 
+                    and "urn" in result["upsertDatasetFreshnessAssertionMonitor"]):
+                    return result["upsertDatasetFreshnessAssertionMonitor"]["urn"]
+                
+                # Check for wrapped response format (standard GraphQL)
+                if ("data" in result
+                    and "upsertDatasetFreshnessAssertionMonitor" in result["data"]
+                    and "urn" in result["data"]["upsertDatasetFreshnessAssertionMonitor"]):
+                    return result["data"]["upsertDatasetFreshnessAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create freshness assertion: {result}")
             return None
@@ -2214,13 +2230,18 @@ class DataHubMetadataApiClient:
 
             result = self.context.graph.execute_graphql(query, parameters)
 
-            if (
-                result
-                and "data" in result
-                and "upsertDatasetVolumeAssertionMonitor" in result["data"]
-                and "urn" in result["data"]["upsertDatasetVolumeAssertionMonitor"]
-            ):
-                return result["data"]["upsertDatasetVolumeAssertionMonitor"]["urn"]
+            # Handle both response formats (direct and wrapped)
+            if result:
+                # Check for direct response format
+                if ("upsertDatasetVolumeAssertionMonitor" in result 
+                    and "urn" in result["upsertDatasetVolumeAssertionMonitor"]):
+                    return result["upsertDatasetVolumeAssertionMonitor"]["urn"]
+                
+                # Check for wrapped response format
+                if ("data" in result
+                    and "upsertDatasetVolumeAssertionMonitor" in result["data"]
+                    and "urn" in result["data"]["upsertDatasetVolumeAssertionMonitor"]):
+                    return result["data"]["upsertDatasetVolumeAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create volume assertion: {result}")
             return None
@@ -2333,13 +2354,18 @@ class DataHubMetadataApiClient:
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (
-                result
-                and "data" in result
-                and "upsertDatasetFieldAssertionMonitor" in result["data"]
-                and "urn" in result["data"]["upsertDatasetFieldAssertionMonitor"]
-            ):
-                return result["data"]["upsertDatasetFieldAssertionMonitor"]["urn"]
+            # Handle both response formats (direct and wrapped)
+            if result:
+                # Check for direct response format
+                if ("upsertDatasetFieldAssertionMonitor" in result 
+                    and "urn" in result["upsertDatasetFieldAssertionMonitor"]):
+                    return result["upsertDatasetFieldAssertionMonitor"]["urn"]
+                
+                # Check for wrapped response format
+                if ("data" in result
+                    and "upsertDatasetFieldAssertionMonitor" in result["data"]
+                    and "urn" in result["data"]["upsertDatasetFieldAssertionMonitor"]):
+                    return result["data"]["upsertDatasetFieldAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create field assertion: {result}")
             return None
@@ -2421,13 +2447,18 @@ class DataHubMetadataApiClient:
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (
-                result
-                and "data" in result
-                and "upsertDatasetSqlAssertionMonitor" in result["data"]
-                and "urn" in result["data"]["upsertDatasetSqlAssertionMonitor"]
-            ):
-                return result["data"]["upsertDatasetSqlAssertionMonitor"]["urn"]
+            # Handle both response formats (direct and wrapped)
+            if result:
+                # Check for direct response format
+                if ("upsertDatasetSqlAssertionMonitor" in result 
+                    and "urn" in result["upsertDatasetSqlAssertionMonitor"]):
+                    return result["upsertDatasetSqlAssertionMonitor"]["urn"]
+                
+                # Check for wrapped response format
+                if ("data" in result
+                    and "upsertDatasetSqlAssertionMonitor" in result["data"]
+                    and "urn" in result["data"]["upsertDatasetSqlAssertionMonitor"]):
+                    return result["data"]["upsertDatasetSqlAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create SQL assertion: {result}")
             return None
@@ -2496,13 +2527,18 @@ class DataHubMetadataApiClient:
 
             result = self.context.graph.execute_graphql(query, variables)
 
-            if (
-                result
-                and "data" in result
-                and "upsertDatasetSchemaAssertionMonitor" in result["data"]
-                and "urn" in result["data"]["upsertDatasetSchemaAssertionMonitor"]
-            ):
-                return result["data"]["upsertDatasetSchemaAssertionMonitor"]["urn"]
+            # Handle both response formats (direct and wrapped)
+            if result:
+                # Check for direct response format
+                if ("upsertDatasetSchemaAssertionMonitor" in result 
+                    and "urn" in result["upsertDatasetSchemaAssertionMonitor"]):
+                    return result["upsertDatasetSchemaAssertionMonitor"]["urn"]
+                
+                # Check for wrapped response format
+                if ("data" in result
+                    and "upsertDatasetSchemaAssertionMonitor" in result["data"]
+                    and "urn" in result["data"]["upsertDatasetSchemaAssertionMonitor"]):
+                    return result["data"]["upsertDatasetSchemaAssertionMonitor"]["urn"]
 
             logger.error(f"Failed to create schema assertion: {result}")
             return None

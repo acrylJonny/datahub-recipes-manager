@@ -98,50 +98,72 @@
         min-width: 200px;
     }
 
-    /* Table column width constraints - matching tags page */
+    /* Table column width constraints - matching new column order */
     .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
         width: 40px;
         max-width: 40px;
     }
     
     .table th:nth-child(2), .table td:nth-child(2) { /* Name */
-        max-width: 180px;
-        min-width: 120px;
-    }
-    
-    .table th:nth-child(3), .table td:nth-child(3) { /* Description */
-        max-width: 250px;
+        max-width: 200px;
         min-width: 150px;
     }
     
+    .table th:nth-child(3), .table td:nth-child(3) { /* Assertee URN */
+        max-width: 160px;
+        min-width: 100px;
+    }
+    
     .table th:nth-child(4), .table td:nth-child(4) { /* Type */
+        width: 120px;
+        max-width: 120px;
+    }
+    
+    .table th:nth-child(5), .table td:nth-child(5) { /* Logic */
+        max-width: 150px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(6), .table td:nth-child(6) { /* Status */
+        width: 130px;
+        max-width: 130px;
+        text-align: center;
+    }
+    
+    .table th:nth-child(7), .table td:nth-child(7) { /* Parameters */
+        max-width: 150px;
+        min-width: 100px;
+    }
+    
+    .table th:nth-child(8), .table td:nth-child(8) { /* Schedule */
         width: 100px;
         max-width: 100px;
     }
     
-    .table th:nth-child(5), .table td:nth-child(5) { /* Entity */
-        max-width: 200px;
-        min-width: 120px;
-    }
-    
-    .table th:nth-child(6), .table td:nth-child(6) { /* Status */
+    .table th:nth-child(9), .table td:nth-child(9) { /* Tags */
         width: 100px;
         max-width: 100px;
         text-align: center;
     }
     
-    .table th:nth-child(7), .table td:nth-child(7) { /* URN */
-        max-width: 140px;
-        min-width: 100px;
+    .table th:nth-child(10), .table td:nth-child(10) { /* Source */
+        width: 80px;
+        max-width: 80px;
+        text-align: center;
     }
     
-    .table th:nth-child(8), .table td:nth-child(8) { /* Sync Status */
+    .table th:nth-child(11), .table td:nth-child(11) { /* URN */
+        max-width: 120px;
+        min-width: 80px;
+    }
+    
+    .table th:nth-child(12), .table td:nth-child(12) { /* Sync Status */
         width: 120px;
         max-width: 120px;
         text-align: center;
     }
     
-    .table th:nth-child(9), .table td:nth-child(9) { /* Actions */
+    .table th:nth-child(13), .table td:nth-child(13) { /* Actions */
         width: 200px;
         max-width: 200px;
         text-align: left;
@@ -1438,15 +1460,16 @@ function generateTableHTML(items, tabType) {
                         <th class="checkbox-column" width="3%">
                             <input type="checkbox" class="form-check-input select-all-table" data-tab="${tabType}">
                         </th>
-                        <th class="sortable-header" data-sort="urn" width="12%">URN</th>
-                        <th class="sortable-header" data-sort="type" width="6%">Type</th>
-                        <th width="18%">Logic</th>
-                        <th class="sortable-header" data-sort="status" width="8%">Status</th>
-                        <th class="sortable-header" data-sort="asserteeUrn" width="15%">Assertee URN</th>
-                        <th class="sortable-header" data-sort="parameters" width="12%">Parameters</th>
-                        <th width="10%">Schedule</th>
-                        <th class="sortable-header" data-sort="tags" width="6%">Tags</th>
+                        <th class="sortable-header" data-sort="name" width="10%">Name</th>
+                        <th class="sortable-header" data-sort="asserteeUrn" width="12%">Assertee URN</th>
+                        <th class="sortable-header" data-sort="type" width="8%">Type</th>
+                        <th width="10%">Logic</th>
+                        <th class="sortable-header" data-sort="status" width="10%">Status</th>
+                        <th class="sortable-header" data-sort="parameters" width="10%">Parameters</th>
+                        <th width="8%">Schedule</th>
+                        <th class="sortable-header" data-sort="tags" width="7.5%">Tags</th>
                         <th width="5%">Source</th>
+                        <th class="sortable-header" data-sort="urn" width="6.5%">URN</th>
                         ${showSyncStatus ? '<th width="6%">Sync Status</th>' : ''}
                         <th width="10%">Actions</th>
                     </tr>
@@ -1629,33 +1652,36 @@ function renderAssertionRow(assertion, tabType) {
                 <input type="checkbox" class="form-check-input assertion-checkbox" id="${checkboxId}" data-tab="${tabType}">
             </td>
             <td>
-                <code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 35))}</code>
+                <div class="text-wrap" style="max-width: 200px;" title="${escapeHtml(assertion.name || '')}">${escapeHtml(truncateText(assertion.name || '', 60))}</div>
+            </td>
+            <td>
+                ${asserteeUrn ? `
+                    <code class="small text-truncate d-block" style="max-width: 160px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 30))}</code>
+                ` : `<span class="text-muted">-</span>`}
             </td>
             <td>
                 <span class="badge bg-primary small">${assertionType}</span>
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 300px;">${logic}</div>
+                <div class="text-wrap" style="max-width: 150px;">${logic}</div>
             </td>
             <td>
                 ${status}
             </td>
             <td>
-                ${asserteeUrn ? `
-                    <code class="small text-truncate d-block" style="max-width: 250px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 40))}</code>
-                ` : `<span class="text-muted">-</span>`}
+                <div class="text-wrap" style="max-width: 150px;">${parameters}</div>
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 180px;">${parameters}</div>
-            </td>
-            <td>
-                <div class="text-wrap" style="max-width: 120px;">${schedule}</div>
+                <div class="text-wrap" style="max-width: 100px;">${schedule}</div>
             </td>
             <td>
                 ${tagsDisplay}
             </td>
             <td>
                 ${sourceDisplay}
+            </td>
+            <td>
+                <code class="small text-truncate d-block" style="max-width: 120px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 30))}</code>
             </td>
             ${tabType === 'synced' ? `
             <td>
@@ -1976,7 +2002,7 @@ function handleBulkDelete() {
     
     assertionsArray.forEach(assertionId => {
         const isUrn = assertionId.startsWith("urn:");
-        const endpoint = isUrn ? "/metadata/assertions/delete-remote/" : `/metadata/assertions/${assertionId}/delete/`;
+        const endpoint = isUrn ? "/metadata/assertions/delete-remote/" : `/metadata/assertions/${assertionId}/delete-local/`;
         const method = isUrn ? "POST" : "DELETE";
         const body = isUrn ? JSON.stringify({ assertion_urn: assertionId }) : null;
         
@@ -2335,6 +2361,58 @@ function bulkDeleteLocal(tabType) {
     if (confirm(`Are you sure you want to delete ${checkedBoxes.length} local assertion(s)? This action cannot be undone.`)) {
         console.log(`Bulk delete local ${checkedBoxes.length} assertions for ${tabType}`);
         showSuccess(`Deleting ${checkedBoxes.length} local assertions...`);
+        
+        // Collect assertion IDs and perform actual deletion
+        const assertionIds = [];
+        checkedBoxes.forEach(checkbox => {
+            const row = checkbox.closest('tr');
+            const assertionId = row.dataset.assertionId;
+            if (assertionId) {
+                assertionIds.push(assertionId);
+            }
+        });
+        
+        // Process deletions
+        let completedRequests = 0;
+        let successCount = 0;
+        let errorCount = 0;
+        
+        assertionIds.forEach(assertionId => {
+            fetch(`/metadata/assertions/${assertionId}/delete-local/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                    console.error('Delete failed:', data.error);
+                }
+            })
+            .catch(error => {
+                errorCount++;
+                console.error('Delete error:', error);
+            })
+            .finally(() => {
+                completedRequests++;
+                if (completedRequests === assertionIds.length) {
+                    // All requests completed
+                    if (successCount > 0) {
+                        showSuccess(`Successfully deleted ${successCount} local assertion(s)`);
+                    }
+                    if (errorCount > 0) {
+                        showError(`Failed to delete ${errorCount} assertion(s)`);
+                    }
+                    // Refresh the data
+                    loadAssertionsData();
+                }
+            });
+        });
     }
 }
 
@@ -2961,7 +3039,7 @@ function deleteLocalAssertion(assertionId, button) {
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     button.disabled = true;
     
-    fetch(`/metadata/assertions/${assertionId}/delete/`, {
+    fetch(`/metadata/assertions/${assertionId}/delete-local/`, {
         method: 'DELETE',
         headers: {
             'X-CSRFToken': getCsrfToken(),

@@ -60,7 +60,7 @@
                                 <option value="">No mutations</option>
                                 {% for mutation in mutations %}
                                     <option value="{{ mutation.id }}" {% if environment.mutations and environment.mutations.id == mutation.id %}selected{% endif %}>
-                                        {{ mutation.name }} ({{ mutation.platform_instance }} - {{ mutation.env }})
+                                        {{ mutation.name }} ({{ mutation.get_platform_instance_mapping_display }})
                                     </option>
                                 {% endfor %}
                             </select>

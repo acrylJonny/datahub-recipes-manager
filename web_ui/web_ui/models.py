@@ -180,7 +180,6 @@ class Mutation(models.Model):
     
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
-    platform_instance = models.CharField(max_length=255, blank=True, null=True, help_text="Platform instance identifier (deprecated - use platform_instance_mapping)")
     env = models.CharField(max_length=255, blank=True, null=True, help_text="Environment identifier (deprecated - use platform_instance_mapping)")
     custom_properties = models.JSONField(default=dict, help_text="Custom properties as JSON")
     platform_instance_mapping = models.JSONField(default=dict, help_text="Platform instance mapping (from -> to) for syncing between environments")

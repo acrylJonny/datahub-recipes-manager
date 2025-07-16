@@ -1494,16 +1494,17 @@ function generateTableHTML(items, tabType) {
                         <th class="checkbox-column">
                             <input type="checkbox" class="form-check-input select-all-table" data-tab="${tabType}">
                         </th>
-                        <th class="sortable-header" data-sort="urn">URN</th>
+                        <th class="sortable-header" data-sort="name">Name</th>
+                        <th class="sortable-header" data-sort="asserteeUrn">Assertee URN</th>
                         <th class="sortable-header" data-sort="type">Type</th>
                         <th>Logic</th>
                         <th class="sortable-header" data-sort="status">Status</th>
-                        <th class="sortable-header" data-sort="asserteeUrn">Assertee URN</th>
                         <th class="sortable-header" data-sort="parameters">Parameters</th>
                         <th>Schedule</th>
                         <th>URL</th>
                         <th class="sortable-header" data-sort="tags">Tags</th>
                         <th>Source</th>
+                        <th class="sortable-header" data-sort="urn">URN</th>
                         <th>Sync Status</th>
                         <th width="15%">Actions</th>
                     </tr>
@@ -1657,7 +1658,12 @@ function renderAssertionRow(assertion, tabType) {
                 <input type="checkbox" class="form-check-input assertion-checkbox" id="${checkboxId}" data-tab="${tabType}">
             </td>
             <td>
-                <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 40))}</code>
+                <div class="text-wrap" style="max-width: 200px;" title="${escapeHtml(assertion.name || '')}">${escapeHtml(truncateText(assertion.name || '', 60))}</div>
+            </td>
+            <td>
+                ${asserteeUrn ? `
+                    <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 30))}</code>
+                ` : `<span class="text-muted">-</span>`}
             </td>
             <td>
                 <span class="badge bg-primary">${assertionType}</span>
@@ -1667,11 +1673,6 @@ function renderAssertionRow(assertion, tabType) {
             </td>
             <td>
                 ${status}
-            </td>
-            <td>
-                ${asserteeUrn ? `
-                    <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 30))}</code>
-                ` : `<span class="text-muted">-</span>`}
             </td>
             <td>
                 <div class="text-wrap" style="max-width: 200px;">${parameters}</div>
@@ -1691,6 +1692,9 @@ function renderAssertionRow(assertion, tabType) {
             </td>
             <td>
                 ${sourceDisplay}
+            </td>
+            <td>
+                <code class="small text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 40))}</code>
             </td>
             <td>
                 <span class="badge ${syncStatusClass}">${assertion.sync_status_display || assertion.sync_status}</span>
@@ -1963,6 +1967,49 @@ function handleBulkDelete() {
     // Implementation for bulk delete
     console.log('Bulk delete:', Array.from(selectedAssertions));
     showSuccess(`Deleting ${selectedAssertions.size} assertions...`);
+    
+    // Process deletions
+    const assertionsArray = Array.from(selectedAssertions);
+    let completedRequests = 0;
+    let successCount = 0;
+    let errorCount = 0;
+    
+    assertionsArray.forEach(assertionId => {
+        const isUrn = assertionId.startsWith("urn:");
+        const endpoint = isUrn ? "/metadata/assertions/delete-remote/" : `/metadata/assertions/${assertionId}/delete-local/`;
+        const method = isUrn ? "POST" : "DELETE";
+        const body = isUrn ? JSON.stringify({ assertion_urn: assertionId }) : null;
+        
+        fetch(endpoint, {
+            method: method,
+            headers: {
+                "X-CSRFToken": getCsrfToken(),
+                "Content-Type": "application/json",
+            },
+            body: body
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                successCount++;
+            } else {
+                errorCount++;
+            }
+        })
+        .catch(error => {
+            errorCount++;
+        })
+        .finally(() => {
+            completedRequests++;
+            if (completedRequests === assertionsArray.length) {
+                selectedAssertions.clear();
+                updateBulkActionsBar();
+                if (successCount > 0) showSuccess(`Successfully deleted ${successCount} local assertion(s)`);
+                if (errorCount > 0) showError(`Failed to delete ${errorCount} assertion(s)`);
+                loadAssertionsData();
+            }
+        });
+    });
 }
 
 function handleBulkDownload() {
@@ -2552,7 +2599,7 @@ function deleteLocalAssertion(assertionId, button) {
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     button.disabled = true;
     
-    fetch(`/metadata/assertions/${assertionId}/delete/`, {
+    fetch(`/metadata/assertions/${assertionId}/delete-local/`, {
         method: 'DELETE',
         headers: {
             'X-CSRFToken': getCsrfToken(),
