@@ -51,21 +51,54 @@ class DataHubClient:
         self.server_url = server_url.rstrip("/")
         self.token = token
 
-        # Create a complete config object for DataHubGraph
-        config = DataHubConfig(
-            server=self.server_url, token=self.token, timeout_sec=30, retry_max_times=3
-        )
-
-        # Initialize the graph client
+        # Initialize the graph client with compatibility handling
         try:
+            # Try with basic DataHubConfig first
+            config = DataHubConfig(
+                server=self.server_url, token=self.token, timeout_sec=30, retry_max_times=3
+            )
+            
+            # Add missing openapi_ingestion attribute if not present
+            if not hasattr(config, 'openapi_ingestion'):
+                config.openapi_ingestion = False
+            
             # Latest SDK version approach
             self.graph = DataHubGraph(config)
             logger.info("Successfully initialized DataHub client with config object")
         except Exception as e:
             logger.warning(f"Error initializing DataHub client with config: {str(e)}")
-            # Try alternate initialization approach - use requests directly
-            logger.error(f"Failed to initialize DataHub client: {str(e)}")
-            raise Exception(f"Could not initialize DataHub client. Error: {str(e)}")
+            # Try alternate initialization approach - use direct URL/token
+            try:
+                # Fallback to direct initialization without config object
+                from datahub.emitter.rest_emitter import DatahubRestEmitter
+                
+                # Create a simple emitter-based approach
+                emitter = DatahubRestEmitter(
+                    gms_server=self.server_url,
+                    token=self.token,
+                    timeout_sec=30
+                )
+                
+                # Try to initialize graph with minimal config
+                config = DataHubConfig(server=self.server_url, token=self.token)
+                
+                # Manual attribute setting to bypass validation
+                config.__dict__['openapi_ingestion'] = False
+                
+                self.graph = DataHubGraph(config)
+                logger.info("Successfully initialized DataHub client with fallback approach")
+            except Exception as e2:
+                logger.error(f"Failed to initialize DataHub client with fallback: {str(e2)}")
+                # Last resort - try to use the migration script's own DataHubMetadataApiClient
+                logger.info("Attempting to use DataHubMetadataApiClient as fallback")
+                try:
+                    from utils.datahub_metadata_api import DataHubMetadataApiClient
+                    self.metadata_api = DataHubMetadataApiClient(self.server_url, self.token)
+                    self.graph = self.metadata_api.context.graph
+                    logger.info("Successfully initialized DataHub client using DataHubMetadataApiClient")
+                except Exception as e3:
+                    logger.error(f"All DataHub client initialization methods failed: {str(e3)}")
+                    raise Exception(f"Could not initialize DataHub client. Error: {str(e3)}")
 
     def create_ingestion_source(
         self,

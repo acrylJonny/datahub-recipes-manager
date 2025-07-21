@@ -30,15 +30,7 @@ except ImportError:
     print("DataHub SDK not found. Please install with: pip install 'acryl-datahub>=0.10.0'")
     sys.exit(1)
 
-from utils.urn_utils import generate_deterministic_urn
-
-# Try to import the new URN generation utilities
-try:
-    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
-    from utils.urn_utils import generate_tag_urn, get_mutation_config_for_environment
-    HAS_NEW_URN_UTILS = True
-except ImportError:
-    HAS_NEW_URN_UTILS = False
+from utils.urn_utils import generate_unified_urn
 
 
 logger = logging.getLogger(__name__)
@@ -148,9 +140,7 @@ def create_tag_properties_mcp(
     if custom_urn:
         tag_urn = custom_urn
     else:
-        tag_urn = generate_deterministic_urn(
-            "tag", tag_id, environment=environment, mutation_name=mutation_name
-        )
+        tag_urn = generate_unified_urn("tag", tag_id, environment, mutation_name)
 
     # Create audit stamp
     current_time = int(time.time() * 1000)  # Current time in milliseconds
@@ -204,9 +194,7 @@ def create_tag_ownership_mcp(
     if custom_urn:
         tag_urn = custom_urn
     else:
-        tag_urn = generate_deterministic_urn(
-            "tag", tag_id, environment=environment, mutation_name=mutation_name
-        )
+        tag_urn = generate_unified_urn("tag", tag_id, environment, mutation_name)
 
     # Create audit stamp
     current_time = int(time.time() * 1000)
@@ -385,7 +373,7 @@ def main():
             if mutation_config:
                 # Generate a temporary URN to test mutation
                 temp_urn = f"urn:li:tag:{tag_id}"
-                mutated_urn = generate_tag_urn(temp_urn, env_name, mutation_config)
+                mutated_urn = generate_unified_urn("tag", temp_urn, env_name, mutation_config)
                 if mutated_urn != temp_urn:
                     custom_urn = mutated_urn
                     logger.info(f"Using mutated URN for tag: {temp_urn} -> {mutated_urn}")
@@ -442,7 +430,7 @@ def main():
     if files_skipped:
         logger.info(f"Skipped unchanged MCP files for tag '{tag_id}': {', '.join(files_skipped)}")
     
-    logger.info(f"Tag URN: {generate_deterministic_urn('tag', tag_id, environment=args.environment, mutation_name=args.mutation_name)}")
+    logger.info(f"Tag URN: {generate_unified_urn('tag', tag_id, args.environment, args.mutation_name)}")
 
 
 if __name__ == "__main__":

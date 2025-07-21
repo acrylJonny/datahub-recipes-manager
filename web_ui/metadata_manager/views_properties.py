@@ -18,7 +18,7 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
+from utils.urn_utils import get_full_urn_from_name, generate_mutated_urn, get_mutation_config_for_environment
 from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from web_ui.models import GitSettings
 from .models import StructuredProperty
@@ -767,10 +767,15 @@ class PropertyListView(View):
             if not qualified_name:
                 qualified_name = name.lower().replace(" ", "_")
 
-            # Generate deterministic URN
-            deterministic_urn = get_full_urn_from_name(
-                "structuredProperty", qualified_name
-            )
+            # Get current environment for consistent URN generation
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            current_environment = getattr(current_connection, 'environment', 'dev')
+
+            # Generate URN using the same system as editable properties export
+            base_urn = get_full_urn_from_name("structuredProperty", qualified_name)
+            mutation_config = get_mutation_config_for_environment(current_environment)
+            deterministic_urn = generate_mutated_urn(base_urn, current_environment, "structuredProperty", mutation_config)
 
             # Check if property with this URN already exists
             if StructuredProperty.objects.filter(

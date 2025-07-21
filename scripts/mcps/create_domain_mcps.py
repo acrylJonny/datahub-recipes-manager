@@ -30,7 +30,6 @@ try:
         OwnershipSourceTypeClass,
         AuditStampClass,
         ChangeTypeClass,
-        StatusClass,
         GlobalTagsClass,
         TagAssociationClass,
         GlossaryTermsClass,
@@ -59,7 +58,7 @@ except ImportError:
     print("DataHub SDK not found. Please install with: pip install 'acryl-datahub>=0.10.0'")
     sys.exit(1)
 
-from utils.urn_utils import generate_deterministic_urn
+from utils.urn_utils import generate_unified_urn
 
 
 logger = logging.getLogger(__name__)
@@ -78,7 +77,7 @@ def setup_logging(log_level: str):
 
 
 def create_domain_properties_mcp(
-    domain_id: str,
+    domain_urn: str,
     domain_name: str,
     owner: str,
     description: Optional[str] = None,
@@ -90,9 +89,7 @@ def create_domain_properties_mcp(
     """
     Create an MCP for domain properties
     """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
     if owner.startswith("urn:li:corpuser:"):
@@ -126,7 +123,7 @@ def create_domain_properties_mcp(
 
 
 def create_domain_ownership_mcp(
-    domain_id: str,
+    domain_urn: str,
     owner: str,
     ownership_type: str = "urn:li:ownershipType:__system__technical_owner",
     environment: Optional[str] = None,
@@ -135,9 +132,7 @@ def create_domain_ownership_mcp(
     """
     Create an MCP for domain ownership
     """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
     if owner.startswith("urn:li:corpuser:"):
@@ -180,34 +175,8 @@ def create_domain_ownership_mcp(
     return mcp.to_obj()
 
 
-def create_domain_status_mcp(
-    domain_id: str,
-    removed: bool = False,
-    environment: Optional[str] = None,
-    mutation_name: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Create an MCP for domain status (soft delete)
-    """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
-
-    status = StatusClass(removed=removed)
-
-    mcp = MetadataChangeProposalWrapper(
-        entityUrn=domain_urn,
-        entityType="domain",
-        aspectName="status",
-        aspect=status,
-        changeType=ChangeTypeClass.UPSERT
-    )
-
-    return mcp.to_obj()
-
-
 def create_domain_global_tags_mcp(
-    domain_id: str,
+    domain_urn: str,
     tags: List[str],
     owner: str,
     environment: Optional[str] = None,
@@ -227,9 +196,7 @@ def create_domain_global_tags_mcp(
         urn_utils_available = False
         logger.warning("URN utilities not available - using original URNs")
     
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
     
     # Get mutation configuration if URN utilities are available
     mutation_config = None
@@ -268,7 +235,7 @@ def create_domain_global_tags_mcp(
 
 
 def create_domain_glossary_terms_mcp(
-    domain_id: str,
+    domain_urn: str,
     glossary_terms: List[str],
     owner: str,
     environment: Optional[str] = None,
@@ -288,9 +255,7 @@ def create_domain_glossary_terms_mcp(
         urn_utils_available = False
         logger.warning("URN utilities not available - using original URNs")
     
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     # Get mutation configuration if URN utilities are available
     mutation_config = None
@@ -345,7 +310,7 @@ def create_domain_glossary_terms_mcp(
 
 
 def create_domain_browse_paths_mcp(
-    domain_id: str,
+    domain_urn: str,
     browse_paths: List[str],
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
@@ -353,9 +318,7 @@ def create_domain_browse_paths_mcp(
     """
     Create an MCP for domain browse paths
     """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     browse_paths_aspect = BrowsePathsClass(paths=browse_paths)
 
@@ -371,7 +334,7 @@ def create_domain_browse_paths_mcp(
 
 
 def create_domain_institutional_memory_mcp(
-    domain_id: str,
+    domain_urn: str,
     memory_elements: List[Dict[str, str]],  # [{"url": "...", "description": "..."}, ...]
     owner: str,
     environment: Optional[str] = None,
@@ -380,9 +343,7 @@ def create_domain_institutional_memory_mcp(
     """
     Create an MCP for domain institutional memory
     """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
     if owner.startswith("urn:li:corpuser:"):
@@ -418,7 +379,7 @@ def create_domain_institutional_memory_mcp(
 
 
 def create_domain_structured_properties_mcp(
-    domain_id: str,
+    domain_urn: str,
     properties: List[Dict[str, Any]],  # [{"propertyUrn": "...", "values": [...]}, ...]
     owner: str,
     environment: Optional[str] = None,
@@ -438,9 +399,7 @@ def create_domain_structured_properties_mcp(
         urn_utils_available = False
         logger.warning("URN utilities not available - using original URNs")
     
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     # Get mutation configuration if URN utilities are available
     mutation_config = None
@@ -492,7 +451,7 @@ def create_domain_structured_properties_mcp(
 
 
 def create_domain_forms_mcp(
-    domain_id: str,
+    domain_urn: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
     incomplete_forms: List[str] = None,
@@ -501,9 +460,7 @@ def create_domain_forms_mcp(
     """
     Create an MCP for domain forms
     """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     incomplete_form_associations = []
     if incomplete_forms:
@@ -541,7 +498,7 @@ def create_domain_forms_mcp(
 
 
 def create_domain_test_results_mcp(
-    domain_id: str,
+    domain_urn: str,
     owner: str,
     environment: Optional[str] = None,
     mutation_name: Optional[str] = None,
@@ -551,9 +508,7 @@ def create_domain_test_results_mcp(
     """
     Create an MCP for domain test results
     """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     # Handle owner URN - if it's already a URN, use it as-is, otherwise construct it
     if owner.startswith("urn:li:corpuser:"):
@@ -604,7 +559,7 @@ def create_domain_test_results_mcp(
 
 
 def create_domain_display_properties_mcp(
-    domain_id: str,
+    domain_urn: str,
     color_hex: Optional[str] = None,
     icon_library: Optional[str] = None,
     icon_name: Optional[str] = None,
@@ -615,9 +570,7 @@ def create_domain_display_properties_mcp(
     """
     Create an MCP for domain display properties
     """
-    domain_urn = generate_deterministic_urn(
-        "domain", domain_id, environment=environment, mutation_name=mutation_name
-    )
+    # Use the provided domain_urn directly (already mutated if needed)
 
     icon_properties = None
     if icon_library and icon_name and icon_style:
@@ -767,7 +720,7 @@ def main():
     # Create properties MCP
     logger.info(f"Creating properties MCP for domain '{domain_id}'...")
     properties_mcp = create_domain_properties_mcp(
-        domain_id=domain_id,
+        domain_urn=effective_urn,
         domain_name=domain_name,
         owner=args.owner,
         description=args.description,
@@ -783,7 +736,7 @@ def main():
     # Create ownership MCP
     logger.info(f"Creating ownership MCP for domain '{domain_id}'...")
     ownership_mcp = create_domain_ownership_mcp(
-        domain_id=domain_id,
+        domain_urn=effective_urn,
         owner=args.owner,
         environment=args.environment,
         mutation_name=args.mutation_name
@@ -793,24 +746,12 @@ def main():
     ownership_file = os.path.join(output_dir, f"{safe_domain_id}_ownership.json")
     ownership_saved = save_mcp_to_file(ownership_mcp.to_obj(), ownership_file)
     
-    # Create status MCP
-    logger.info(f"Creating status MCP for domain '{domain_id}'...")
-    status_mcp = create_domain_status_mcp(
-        domain_id=domain_id,
-        environment=args.environment,
-        mutation_name=args.mutation_name
-    )
-    
-    # Save status MCP
-    status_file = os.path.join(output_dir, f"{safe_domain_id}_status.json")
-    status_saved = save_mcp_to_file(status_mcp.to_obj(), status_file)
-    
     # Create display properties MCP if display properties are provided
     display_saved = False
     if args.color_hex or args.icon_name:
         logger.info(f"Creating display properties MCP for domain '{domain_id}'...")
         display_mcp = create_domain_display_properties_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             color_hex=args.color_hex,
             icon_name=args.icon_name,
             icon_style=args.icon_style,
@@ -837,11 +778,6 @@ def main():
     else:
         files_skipped.append("ownership")
         
-    if status_saved:
-        files_created.append("status")
-    else:
-        files_skipped.append("status")
-        
     if display_saved:
         files_created.append("display_properties")
     else:
@@ -852,7 +788,7 @@ def main():
     if files_skipped:
         logger.info(f"Skipped unchanged MCP files for domain '{domain_id}': {', '.join(files_skipped)}")
     
-    logger.info(f"Domain URN: {generate_deterministic_urn('domain', domain_id, environment=args.environment, mutation_name=args.mutation_name)}")
+    logger.info(f"Domain URN: {generate_unified_urn('domain', domain_id, args.environment, args.mutation_name)}")
 
 
 if __name__ == "__main__":
@@ -909,7 +845,7 @@ def create_domain_staged_changes(
     
     # 1. Domain Properties (always include)
     properties_mcp = create_domain_properties_mcp(
-        domain_id=domain_id,
+        domain_urn=effective_urn,
         domain_name=name,
         owner=owners[0] if owners else "admin",
         description=description,
@@ -921,76 +857,69 @@ def create_domain_staged_changes(
     # 2. Ownership (always include)
     if owners:
         ownership_mcp = create_domain_ownership_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             owner=owners[0]
         )
         mcps.append(ownership_mcp)
     
-    # 3. Status (always include)
-    status_mcp = create_domain_status_mcp(
-        domain_id=domain_id,
-        removed=False
-    )
-    mcps.append(status_mcp)
-    
-    # 4. Global Tags (if tags provided)
+    # 3. Global Tags (if tags provided)
     if tags:
         tags_mcp = create_domain_global_tags_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             tags=tags,
             owner=owners[0] if owners else "admin"
         )
         mcps.append(tags_mcp)
     
-    # 5. Glossary Terms (if terms provided)
+    # 4. Glossary Terms (if terms provided)
     if terms:
         terms_mcp = create_domain_glossary_terms_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             glossary_terms=terms,
             owner=owners[0] if owners else "admin"
         )
         mcps.append(terms_mcp)
     
-    # 6. Institutional Memory (if links provided)
+    # 5. Institutional Memory (if links provided)
     if links:
         memory_mcp = create_domain_institutional_memory_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             memory_elements=links,
             owner=owners[0] if owners else "admin"
         )
         mcps.append(memory_mcp)
     
-    # 7. Structured Properties (if provided)
+    # 6. Structured Properties (if provided)
     if structured_properties:
         props_mcp = create_domain_structured_properties_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             properties=structured_properties,
             owner=owners[0] if owners else "admin"
         )
         mcps.append(props_mcp)
     
-    # 8. Forms (if provided)
+    # 7. Forms (if provided)
     if forms:
         forms_mcp = create_domain_forms_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             completed_forms=[f.get("urn") for f in forms if f.get("urn")]
         )
         mcps.append(forms_mcp)
     
-    # 9. Test Results (if provided)
+    # 8. Test Results (if provided)
     if test_results:
         test_mcp = create_domain_test_results_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             owner=owners[0] if owners else "admin",
             passing_tests=[t.get("urn") for t in test_results if t.get("status") == "PASS" and t.get("urn")],
             failing_tests=[t.get("urn") for t in test_results if t.get("status") == "FAIL" and t.get("urn")]
         )
         mcps.append(test_mcp)
     
-    # 10. Display Properties (if provided)
+    # 9. Display Properties (if provided)
     if display_properties:
         display_mcp = create_domain_display_properties_mcp(
-            domain_id=domain_id,
+        domain_urn=effective_urn,
             color_hex=display_properties.get("colorHex"),
             icon_library=display_properties.get("icon", {}).get("library"),
             icon_name=display_properties.get("icon", {}).get("name"),

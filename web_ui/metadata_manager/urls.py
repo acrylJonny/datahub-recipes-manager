@@ -44,6 +44,11 @@ urlpatterns = [
         views.get_platforms,
         name="get_platforms",
     ),
+    path(
+        "platform-instances/",
+        views.get_all_platform_instances,
+        name="get_all_platform_instances",
+    ),
     path("entities/<str:urn>/", views.get_entity_details, name="get_entity_details"),
     path(
         "entities/<str:urn>/schema/", views.get_entity_schema, name="get_entity_schema"
@@ -52,6 +57,7 @@ urlpatterns = [
     path("config/datahub-url/", views.get_datahub_url_config, name="get_datahub_url_config"),
     path("structured-properties/", views.get_structured_properties, name="get_structured_properties"),
     path("entities/editable/export-with-mutations/", views.export_entities_with_mutations, name="export_entities_with_mutations"),
+    path("entities/editable/download-exported/", views.download_exported_entities, name="download_exported_entities"),
     # Structured Properties
     path(
         "properties/", views_properties.PropertyListView.as_view(), name="property_list"

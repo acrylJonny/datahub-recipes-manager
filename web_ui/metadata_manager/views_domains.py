@@ -17,7 +17,7 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
+from utils.urn_utils import get_full_urn_from_name, generate_mutated_urn, get_mutation_config_for_environment
 from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.token_utils import get_token_from_env
 from .models import Domain
@@ -110,17 +110,21 @@ class DomainListView(View):
                 messages.error(request, "Domain name is required")
                 return redirect("metadata_manager:domain_list")
             
-            # Generate deterministic URN
-            urn = get_full_urn_from_name("domain", name)
+            # Get current connection from request session
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
+            # Determine environment name
+            current_environment = getattr(current_connection, 'environment', 'dev')
+            
+            # Generate URN using the same system as editable properties export
+            from utils.urn_utils import generate_urn_for_new_entity
+            urn = generate_urn_for_new_entity("domain", name, current_environment)
             
             # Check if domain with this URN already exists
             if Domain.objects.filter(urn=urn).exists():
                 messages.error(request, f"Domain with name '{name}' already exists")
                 return redirect("metadata_manager:domain_list")
-            
-            # Get current connection from request session
-            from web_ui.views import get_current_connection
-            current_connection = get_current_connection(request)
             
             # Process ownership data
             ownership_data = None
@@ -1449,10 +1453,11 @@ def sync_domain_to_local(request, domain_id=None):
         # Get current connection from request session
         from web_ui.views import get_current_connection
         current_connection = get_current_connection(request)
+        current_environment = getattr(current_connection, 'environment', 'dev')
 
-        # Generate deterministic URN for local storage
-        from utils.urn_utils import get_full_urn_from_name
-        deterministic_urn = get_full_urn_from_name("domain", domain_name)
+        # When syncing FROM DataHub TO local, preserve the original DataHub URN
+        # Do NOT generate a new deterministic URN - that's for NEW entities created in web UI
+        local_urn = domain_urn
 
         # Prepare ownership data
         ownership_data = None
@@ -1478,7 +1483,7 @@ def sync_domain_to_local(request, domain_id=None):
 
         # Create or update local domain with SYNCED status
         domain, created = Domain.objects.update_or_create(
-            urn=deterministic_urn,
+            urn=local_urn,
             defaults={
                 "name": domain_name,
                 "description": domain_description,
@@ -1526,9 +1531,8 @@ def sync_domain_to_local(request, domain_id=None):
                         if remote_parent:
                             parent_name = remote_parent.get("properties", {}).get("name")
                             if parent_name:
-                                # Generate deterministic URN for the parent
-                                from utils.urn_utils import get_full_urn_from_name
-                                parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
+                                # Generate URN using the same system as editable properties export
+                                parent_deterministic_urn = generate_urn_for_new_entity("domain", parent_name, current_environment)
                                 
                                 # Check if a domain with this deterministic URN exists
                                 local_parent = Domain.objects.filter(urn=parent_deterministic_urn).first()
@@ -1690,9 +1694,8 @@ def resync_domain(request, domain_id):
                         if remote_parent:
                             parent_name = remote_parent.get("properties", {}).get("name")
                             if parent_name:
-                                # Generate deterministic URN for the parent
-                                from utils.urn_utils import get_full_urn_from_name
-                                parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
+                                # Generate URN using the same system as editable properties export
+                                parent_deterministic_urn = generate_urn_for_new_entity("domain", parent_name, current_environment)
                                 
                                 # Check if a domain with this deterministic URN exists
                                 local_parent = Domain.objects.filter(urn=parent_deterministic_urn).first()
@@ -2051,6 +2054,8 @@ def bulk_sync_domains_to_local(request):
         # Get current connection from request session
         from web_ui.views import get_current_connection
         current_connection = get_current_connection(request)
+        current_environment = getattr(current_connection, 'environment', 'dev')
+        mutation_config = get_mutation_config_for_environment(current_environment)
         
         success_count = 0
         error_count = 0
@@ -2078,9 +2083,9 @@ def bulk_sync_domains_to_local(request):
                 # Extract datahub_id from URN
                 datahub_id = domain_urn.split(":")[-1] if domain_urn else None
                 
-                # Generate deterministic URN for local storage
-                from utils.urn_utils import get_full_urn_from_name
-                deterministic_urn = get_full_urn_from_name("domain", domain_name)
+                # When syncing FROM DataHub TO local, preserve the original DataHub URN
+                # Do NOT generate a new deterministic URN - that's for NEW entities created in web UI
+                local_urn = domain_urn
                 
                 # Prepare ownership data
                 ownership_data = None
@@ -2106,7 +2111,7 @@ def bulk_sync_domains_to_local(request):
                 
                 # Create or update local domain
                 domain, created = Domain.objects.update_or_create(
-                    urn=deterministic_urn,
+                    urn=local_urn,
                     defaults={
                         "name": domain_name,
                         "description": domain_description,
@@ -2154,9 +2159,9 @@ def bulk_sync_domains_to_local(request):
                                 if remote_parent:
                                     parent_name = remote_parent.get("properties", {}).get("name")
                                     if parent_name:
-                                        # Generate deterministic URN for the parent
-                                        from utils.urn_utils import get_full_urn_from_name
-                                        parent_deterministic_urn = get_full_urn_from_name("domain", parent_name)
+                                        # Generate URN using the same system as editable properties export
+                                        from utils.urn_utils import generate_urn_for_new_entity
+                                        parent_deterministic_urn = generate_urn_for_new_entity("domain", parent_name, current_environment)
                                         
                                         # Check if a domain with this deterministic URN exists
                                         local_parent = Domain.objects.filter(urn=parent_deterministic_urn).first()
@@ -2332,7 +2337,9 @@ def bulk_add_domains_to_staged_changes(request):
                     include_all_aspects=True,
                     environment=environment,
                     owner="system",  # Default owner
-                    base_dir="metadata"
+                    base_dir="metadata",
+                    # Pass existing URN if domain has one (for proper NEW vs EXISTING handling)
+                    existing_urn=domain.urn if domain.urn else None
                 )
                 
                 if result.get("success"):
@@ -2474,7 +2481,9 @@ def add_domain_to_staged_changes(request, domain_id):
             include_all_aspects=True,
             environment=environment,
             owner=request.user.username if request.user.is_authenticated else "admin",
-            base_dir="metadata-manager"
+            base_dir="metadata-manager",
+            # Pass existing URN if domain has one (for proper NEW vs EXISTING handling)
+            existing_urn=domain.urn if domain.urn else None
         )
         
         if result.get("success"):
@@ -2612,7 +2621,9 @@ class DomainRemoteAddToStagedChangesView(View):
                 environment=environment_name,
                 owner=owner,
                 base_dir="metadata-manager",
-                mutation_name=mutation_name
+                mutation_name=mutation_name,
+                # Remote domains always have existing URNs from DataHub
+                existing_urn=domain_data.get('urn')
             )
             
             # Provide feedback about files created

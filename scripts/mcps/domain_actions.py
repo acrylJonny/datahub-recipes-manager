@@ -18,22 +18,11 @@ sys.path.append(
 )
 
 # Import local utilities
-from utils.urn_utils import generate_deterministic_urn, extract_name_from_properties
+from utils.urn_utils import generate_urn_for_new_entity, apply_urn_mutations_for_existing_entity, extract_name_from_properties
 from scripts.mcps.create_domain_mcps import (
     create_domain_staged_changes,
     save_mcps_to_files
 )
-
-# Try to import the new URN generation utilities
-try:
-    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
-    from utils.urn_utils import (
-        generate_domain_urn, 
-        get_mutation_config_for_environment
-    )
-    HAS_NEW_URN_UTILS = True
-except ImportError:
-    HAS_NEW_URN_UTILS = False
 
 logger = logging.getLogger(__name__)
 
@@ -165,25 +154,23 @@ def add_domain_to_staged_changes(
     setup_logging()
     
     try:
-        # Generate domain URN with mutation support
-        domain_urn = f"urn:li:domain:{domain_id}"
-        custom_urn = None
-        
+        # Generate domain URN based on whether this is a new or existing entity
         # Extract mutation_name from kwargs if provided, otherwise use environment
         mutation_name = kwargs.pop('mutation_name', environment)
         
-        if HAS_NEW_URN_UTILS:
-            try:
-                mutation_config = get_mutation_config_for_environment(environment)
-                if mutation_config:
-                    mutated_urn = generate_domain_urn(domain_urn, environment, mutation_config)
-                    if mutated_urn != domain_urn:
-                        custom_urn = mutated_urn
-                        domain_urn = mutated_urn
-                        logger.info(f"Generated mutated URN for domain: {f'urn:li:domain:{domain_id}'} -> {mutated_urn}")
-                logger.info(f"Using mutation config for environment '{environment}': {mutation_config is not None}")
-            except Exception as e:
-                logger.warning(f"Could not get mutation config for environment '{environment}': {e}")
+        # Check if this domain already exists (has a URN from DataHub)
+        existing_urn = kwargs.get('existing_urn')  # Could be passed if entity exists
+        
+        if existing_urn:
+            # EXISTING entity from DataHub - mutate the existing URN
+            from utils.urn_utils import apply_urn_mutations_for_existing_entity
+            domain_urn = apply_urn_mutations_for_existing_entity(existing_urn, environment, mutation_name)
+            logger.info(f"Mutated existing domain URN: {existing_urn} -> {domain_urn}")
+        else:
+            # NEW entity created in web UI - generate from name
+            from utils.urn_utils import generate_urn_for_new_entity
+            domain_urn = generate_urn_for_new_entity("domain", domain_id, environment, mutation_name)
+            logger.info(f"Generated new domain URN: {domain_urn}")
         
         # Create MCPs using the new comprehensive function
         mcps = create_domain_staged_changes(
@@ -202,7 +189,7 @@ def add_domain_to_staged_changes(
             parent_domain=parent_domain,
             include_all_aspects=include_all_aspects,
             custom_aspects=custom_aspects,
-            custom_urn=custom_urn,
+            custom_urn=None,
             environment=environment,
             mutation_name=mutation_name,
             **kwargs

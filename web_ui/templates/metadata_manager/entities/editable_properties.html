@@ -630,6 +630,59 @@ document.addEventListener('DOMContentLoaded', function() {
         connectionId: null
     };
     
+    // Domain cache for name lookups (matches data products implementation)
+    let domainsCache = new Map();
+    let domainsCacheLoaded = false;
+    
+    // Load domains data for name lookups
+    async function loadDomainsForLookup() {
+        if (domainsCacheLoaded) return;
+        
+        try {
+            const response = await fetch('/metadata/domains/data/', {
+                method: 'GET',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const allDomains = [
+                    ...(data.data.synced_items || []),
+                    ...(data.data.local_only_items || []),
+                    ...(data.data.remote_only_items || [])
+                ];
+                
+                // Build cache map
+                allDomains.forEach(domain => {
+                    if (domain.urn) {
+                        const name = domain.properties?.name || domain.name || '';
+                        domainsCache.set(domain.urn, name);
+                    }
+                });
+                
+                domainsCacheLoaded = true;
+                console.log(`Loaded ${domainsCache.size} domains for lookup`);
+                
+                // Debug: log some domain entries
+                if (domainsCache.size > 0) {
+                    const firstFew = Array.from(domainsCache.entries()).slice(0, 3);
+                    console.log('Sample domains:', firstFew);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading domains for lookup:', error);
+        }
+    }
+    
+    // Get domain name from cache
+    function getDomainName(domainUrn) {
+        if (!domainUrn) return '';
+        return domainsCache.get(domainUrn) || '';
+    }
+    
     // Multi-select dropdown functionality - INITIALIZE EARLY
     function initializeMultiSelect(selectElement) {
         const container = selectElement.parentElement;
@@ -908,64 +961,181 @@ document.addEventListener('DOMContentLoaded', function() {
         return null;
     }
     
-    // Extract and cache ALL platform instances from loaded entities
-    function extractAllPlatformInstances() {
-        if (allEntities.length === 0) {
-            return;
+    // Load platform instances from backend
+    function loadPlatformInstances(platform = null, entityType = null) {
+        const currentConnection = getCurrentConnectionId();
+        
+        console.log('Loading platform instances from backend for platform:', platform, 'entityType:', entityType, 'connection:', currentConnection);
+        
+        // Build URL with parameters
+        let url = '/metadata/platform-instances/';
+        const params = new URLSearchParams();
+        
+        if (platform) {
+            params.append('platform', platform);
+        }
+        if (entityType) {
+            params.append('entity_type', entityType);
         }
         
-        console.log('Extracting all platform instances from', allEntities.length, 'entities');
+        if (params.toString()) {
+            url += '?' + params.toString();
+        }
         
-        // Group instances by platform
-        const instancesByPlatform = new Map();
+        console.log('Fetching platform instances from:', url);
         
-        allEntities.forEach(entity => {
-            const platformName = getEntityPlatformName(entity);
-            const instanceId = getEntityPlatformInstance(entity);
-            
-            if (platformName && instanceId) {
-                if (!instancesByPlatform.has(platformName)) {
-                    instancesByPlatform.set(platformName, new Set());
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.platform_instances) {
+                    console.log('Loaded', data.platform_instances.length, 'platform instances from cache');
+                    
+                    // Cache the instances
+                    const instanceCacheKey = platform ? `${platform}_${currentConnection}` : `all_${currentConnection}`;
+                    platformInstanceCache.set(instanceCacheKey, data.platform_instances);
+                    
+                    // Update the dropdown
+                    updatePlatformInstancesDropdown();
+                } else if (data.success && data.platform_instances && data.platform_instances.length === 0) {
+                    // Empty cache - set empty array and suggest loading data
+                    console.log('Cache is empty - no platform instances found. Try loading entities first.');
+                    const instanceCacheKey = platform ? `${platform}_${currentConnection}` : `all_${currentConnection}`;
+                    platformInstanceCache.set(instanceCacheKey, []);
+                    updatePlatformInstancesDropdown();
+                    
+                    // Show a helpful message in the UI
+                    const platformInstanceSelect = document.getElementById('platformInstance');
+                    if (platformInstanceSelect && platformInstanceSelect.nextElementSibling) {
+                        const helpText = platformInstanceSelect.nextElementSibling.querySelector('.form-text');
+                        if (helpText) {
+                            helpText.textContent = 'No platform instances found in cache. Load entities first to populate instances.';
+                        }
+                    }
+                } else {
+                    console.error('Failed to load platform instances:', data.error);
+                    platformInstanceCache.set(`${platform || 'all'}_${currentConnection}`, []);
+                    updatePlatformInstancesDropdown();
                 }
-                instancesByPlatform.get(platformName).add(instanceId);
-                console.log('Found instance:', instanceId, 'for platform:', platformName);
-            }
-        });
+            })
+            .catch(error => {
+                console.error('Error loading platform instances:', error);
+                platformInstanceCache.set(`${platform || 'all'}_${currentConnection}`, []);
+                updatePlatformInstancesDropdown();
+            });
+    }
+    
+    // Extract and cache ALL platform instances from loaded entities (legacy fallback)
+    function extractAllPlatformInstances() {
+        // First try to load from backend cache
+        const entityType = document.getElementById('entityType').value;
+        loadPlatformInstances(null, entityType);
         
-        // Cache instances for each platform
-        const currentConnection = getCurrentConnectionId();
-        instancesByPlatform.forEach((instances, platformName) => {
-            const instanceCacheKey = `${platformName}_${currentConnection}`;
-            const instancesArray = Array.from(instances).sort();
-            platformInstanceCache.set(instanceCacheKey, instancesArray);
-            console.log('Cached', instancesArray.length, 'instances for platform:', platformName);
-        });
-        
-        // Update the dropdown based on current platform selection
-        updatePlatformInstancesDropdown();
+        // Also extract from loaded entities as fallback (for when cache is empty)
+        if (allEntities.length > 0) {
+            setTimeout(() => {
+                const currentConnection = getCurrentConnectionId();
+                const allInstancesCacheKey = `all_${currentConnection}`;
+                
+                // Only extract if cache is still empty
+                if (!platformInstanceCache.has(allInstancesCacheKey) || platformInstanceCache.get(allInstancesCacheKey).length === 0) {
+                    console.log('Cache is empty, extracting platform instances from loaded entities as fallback');
+                    
+                    // Group instances by platform
+                    const instancesByPlatform = new Map();
+                    
+                    allEntities.forEach(entity => {
+                        const platformName = getEntityPlatformName(entity);
+                        const instanceId = getEntityPlatformInstance(entity);
+                        
+                        if (platformName && instanceId) {
+                            if (!instancesByPlatform.has(platformName)) {
+                                instancesByPlatform.set(platformName, new Set());
+                            }
+                            instancesByPlatform.get(platformName).add(instanceId);
+                        }
+                    });
+                    
+                    // Cache instances for each platform
+                    instancesByPlatform.forEach((instances, platformName) => {
+                        const instanceCacheKey = `${platformName}_${currentConnection}`;
+                        const instancesArray = Array.from(instances).sort();
+                        platformInstanceCache.set(instanceCacheKey, instancesArray);
+                    });
+                    
+                    // Also cache all instances together
+                    const allInstances = new Set();
+                    instancesByPlatform.forEach((instances) => {
+                        instances.forEach(instance => allInstances.add(instance));
+                    });
+                    platformInstanceCache.set(allInstancesCacheKey, Array.from(allInstances).sort());
+                    
+                    // Update the dropdown
+                    updatePlatformInstancesDropdown();
+                    
+                    console.log('Extracted and cached', allInstances.size, 'platform instances from loaded entities');
+                }
+            }, 500); // Small delay to let the backend request complete first
+        }
     }
     
     // Update platform instances dropdown based on selected platform
     function updatePlatformInstancesDropdown() {
-        const platform = document.getElementById('platform').value;
-        const platformInstanceSelect = document.getElementById('platformInstance');
+        const selectedPlatforms = getSelectedValues(document.getElementById('platform'));
+        const entityType = document.getElementById('entityType').value;
+        const currentConnection = getCurrentConnectionId();
         
-        if (!platform) {
+        if (selectedPlatforms.length === 0) {
             // Show all unique instances across all platforms
-            const allInstances = new Set();
-            platformInstanceCache.forEach((instances, key) => {
-                instances.forEach(instance => allInstances.add(instance));
-            });
-            const sortedInstances = Array.from(allInstances).sort();
-            populatePlatformInstanceDropdown(sortedInstances);
-            console.log('Showing all', sortedInstances.length, 'instances across all platforms');
+            const allInstancesCacheKey = `all_${currentConnection}`;
+            
+            if (platformInstanceCache.has(allInstancesCacheKey)) {
+                const instances = platformInstanceCache.get(allInstancesCacheKey);
+                populatePlatformInstanceDropdown(instances);
+                console.log('Using cached', instances.length, 'instances for all platforms');
+            } else {
+                // Load all instances from backend
+                console.log('Loading all platform instances from backend');
+                loadPlatformInstances(null, entityType);
+            }
             return;
         }
         
+        // If multiple platforms selected, merge their instances
+        if (selectedPlatforms.length > 1) {
+            console.log('Updating platform instances for multiple platforms:', selectedPlatforms);
+            
+            const mergedInstances = new Set();
+            let allCached = true;
+            
+            // Check if we have cached instances for all selected platforms
+            for (const platform of selectedPlatforms) {
+                const instanceCacheKey = `${platform}_${currentConnection}`;
+                if (platformInstanceCache.has(instanceCacheKey)) {
+                    const instances = platformInstanceCache.get(instanceCacheKey);
+                    instances.forEach(instance => mergedInstances.add(instance));
+                } else {
+                    allCached = false;
+                    break;
+                }
+            }
+            
+            if (allCached) {
+                const sortedInstances = Array.from(mergedInstances).sort();
+                populatePlatformInstanceDropdown(sortedInstances);
+                console.log('Using cached instances for', selectedPlatforms.length, 'platforms, total:', sortedInstances.length, 'instances');
+            } else {
+                // Load instances for all platforms (this will get instances for all platforms, then we'll filter client-side)
+                console.log('Loading platform instances for multiple platforms from backend');
+                loadPlatformInstances(null, entityType);
+            }
+            return;
+        }
+        
+        // Single platform selected
+        const platform = selectedPlatforms[0];
         console.log('Updating platform instances for platform:', platform);
         
         // Create connection-specific cache key for platform instances
-        const currentConnection = getCurrentConnectionId();
         const instanceCacheKey = `${platform}_${currentConnection}`;
         
         // Check if we have cached instances for this platform and connection
@@ -974,9 +1144,9 @@ document.addEventListener('DOMContentLoaded', function() {
             populatePlatformInstanceDropdown(instances);
             console.log('Using cached', instances.length, 'instances for platform:', platform);
         } else {
-            // No instances found for this platform
-            populatePlatformInstanceDropdown([]);
-            console.log('No instances found for platform:', platform);
+            // Load instances from backend for this specific platform
+            console.log('Loading platform instances from backend for platform:', platform);
+            loadPlatformInstances(platform, entityType);
         }
     }
     
@@ -1013,10 +1183,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize platform instance dropdown with empty state
     populatePlatformInstanceDropdown([]);
     
+    // Load initial platform instances
+    setTimeout(() => {
+        console.log('Loading initial platform instances...');
+        loadPlatformInstances(null, null); // Load all instances initially
+    }, 500);
+    
     // Load initial data for all platforms and entity types
     setTimeout(() => {
         console.log('Loading initial data for all platforms and entity types...');
         loadEntities(1); // This will load all data initially
+        loadDomainsForLookup(); // Load domains for name lookups
     }, 1500); // Give platform loading time to complete
     
     // Create a global function to handle connection changes (called from base template)
@@ -1042,6 +1219,8 @@ document.addEventListener('DOMContentLoaded', function() {
         structuredPropertiesCache.lastFetched = null;
         structuredPropertiesCache.connectionId = null;
         platformInstanceCache.clear(); // Clear platform instance cache
+        domainsCache.clear(); // Clear domain cache
+        domainsCacheLoaded = false;
         
         // Platform cache removed - no need to clear sessionStorage
         
@@ -1083,9 +1262,17 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Reloading platforms for entity type:', entityType, 'and new connection:', newConnectionId);
             loadPlatformsForConnection(entityType, newConnectionId);
             
+            // Also reload platform instances for the new connection
+            console.log('Reloading platform instances for new connection:', newConnectionId);
+            loadPlatformInstances(null, entityType);
+            
             // Also reload structured properties for the new connection
             console.log('Reloading structured properties for new connection:', newConnectionId);
             loadStructuredPropertiesForConnection(newConnectionId);
+            
+            // Also reload domains for the new connection
+            console.log('Reloading domains for new connection:', newConnectionId);
+            loadDomainsForLookup();
         }, 200);
         
         console.log('Cleared all caches due to connection change');
@@ -1106,7 +1293,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const entityTypeElement = document.getElementById('entityType');
     if (entityTypeElement) {
         entityTypeElement.addEventListener('change', function() {
-            // Don't reload platforms - just apply client-side filtering
+            // Reload platform instances for the new entity type
+            const selectedPlatforms = getSelectedValues(document.getElementById('platform'));
+            const entityType = this.value;
+            
+            // Clear platform instance cache for this entity type change
+            platformInstanceCache.clear();
+            
+            // Load platform instances for the new entity type
+            if (selectedPlatforms.length === 1) {
+                loadPlatformInstances(selectedPlatforms[0], entityType);
+            } else {
+                loadPlatformInstances(null, entityType);
+            }
+            
+            // Apply client-side filtering if we have entities loaded
             if (allEntities.length > 0) {
                 applyClientSideFilters();
             }
@@ -1329,6 +1530,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 const tr = createEntityRow(entity);
                 tbody.appendChild(tr);
             });
+            
+            // Add event listeners after DOM is updated
+            setTimeout(() => {
+                document.querySelectorAll('.view-entity').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const urn = this.getAttribute('data-urn');
+                        const type = this.getAttribute('data-type');
+                        console.log('View button clicked for:', urn, type);
+                        openViewModal(urn, type);
+                    });
+                });
+            }, 10);
         } else {
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -2174,14 +2387,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 tbody.appendChild(tr);
             });
             
-            // Add event listeners for action buttons
-            document.querySelectorAll('.view-entity').forEach(button => {
-                button.addEventListener('click', function() {
-                    const urn = this.getAttribute('data-urn');
-                    const type = this.getAttribute('data-type');
-                    openViewModal(urn, type);
+            // Add event listeners for action buttons after DOM is updated
+            setTimeout(() => {
+                document.querySelectorAll('.view-entity').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const urn = this.getAttribute('data-urn');
+                        const type = this.getAttribute('data-type');
+                        console.log('View button clicked for:', urn, type);
+                        openViewModal(urn, type);
+                    });
                 });
-            });
+            }, 10);
             
             // Note: edit-entity and add-to-staged buttons have been removed
         } else {
@@ -2222,102 +2438,48 @@ document.addEventListener('DOMContentLoaded', function() {
                 const entity = result.entity;
                 if (!entity) return;
                 
-                // Get entity name using helper that checks all possible locations
-                let displayName = getEntityName(entity);
-                
-                // Get entity platform information
-                let platformInfo = getEntityPlatform(entity);
-                
-                // Format editable properties
-                let editablePropertiesHtml = formatEditableProperties(entity);
-                
-                // Format schema metadata
-                let schemaMetadataHtml = formatSchemaMetadata(entity);
-                
-                // Format browse path
-                let browsePath = formatBrowsePath(entity);
-                
-                // Count metadata elements
-                const editablePropsCount = countEditableProperties(entity);
-                const schemaMetadataCount = countSchemaMetadata(entity);
-                const domainsCount = countDomains(entity);
-                const glossaryTermsCount = countGlossaryTerms(entity);
-                const tagsCount = countTags(entity);
-                const structuredPropsCount = countStructuredProperties(entity);
-                
-                // Check if entity is deprecated
-                const isDeprecated = entity.deprecation && entity.deprecation.deprecated;
-                const deprecatedBadge = isDeprecated ? 
-                    '<span class="badge bg-danger">Yes</span>' : 
-                    '<span class="badge bg-success">No</span>';
-                
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>
-                        <div class="fw-bold">${displayName}</div>
-                    </td>
-                    <td><span class="badge ${getEntityTypeBadgeClass(entity.type)}">${entity.type}</span></td>
-                    <td>${platformInfo}</td>
-                    <td>${deprecatedBadge}</td>
-                    <td><span class="badge bg-primary">${editablePropsCount}</span></td>
-                    <td><span class="badge bg-info">${schemaMetadataCount}</span></td>
-                    <td><span class="badge bg-success">${domainsCount}</span></td>
-                    <td><span class="badge bg-warning text-dark">${glossaryTermsCount}</span></td>
-                    <td><span class="badge bg-secondary">${tagsCount}</span></td>
-                    <td><span class="badge bg-dark">${structuredPropsCount}</span></td>
-                    <td>${browsePath}</td>
-                    <td><code class="small text-truncate d-block" style="max-width: 200px;" title="${entity.urn}">${entity.urn}</code></td>
-                    <td>
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-outline-secondary view-entity"
-                                    data-urn="${entity.urn}" data-type="${entity.type}">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <a href="#" class="btn btn-sm btn-outline-primary view-in-datahub"
-                               data-urn="${entity.urn}" data-type="${entity.type}" target="_blank">
-                                <i class="fas fa-external-link-alt"></i>
-                            </a>
-                        </div>
-                    </td>
-                `;
+                const tr = createEntityRow(entity);
                 tbody.appendChild(tr);
             });
             
-            // Add event listeners to the view button
-            document.querySelectorAll('.view-entity').forEach(button => {
-                button.addEventListener('click', function() {
-                    const urn = this.getAttribute('data-urn');
-                    const type = this.getAttribute('data-type');
-                    openViewModal(urn, type);
-                });
-            });
-            
-            // Add event listeners to the view-in-datahub links
-            document.querySelectorAll('.view-in-datahub').forEach(link => {
-                // Configure the DataHub URL for each link
-                fetch('/metadata/config/datahub-url/')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success && data.url) {
-                            const urn = link.getAttribute('data-urn');
-                            const type = link.getAttribute('data-type').toLowerCase();
-                            
-                            // Use proper encoding for the URN
-                            const encodedUrn = encodeURIComponent(urn).replace(/%3A/g, ':').replace(/%2C/g, ',');
-                            
-                            // Build the DataHub URL
-                            const datahubUrl = `${data.url}/${type}/${encodedUrn}`.replace('//', '/');
-                            link.href = datahubUrl;
-                        } else {
-                            link.href = '#';
-                            console.warn('DataHub URL not found in configuration');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching DataHub URL:', error);
-                        link.href = '#';
+            // Add event listeners to the view button after DOM is updated
+            setTimeout(() => {
+                document.querySelectorAll('.view-entity').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const urn = this.getAttribute('data-urn');
+                        const type = this.getAttribute('data-type');
+                        console.log('View button clicked for:', urn, type);
+                        openViewModal(urn, type);
                     });
-            });
+                });
+                
+                // Add event listeners to the view-in-datahub links
+                document.querySelectorAll('.view-in-datahub').forEach(link => {
+                    // Configure the DataHub URL for each link
+                    fetch('/metadata/config/datahub-url/')
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success && data.url) {
+                                const urn = link.getAttribute('data-urn');
+                                const type = link.getAttribute('data-type').toLowerCase();
+                                
+                                // Use proper encoding for the URN
+                                const encodedUrn = encodeURIComponent(urn).replace(/%3A/g, ':').replace(/%2C/g, ',');
+                                
+                                // Build the DataHub URL
+                                const datahubUrl = `${data.url}/${type}/${encodedUrn}`.replace('//', '/');
+                                link.href = datahubUrl;
+                            } else {
+                                link.href = '#';
+                                console.warn('DataHub URL not found in configuration');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching DataHub URL:', error);
+                            link.href = '#';
+                        });
+                });
+            }, 10);
             
             // Update pagination info if available
             const paginationInfo = document.getElementById('paginationInfo');
@@ -3075,21 +3237,81 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
+    // Helper function to resolve domain name from URN using domain cache
+    function resolveDomainName(domainUrn) {
+        // First try to get domain name from cache
+        const cachedName = getDomainName(domainUrn);
+        if (cachedName) {
+            return cachedName;
+        }
+        
+        // Fallback: extract UUID from URN and return as-is
+        // This will show the UUID if we can't resolve the name
+        const domainId = domainUrn.split(':').pop();
+        return domainId;
+    }
+
     // Helper function to display domain
     function displayDomain(entity) {
         const domainContainer = document.getElementById('viewEntityDomain');
         domainContainer.innerHTML = '';
         
+        // Try multiple possible domain data structures
+        let domainUrn = null;
+        let domainName = null;
+        let domainInfo = null;
+        
+        // Pattern 1: entity.domain.domain.urn (nested domain structure)
         if (entity.domain && entity.domain.domain && entity.domain.domain.urn) {
-            const domainUrn = entity.domain.domain.urn;
-            const domainName = domainUrn.split(':').pop();
+            domainUrn = entity.domain.domain.urn;
+            domainInfo = entity.domain.domain;
+        }
+        // Pattern 2: entity.domains array (multiple domains)
+        else if (entity.domains && Array.isArray(entity.domains) && entity.domains.length > 0) {
+            // Take the first domain if multiple exist
+            if (typeof entity.domains[0] === 'string') {
+                domainUrn = entity.domains[0];
+            } else if (entity.domains[0] && entity.domains[0].urn) {
+                domainUrn = entity.domains[0].urn;
+                domainInfo = entity.domains[0];
+            }
+        }
+        // Pattern 3: entity.domains object with domains array
+        else if (entity.domains && entity.domains.domains && Array.isArray(entity.domains.domains) && entity.domains.domains.length > 0) {
+            domainUrn = entity.domains.domains[0];
+        }
+        // Pattern 4: entity.domain.urn (direct domain reference)
+        else if (entity.domain && entity.domain.urn) {
+            domainUrn = entity.domain.urn;
+            domainInfo = entity.domain;
+        }
+        // Pattern 5: entity.domain_urn (simple string field)
+        else if (entity.domain_urn) {
+            domainUrn = entity.domain_urn;
+        }
+        
+        if (domainUrn) {
+            // Try to resolve domain name from the loaded entities
+            const resolvedDomainName = resolveDomainName(domainUrn);
             
-            domainContainer.innerHTML = `
+            // Check if we have more detailed domain info
+            const displayName = domainInfo && domainInfo.properties && domainInfo.properties.name ? 
+                domainInfo.properties.name : resolvedDomainName;
+            const description = domainInfo && domainInfo.properties && domainInfo.properties.description ? 
+                domainInfo.properties.description : null;
+            
+            let domainHtml = `
                 <div class="p-2 border rounded bg-light">
-                    <strong>${domainName}</strong>
+                    <strong>${displayName}</strong>
                     <br><small class="text-muted">${domainUrn}</small>
-                </div>
             `;
+            
+            if (description) {
+                domainHtml += `<br><small class="text-muted">${description}</small>`;
+            }
+            
+            domainHtml += '</div>';
+            domainContainer.innerHTML = domainHtml;
         } else {
             domainContainer.innerHTML = '<p class="text-muted">No domain assigned</p>';
         }
@@ -3843,6 +4065,41 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         showNotification(message, 'success');
                         
+                        // Create download link if file is available
+                        if (data.file_path && data.filename) {
+                            const downloadUrl = `/metadata/entities/editable/download-exported/?file_path=${encodeURIComponent(data.file_path)}&filename=${encodeURIComponent(data.filename)}`;
+                            
+                            // Create a download link element
+                            const downloadLink = document.createElement('a');
+                            downloadLink.href = downloadUrl;
+                            downloadLink.download = data.filename;
+                            downloadLink.style.display = 'none';
+                            document.body.appendChild(downloadLink);
+                            
+                            // Show notification with download option
+                            setTimeout(() => {
+                                const downloadNotification = document.createElement('div');
+                                downloadNotification.className = 'alert alert-info alert-dismissible fade show';
+                                downloadNotification.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+                                downloadNotification.innerHTML = `
+                                    <strong>Download Ready!</strong><br>
+                                    <button type="button" class="btn btn-sm btn-primary mt-2" onclick="this.parentElement.querySelector('a').click()">
+                                        <i class="fas fa-download me-1"></i> Download ${data.filename}
+                                    </button>
+                                    <a href="${downloadUrl}" download="${data.filename}" style="display: none;"></a>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                `;
+                                document.body.appendChild(downloadNotification);
+                                
+                                // Auto-remove after 10 seconds
+                                setTimeout(() => {
+                                    if (downloadNotification.parentElement) {
+                                        downloadNotification.remove();
+                                    }
+                                }, 10000);
+                            }, 1000);
+                        }
+                        
                         // Show additional details
                         if (data.mcp_files_generated > 0) {
                             setTimeout(() => {
@@ -4040,9 +4297,29 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function countDomains(entity) {
+        // Try multiple possible domain data structures (same logic as displayDomain)
+        
+        // Pattern 1: entity.domain.domain.urn (nested domain structure)
         if (entity.domain && entity.domain.domain && entity.domain.domain.urn) {
             return 1;
         }
+        // Pattern 2: entity.domains array (multiple domains)
+        else if (entity.domains && Array.isArray(entity.domains) && entity.domains.length > 0) {
+            return entity.domains.length;
+        }
+        // Pattern 3: entity.domains object with domains array
+        else if (entity.domains && entity.domains.domains && Array.isArray(entity.domains.domains)) {
+            return entity.domains.domains.length;
+        }
+        // Pattern 4: entity.domain.urn (direct domain reference)
+        else if (entity.domain && entity.domain.urn) {
+            return 1;
+        }
+        // Pattern 5: entity.domain_urn (simple string field)
+        else if (entity.domain_urn) {
+            return 1;
+        }
+        
         return 0;
     }
 
@@ -4331,7 +4608,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 "field": "platform",
                 "condition": "EQUAL",
                 "values": [platformValue],
-                "negated": false
             };
         }
         
@@ -4341,14 +4617,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 {
                     "field": "tags",
                     "condition": "EXISTS",
-                    "negated": false
                 },
                 platformFilter
             ] : [
                 {
                     "field": "tags",
                     "condition": "EXISTS",
-                    "negated": false
                 }
             ]
         });
@@ -4359,14 +4633,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 {
                     "field": "glossaryTerms",
                     "condition": "EXISTS",
-                    "negated": false
                 },
                 platformFilter
             ] : [
                 {
                     "field": "glossaryTerms",
                     "condition": "EXISTS",
-                    "negated": false
                 }
             ]
         });
@@ -4375,16 +4647,14 @@ document.addEventListener('DOMContentLoaded', function() {
         orFilters.push({
             "and": platformFilter ? [
                 {
-                    "field": "domain",
+                    "field": "hasDomain",
                     "condition": "EXISTS",
-                    "negated": false
                 },
                 platformFilter
             ] : [
                 {
-                    "field": "domain",
+                    "field": "hasDomain",
                     "condition": "EXISTS",
-                    "negated": false
                 }
             ]
         });
@@ -4395,14 +4665,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 {
                     "field": "editableProperties",
                     "condition": "EXISTS",
-                    "negated": false
                 },
                 platformFilter
             ] : [
                 {
                     "field": "editableProperties",
                     "condition": "EXISTS",
-                    "negated": false
                 }
             ]
         });
@@ -4413,14 +4681,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 {
                     "field": "schemaMetadata",
                     "condition": "EXISTS",
-                    "negated": false
                 },
                 platformFilter
             ] : [
                 {
                     "field": "schemaMetadata",
                     "condition": "EXISTS",
-                    "negated": false
                 }
             ]
         });
@@ -4432,7 +4698,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     "field": "deprecated",
                     "condition": "EQUAL",
                     "values": ["true"],
-                    "negated": false
                 },
                 platformFilter
             ] : [
@@ -4440,7 +4705,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     "field": "deprecated",
                     "condition": "EQUAL",
                     "values": ["true"],
-                    "negated": false
                 }
             ]
         });
@@ -4464,14 +4728,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                 {
                                     "field": prop.filter_field,
                                     "condition": "EXISTS",
-                                    "negated": false
                                 },
                                 platformFilter
                             ] : [
                                 {
                                     "field": prop.filter_field,
                                     "condition": "EXISTS",
-                                    "negated": false
                                 }
                             ]
                         });

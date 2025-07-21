@@ -20,7 +20,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.append(project_root)
 
 from utils.datahub_utils import test_datahub_connection, get_datahub_client
-from utils.urn_utils import get_full_urn_from_name
+from utils.urn_utils import get_full_urn_from_name, generate_mutated_urn, get_mutation_config_for_environment
 from .models import DataProduct, Environment
 
 logger = logging.getLogger(__name__)
@@ -276,8 +276,14 @@ def create_local_data_product(request, data_product_data):
         domain_urn = data_product_data.get('domain_urn')
         entity_urns = data_product_data.get('entity_urns', [])
         
-        # Generate deterministic URN
-        deterministic_urn = get_full_urn_from_name("dataProduct", name)
+        # Get current environment for consistent URN generation
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        current_environment = getattr(current_connection, 'environment', 'dev')
+        
+        # Generate URN using the same system as editable properties export
+        from utils.urn_utils import generate_urn_for_new_entity
+        deterministic_urn = generate_urn_for_new_entity("dataProduct", name, current_environment)
         
         # Check if data product already exists
         if DataProduct.objects.filter(urn=deterministic_urn).exists():
@@ -817,6 +823,7 @@ def sync_data_product_to_local(request, data_product_id=None):
             # Get current connection context
             from web_ui.views import get_current_connection
             current_connection = get_current_connection(request)
+            current_environment = getattr(current_connection, 'environment', 'dev')
             
             # Create or update using the model's create_from_datahub method
             created_product = DataProduct.create_from_datahub(product_data, connection=current_connection)
@@ -858,14 +865,12 @@ def sync_data_product_to_local(request, data_product_id=None):
                 # would require a separate API call to get the data product's assets
                 pass
             
-            # Generate deterministic URN for local storage
-            deterministic_urn = get_full_urn_from_name("dataProduct", name)
+            # When syncing FROM DataHub TO local, preserve the original DataHub URN
+            # Do NOT generate a new deterministic URN - that's for NEW entities created in web UI
+            local_urn = product_urn
             
             # Check if data product already exists locally
-            existing_product = DataProduct.objects.filter(
-                models.Q(urn=deterministic_urn) | 
-                models.Q(urn=product_urn)
-            ).first()
+            existing_product = DataProduct.objects.filter(urn=local_urn).first()
             
             if existing_product:
                 # Update existing product
@@ -902,7 +907,7 @@ def sync_data_product_to_local(request, data_product_id=None):
                 new_product = DataProduct.objects.create(
                     name=name,
                     description=description,
-                    urn=deterministic_urn,
+                    urn=local_urn,
                     external_url=external_url,
                     domain_urn=domain_urn,
                     entity_urns=entity_urns,
@@ -1390,12 +1395,14 @@ def create_local_data_product_comprehensive(request):
             except Exception as e:
                 logger.warning(f"Error parsing entity URNs: {e}")
         
-        # Generate deterministic URN for local storage
-        deterministic_urn = get_full_urn_from_name("dataProduct", name)
-        
         # Get current connection context
         from web_ui.views import get_current_connection
         current_connection = get_current_connection(request)
+        current_environment = getattr(current_connection, 'environment', 'dev')
+        
+        # Generate URN using the same system as editable properties export
+        from utils.urn_utils import generate_urn_for_new_entity
+        deterministic_urn = generate_urn_for_new_entity("dataProduct", name, current_environment)
         
         # Check if data product already exists
         if DataProduct.objects.filter(urn=deterministic_urn).exists():

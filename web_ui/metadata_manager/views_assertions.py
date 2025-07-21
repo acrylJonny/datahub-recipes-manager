@@ -21,7 +21,7 @@ project_root = os.path.dirname(
 sys.path.append(project_root)
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
+from utils.urn_utils import get_full_urn_from_name, generate_mutated_urn, get_mutation_config_for_environment
 from utils.datahub_utils import test_datahub_connection, get_datahub_client, get_datahub_client_from_request
 from utils.datahub_rest_client import DataHubRestClient
 from .models import Assertion, AssertionResult, Domain, Environment
@@ -311,8 +311,13 @@ class AssertionRunView(View):
                     },
                 }
             
-            # Generate the tag URN
-            tag_urn = get_full_urn_from_name("tag", tag_name)
+            # Generate the tag URN using consistent system
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            current_environment = getattr(current_connection, 'environment', 'dev')
+            base_tag_urn = get_full_urn_from_name("tag", tag_name)
+            mutation_config = get_mutation_config_for_environment(current_environment)
+            tag_urn = generate_mutated_urn(base_tag_urn, current_environment, "tag", mutation_config)
             
             # Check if tag exists in DataHub
             tag = client.get_tag(tag_urn)
@@ -350,8 +355,13 @@ class AssertionRunView(View):
                     },
                 }
             
-            # Generate the term URN (this is a simplified approach, actual URN may depend on parent path)
-            term_urn = get_full_urn_from_name("glossaryTerm", term_name)
+            # Generate the term URN using consistent system
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            current_environment = getattr(current_connection, 'environment', 'dev')
+            base_term_urn = get_full_urn_from_name("glossaryTerm", term_name)
+            mutation_config = get_mutation_config_for_environment(current_environment)
+            term_urn = generate_mutated_urn(base_term_urn, current_environment, "glossaryTerm", mutation_config)
             
             # Check if term exists in DataHub
             term = client.get_glossary_term(term_urn)
@@ -2335,8 +2345,15 @@ def create_local_assertion(request):
                 "error": "Assertion name is required"
             })
         
-        # Generate proper assertion URN (not using "local:" prefix)
-        deterministic_urn = get_full_urn_from_name("assertion", name)
+        # Get current environment for consistent URN generation
+        from web_ui.views import get_current_connection
+        current_connection = get_current_connection(request)
+        current_environment = getattr(current_connection, 'environment', 'dev')
+
+        # Generate URN using the same system as editable properties export
+        base_urn = get_full_urn_from_name("assertion", name)
+        mutation_config = get_mutation_config_for_environment(current_environment)
+        deterministic_urn = generate_mutated_urn(base_urn, current_environment, "assertion", mutation_config)
         
         # Handle different assertion types for local creation
         config = {}

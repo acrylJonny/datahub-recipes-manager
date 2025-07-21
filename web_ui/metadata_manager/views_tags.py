@@ -21,7 +21,7 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name
+from utils.urn_utils import get_full_urn_from_name, generate_mutated_urn, get_mutation_config_for_environment
 from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import GitSettings, Environment
@@ -391,12 +391,15 @@ class TagListView(View):
                 messages.error(request, "Tag name is required")
                 return redirect("metadata_manager:tag_list")
 
-            # Generate deterministic URN
-            deterministic_urn = get_full_urn_from_name("tag", name)
-
             # Get current connection
             from web_ui.views import get_current_connection
             current_connection = get_current_connection(request)
+            current_environment = getattr(current_connection, 'environment', 'dev')
+
+            # Generate URN using the same system as editable properties export
+            base_urn = get_full_urn_from_name("tag", name)
+            mutation_config = get_mutation_config_for_environment(current_environment)
+            deterministic_urn = generate_mutated_urn(base_urn, current_environment, "tag", mutation_config)
             
             # Check if tag with this URN already exists for the current connection
             existing_tag_query = Tag.objects.filter(urn=deterministic_urn)
@@ -2205,7 +2208,9 @@ class TagAddToStagedChangesView(View):
                 environment=environment_name,
                 owner=owner,
                 base_dir=str(base_dir),
-                mutation_name=mutation_name
+                mutation_name=mutation_name,
+                # Pass existing URN if tag has one (for proper NEW vs EXISTING handling)
+                existing_urn=tag.urn if tag.urn else None
             )
             
             # Provide feedback about deduplication
@@ -2347,7 +2352,9 @@ class TagRemoteAddToStagedChangesView(View):
                 environment=environment_name,
                 owner=owner,
                 base_dir=str(base_dir),
-                mutation_name=mutation_name
+                mutation_name=mutation_name,
+                # Remote tags always have existing URNs from DataHub
+                existing_urn=tag_data.get('urn')
             )
             
             # Provide feedback about files created
@@ -3454,7 +3461,9 @@ class TagAddAllToStagedChangesView(View):
                         tag_data=tag_data,
                         environment=environment,
                         owner="system",  # Default owner
-                        mutation_name=mutation_name
+                        mutation_name=mutation_name,
+                        # Pass existing URN if tag has one (for proper NEW vs EXISTING handling)
+                        existing_urn=tag.urn if tag.urn else None
                     )
                     
                     success_count += 1

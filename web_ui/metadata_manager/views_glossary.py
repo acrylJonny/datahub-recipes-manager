@@ -19,7 +19,7 @@ sys.path.append(
 )
 
 # Import the deterministic URN utilities
-from utils.urn_utils import get_full_urn_from_name, get_parent_path
+from utils.urn_utils import get_full_urn_from_name, get_parent_path, generate_mutated_urn, get_mutation_config_for_environment
 from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.data_sanitizer import sanitize_api_response
 from web_ui.models import Environment as DjangoEnvironment
@@ -559,15 +559,21 @@ class GlossaryListView(View):
                         messages.error(request, "Domain not found")
                         return redirect("metadata_manager:glossary_list")
                 
-                # Generate URN
+                # Get current environment for consistent URN generation
+                from web_ui.views import get_current_connection
+                current_connection = get_current_connection(request)
+                current_environment = getattr(current_connection, 'environment', 'dev')
+                mutation_config = get_mutation_config_for_environment(current_environment)
+                
+                # Generate URN using the same system as editable properties export
                 # For nodes with a parent, include the parent path in the URN
                 if parent:
                     parent_path = get_parent_path(parent)
-                    urn = get_full_urn_from_name(
-                        "glossaryNode", name, parent_path=parent_path
-                    )
+                    base_urn = get_full_urn_from_name("glossaryNode", name, parent_path=parent_path)
+                    urn = generate_mutated_urn(base_urn, current_environment, "glossaryNode", mutation_config)
                 else:
-                    urn = get_full_urn_from_name("glossaryNode", name)
+                    base_urn = get_full_urn_from_name("glossaryNode", name)
+                    urn = generate_mutated_urn(base_urn, current_environment, "glossaryNode", mutation_config)
                 
                 # Check if node with this URN already exists
                 if GlossaryNode.objects.filter(
@@ -2261,6 +2267,7 @@ def search_domains(request):
             }
             
             # Execute GraphQL query
+            logger.info(f"Executing GraphQL query for domains search - query: {query}, start: {start}, count: {count}")
             result = client.execute_graphql(graphql_query, variables)
             
             if not result or 'data' not in result:

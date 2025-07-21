@@ -73,6 +73,10 @@ class MetadataMigrationProcessor:
         self.api_client = None
         self.metadata_api = None
         
+        # Track if mutations were already applied during export
+        self.mutations_already_applied = False
+        self.export_metadata = None
+        
         # Setup logging
         logging.basicConfig(
             level=logging.INFO,
@@ -122,14 +126,49 @@ class MetadataMigrationProcessor:
             
             # Handle different export formats
             if isinstance(data, dict):
-                if 'entities' in data:
+                # New format: check for metadata and entities
+                if 'metadata' in data and 'entities' in data:
+                    # Extract metadata information
+                    metadata = data['metadata']
+                    entities = data['entities']
+                    
+                    # Log export information
+                    self.logger.info(f"Loaded export from {metadata.get('environment', 'unknown')} environment")
+                    self.logger.info(f"Export timestamp: {metadata.get('export_timestamp', 'unknown')}")
+                    self.logger.info(f"Mutations already applied: {metadata.get('mutations_applied', False)}")
+                    
+                    # If mutations were already applied, we don't need to apply them again
+                    if metadata.get('mutations_applied', False):
+                        self.logger.info("Mutations were already applied during export - skipping mutation step")
+                        self.mutations_already_applied = True
+                        self.export_metadata = metadata
+                        
+                        # Extract mutations from export metadata for browse path searches
+                        if 'mutation_config' in metadata:
+                            mutation_config = metadata['mutation_config']
+                            if 'platform_instance_mapping' in mutation_config:
+                                # Convert export format to internal format
+                                self.mutations = {
+                                    'platform_instances': mutation_config['platform_instance_mapping']
+                                }
+                                self.logger.info(f"Loaded platform instance mappings from export: {self.mutations['platform_instances']}")
+                            else:
+                                self.mutations = {}
+                        else:
+                            self.mutations = {}
+                    
+                elif 'entities' in data:
+                    # Legacy format with entities key
                     entities = data['entities']
                 elif 'export_data' in data:
+                    # Legacy format with export_data key
                     entities = data['export_data']
                 else:
-                    entities = [data]  # Single entity
+                    # Single entity format
+                    entities = [data]
             else:
-                entities = data  # List of entities
+                # List format
+                entities = data
             
             # Filter out None values and invalid entities
             valid_entities = []
@@ -198,38 +237,1031 @@ class MetadataMigrationProcessor:
         
         return name
     
-    def fetch_target_entities(self, platforms: List[str], entity_types: List[str]) -> List[Dict[str, Any]]:
-        """Fetch entities from target environment"""
+    def fetch_target_entities(self, source_entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Fetch entities from target environment based on browse paths and name/platform matching"""
         if self.dry_run:
-            self.logger.info("DRY RUN: Would fetch target entities")
+            self.logger.info("DRY RUN: Would fetch target entities based on browse paths and name/platform matching")
+            # Show what the query would be even in dry-run mode
+            self._show_graphql_query_preview(source_entities)
             return []
         
         try:
+            # Extract unique browse paths from source entities and apply mutations
+            browse_paths = set()
+            platforms = set()
+            entity_types = set()
+            entity_names = set()
+            platform_instances = set()
+            mutated_browse_paths = set()
+            
+            for entity in source_entities:
+                if not entity or not isinstance(entity, dict):
+                    continue
+                    
+                # Build browse path including platform instance
+                path_parts = []
+                
+                # Add platform instance as first component if available
+                platform_instance = self.safe_get(entity, 'dataPlatformInstance', 'instanceId')
+                if platform_instance:
+                    path_parts.append(platform_instance)
+                
+                # Add browse path components
+                browse_path = self.extract_browse_path(entity)
+                if browse_path:
+                    # Extract path components for search
+                    browse_path_parts = [part.strip() for part in browse_path.strip('/').split('/') if part.strip()]
+                    path_parts.extend(browse_path_parts)
+                
+                if path_parts:
+                    browse_paths.update(path_parts)
+                    
+                    # Apply platform instance mutations to browse path components
+                    mutated_path_parts = []
+                    for part in path_parts:
+                        # Check if this part is a platform instance that needs mutation
+                        if part in self.mutations.get('platform_instances', {}):
+                            mutated_part = self.mutations['platform_instances'][part]
+                            mutated_path_parts.append(mutated_part)
+                            self.logger.debug(f"Mutated browse path component: {part} -> {mutated_part}")
+                        else:
+                            mutated_path_parts.append(part)
+                    mutated_browse_paths.update(mutated_path_parts)
+                
+                # Also collect platforms, entity types, names, and platform instances
+                if entity.get('platform', {}).get('name'):
+                    platforms.add(entity['platform']['name'])
+                if entity.get('type'):
+                    entity_types.add(entity['type'])
+                if entity.get('name'):
+                    entity_names.add(entity['name'])
+                if entity.get('dataPlatformInstance', {}).get('instanceId'):
+                    platform_instances.add(entity['dataPlatformInstance']['instanceId'])
+            
+            # Determine which browse paths to use for searching
+            # Even if mutations were "already applied", we need to search for the mutated browse paths
+            # in the target environment since the source entities may still contain original platform instances
+            search_browse_paths = list(mutated_browse_paths) if mutated_browse_paths else list(browse_paths)
+            if self.mutations_already_applied:
+                if mutated_browse_paths:
+                    self.logger.info("Mutations were marked as applied during export, but applying them for browse path search")
+                    self.logger.info(f"Original browse paths: {list(browse_paths)} -> Mutated browse paths: {list(mutated_browse_paths)}")
+                else:
+                    self.logger.info("Using original browse paths since no mutations were needed")
+            else:
+                self.logger.info(f"Applied platform instance mutations to browse paths: {list(browse_paths)} -> {list(mutated_browse_paths)}")
+            
+            # Search for entities using multiple approaches
             target_entities = []
             
-            for platform in platforms:
-                for entity_type in entity_types:
-                    query = f"platform:{platform}"
-                    
-                    # Use the graph client to search
-                    results = self.metadata_api.context.graph.search_entities(
-                        entity_types=[entity_type.lower()],
-                        query=query,
-                        start=0,
-                        count=10000  # Large count to get all entities
-                    )
-                    
-                    if results:
-                        for entity in results:
-                            if entity:
-                                target_entities.append(entity)
+            # Approach 1: Search by browse paths (with mutations applied)
+            if search_browse_paths:
+                self.logger.info(f"Searching target DataHub for entities with browse path components: {search_browse_paths}")
+                browse_path_entities = self._search_entities_by_browse_paths(search_browse_paths, list(platforms), list(entity_types), list(platform_instances))
+                target_entities.extend(browse_path_entities)
+                self.logger.info(f"Browse path search found {len(browse_path_entities)} entities")
             
-            self.logger.info(f"Fetched {len(target_entities)} entities from target environment")
-            return target_entities
+            # Approach 2: Search by name and platform (for different platform instances)
+            # This is the primary matching approach when browse paths don't match
+            if entity_names and platforms:
+                self.logger.info(f"Searching target DataHub for entities by name and platform: {sorted(entity_names)[:10]}{'...' if len(entity_names) > 10 else ''} on {sorted(platforms)}")
+                if platform_instances:
+                    self.logger.info(f"Source entities have platform instances: {sorted(platform_instances)}")
+                name_platform_entities = self._search_entities_by_name_and_platform(
+                    list(entity_names),
+                    list(platforms),
+                    list(entity_types),
+                    list(platform_instances)
+                )
+                target_entities.extend(name_platform_entities)
+                self.logger.info(f"Name/platform search found {len(name_platform_entities)} entities")
+            
+            # Remove duplicates based on URN
+            unique_entities = {}
+            for entity in target_entities:
+                urn = entity.get('urn')
+                if urn and urn not in unique_entities:
+                    unique_entities[urn] = entity
+            
+            final_entities = list(unique_entities.values())
+            self.logger.info(f"Fetched {len(final_entities)} unique entities from target environment")
+            return final_entities
             
         except Exception as e:
             self.logger.error(f"Failed to fetch target entities: {e}")
             return []
+    
+    def _search_entities_by_browse_paths(self, browse_path_components: List[str], platforms: List[str], entity_types: List[str], platform_instances: List[str] = None) -> List[Dict[str, Any]]:
+        """Search for entities in target DataHub using browse path components"""
+        try:
+            # Create GraphQL query for searching entities by browse paths
+            query = """
+            query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on Dataset {
+                      name
+                      platform {
+                        name
+                        properties {
+                          displayName
+                        }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      browsePaths {
+                        path
+                      }
+                      browsePathV2 {
+                        path {
+                          entity {
+                            ... on Container {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        name
+                        description
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            glossaryTermInfo {
+                              name
+                            }
+                          }
+                        }
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                          }
+                        }
+                      }
+                    }
+                    ... on Container {
+                      properties {
+                        name
+                      }
+                      platform {
+                        name
+                        properties {
+                          displayName
+                        }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      browsePathV2 {
+                        path {
+                          entity {
+                            ... on Container {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            glossaryTermInfo {
+                              name
+                            }
+                          }
+                        }
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                          }
+                        }
+                      }
+                    }
+                    ... on Chart {
+                      properties {
+                        name
+                      }
+                      platform {
+                        name
+                        properties {
+                          displayName
+                        }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      browsePaths {
+                        path
+                      }
+                      browsePathV2 {
+                        path {
+                          entity {
+                            ... on Container {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            glossaryTermInfo {
+                              name
+                            }
+                          }
+                        }
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                          }
+                        }
+                      }
+                    }
+                    ... on Dashboard {
+                      properties {
+                        name
+                      }
+                      platform {
+                        name
+                        properties {
+                          displayName
+                        }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      browsePaths {
+                        path
+                      }
+                      browsePathV2 {
+                        path {
+                          entity {
+                            ... on Container {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            glossaryTermInfo {
+                              name
+                            }
+                          }
+                        }
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                          }
+                        }
+                      }
+                    }
+                    ... on DataFlow {
+                      properties {
+                        name
+                      }
+                      platform {
+                        name
+                        properties {
+                          displayName
+                        }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      browsePaths {
+                        path
+                      }
+                      browsePathV2 {
+                        path {
+                          entity {
+                            ... on Container {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            glossaryTermInfo {
+                              name
+                            }
+                          }
+                        }
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                          }
+                        }
+                      }
+                    }
+                    ... on DataJob {
+                      properties {
+                        name
+                      }
+                      dataFlow {
+                        flowId
+                        properties {
+                          name
+                        }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      browsePaths {
+                        path
+                      }
+                      browsePathV2 {
+                        path {
+                          entity {
+                            ... on Container {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        description
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            glossaryTermInfo {
+                              name
+                            }
+                          }
+                        }
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            # Create OR filters for browse paths
+            or_filters = []
+            
+            # Add browsePathV2 filter
+            if browse_path_components:
+                or_filters.append({
+                    "and": [
+                        {
+                            "field": "browsePathV2",
+                            "condition": "CONTAIN",
+                            "values": browse_path_components,
+                            "negated": False
+                        }
+                    ]
+                })
+                
+                # Add browsePath filter as fallback
+                or_filters.append({
+                    "and": [
+                        {
+                            "field": "browsePath",
+                            "condition": "CONTAIN",
+                            "values": browse_path_components,
+                            "negated": False
+                        }
+                    ]
+                })
+            
+            # Note: Platform filtering via GraphQL orFilters doesn't seem to work reliably
+            # So we'll do broader search and filter manually on client side
+            # if platforms:
+            #     or_filters.append({
+            #         "and": [
+            #             {
+            #                 "field": "platform",
+            #                 "condition": "EQUAL",
+            #                 "values": platforms,
+            #                 "negated": False
+            #             }
+            #         ]
+            #     })
+            
+            # Add platform instance filter if we have platform instances
+            # Note: Only add this filter if we know the target entities have platform instances
+            # Many target environments may not have platform instances set, so we'll match by name/platform primarily
+            if platform_instances:
+                self.logger.info(f"Source entities have platform instances: {platform_instances}")
+                self.logger.info("Note: Target entities may not have platform instances - will match by name/platform primarily")
+                # Don't add platformInstance filter as it may exclude valid matches
+                # or_filters.append({
+                #     "and": [
+                #         {
+                #             "field": "platformInstance",
+                #             "condition": "EQUAL",
+                #             "values": platform_instances,
+                #             "negated": False
+                #         }
+                #     ]
+                # })
+            
+            variables = {
+                "input": {
+                    "query": "",
+                    "start": 0,
+                    "count": 1000,
+                    "orFilters": or_filters
+                }
+            }
+            
+            # Add entity types filter if we have them
+            if entity_types:
+                variables["input"]["types"] = entity_types
+            
+            self.logger.info(f"Executing GraphQL query with variables: {variables}")
+            if platform_instances:
+                self.logger.info(f"Including platform instances in search: {platform_instances}")
+            
+            # Execute the GraphQL query
+            result = self.metadata_api.context.graph.execute_graphql(query, variables)
+            
+            if result and "searchAcrossEntities" in result:
+                search_results = result["searchAcrossEntities"].get("searchResults", [])
+                entities = []
+                
+                for search_result in search_results:
+                    entity = search_result.get("entity")
+                    if entity:
+                        # Apply platform filtering manually since GraphQL filter doesn't work reliably
+                        entity_platform = entity.get("platform", {}).get("name", "")
+                        if not platforms or entity_platform in platforms:
+                            entities.append(entity)
+                        else:
+                            self.logger.debug(f"Filtered out entity {entity.get('name', 'N/A')} with platform {entity_platform}")
+                
+                self.logger.info(f"Found {len(entities)} entities in target DataHub (after platform filtering)")
+                return entities
+            else:
+                self.logger.warning("No search results found in GraphQL response")
+                return []
+            
+        except Exception as e:
+            self.logger.error(f"Error searching entities by browse paths: {e}")
+            return []
+    
+    def _search_entities_by_name_and_platform(self, entity_names: List[str], platforms: List[str], entity_types: List[str], platform_instances: List[str] = None) -> List[Dict[str, Any]]:
+        """Search for entities in target DataHub using name and platform (for different platform instances)"""
+        try:
+            # Create GraphQL query for searching entities by name and platform
+            query = """
+            query GetEntitiesByNameAndPlatform($input: SearchAcrossEntitiesInput!) {
+              searchAcrossEntities(input: $input) {
+                start
+                count
+                total
+                searchResults {
+                  entity {
+                    urn
+                    type
+                    ... on Dataset {
+                      name
+                      platform {
+                        name
+                        properties {
+                          displayName
+                        }
+                      }
+                      dataPlatformInstance {
+                        instanceId
+                        platform {
+                          name
+                        }
+                      }
+                      domain {
+                        domain {
+                          urn
+                        }
+                      }
+                      browsePaths {
+                        path
+                      }
+                      browsePathV2 {
+                        path {
+                          entity {
+                            ... on Container {
+                              properties {
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      editableProperties {
+                        name
+                        description
+                      }
+                      tags {
+                        tags {
+                          tag {
+                            urn
+                          }
+                        }
+                      }
+                      glossaryTerms {
+                        terms {
+                          term {
+                            urn
+                            glossaryTermInfo {
+                              name
+                            }
+                          }
+                        }
+                      }
+                      structuredProperties {
+                        properties {
+                          structuredProperty {
+                            urn
+                          }
+                          values {
+                            ... on StringValue {
+                              stringValue
+                            }
+                            ... on NumberValue {
+                              numberValue
+                            }
+                          }
+                          valueEntities {
+                            urn
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            # Create OR filters for each entity name combined with platform
+            or_filters = []
+            
+            # Note: Platform filtering via GraphQL orFilters doesn't seem to work reliably
+            # So we'll do broader search and filter manually on client side
+            # if platforms:
+            #     or_filters.append({
+            #         "and": [
+            #             {
+            #                 "field": "platform",
+            #                 "condition": "EQUAL",
+            #                 "values": platforms,
+            #                 "negated": False
+            #             }
+            #         ]
+            #     })
+            
+            # Add platform instance filter
+            # Note: Many target environments may not have platform instances set
+            # so we'll match by name/platform primarily and not filter by platform instance
+            if platform_instances:
+                self.logger.info(f"Source entities have platform instances: {platform_instances}")
+                self.logger.info("Note: Target entities may not have platform instances - will match by name/platform primarily")
+                # Don't add platformInstance filter as it may exclude valid matches
+                # or_filters.append({
+                #     "and": [
+                #         {
+                #             "field": "platformInstance",
+                #             "condition": "EQUAL",
+                #             "values": platform_instances,
+                #             "negated": False
+                #         }
+                #     ]
+                # })
+            
+            # Use a broad search to get all entities from the platform and filter manually
+            # This handles cases where entity names might have schema prefixes or differences
+            query_string = "*"  # Search for all entities, rely on platform filter
+            
+            variables = {
+                "input": {
+                    "query": query_string,
+                    "start": 0,
+                    "count": 1000,
+                    "orFilters": or_filters
+                }
+            }
+            
+            # Add entity types filter if we have them
+            if entity_types:
+                variables["input"]["types"] = entity_types
+            
+            self.logger.info(f"Executing name/platform GraphQL query with variables: {variables}")
+            
+            # Execute the GraphQL query
+            result = self.metadata_api.context.graph.execute_graphql(query, variables)
+            
+            if result and "searchAcrossEntities" in result:
+                search_results = result["searchAcrossEntities"]["searchResults"]
+                all_entities = []
+                
+                for search_result in search_results:
+                    entity = search_result.get("entity")
+                    if entity:
+                        # Apply platform filtering manually since GraphQL filter doesn't work reliably
+                        entity_platform = entity.get("platform", {}).get("name", "")
+                        if not platforms or entity_platform in platforms:
+                            all_entities.append(entity)
+                        else:
+                            self.logger.debug(f"Filtered out entity {entity.get('name', 'N/A')} with platform {entity_platform}")
+                
+                # Filter entities manually to match source entity names
+                matched_entities = []
+                self.logger.debug(f"Filtering {len(all_entities)} entities against {len(entity_names)} source names")
+                for entity in all_entities:
+                    entity_name = entity.get("name", "")
+                    entity_urn = entity.get("urn", "")
+                    
+                    # Check if this entity matches any of our source entity names
+                    matched = False
+                    for source_name in entity_names:
+                        if self._name_matches(entity_name, source_name, entity_urn):
+                            matched_entities.append(entity)
+                            self.logger.info(f"Matched entity: {entity_name} -> {source_name}")
+                            matched = True
+                            break
+                    
+                    if not matched:
+                        self.logger.debug(f"No match found for target entity: {entity_name} (URN: {entity_urn})")
+                
+                self.logger.info(f"Found {len(all_entities)} total entities (after platform filtering), {len(matched_entities)} matched by name/platform search")
+                return matched_entities
+            else:
+                self.logger.warning("No search results found in name/platform GraphQL response")
+                return []
+            
+        except Exception as e:
+            self.logger.error(f"Error searching entities by name and platform: {e}")
+            return []
+    
+    def _name_matches(self, entity_name: str, source_name: str, entity_urn: str) -> bool:
+        """Check if an entity name matches a source name, handling schema prefixes and variations"""
+        if not entity_name or not source_name:
+            return False
+            
+        # Exact match
+        if entity_name == source_name:
+            return True
+            
+        # Check if entity name ends with the source name (e.g., rfam._annotated_file matches _annotated_file)
+        if entity_name.endswith('.' + source_name):
+            return True
+        if entity_name.endswith('_' + source_name):
+            return True
+            
+        # Check if entity name starts with the source name (e.g., _annotated_file.something matches _annotated_file)
+        if entity_name.startswith(source_name + '.'):
+            return True
+        if entity_name.startswith(source_name + '_'):
+            return True
+            
+        # Check URN for additional context - extract the table name from URN
+        if entity_urn:
+            # URN format: urn:li:dataset:(urn:li:dataPlatform:mysql,rfam._annotated_file,PROD)
+            try:
+                # Extract the table name from the URN
+                if ',PROD)' in entity_urn:
+                    table_part = entity_urn.split(',PROD)')[0].split(',')[-1]
+                    if table_part.endswith('.' + source_name):
+                        return True
+                    if table_part.endswith('_' + source_name):
+                        return True
+            except:
+                pass
+        
+        return False
+    
+    def _show_graphql_query_preview(self, source_entities: List[Dict[str, Any]]):
+        """Show what the GraphQL query would look like in dry-run mode"""
+        try:
+            # Extract browse paths and other info (same logic as the real method)
+            browse_paths = set()
+            platforms = set()
+            entity_types = set()
+            mutated_browse_paths = set()
+            
+            for entity in source_entities:
+                if not entity or not isinstance(entity, dict):
+                    continue
+                    
+                # Build browse path including platform instance
+                path_parts = []
+                
+                # Add platform instance as first component if available
+                platform_instance = self.safe_get(entity, 'dataPlatformInstance', 'instanceId')
+                if platform_instance:
+                    path_parts.append(platform_instance)
+                
+                # Add browse path components
+                browse_path = self.extract_browse_path(entity)
+                if browse_path:
+                    # Extract path components for search
+                    browse_path_parts = [part.strip() for part in browse_path.strip('/').split('/') if part.strip()]
+                    path_parts.extend(browse_path_parts)
+                
+                if path_parts:
+                    browse_paths.update(path_parts)
+                    
+                    # Apply platform instance mutations to browse path components
+                    mutated_path_parts = []
+                    for part in path_parts:
+                        # Check if this part is a platform instance that needs mutation
+                        if part in self.mutations.get('platform_instances', {}):
+                            mutated_part = self.mutations['platform_instances'][part]
+                            mutated_path_parts.append(mutated_part)
+                        else:
+                            mutated_path_parts.append(part)
+                    mutated_browse_paths.update(mutated_path_parts)
+                
+                # Also collect platforms and entity types
+                if entity.get('platform', {}).get('name'):
+                    platforms.add(entity['platform']['name'])
+                if entity.get('type'):
+                    entity_types.add(entity['type'])
+            
+            # Determine which browse paths to use for search
+            # Even if mutations were "already applied", we need to search for the mutated browse paths
+            # in the target environment since the source entities may still contain original platform instances
+            search_browse_paths = list(mutated_browse_paths) if mutated_browse_paths else list(browse_paths)
+            
+            # Create the same OR filters as the real method
+            or_filters = []
+            
+            if search_browse_paths:
+                or_filters.append({
+                    "and": [
+                        {
+                            "field": "browsePathV2",
+                            "condition": "CONTAIN",
+                            "values": search_browse_paths,
+                            "negated": False
+                        }
+                    ]
+                })
+                
+                or_filters.append({
+                    "and": [
+                        {
+                            "field": "browsePath",
+                            "condition": "CONTAIN",
+                            "values": search_browse_paths,
+                            "negated": False
+                        }
+                    ]
+                })
+            
+            if platforms:
+                or_filters.append({
+                    "and": [
+                        {
+                            "field": "platform",
+                            "condition": "EQUAL",
+                            "values": list(platforms),
+                            "negated": False
+                        }
+                    ]
+                })
+            
+            variables = {
+                "input": {
+                    "query": "",
+                    "start": 0,
+                    "count": 1000,
+                    "orFilters": or_filters
+                }
+            }
+            
+            if entity_types:
+                variables["input"]["types"] = list(entity_types)
+            
+            self.logger.info("=== DRY RUN: GraphQL Query Preview ===")
+            self.logger.info(f"Query: searchAcrossEntities")
+            if mutated_browse_paths:
+                self.logger.info(f"Original browse path components: {list(browse_paths)}")
+                self.logger.info(f"Mutated browse path components: {list(mutated_browse_paths)}")
+            else:
+                self.logger.info(f"Browse path components: {list(browse_paths)}")
+            self.logger.info(f"Platforms: {list(platforms)}")
+            self.logger.info(f"Entity types: {list(entity_types)}")
+            self.logger.info(f"Variables: {variables}")
+            self.logger.info("=== End Query Preview ===")
+            
+        except Exception as e:
+            self.logger.error(f"Error showing GraphQL preview: {e}")
     
     def match_entities(self, source_entities: List[Dict[str, Any]], target_entities: List[Dict[str, Any]]) -> List[EntityMatch]:
         """Match source entities with target entities based on browse path and name"""
@@ -249,6 +1281,9 @@ class MetadataMigrationProcessor:
             
             key = f"{entity_type}:{browse_path}:{name}".lower()
             target_lookup[key] = target_entity
+            
+            # DEBUG: Log target entity details
+            self.logger.debug(f"Target entity - URN: {target_entity.get('urn')}, Name: {name}, Browse path: {browse_path}, Key: {key}")
         
         # Match source entities
         for source_entity in source_entities:
@@ -256,31 +1291,75 @@ class MetadataMigrationProcessor:
             if not source_entity or not isinstance(source_entity, dict):
                 self.logger.warning(f"Skipping invalid source entity: {source_entity}")
                 continue
-            source_browse_path = self.extract_browse_path(source_entity)
+            
             source_name = self.extract_entity_name(source_entity)
             source_type = source_entity.get('type', '')
             
-            key = f"{source_type}:{source_browse_path}:{source_name}".lower()
+            # Calculate what the target browse path should be (with mutations applied)
+            source_browse_path = self.extract_browse_path(source_entity)
             
-            if key in target_lookup:
-                target_entity = target_lookup[key]
+            # Build the expected target entity name with platform instance
+            platform_instance = self.safe_get(source_entity, 'dataPlatformInstance', 'instanceId')
+            if platform_instance:
+                # For target matching, we need to find entities with the CURRENT platform instance (abc)
+                # The mutation will be applied in the MCP, not in the matching
+                current_platform_instance = platform_instance  # Keep original for matching
+                
+                # Build expected target entity name (with original platform instance)
+                if source_browse_path:
+                    browse_path_parts = [part.strip() for part in source_browse_path.strip('/').split('/') if part.strip()]
+                    target_entity_name = f"{current_platform_instance}.{'.'.join(browse_path_parts)}.{source_name}"
+                else:
+                    target_entity_name = f"{current_platform_instance}.{source_name}"
+            else:
+                target_entity_name = source_name
+            
+            # Try to match using the expected target entity name
+            target_key = f"{source_type}::{target_entity_name}".lower()  # Empty browse path since target entities don't have browse paths
+            
+            # DEBUG: Log matching attempt
+            self.logger.debug(f"Source entity - Name: {source_name}, Type: {source_type}, Target key: {target_key}")
+            
+            if target_key in target_lookup:
+                target_entity = target_lookup[target_key]
                 match = EntityMatch(
                     source_entity=source_entity,
                     target_urn=target_entity['urn'],
                     target_name=self.extract_entity_name(target_entity),
-                    browse_path=source_browse_path,
+                    browse_path=self.extract_browse_path(target_entity),
                     confidence=1.0  # Exact match
                 )
                 matches.append(match)
-                self.logger.debug(f"Matched: {source_name} -> {target_entity['urn']}")
+                self.logger.info(f"Matched: {source_name} -> {target_entity['urn']} (platform instance match)")
             else:
-                self.logger.warning(f"No match found for: {source_type}:{source_browse_path}:{source_name}")
+                # Fallback: try matching by simple name only
+                fallback_matches = [entity for key, entity in target_lookup.items() if key.endswith(f":{source_name}".lower())]
+                
+                if fallback_matches:
+                    # Take the first match if multiple found
+                    target_entity = fallback_matches[0]
+                    match = EntityMatch(
+                        source_entity=source_entity,
+                        target_urn=target_entity['urn'],
+                        target_name=self.extract_entity_name(target_entity),
+                        browse_path=self.extract_browse_path(target_entity),
+                        confidence=0.8  # Lower confidence for name-only match
+                    )
+                    matches.append(match)
+                    self.logger.info(f"Fallback matched: {source_name} -> {target_entity['urn']} (name-only match)")
+                else:
+                    self.logger.warning(f"No match found for: {source_type}:{source_browse_path}:{source_name} (expected target: {target_entity_name})")
         
         self.logger.info(f"Found {len(matches)} entity matches out of {len(source_entities)} source entities")
         return matches
     
     def apply_urn_mutations(self, urn: str) -> str:
         """Apply environment-specific mutations to URNs"""
+        # Skip mutations if they were already applied during export
+        if self.mutations_already_applied:
+            self.logger.debug(f"Skipping mutation for {urn} - already applied during export")
+            return urn
+            
         if not self.mutations:
             return urn
         
@@ -302,15 +1381,86 @@ class MetadataMigrationProcessor:
         
         return mutated_urn
     
+    def apply_urn_mutations_for_mcp(self, urn: str) -> str:
+        """Apply environment-specific mutations to URNs for MCP generation (always applies mutations)"""
+        if not self.mutations:
+            return urn
+        
+        mutated_urn = urn
+        
+        # Apply mutations based on configuration
+        for mutation_type, mutation_config in self.mutations.items():
+            if mutation_type == 'platform_instances':
+                # Handle platform instance mutations
+                for from_instance, to_instance in mutation_config.items():
+                    if from_instance in mutated_urn:
+                        mutated_urn = mutated_urn.replace(from_instance, to_instance)
+                        self.logger.debug(f"Applied platform instance mutation: {from_instance} -> {to_instance}")
+            
+            elif mutation_type == 'custom_properties':
+                # Handle custom property mutations (URN transformations)
+                for prop_key, prop_value in mutation_config.items():
+                    if prop_key in mutated_urn:
+                        mutated_urn = mutated_urn.replace(prop_key, prop_value)
+        
+        return mutated_urn
+    
     def generate_mcps_for_match(self, match: EntityMatch) -> List[MCPTask]:
         """Generate MCPs for a matched entity"""
-        if not match or not match.source_entity or not isinstance(match.source_entity, dict):
-            self.logger.warning(f"Skipping invalid match: {match}")
+        if not match:
+            self.logger.warning(f"Skipping None match")
+            return []
+        
+        if not match.source_entity:
+            self.logger.warning(f"Skipping match with None source_entity: {match}")
+            return []
+            
+        if not isinstance(match.source_entity, dict):
+            self.logger.warning(f"Skipping match with invalid source_entity type: {type(match.source_entity)}")
             return []
             
         mcps = []
         source_entity = match.source_entity
         target_urn = match.target_urn
+        
+        # Additional debug logging
+        self.logger.debug(f"Initial source_entity assignment - type: {type(source_entity)}, is None: {source_entity is None}")
+        if source_entity is None:
+            self.logger.error(f"source_entity is None after assignment from match.source_entity")
+            return []
+        
+        # Use the mutated URN (apply platform instance mutations to the target URN)
+        # This creates the URN with the mutated platform instance
+        mutated_entity_urn = self.apply_urn_mutations_for_mcp(target_urn)
+        
+        self.logger.info(f"Generating MCPs for entity: {target_urn} -> {mutated_entity_urn}")
+        self.logger.debug(f"After URN assignment - source_entity type: {type(source_entity)}, is None: {source_entity is None}")
+        
+        # DEBUG: Log what metadata is actually present in this entity
+        entity_name = source_entity.get('name', 'Unknown')
+        self.logger.info(f"DEBUG: Entity {entity_name} has keys: {list(source_entity.keys())}")
+        
+        has_tags = bool(self.safe_get(source_entity, 'tags', 'tags'))
+        has_glossary_terms = bool(self.safe_get(source_entity, 'glossaryTerms', 'terms'))
+        has_domain = bool(self.safe_get(source_entity, 'domain', 'domain'))
+        has_structured_props = bool(self.safe_get(source_entity, 'structuredProperties', 'properties'))
+        has_schema_fields = bool(self.safe_get(source_entity, 'schemaMetadata', 'fields'))
+        
+        self.logger.info(f"DEBUG: Entity {entity_name} metadata check:")
+        self.logger.info(f"  - Has tags: {has_tags}")
+        self.logger.info(f"  - Has glossary terms: {has_glossary_terms}")
+        self.logger.info(f"  - Has domain: {has_domain}")
+        self.logger.info(f"  - Has structured properties: {has_structured_props}")
+        self.logger.info(f"  - Has schema fields: {has_schema_fields}")
+        
+        if has_tags:
+            self.logger.info(f"  - Tags structure: {source_entity.get('tags', {})}")
+        if has_glossary_terms:
+            self.logger.info(f"  - Glossary terms structure: {source_entity.get('glossaryTerms', {})}")
+        if has_domain:
+            self.logger.info(f"  - Domain structure: {source_entity.get('domain', {})}")
+        if has_structured_props:
+            self.logger.info(f"  - Structured properties structure: {self.safe_get(source_entity, 'structuredProperties', default={})}")
         
         # Process tags
         tags_list = self.safe_get(source_entity, 'tags', 'tags')
@@ -327,7 +1477,7 @@ class MetadataMigrationProcessor:
             
             if tag_associations:
                 mcps.append(MCPTask(
-                    entity_urn=target_urn,
+                    entity_urn=mutated_entity_urn,
                     mcp_type='globalTags',
                     aspect_data={'tags': tag_associations},
                     source_urns=source_urns
@@ -348,30 +1498,33 @@ class MetadataMigrationProcessor:
             
             if term_associations:
                 mcps.append(MCPTask(
-                    entity_urn=target_urn,
+                    entity_urn=mutated_entity_urn,
                     mcp_type='glossaryTerms',
                     aspect_data={'terms': term_associations},
                     source_urns=source_urns
                 ))
         
         # Process domain
-        domain_urn = self.safe_get(source_entity, 'domain', 'urn')
+        domain_urn = self.safe_get(source_entity, 'domain', 'domain')
         if domain_urn:
             mutated_domain_urn = self.apply_urn_mutations(domain_urn)
             
             mcps.append(MCPTask(
-                entity_urn=target_urn,
+                entity_urn=mutated_entity_urn,
                 mcp_type='domains',
                 aspect_data={'domains': [mutated_domain_urn]},
                 source_urns=[domain_urn]
             ))
         
         # Process structured properties
-        if source_entity.get('structuredProperties', {}).get('properties'):
+        self.logger.debug(f"About to check structured properties - source_entity type: {type(source_entity)}, is None: {source_entity is None}")
+        structured_props = source_entity.get('structuredProperties') if source_entity else None
+        self.logger.debug(f"structured_props type: {type(structured_props)}, is None: {structured_props is None}")
+        if structured_props and structured_props.get('properties'):
             property_assignments = []
             source_urns = []
             
-            for prop in source_entity['structuredProperties']['properties']:
+            for prop in structured_props['properties']:
                 prop_urn = prop.get('structuredProperty', {}).get('urn', '')
                 if prop_urn:
                     mutated_prop_urn = self.apply_urn_mutations(prop_urn)
@@ -384,7 +1537,7 @@ class MetadataMigrationProcessor:
             
             if property_assignments:
                 mcps.append(MCPTask(
-                    entity_urn=target_urn,
+                    entity_urn=mutated_entity_urn,
                     mcp_type='structuredProperties',
                     aspect_data={'properties': property_assignments},
                     source_urns=source_urns
@@ -392,25 +1545,33 @@ class MetadataMigrationProcessor:
         
         # Process schema field metadata (tags and glossary terms on fields)
         if source_entity.get('schemaMetadata', {}).get('fields'):
-            field_mcps = self._process_schema_field_metadata(source_entity, target_urn)
+            field_mcps = self._process_schema_field_metadata(source_entity, mutated_entity_urn)
             mcps.extend(field_mcps)
         
         return mcps
     
-    def _process_schema_field_metadata(self, source_entity: Dict[str, Any], target_urn: str) -> List[MCPTask]:
+    def _process_schema_field_metadata(self, source_entity: Dict[str, Any], mutated_entity_urn: str) -> List[MCPTask]:
         """Process schema field metadata (tags and glossary terms on fields)"""
         mcps = []
         
         for field in source_entity['schemaMetadata']['fields']:
+            self.logger.debug(f"Processing field: type={type(field)}, is None: {field is None}")
+            if not field or not isinstance(field, dict):
+                self.logger.warning(f"Skipping invalid field: {field}")
+                continue
+                
             field_path = field.get('fieldPath', '')
             schema_field_entity = field.get('schemaFieldEntity', {})
             
             # Process field tags
-            if field.get('tags', {}).get('tags'):
+            self.logger.debug(f"About to check field tags - field type: {type(field)}, is None: {field is None}")
+            field_tags = field.get('tags') if field else None
+            self.logger.debug(f"field_tags type: {type(field_tags)}, is None: {field_tags is None}")
+            if field_tags and field_tags.get('tags'):
                 tag_associations = []
                 source_urns = []
                 
-                for tag in field['tags']['tags']:
+                for tag in field_tags['tags']:
                     tag_urn = tag.get('tag', {}).get('urn', '')
                     if tag_urn:
                         mutated_tag_urn = self.apply_urn_mutations(tag_urn)
@@ -419,7 +1580,7 @@ class MetadataMigrationProcessor:
                 
                 if tag_associations:
                     mcps.append(MCPTask(
-                        entity_urn=target_urn,
+                        entity_urn=mutated_entity_urn,
                         mcp_type='editableSchemaFieldInfo',
                         aspect_data={
                             'fieldPath': field_path,
@@ -429,11 +1590,12 @@ class MetadataMigrationProcessor:
                     ))
             
             # Process field glossary terms
-            if field.get('glossaryTerms', {}).get('terms'):
+            field_glossary_terms = field.get('glossaryTerms') if field else None
+            if field_glossary_terms and field_glossary_terms.get('terms'):
                 term_associations = []
                 source_urns = []
                 
-                for term in field['glossaryTerms']['terms']:
+                for term in field_glossary_terms['terms']:
                     term_urn = term.get('term', {}).get('urn', '')
                     if term_urn:
                         mutated_term_urn = self.apply_urn_mutations(term_urn)
@@ -442,7 +1604,7 @@ class MetadataMigrationProcessor:
                 
                 if term_associations:
                     mcps.append(MCPTask(
-                        entity_urn=target_urn,
+                        entity_urn=mutated_entity_urn,
                         mcp_type='editableSchemaFieldInfo',
                         aspect_data={
                             'fieldPath': field_path,
@@ -546,8 +1708,8 @@ class MetadataMigrationProcessor:
                 if entity.get('type'):
                     entity_types.add(entity['type'])
             
-            # Fetch target entities
-            target_entities = self.fetch_target_entities(list(platforms), list(entity_types))
+            # Fetch target entities based on browse paths from source entities
+            target_entities = self.fetch_target_entities(source_entities)
             
             # Match entities
             matches = self.match_entities(source_entities, target_entities)
@@ -589,7 +1751,6 @@ def main():
     parser = argparse.ArgumentParser(description='Process metadata migration between DataHub environments')
     parser.add_argument('--input', required=True, help='Input JSON file with exported entities')
     parser.add_argument('--target-env', required=True, help='Target environment name')
-    parser.add_argument('--mutations-file', help='JSON file with environment mutations')
     parser.add_argument('--output-dir', help='Output directory for generated MCPs (dry run)')
     parser.add_argument('--dry-run', action='store_true', help='Generate MCPs without emitting them')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
@@ -601,20 +1762,13 @@ def main():
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Load mutations if provided
-    mutations = {}
-    if args.mutations_file:
-        try:
-            with open(args.mutations_file, 'r') as f:
-                mutations = json.load(f)
-        except Exception as e:
-            logging.error(f"Failed to load mutations file: {e}")
-            sys.exit(1)
+    # Note: Mutations are now included in the export file, no need for separate mutations file
+    # The mutation configuration is in the export metadata and mutations are already applied
     
     # Initialize processor
     processor = MetadataMigrationProcessor(
         target_environment=args.target_env,
-        mutations=mutations,
+        mutations={},  # Empty mutations since they're already applied
         dry_run=args.dry_run
     )
     
@@ -632,6 +1786,13 @@ def main():
         print(f"Tasks generated: {result['tasks_generated']}")
         print(f"Platforms: {', '.join(result['platforms'])}")
         print(f"Entity types: {', '.join(result['entity_types'])}")
+        
+        # Show mutation information from export
+        if hasattr(processor, 'export_metadata') and processor.export_metadata:
+            metadata = processor.export_metadata
+            print(f"Export environment: {metadata.get('environment', 'unknown')}")
+            print(f"Mutations applied: {metadata.get('mutations_applied', 'unknown')}")
+            print(f"Export timestamp: {metadata.get('export_timestamp', 'unknown')}")
         
         if args.dry_run:
             print(f"\nDRY RUN: MCPs saved to {args.output_dir or 'logs'}")

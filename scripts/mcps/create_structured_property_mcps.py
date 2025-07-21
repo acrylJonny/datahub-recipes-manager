@@ -44,7 +44,7 @@ except ImportError:
     print("DataHub SDK not found. Please install with: pip install 'acryl-datahub>=0.10.0'")
     sys.exit(1)
 
-from utils.urn_utils import generate_deterministic_urn
+from utils.urn_utils import generate_unified_urn
 
 
 logger = logging.getLogger(__name__)
@@ -112,8 +112,7 @@ def create_structured_property_definition_mcp(
     if custom_urn:
         property_urn = custom_urn
     else:
-        property_urn = generate_deterministic_urn(
-            "structuredProperty", property_id, environment=environment, mutation_name=mutation_name
+        property_urn = generate_unified_urn("structuredProperty", property_id, environment, mutation_name
         )
 
     current_time = int(time.time() * 1000)
@@ -180,8 +179,7 @@ def create_structured_property_ownership_mcp(
     """
     Create an MCP for structured property ownership
     """
-    property_urn = generate_deterministic_urn(
-        "structuredProperty", property_id, environment=environment, mutation_name=mutation_name
+    property_urn = generate_unified_urn("structuredProperty", property_id, environment, mutation_name
     )
 
     current_time = int(time.time() * 1000)
@@ -221,8 +219,7 @@ def create_structured_property_status_mcp(
     """
     Create an MCP for structured property status (soft delete)
     """
-    property_urn = generate_deterministic_urn(
-        "structuredProperty", property_id, environment=environment, mutation_name=mutation_name
+    property_urn = generate_unified_urn("structuredProperty", property_id, environment, mutation_name
     )
 
     status = StatusClass(removed=removed)
@@ -248,8 +245,7 @@ def create_structured_property_institutional_memory_mcp(
     """
     Create an MCP for structured property institutional memory
     """
-    property_urn = generate_deterministic_urn(
-        "structuredProperty", property_id, environment=environment, mutation_name=mutation_name
+    property_urn = generate_unified_urn("structuredProperty", property_id, environment, mutation_name
     )
 
     current_time = int(time.time() * 1000)

@@ -73,7 +73,7 @@ except ImportError:
     sys.exit(1)
 
 # Import local utilities
-from utils.urn_utils import generate_deterministic_urn, extract_name_from_properties
+from utils.urn_utils import generate_unified_urn, extract_name_from_properties
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +107,7 @@ def create_glossary_node_info_mcp(
     if custom_urn:
         node_urn = custom_urn
     else:
-        node_urn = generate_deterministic_urn(
-            "glossaryNode", node_id, environment=environment, mutation_name=mutation_name
+        node_urn = generate_unified_urn("glossaryNode", node_id, environment, mutation_name
         )
 
     # Create glossary node info with all available data
@@ -161,8 +160,7 @@ def create_glossary_term_info_mcp(
     if custom_urn:
         term_urn = custom_urn
     else:
-        term_urn = generate_deterministic_urn(
-            "glossaryTerm", term_id, environment=environment, mutation_name=mutation_name
+        term_urn = generate_unified_urn("glossaryTerm", term_id, environment, mutation_name
         )
 
     # Create glossary term info with all available data
@@ -216,8 +214,7 @@ def create_glossary_ownership_mcp(
     if custom_urn:
         entity_urn = custom_urn
     else:
-        entity_urn = generate_deterministic_urn(
-            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
         )
 
     # Create audit stamp
@@ -312,8 +309,7 @@ def create_glossary_status_mcp(
     entity_id = entity_data.get("id")
     deprecated = entity_data.get("deprecated", False)
     
-    entity_urn = generate_deterministic_urn(
-        entity_type, entity_id, environment=environment, mutation_name=mutation_name
+    entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
     )
 
     # Create status aspect
@@ -344,8 +340,7 @@ def create_glossary_deprecation_mcp(
         entity_id = entity_data.get("id")
         deprecated = entity_data.get("deprecated", False)
         
-        entity_urn = generate_deterministic_urn(
-            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
         )
 
         if deprecated:
@@ -403,8 +398,7 @@ def create_glossary_global_tags_mcp(
     if not tags:
         return None
     
-    entity_urn = generate_deterministic_urn(
-        entity_type, entity_id, environment=environment, mutation_name=mutation_name
+    entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
     )
 
     # Get mutation configuration if URN utilities are available
@@ -479,8 +473,7 @@ def create_glossary_terms_mcp(
     if not glossary_terms:
         return None
     
-    entity_urn = generate_deterministic_urn(
-        entity_type, entity_id, environment=environment, mutation_name=mutation_name
+    entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
     )
 
     # Get mutation configuration if URN utilities are available
@@ -551,8 +544,7 @@ def create_glossary_browse_paths_mcp(
     if not browse_paths:
         return None
     
-    entity_urn = generate_deterministic_urn(
-        entity_type, entity_id, environment=environment, mutation_name=mutation_name
+    entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
     )
 
     browse_paths_aspect = BrowsePathsClass(paths=browse_paths)
@@ -586,8 +578,7 @@ def create_glossary_institutional_memory_mcp(
     if not memory_elements:
         return None
     
-    entity_urn = generate_deterministic_urn(
-        entity_type, entity_id, environment=environment, mutation_name=mutation_name
+    entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
     )
 
     current_time = int(time.time() * 1000)
@@ -642,8 +633,7 @@ def create_glossary_related_terms_mcp(
         if not related_terms and not relationships_data:
             return None
         
-        entity_urn = generate_deterministic_urn(
-            "glossaryTerm", term_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn("glossaryTerm", term_id, environment, mutation_name
         )
         
         # Extract URNs from related terms
@@ -781,8 +771,7 @@ def create_glossary_domains_mcp(
     if not domain_urn and not domain_data:
         return None
     
-    entity_urn = generate_deterministic_urn(
-        "glossaryTerm", term_id, environment=environment, mutation_name=mutation_name
+    entity_urn = generate_unified_urn("glossaryTerm", term_id, environment, mutation_name
     )
     
     # Get mutation configuration if URN utilities are available
@@ -843,8 +832,7 @@ def create_glossary_display_properties_mcp(
         if not color_hex:
             return None
         
-        entity_urn = generate_deterministic_urn(
-            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
         )
 
         # Create display properties with icon information
@@ -888,8 +876,7 @@ def create_glossary_data_platform_instance_mcp(
         if not platform_instance:
             return None
         
-        entity_urn = generate_deterministic_urn(
-            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
         )
 
         # Create data platform instance
@@ -932,8 +919,7 @@ def create_glossary_subtypes_mcp(
         if not sub_types:
             return None
         
-        entity_urn = generate_deterministic_urn(
-            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
         )
 
         # Create sub types
@@ -976,8 +962,7 @@ def create_glossary_forms_mcp(
         if not forms_data:
             return None
         
-        entity_urn = generate_deterministic_urn(
-            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
         )
 
         # Create audit stamp
@@ -1056,8 +1041,7 @@ def create_glossary_structured_properties_mcp(
         if not structured_props_data:
             return None
         
-        entity_urn = generate_deterministic_urn(
-            entity_type, entity_id, environment=environment, mutation_name=mutation_name
+        entity_urn = generate_unified_urn(entity_type, entity_id, environment, mutation_name
         )
 
         # Get mutation configuration if URN utilities are available

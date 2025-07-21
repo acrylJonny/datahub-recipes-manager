@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.views import View
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, FileResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 import os
@@ -21,6 +21,14 @@ sys.path.append(project_root)
 from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.datahub_rest_client import DataHubRestClient
 from .models import Tag, GlossaryNode, GlossaryTerm, Domain, Assertion, Environment, StructuredProperty, SearchResultCache, SearchProgress
+
+# Import MutationStore at module level - this should work properly now
+try:
+    from services.mutation_store import MutationStore
+except ImportError as e:
+    logger = logging.getLogger(__name__)
+    logger.error(f"Could not import MutationStore: {e}")
+    MutationStore = None
 
 # Create a logger
 logger = logging.getLogger(__name__)
@@ -256,7 +264,9 @@ def get_platform_instances(client, platform, entity_type=None):
                         if instance_id and len(instance_id) > 0:
                             instances.add(instance_id)
             except Exception as e:
-                logger.debug(f"Error parsing URN {urn}: {str(e)}")
+                # Reduce verbose logging - only log unique errors
+                if "Error parsing URN" not in str(e):
+                    logger.debug(f"Error parsing URN {urn}: {str(e)}")
                 continue
 
         logger.info(
@@ -670,6 +680,7 @@ def _search_with_pagination_and_cache(client, query, entity_type, platform, sort
     
     while True:
         try:
+            logger.info(f"Getting editable entities - start: {start}, count: {batch_size}, query: {query}, entity_type: {entity_type}, platform: {platform}")
             result = client.get_editable_entities(
                 start=start,
                 count=batch_size,
@@ -790,6 +801,7 @@ def _perform_direct_search_with_progress(client, query, entity_type, platform, s
             while True:
                 try:
                     # Use the client with orFilters
+                    logger.info(f"Getting editable entities with orFilters - start: {start}, count: {batch_size}, query: {query}, entity_type: {entity_type}, platform: {platform}, orFilters: {or_filters}")
                     result = client.get_editable_entities(
                         start=start,
                         count=batch_size,
@@ -892,6 +904,7 @@ def _discover_platforms(client, query, sort_by):
     
     try:
         # Quick discovery search
+        logger.info(f"Platform discovery - querying for platforms with query: '*', count: 1000")
         platform_discovery_result = client.get_editable_entities(
             start=0,
             count=1000,  # Get more for better platform discovery
@@ -951,6 +964,7 @@ def _search_with_pagination(client, query, entity_type, platform, sort_by, seen_
     
     while True:
         try:
+            logger.info(f"Getting editable entities (pagination) - start: {start}, count: {batch_size}, query: {query}, entity_type: {entity_type}, platform: {platform}")
             result = client.get_editable_entities(
                 start=start,
                 count=batch_size,
@@ -1585,7 +1599,6 @@ def get_browse_paths_hierarchy(client, entity_type=None, parent_path="/"):
                                         "field": "browsePathV2",
                                         "condition": "EQUAL",
                                         "values": [f"␟{path_name}"],
-                                        "negated": False,
                                     }
                                 ]
                             }
@@ -1599,6 +1612,7 @@ def get_browse_paths_hierarchy(client, entity_type=None, parent_path="/"):
 
             # Execute the query
             try:
+                logger.info(f"Executing GraphQL query for browse paths hierarchy - parent_path: {parent_path}, entity_type: {entity_type}")
                 result = client.execute_graphql(graphql_query, variables)
 
                 # Process the results
@@ -1900,6 +1914,7 @@ def metadata_entities_editable_list(request):
         client = get_datahub_client_from_request(request)
 
         # Call the improved get_editable_entities method with all parameters
+        logger.info(f"Metadata entities editable list - start: {start}, count: {count}, query: {search_query}, entity_type: {entity_type}, platform: {platform}, use_platform_pagination: {use_platform_pagination}, sort_by: {sort_by}, editable_only: {editable_only}")
         result = client.get_editable_entities(
             start=start,
             count=count,
@@ -2002,6 +2017,7 @@ def get_platforms(request):
             else:
                 logger.warning("Aggregation API failed or returned no data, falling back to entity search")
                 # Fallback to a single search if aggregation fails
+                logger.info(f"Platform aggregation fallback - querying for platforms with entity_type: {entity_type}, count: 10000")
                 result = client.get_editable_entities(
                     start=0,
                     count=10000,  # Much larger sample for comprehensive platform discovery
@@ -2242,22 +2258,12 @@ def get_structured_properties(request):
 @require_http_methods(["POST"])
 def export_entities_with_mutations(request):
     """Export entities with environment-specific mutations applied and save to environment directory."""
-    import logging
-    logger = logging.getLogger(__name__)
-    
     try:
         import json
         import os
         from datetime import datetime
         from django.conf import settings
         from web_ui.models import Environment
-        
-        # Try to import MutationStore, but continue without it if it fails
-        try:
-            from web_ui.services.mutation_store import MutationStore
-        except ImportError as import_error:
-            logger.error(f"Could not import MutationStore: {import_error}")
-            MutationStore = None
         
         # Parse request data
         data = json.loads(request.body)
@@ -2271,149 +2277,254 @@ def export_entities_with_mutations(request):
                 status=400
             )
         
-        # Get current environment and mutations
+        # Get current connection and environment (same pattern as other views)
         from web_ui.views import get_current_connection
         current_connection = get_current_connection(request)
         
         # Determine environment name
-        env_name = getattr(current_connection, 'environment', 'dev')
+        current_environment = getattr(current_connection, 'environment', 'dev')
         
-        mutations = {}
-        if include_mutations and current_connection and MutationStore:
+        logger.info(f"Exporting {len(entities)} entities with mutations for environment: {current_environment}")
+        
+        # Process entities and apply mutations if requested
+        processed_entities = []
+        mutation_config = None
+        
+        if include_mutations:
             try:
-                environment = Environment.objects.filter(name=env_name).first()
+                # Import URN utilities
+                from utils.urn_utils import (
+                    get_mutation_config_for_environment,
+                    apply_urn_mutations_to_associations
+                )
                 
-                if environment:
-                    mutation_store = MutationStore(environment)
-                    mutations = mutation_store.get_mutations()
-                    logger.info(f"Loaded {len(mutations)} mutations for environment {env_name}")
+                # Get mutation configuration for the current environment
+                mutation_config = get_mutation_config_for_environment(current_environment)
+                
+                if mutation_config:
+                    logger.info(f"Found mutation configuration for environment '{current_environment}': {mutation_config}")
                 else:
-                    logger.warning(f"Environment {env_name} not found in database")
+                    logger.warning(f"No mutation configuration found for environment '{current_environment}'")
+                    
+            except ImportError as e:
+                logger.warning(f"URN utilities not available - exporting without mutations: {e}")
+                include_mutations = False
+        
+        # Process each entity
+        for entity in entities:
+            try:
+                # Create a copy of the entity to avoid modifying the original
+                processed_entity = json.loads(json.dumps(entity))
+                
+                # Apply mutations if requested
+                if include_mutations and mutation_config:
+                    try:
+                        # For editable entities, we DON'T mutate the main entity URN (e.g. dataset URN)
+                        # We ONLY mutate the associated entity URNs (domain, tags, glossary terms, etc.)
+                        processed_entity = apply_urn_mutations_to_associations(
+                            processed_entity, 
+                            current_environment, 
+                            mutation_config,
+                            mutate_main_entity_urn=False  # Don't mutate main URN for editable entities
+                        )
+                        logger.debug(f"Applied association mutations to entity: {processed_entity.get('urn', 'unknown')}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error applying mutations to entity {processed_entity.get('urn', 'unknown')}: {str(e)}")
+                        # Continue with the original entity if mutation fails
+                        processed_entity = entity
+                
+                processed_entities.append(processed_entity)
                 
             except Exception as e:
-                logger.error(f"Error loading mutations: {str(e)}")
-                # Continue without mutations
-        elif include_mutations and not MutationStore:
-            logger.warning("MutationStore not available, continuing without mutations")
+                logger.error(f"Error processing entity: {str(e)}")
+                # Include the original entity if processing fails
+                processed_entities.append(entity)
         
-        # Use our metadata migration script to process entities properly
-        import subprocess
-        import tempfile
+        # Create the export data structure
+        export_data = {
+            "metadata": {
+                "export_timestamp": datetime.now().isoformat(),
+                "environment": current_environment,
+                "mutations_applied": include_mutations and mutation_config is not None,
+                "entity_count": len(processed_entities),
+                "export_format": export_format,
+                "mutation_config": mutation_config if include_mutations else None
+            },
+            "entities": processed_entities
+        }
         
-        # Create temporary file with entities
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
-            json.dump({"entities": entities}, temp_file, indent=2)
-            temp_entities_file = temp_file.name
+        # Create environment directory if it doesn't exist
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        env_dir = os.path.join(project_root, 'metadata-manager', current_environment, 'editable_entities')
+        os.makedirs(env_dir, exist_ok=True)
         
-        try:
-            # Create output directory for the environment
-            # BASE_DIR points to web_ui, so go up one level to get to workspace root
-            web_ui_dir = getattr(settings, 'BASE_DIR', os.getcwd())
-            workspace_root = os.path.dirname(web_ui_dir)
-            env_dir = os.path.join(workspace_root, 'metadata-manager', env_name)
-            editable_entities_dir = os.path.join(env_dir, 'editable_entities')
-            
-            # Create directories if they don't exist
-            os.makedirs(editable_entities_dir, exist_ok=True)
-            
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"exported_entities_{timestamp}.json"
-            output_path = os.path.join(editable_entities_dir, output_filename)
-            
-            # Look for mutations file
-            mutations_file = None
-            mutations_paths = [
-                os.path.join(workspace_root, 'params', 'environments', env_name, 'mutations.json'),
-                os.path.join(workspace_root, 'web_ui', 'environments', f'{env_name}_mutations.json'),
-            ]
-            
-            for path in mutations_paths:
-                if os.path.exists(path):
-                    mutations_file = path
-                    break
-            
-            # Build command for our migration script
-            script_path = os.path.join(workspace_root, 'scripts', 'process_metadata_migration.py')
-            cmd = [
-                'python', script_path,
-                '--input', temp_entities_file,
-                '--target-env', env_name,
-                '--output-dir', editable_entities_dir,
-                '--dry-run',  # Generate MCPs but don't emit
-                '--verbose'
-            ]
-            
-            if mutations_file:
-                cmd.extend(['--mutations-file', mutations_file])
-            
-            # Run the script
-            logger.info(f"Running metadata migration script: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=workspace_root)
-            
-            if result.returncode != 0:
-                logger.error(f"Migration script failed: {result.stderr}")
-                return JsonResponse({
-                    "success": False, 
-                    "error": f"Migration processing failed: {result.stderr}"
-                }, status=500)
-            
-            # Also save the original export data as a simple JSON file
-            export_data = {
-                "metadata": {
-                    "export_timestamp": datetime.now().isoformat(),
-                    "export_format": export_format,
-                    "source_environment": env_name,
-                    "entity_count": len(entities),
-                    "mutations_applied": include_mutations,
-                    "mutations_count": len(mutations) if mutations else 0,
-                    "processed_by": "metadata_migration_script"
-                },
-                "entities": entities  # Keep original entities for reference
-            }
-            
-            # Save the export data
-            with open(output_path, 'w') as f:
-                json.dump(export_data, f, indent=2)
-            
-            # Count generated MCP files
-            mcp_files = []
-            for file in os.listdir(editable_entities_dir):
-                if file.endswith('.json') and file != output_filename:
-                    mcp_files.append(file)
-            
-            logger.info(f"Export completed: {output_path}")
-            logger.info(f"Generated {len(mcp_files)} MCP files")
-            
-            return JsonResponse({
-                "success": True,
-                "file_path": output_path,
-                "filename": output_filename,
-                "entity_count": len(entities),
-                "mutations_applied": include_mutations,
-                "environment": env_name,
-                "mcp_files_generated": len(mcp_files),
-                "directory": f"metadata-manager/{env_name}/editable_entities/",
-                "message": f"Exported {len(entities)} entities to {env_name} environment directory with {len(mcp_files)} MCP files generated"
-            })
-            
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_entities_file)
-            except:
-                pass
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mutations_suffix = "_with_mutations" if include_mutations and mutation_config else "_no_mutations"
+        filename = f"exported_entities{mutations_suffix}_{timestamp}.json"
+        file_path = os.path.join(env_dir, filename)
         
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON in request body"}, 
-            status=400
-        )
+        # Save to file
+        with open(file_path, 'w') as f:
+            json.dump(export_data, f, indent=2)
+        
+        logger.info(f"Successfully exported {len(processed_entities)} entities to {file_path}")
+        
+        # Return success response with file information
+        return JsonResponse({
+            "success": True,
+            "message": f"Successfully exported {len(processed_entities)} entities to {current_environment} environment",
+            "file_path": file_path,
+            "filename": filename,
+            "environment": current_environment,
+            "entity_count": len(processed_entities),
+            "mutations_applied": include_mutations and mutation_config is not None,
+            "export_format": export_format
+        })
+        
     except Exception as e:
         logger.error(f"Error exporting entities with mutations: {str(e)}")
         return JsonResponse(
-            {"success": False, "error": str(e)}, 
+            {"success": False, "error": f"Failed to export entities: {str(e)}"}, 
             status=500
         )
+
+
+@require_http_methods(["GET"])
+def get_all_platform_instances(request):
+    """Get list of all platform instances from cached search results."""
+    try:
+        entity_type = request.GET.get("entity_type")
+        platform = request.GET.get("platform")  # Optional platform filter
+        
+        logger.info(f"Getting platform instances from cache for entity_type='{entity_type}', platform='{platform}'")
+        
+        # Get session key
+        session_key = request.session.session_key
+        if not session_key:
+            request.session.create()
+            session_key = request.session.session_key
+        
+        # Import SearchResultCache model
+        from .models import SearchResultCache
+        
+        # Get all cached entities for this session
+        cached_results = SearchResultCache.objects.filter(session_key=session_key)
+        
+        logger.info(f"Found {cached_results.count()} cached entities for session {session_key}")
+        
+        # Extract platform instances from cached entities
+        platform_instances = set()
+        
+        for cached_result in cached_results:
+            entity = cached_result.entity_data
+            
+            # Filter by entity type if specified
+            if entity_type and entity.get("type") != entity_type:
+                continue
+            
+            # Extract platform instance from dataPlatformInstance field
+            if entity.get("dataPlatformInstance"):
+                platform_instance_data = entity["dataPlatformInstance"]
+                
+                # Filter by platform if specified
+                if platform:
+                    entity_platform = None
+                    if platform_instance_data.get("platform"):
+                        entity_platform = platform_instance_data["platform"].get("name")
+                    elif entity.get("platform"):
+                        entity_platform = entity["platform"].get("name")
+                    
+                    if entity_platform and entity_platform.lower() != platform.lower():
+                        continue
+                
+                # Get instance ID from instanceId field
+                instance_id = platform_instance_data.get("instanceId")
+                if instance_id:
+                    platform_instances.add(instance_id)
+                
+                # Also check properties.name as fallback
+                if not instance_id and platform_instance_data.get("properties"):
+                    instance_name = platform_instance_data["properties"].get("name")
+                    if instance_name:
+                        platform_instances.add(instance_name)
+            
+            # Also extract from URN as fallback for legacy format
+            if entity.get("urn"):
+                urn = entity["urn"]
+                try:
+                    # Format: urn:li:dataset:(urn:li:dataPlatform:platform, instance.database.schema.table, env)
+                    if "urn:li:dataset:" in urn or "urn:li:container:" in urn:
+                        parts = urn.split(",")
+                        if len(parts) >= 2:
+                            # The second part may contain instance.database format
+                            instance_part = parts[1].strip()
+                            # Extract just the instance part (before first dot)
+                            if "." in instance_part:
+                                instance_id = instance_part.split(".")[0].strip()
+                                if instance_id and len(instance_id) > 0:
+                                    platform_instances.add(instance_id)
+                except Exception as e:
+                    # Only log errors, not individual URN parsing issues
+                    if "Error extracting platform instance from URN" not in str(e):
+                        logger.debug(f"Error parsing URN {urn}: {str(e)}")
+                    continue
+        
+        logger.info(f"Extracted {len(platform_instances)} unique platform instances from cache")
+        
+        # Convert to sorted list
+        platform_instances_list = sorted(list(platform_instances))
+        
+        return JsonResponse({
+            "success": True, 
+            "platform_instances": platform_instances_list,
+            "entity_type": entity_type,
+            "platform": platform
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting platform instances from cache: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def download_exported_entities(request):
+    """Download the exported entities JSON file"""
+    try:
+        file_path = request.GET.get('file_path')
+        filename = request.GET.get('filename')
+        
+        if not file_path or not filename:
+            return JsonResponse({"success": False, "error": "File path and filename are required"}, status=400)
+        
+        import os
+        from django.http import FileResponse
+        from django.conf import settings
+        
+        # Ensure the file exists and is within the expected directory
+        if not os.path.exists(file_path):
+            return JsonResponse({"success": False, "error": "File not found"}, status=404)
+        
+        # Security check - ensure the file is within the metadata-manager directory
+        web_ui_dir = getattr(settings, 'BASE_DIR', os.getcwd())
+        workspace_root = os.path.dirname(web_ui_dir)
+        expected_dir = os.path.join(workspace_root, 'metadata-manager')
+        
+        if not os.path.abspath(file_path).startswith(os.path.abspath(expected_dir)):
+            return JsonResponse({"success": False, "error": "Invalid file path"}, status=400)
+        
+        # Return the file as a download
+        response = FileResponse(
+            open(file_path, 'rb'),
+            as_attachment=True,
+            filename=filename
+        )
+        response['Content-Type'] = 'application/json'
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error downloading exported entities: {str(e)}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 

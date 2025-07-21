@@ -4,8 +4,13 @@ Handles environment-specific transformations for CI/CD processes.
 """
 
 import logging
+import sys
+import os
 from typing import Dict, Any, List, Optional
 from django.db.models import Model
+
+# Add parent directory to path to import utils
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from utils.urn_utils import apply_entity_mutation
 
 logger = logging.getLogger(__name__)
@@ -380,13 +385,34 @@ class MutationStore:
         mutations = {}
         
         if self.environment:
-            # Try to get mutations from the environment model
+            # Get mutations from the environment's foreign key relationship
             if hasattr(self.environment, 'mutations') and self.environment.mutations:
                 try:
-                    import json
-                    mutations = json.loads(self.environment.mutations)
-                except json.JSONDecodeError:
-                    logger.error(f"Error parsing mutations JSON for environment {self.environment.name}")
+                    # Access the Mutation object through the foreign key
+                    mutation_obj = self.environment.mutations
+                    
+                    # Build mutations dictionary from the Mutation model fields
+                    mutations = {
+                        'name': mutation_obj.name,
+                        'description': mutation_obj.description,
+                        'custom_properties': mutation_obj.custom_properties or {},
+                        'platform_instance_mapping': mutation_obj.platform_instance_mapping or {},
+                        'apply_to_tags': mutation_obj.apply_to_tags,
+                        'apply_to_glossary_terms': mutation_obj.apply_to_glossary_terms,
+                        'apply_to_glossary_nodes': mutation_obj.apply_to_glossary_nodes,
+                        'apply_to_structured_properties': mutation_obj.apply_to_structured_properties,
+                        'apply_to_domains': mutation_obj.apply_to_domains,
+                        'apply_to_data_products': mutation_obj.apply_to_data_products,
+                    }
+                    
+                    # Add deprecated env field if it exists
+                    if mutation_obj.env:
+                        mutations['env'] = mutation_obj.env
+                        
+                except AttributeError as e:
+                    logger.error(f"Error accessing mutation object for environment {self.environment.name}: {e}")
+                except Exception as e:
+                    logger.error(f"Error loading mutations for environment {self.environment.name}: {e}")
             
             # Add environment name to mutations for URN transformations
             mutations['environment_name'] = getattr(self.environment, 'name', 'dev')

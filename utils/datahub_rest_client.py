@@ -109,15 +109,34 @@ class DataHubRestClient:
             dict: The GraphQL response
         """
         try:
-            # Reduced logging - only log query name and key details for entity searches
+            # Extract query name for logging
             query_name = "Unknown"
             if "query " in query:
                 query_name = query.split("query ")[1].split("(")[0].strip()
             elif "mutation " in query:
                 query_name = query.split("mutation ")[1].split("(")[0].strip()
             
-            # Only log minimal info to reduce clutter
-            self.logger.debug(f"Executing GraphQL {query_name}")
+            # Enhanced logging for editable entities and other important queries
+            if ("GetEntitiesWithBrowsePathsForSearch" in query or 
+                "searchAcrossEntities" in query or 
+                "GetBrowsePathEntities" in query or 
+                "GetTopLevelEntities" in query or
+                "GetDomains" in query):
+                
+                self.logger.info(f"Executing GraphQL query: {query_name}")
+                self.logger.info(f"GraphQL Query:\n{query}")
+                
+                if variables:
+                    # Log variables in a formatted way
+                    import json
+                    try:
+                        formatted_variables = json.dumps(variables, indent=2)
+                        self.logger.info(f"GraphQL Variables:\n{formatted_variables}")
+                    except:
+                        self.logger.info(f"GraphQL Variables: {variables}")
+            else:
+                # For other queries, use debug level logging
+                self.logger.debug(f"Executing GraphQL {query_name}")
 
             # Try with DataHubGraph client if available
             if hasattr(self, "dhg_client") and self.dhg_client:
@@ -4870,7 +4889,6 @@ class DataHubRestClient:
                                 "field": field_type,
                                 "condition": "EQUAL",
                                 "values": [metadata_urn],
-                                "negated": False,
                             }
                         ]
                     }
@@ -7392,7 +7410,6 @@ class DataHubRestClient:
                     "field": "platform",
                     "condition": "EQUAL",
                     "values": [platform_value],
-                    "negated": False
                 }]
             }]
 

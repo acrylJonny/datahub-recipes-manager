@@ -7,7 +7,7 @@ on:
         description: 'Path to JSON file with exported entities (relative to repo root)'
         required: true
         type: string
-        default: 'metadata-manager/dev/editable_entities/exported_entities.json'
+        default: 'metadata-manager/dev/editable_entities/exported_entities_with_mutations.json'
       source_environment:
         description: 'Source environment name'
         required: true
@@ -155,6 +155,16 @@ jobs:
               with open('${{ github.event.inputs.entities_file }}', 'r') as f:
                   data = json.load(f)
               
+              print(f"📊 Loaded JSON data type: {type(data)}")
+              if isinstance(data, dict):
+                  print(f"📊 Dictionary keys: {list(data.keys())}")
+              elif isinstance(data, list):
+                  print(f"📊 List length: {len(data)}")
+                  if data:
+                      print(f"📊 First item type: {type(data[0])}")
+              else:
+                  print(f"📊 Raw data: {str(data)[:200]}...")
+          
               # Handle different export formats
               if isinstance(data, dict):
                   if 'entities' in data:
@@ -163,45 +173,83 @@ jobs:
                       entities = data['export_data']
                   else:
                       entities = [data]
-              else:
+              elif isinstance(data, list):
                   entities = data
+              else:
+                  print(f"⚠️ Unexpected data format: {type(data)}")
+                  entities = []
+              
+              # Ensure entities is a list
+              if not isinstance(entities, list):
+                  print(f"⚠️ Entities is not a list: {type(entities)}")
+                  entities = []
+              
+              # Filter out None values
+              entities = [e for e in entities if e is not None]
+              
+              if not entities:
+                  print("⚠️ No valid entities found in file")
+                  sys.exit(1)
+              
+              print(f"📊 Processing {len(entities)} entities")
+              if entities:
+                  print(f"📊 First entity type: {type(entities[0])}")
+                  if isinstance(entities[0], dict):
+                      print(f"📊 First entity keys: {list(entities[0].keys())}")
               
               # Analyze entities
               platforms = []
               entity_types = []
               has_metadata = False
+              skipped_entities = 0
               
-              for entity in entities:
+              for i, entity in enumerate(entities):
+                  # Skip None or invalid entities
+                  if not entity or not isinstance(entity, dict):
+                      skipped_entities += 1
+                      print(f"⚠️ Skipping entity {i}: {type(entity)} - {str(entity)[:100]}")
+                      continue
+                  
                   # Platform
-                  if entity.get('platform', {}).get('name'):
-                      platforms.append(entity['platform']['name'])
+                  platform_info = entity.get('platform', {})
+                  if platform_info and isinstance(platform_info, dict) and platform_info.get('name'):
+                      platforms.append(platform_info['name'])
                   
                   # Entity type
-                  if entity.get('type'):
-                      entity_types.append(entity['type'])
+                  entity_type = entity.get('type')
+                  if entity_type:
+                      entity_types.append(entity_type)
                   
                   # Check for metadata to migrate
-                  if (entity.get('tags', {}).get('tags') or 
-                      entity.get('glossaryTerms', {}).get('terms') or
-                      entity.get('domain', {}).get('urn') or
-                      entity.get('structuredProperties', {}).get('properties')):
+                  tags = entity.get('tags', {})
+                  glossary_terms = entity.get('glossaryTerms', {})
+                  domain = entity.get('domain', {})
+                  structured_props = entity.get('structuredProperties', {})
+                  
+                  if ((tags and isinstance(tags, dict) and tags.get('tags')) or 
+                      (glossary_terms and isinstance(glossary_terms, dict) and glossary_terms.get('terms')) or
+                      (domain and isinstance(domain, dict) and domain.get('urn')) or
+                      (structured_props and isinstance(structured_props, dict) and structured_props.get('properties'))):
                       has_metadata = True
               
               # Count unique values
               unique_platforms = list(set(platforms))
               unique_entity_types = list(set(entity_types))
+              processed_entities = len(entities) - skipped_entities
               
               print(f"📊 Analysis Results:")
-              print(f"   Entities: {len(entities)}")
-              print(f"   Platforms: {', '.join(unique_platforms)}")
-              print(f"   Entity Types: {', '.join(unique_entity_types)}")
+              print(f"   Total Entities: {len(entities)}")
+              print(f"   Processed Entities: {processed_entities}")
+              print(f"   Skipped Entities: {skipped_entities}")
+              print(f"   Platforms: {', '.join(unique_platforms) if unique_platforms else 'None'}")
+              print(f"   Entity Types: {', '.join(unique_entity_types) if unique_entity_types else 'None'}")
               print(f"   Has Metadata: {has_metadata}")
               
               # Set GitHub outputs
               with open('$GITHUB_OUTPUT', 'a') as f:
                   f.write(f"platforms={','.join(unique_platforms)}\n")
                   f.write(f"entity_types={','.join(unique_entity_types)}\n")
-                  f.write(f"entity_count={len(entities)}\n")
+                  f.write(f"entity_count={processed_entities}\n")
                   f.write(f"has_mutations={'true' if has_metadata else 'false'}\n")
               
           except Exception as e:
@@ -227,28 +275,6 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-web.txt
 
-      - name: Load environment mutations
-        id: mutations
-        run: |
-          echo "🔄 Loading environment mutations..."
-          
-          MUTATIONS_FILE=""
-          
-          # Look for mutations file in environment configurations
-          if [ -f "params/environments/${{ github.event.inputs.target_environment }}/mutations.json" ]; then
-            MUTATIONS_FILE="params/environments/${{ github.event.inputs.target_environment }}/mutations.json"
-          elif [ -f "web_ui/environments/${{ github.event.inputs.target_environment }}_mutations.json" ]; then
-            MUTATIONS_FILE="web_ui/environments/${{ github.event.inputs.target_environment }}_mutations.json"
-          fi
-          
-          if [ -n "$MUTATIONS_FILE" ]; then
-            echo "✅ Found mutations file: $MUTATIONS_FILE"
-            echo "mutations_file=$MUTATIONS_FILE" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️  No mutations file found for ${{ github.event.inputs.target_environment }}"
-            echo "mutations_file=" >> $GITHUB_OUTPUT
-          fi
-
       - name: Create output directory
         run: |
           mkdir -p metadata-migration/output
@@ -258,16 +284,11 @@ jobs:
         if: ${{ github.event.inputs.dry_run == 'true' }}
         run: |
           echo "🧪 Running metadata migration in DRY RUN mode..."
-          
-          MUTATIONS_ARG=""
-          if [ -n "${{ steps.mutations.outputs.mutations_file }}" ]; then
-            MUTATIONS_ARG="--mutations-file ${{ steps.mutations.outputs.mutations_file }}"
-          fi
+          echo "ℹ️  Note: Mutations have already been applied during export"
           
           python scripts/process_metadata_migration.py \
             --input "${{ github.event.inputs.entities_file }}" \
             --target-env "${{ github.event.inputs.target_environment }}" \
-            $MUTATIONS_ARG \
             --output-dir "metadata-migration/output" \
             --dry-run \
             --verbose > metadata-migration/logs/migration.log 2>&1
@@ -282,16 +303,11 @@ jobs:
           DATAHUB_GMS_TOKEN: ${{ secrets[format('DATAHUB_GMS_TOKEN_{0}', github.event.inputs.target_environment)] }}
         run: |
           echo "🚀 Running metadata migration in LIVE mode..."
-          
-          MUTATIONS_ARG=""
-          if [ -n "${{ steps.mutations.outputs.mutations_file }}" ]; then
-            MUTATIONS_ARG="--mutations-file ${{ steps.mutations.outputs.mutations_file }}"
-          fi
+          echo "ℹ️  Note: Mutations have already been applied during export"
           
           python scripts/process_metadata_migration.py \
             --input "${{ github.event.inputs.entities_file }}" \
             --target-env "${{ github.event.inputs.target_environment }}" \
-            $MUTATIONS_ARG \
             --verbose > metadata-migration/logs/migration.log 2>&1
           
           echo "📋 Migration summary:"
