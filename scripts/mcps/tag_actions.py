@@ -19,12 +19,20 @@ sys.path.append(
 )
 
 # Import local utilities
-from utils.urn_utils import generate_urn_for_new_entity, apply_urn_mutations_for_existing_entity, extract_name_from_properties
+from utils.urn_utils import generate_deterministic_urn, extract_name_from_properties
 from scripts.mcps.create_tag_mcps import (
     create_tag_properties_mcp, 
     create_tag_ownership_mcp, 
     save_mcp_to_file
 )
+
+# Try to import the new URN generation utilities
+try:
+    sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'web_ui'))
+    from utils.urn_utils import generate_tag_urn, get_mutation_config_for_environment
+    HAS_NEW_URN_UTILS = True
+except ImportError:
+    HAS_NEW_URN_UTILS = False
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +144,7 @@ def add_tag_to_staged_changes(
     environment: str, 
     owner: str,
     base_dir: Optional[str] = None,
-    mutation_name: Optional[str] = None,
-    existing_urn: Optional[str] = None
+    mutation_name: Optional[str] = None
 ) -> Dict[str, str]:
     """
     Add tag to staged changes by creating a single MCP file containing all MCPs
@@ -155,21 +162,16 @@ def add_tag_to_staged_changes(
     try:
         # Extract tag information
         tag_urn = tag_data.get("urn")
+        if not tag_urn:
+            raise ValueError("Tag URN not found in tag data")
         
         # Extract tag properties
         tag_name = extract_name_from_properties(tag_data)
         if not tag_name:
-            # Try to get name from different fields
-            tag_name = tag_data.get("name") or tag_data.get("properties", {}).get("name")
-            if not tag_name:
-                raise ValueError("Tag name not found in tag data")
+            raise ValueError("Tag name not found in tag data")
         
         # Extract tag ID from URN or properties
-        if tag_urn:
-            tag_id = tag_data.get("key") or extract_tag_id_from_urn(tag_urn)
-        else:
-            # For new tags without URN, use name as base for ID
-            tag_id = tag_data.get("key") or tag_name.lower().replace(" ", "_")
+        tag_id = tag_data.get("key") or extract_tag_id_from_urn(tag_urn)
         
         # Get description if available
         description = None
@@ -244,22 +246,25 @@ def add_tag_to_staged_changes(
         # Create new MCPs for this tag
         new_mcps = []
         
-        # URN generation will be handled in the mutation logic below
+        # Get mutation configuration for environment-based URN generation
+        mutation_config = None
+        if HAS_NEW_URN_UTILS:
+            try:
+                mutation_config = get_mutation_config_for_environment(environment)
+                logger.info(f"Using mutation config for environment '{environment}': {mutation_config is not None}")
+            except Exception as e:
+                logger.warning(f"Could not get mutation config for environment '{environment}': {e}")
         
-        # Generate URN based on whether this is a NEW or EXISTING entity
-        if existing_urn:
-            # EXISTING entity from DataHub - mutate the existing URN
-            mutated_urn = apply_urn_mutations_for_existing_entity(existing_urn, environment, mutation_name)
-            logger.info(f"Mutated existing tag URN: {existing_urn} -> {mutated_urn}")
-        elif not tag_urn:
-            # NEW entity created in web UI - generate from name
-            tag_name = tag_data.get("name") or tag_data.get("properties", {}).get("name", "unknown")
-            mutated_urn = generate_urn_for_new_entity("tag", tag_name, environment, mutation_name)
-            logger.info(f"Generated new tag URN: {mutated_urn}")
-        else:
-            # Tag already has a URN, treat as existing entity
-            mutated_urn = apply_urn_mutations_for_existing_entity(tag_urn, environment, mutation_name)
-            logger.info(f"Mutated tag URN: {tag_urn} -> {mutated_urn}")
+        # Generate mutated URN if mutations are configured
+        mutated_urn = tag_urn
+        if HAS_NEW_URN_UTILS and mutation_config:
+            try:
+                mutated_urn = generate_tag_urn(tag_urn, environment, mutation_config)
+                if mutated_urn != tag_urn:
+                    logger.info(f"Generated mutated URN for tag: {tag_urn} -> {mutated_urn}")
+            except Exception as e:
+                logger.warning(f"Could not generate mutated URN: {e}")
+                mutated_urn = tag_urn
         
         # Create properties MCP
         properties_mcp = create_tag_properties_mcp(

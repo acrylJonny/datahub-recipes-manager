@@ -893,6 +893,33 @@ function updateBulkActionsVisibility(tabType = null) {
     });
 }
 
+function shouldShowDataHubViewButton(domainData, tabType) {
+    const urn = domainData.urn || '';
+    
+    // Don't show for local URNs or empty URNs
+    if (!urn || urn.includes('local:')) {
+        return false;
+    }
+    
+    // Show for remote-only domains (they definitely exist in DataHub)
+    if (tabType === 'remote') {
+        return true;
+    }
+    
+    // For synced tab: show the button (these domains are synced with DataHub)
+    if (tabType === 'synced') {
+        return true;
+    }
+    
+    // For local tab: don't show View in DataHub button
+    // These domains either don't exist in DataHub or are local-only
+    if (tabType === 'local') {
+        return false;
+    }
+    
+    return false;
+}
+
 function getActionButtons(domain, tabType) {
     const buttons = [];
     const domainId = domain.id;
@@ -906,8 +933,9 @@ function getActionButtons(domain, tabType) {
         <i class="fas fa-eye"></i>
     </button>`);
     
-    // View in DataHub button - only for non-local domains (not LOCAL_ONLY status)
-    if (domainUrn && !domainUrn.includes('local:') && status !== 'LOCAL_ONLY') {
+    // View in DataHub button - only show for domains that exist in DataHub
+    // Don't show for local-only domains (consistent with tags behavior)
+    if (shouldShowDataHubViewButton(domain, tabType)) {
         buttons.push(`<a href="${getDataHubUrl(domainUrn, 'domain')}" class="btn btn-sm btn-outline-info" target="_blank" title="View in DataHub">
             <i class="fas fa-external-link-alt"></i>
         </a>`);
@@ -1324,11 +1352,14 @@ function showDomainDetails(domain) {
         rawJsonElement.innerHTML = `<code>${escapeHtml(JSON.stringify(domain, null, 2))}</code>`;
     }
     
-    // DataHub link
+    // DataHub link - use consistent logic with action buttons
     const datahubLink = document.getElementById('modal-datahub-link');
     if (datahubLink) {
-        if (domain.urn && !domain.urn.includes('local:') && domainsData.datahub_url) {
-            datahubLink.href = getDataHubUrl(domain.urn, 'domain');
+        const urn = domain.urn;
+        if (domainsData.datahub_url && urn && !urn.includes('local:') && domain.sync_status !== 'LOCAL_ONLY') {
+            // Ensure no double slashes and don't encode URN colons (consistent with tags)
+            const baseUrl = domainsData.datahub_url.replace(/\/+$/, ''); // Remove trailing slashes
+            datahubLink.href = `${baseUrl}/domain/${urn}`;
             datahubLink.style.display = 'inline-block';
         } else {
             datahubLink.style.display = 'none';
@@ -2524,10 +2555,11 @@ function getStatusBadgeClass(status) {
 }
 
 function getDataHubUrl(urn, type) {
-    if (domainsData.datahub_url) {
-        return `${domainsData.datahub_url}/domain/${encodeURIComponent(urn)}`;
-    }
-    return '#';
+    if (!domainsData.datahub_url || !urn) return '#';
+    
+    // Ensure no double slashes and don't encode URN colons (consistent with tags)
+    const baseUrl = domainsData.datahub_url.replace(/\/+$/, ''); // Remove trailing slashes
+    return `${baseUrl}/domain/${urn}`;
 }
 
 function getCsrfToken() {
@@ -2762,11 +2794,13 @@ function showDomainViewModal(domain) {
     // Display structured properties
     displayStructuredProperties(domain);
     
-    // Update DataHub link
+    // Update DataHub link - use consistent logic with action buttons
     const datahubLink = document.getElementById('modal-datahub-link');
-    if (domain.sync_status !== 'LOCAL_ONLY' && window.datahubUrl) {
-        const domainId = domain.urn.split(':').pop();
-        datahubLink.href = `${window.datahubUrl}/domain/${domainId}`;
+    const urn = domain.urn;
+    if (domainsData.datahub_url && urn && !urn.includes('local:') && domain.sync_status !== 'LOCAL_ONLY') {
+        // Ensure no double slashes and don't encode URN colons (consistent with tags)
+        const baseUrl = domainsData.datahub_url.replace(/\/+$/, ''); // Remove trailing slashes
+        datahubLink.href = `${baseUrl}/domain/${urn}`;
         datahubLink.style.display = 'inline-block';
     } else {
         datahubLink.style.display = 'none';

@@ -1469,7 +1469,7 @@ class MetadataMigrationProcessor:
             source_urns = []
             
             for tag in tags_list:
-                tag_urn = self.safe_get(tag, 'tag', 'urn')
+                tag_urn = self.safe_get(tag, 'tag', 'urn', '')
                 if tag_urn:
                     mutated_tag_urn = self.apply_urn_mutations(tag_urn)
                     source_urns.append(tag_urn)
@@ -1490,7 +1490,7 @@ class MetadataMigrationProcessor:
             source_urns = []
             
             for term in terms_list:
-                term_urn = self.safe_get(term, 'term', 'urn')
+                term_urn = self.safe_get(term, 'term', 'urn', '')
                 if term_urn:
                     mutated_term_urn = self.apply_urn_mutations(term_urn)
                     source_urns.append(term_urn)
@@ -1505,7 +1505,7 @@ class MetadataMigrationProcessor:
                 ))
         
         # Process domain
-        domain_urn = self.safe_get(source_entity, 'domain', 'domain', 'urn')
+        domain_urn = self.safe_get(source_entity, 'domain', 'domain')
         if domain_urn:
             mutated_domain_urn = self.apply_urn_mutations(domain_urn)
             

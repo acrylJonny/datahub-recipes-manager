@@ -392,9 +392,15 @@ class DomainDeployView(View):
                     
                     if result:
                         # Update domain with remote URN and status
-    
+                        
+                        # Get current connection to set on domain
+                        from web_ui.views import get_current_connection
+                        current_connection = get_current_connection(request)
+                        
                         domain.sync_status = "SYNCED"
                         domain.last_synced = timezone.now()
+                        if current_connection:
+                            domain.connection = current_connection
                         domain.save()
                         
                         messages.success(
@@ -421,8 +427,15 @@ class DomainDeployView(View):
                     
                     if result:
                         # Update domain status
+                        
+                        # Get current connection to set on domain
+                        from web_ui.views import get_current_connection
+                        current_connection = get_current_connection(request)
+                        
                         domain.sync_status = "SYNCED"
                         domain.last_synced = timezone.now()
+                        if current_connection:
+                            domain.connection = current_connection
                         domain.save()
                         
                         messages.success(
@@ -1853,12 +1866,19 @@ def push_domain_to_datahub(request, domain_id):
             
             if update_success:
                 # Update domain status
+                
+                # Get current connection to set on domain
+                from web_ui.views import get_current_connection
+                current_connection = get_current_connection(request)
+                
                 domain.sync_status = "SYNCED"
                 domain.last_synced = timezone.now()
+                if current_connection:
+                    domain.connection = current_connection
                 # Store the DataHub ID if this was a local-only domain
                 if not hasattr(domain, 'datahub_id') or not domain.datahub_id:
                     domain.datahub_id = target_urn.split(":")[-1]
-                domain.save(update_fields=["sync_status", "last_synced", "datahub_id"])
+                domain.save(update_fields=["sync_status", "last_synced", "connection", "datahub_id"])
                 
                 updates_msg = f" (updated: {', '.join(updates_needed)})" if updates_needed else ""
                 logger.info(f"Successfully pushed domain '{domain.name}' to DataHub{updates_msg}")
@@ -1972,14 +1992,18 @@ def add_remote_domain_to_pr(request):
         local_domain = Domain.objects.filter(urn=domain_urn).first()
         
         if not local_domain:
+            # Get current connection to set on domain
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
             # Create local domain from remote data
             local_domain = Domain.objects.create(
                 name=domain_name,
                 description=domain_data.get("description", ""),
                 urn=domain_urn,
-
                 sync_status="SYNCED",
                 last_synced=timezone.now(),
+                connection=current_connection,
                 raw_data=remote_domain,
             )
             logger.info(f"Created local copy of remote domain: {domain_name}")
