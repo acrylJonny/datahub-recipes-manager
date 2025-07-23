@@ -246,6 +246,16 @@ def get_cached_policies(force_refresh=False):
         return []
 
 
+def invalidate_policies_cache():
+    """
+    Invalidate the cached policies data to force a refresh on the next request.
+    Call this function whenever policies are created, updated, or deleted.
+    """
+    cache_key = "datahub_policies"
+    cache.delete(cache_key)
+    logger.info("Invalidated policies cache")
+
+
 def get_cached_recipes(force_refresh=False):
     """
     Get recipes (ingestion sources) from cache or fetch from DataHub if not cached or expired.
@@ -281,12 +291,6 @@ def get_cached_recipes(force_refresh=False):
     except Exception as e:
         logger.error(f"Error fetching recipes: {str(e)}")
         return []
-
-
-def invalidate_policies_cache():
-    """Invalidate the policies cache."""
-    cache.delete("datahub_policies")
-    logger.info("Invalidated policies cache")
 
 
 def invalidate_recipes_cache():

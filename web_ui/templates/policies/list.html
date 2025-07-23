@@ -7,9 +7,25 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">DataHub Policies</h1>
         <div>
-            <a href="{% url 'policy_create' %}" class="btn btn-primary">
-                <i class="fas fa-plus me-1"></i> Create New Policy
-            </a>
+            <button type="button" class="btn btn-outline-info" onclick="refreshPolicies()">
+                <i class="fas fa-sync-alt me-1"></i> Refresh
+            </button>
+            <div class="btn-group ms-2">
+                <a href="{% url 'policy_create' %}?local=true" class="btn btn-primary">
+                    <i class="fas fa-plus me-1"></i> Create New Policy
+                </a>
+                <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Toggle Dropdown</span>
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{% url 'policy_create' %}?local=true">
+                        <i class="fas fa-laptop me-2"></i> Create Local Policy (Recommended)
+                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'policy_create' %}">
+                        <i class="fas fa-cloud me-2"></i> Create DataHub Policy (Advanced)
+                    </a></li>
+                </ul>
+            </div>
             <a href="{% url 'policy_import' %}" class="btn btn-outline-secondary ms-2">
                 <i class="fas fa-file-import me-1"></i> Import Policy
             </a>
@@ -556,8 +572,62 @@
             });
         }
 
-        // Make loadPoliciesData available globally for retry button
+        // Function to refresh policies with cache bypass
+        function refreshPolicies() {
+            const refreshBtn = document.querySelector('button[onclick="refreshPolicies()"]');
+            const originalHTML = refreshBtn.innerHTML;
+            
+            // Show loading state
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Refreshing...';
+            refreshBtn.disabled = true;
+            
+            // Force refresh by adding a refresh parameter
+            const url = new URL('{% url "policies_data" %}', window.location.origin);
+            url.searchParams.set('refresh', 'true');
+            
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Reload the page to show updated data
+                        window.location.reload();
+                    } else {
+                        console.error('Error refreshing policies:', data.error);
+                        // Reset button state
+                        refreshBtn.innerHTML = originalHTML;
+                        refreshBtn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error refreshing policies:', error);
+                    // Reset button state
+                    refreshBtn.innerHTML = originalHTML;
+                    refreshBtn.disabled = false;
+                });
+        }
+
+        // Handle deploy policy modal
+        const deployButtons = document.querySelectorAll('.deploy-policy');
+        const deployModal = document.getElementById('deployPolicyModal');
+        const deployForm = document.getElementById('deploy-policy-form');
+        const deployPolicyName = document.getElementById('deploy-policy-name');
+
+        deployButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const policyId = this.getAttribute('data-policy-id');
+                const policyName = this.getAttribute('data-policy-name');
+                
+                // Set the policy name in the modal
+                deployPolicyName.textContent = policyName;
+                
+                // Set the form action to the deploy URL
+                deployForm.action = `{% url 'policy_deploy' '___POLICY_ID___' %}`.replace('___POLICY_ID___', policyId);
+            });
+        });
+
+        // Make functions available globally
         window.loadPoliciesData = loadPoliciesData;
+        window.refreshPolicies = refreshPolicies;
     });
 </script>
 {% endblock %} 

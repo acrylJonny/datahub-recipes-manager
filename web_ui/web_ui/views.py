@@ -974,8 +974,108 @@ def policies_data(request):
         })
 
 
+def transform_actors_for_datahub(actors_data):
+    """Transform actors from UI format to DataHub GraphQL format."""
+    # Initialize the GraphQL format structure
+    datahub_actors = {
+        "users": [],
+        "groups": [],
+        "allUsers": False,
+        "allGroups": False,
+        "resourceOwners": False,
+        "resourceOwnersTypes": None,
+    }
+    
+    # Handle different input formats
+    if isinstance(actors_data, dict):
+        # If it's already in the correct format, merge with defaults
+        if "allUsers" in actors_data or "allGroups" in actors_data:
+            datahub_actors.update(actors_data)
+            return datahub_actors
+        else:
+            # Convert single actor object to array format
+            actors_data = [actors_data]
+    
+    if isinstance(actors_data, list):
+        # Process array of actor objects
+        for actor in actors_data:
+            if isinstance(actor, dict):
+                actor_type = actor.get("type", "").upper()
+                identity = actor.get("identity", "")
+                
+                if actor_type == "USER" and identity:
+                    datahub_actors["users"].append(identity)
+                elif actor_type == "GROUP" and identity:
+                    datahub_actors["groups"].append(identity)
+    
+    # If no specific users/groups were added, default to all users
+    if not datahub_actors["users"] and not datahub_actors["groups"]:
+        datahub_actors["allUsers"] = True
+    
+    return datahub_actors
+
+
+def transform_resources_for_datahub(resources_data):
+    """Transform resources from UI format to DataHub GraphQL format."""
+    if not isinstance(resources_data, list):
+        return []
+    
+    # DataHub expects resources as a list, but we need to ensure proper structure
+    transformed_resources = []
+    
+    for resource in resources_data:
+        if isinstance(resource, dict):
+            # Ensure required fields are present
+            transformed_resource = {
+                "type": resource.get("type", "dataset"),
+                "resource": resource.get("resource", "*")
+            }
+            
+            # Handle resources array within the resource object
+            if "resources" in resource:
+                if isinstance(resource["resources"], list):
+                    # For multiple specific resources
+                    for res in resource["resources"]:
+                        transformed_resources.append({
+                            "type": transformed_resource["type"],
+                            "resource": res
+                        })
+                else:
+                    transformed_resource["resource"] = resource["resources"]
+                    transformed_resources.append(transformed_resource)
+            else:
+                transformed_resources.append(transformed_resource)
+    
+    return transformed_resources if transformed_resources else [{"type": "dataset", "resource": "*"}]
+
+
+def transform_privileges_for_datahub(privileges_data):
+    """Transform privileges from UI format to DataHub GraphQL format."""
+    if isinstance(privileges_data, list):
+        # Extract privilege names from objects or use strings directly
+        transformed_privileges = []
+        for privilege in privileges_data:
+            if isinstance(privilege, dict):
+                # Handle object format: {"type": "view", "name": "VIEW_ENTITY_PAGE"}
+                privilege_name = privilege.get("name") or privilege.get("privilege", "")
+                if privilege_name:
+                    transformed_privileges.append(privilege_name)
+            elif isinstance(privilege, str):
+                # Handle string format: "VIEW_ENTITY_PAGE"
+                transformed_privileges.append(privilege)
+        
+        return transformed_privileges if transformed_privileges else ["VIEW_ENTITY_PAGE"]
+    
+    return ["VIEW_ENTITY_PAGE"]  # Default privilege
+
+
 def policy_create(request):
     """Create a new policy."""
+    
+    # Get current connection to ensure proper connection context
+    current_connection = get_current_connection(request)
+    logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+    
     # Check if creating a local policy
     is_local = request.GET.get("local", "false").lower() in (
         "true",
@@ -989,6 +1089,7 @@ def policy_create(request):
     client = get_datahub_client_from_request(request)
     connected = client and client.test_connection()
 
+    # For policy creation, we need a working connection (unless creating local policy)
     if not is_local and not connected:
         messages.warning(
             request, "Not connected to DataHub. Please check your connection settings."
@@ -1012,13 +1113,33 @@ def policy_create(request):
                 "state": form.cleaned_data["policy_state"],
             }
 
-            # Handle JSON fields
+            # Handle JSON fields with data transformation for DataHub compatibility
             for field in ["resources", "privileges", "actors"]:
                 try:
                     json_data = form.cleaned_data.get(f"policy_{field}", "[]")
                     if json_data:
-                        json.loads(json_data)  # Validate JSON
-                    policy_data[field] = json_data
+                        parsed_data = json.loads(json_data)  # Parse JSON string to Python object
+                        
+                        # Transform data to DataHub GraphQL format
+                        if field == "actors":
+                            policy_data[field] = transform_actors_for_datahub(parsed_data)
+                        elif field == "resources":
+                            policy_data[field] = transform_resources_for_datahub(parsed_data)
+                        elif field == "privileges":
+                            policy_data[field] = transform_privileges_for_datahub(parsed_data)
+                    else:
+                        # Set appropriate defaults for empty fields
+                        if field == "actors":
+                            policy_data[field] = {
+                                "users": [],
+                                "groups": [],
+                                "allUsers": True,  # Default to all users if empty
+                                "allGroups": False,
+                                "resourceOwners": False,
+                                "resourceOwnersTypes": None,
+                            }
+                        else:  # resources and privileges
+                            policy_data[field] = []
                 except Exception as e:
                     messages.error(request, f"Invalid JSON in {field} field: {str(e)}")
                     return render(
@@ -1105,6 +1226,11 @@ def policy_create(request):
 
 def policy_edit(request, policy_id):
     """Edit a policy."""
+    
+    # Get current connection to ensure proper connection context
+    current_connection = get_current_connection(request)
+    logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+    
     # First, check if it's a local policy
     try:
         policy = Policy.objects.get(id=policy_id)
@@ -1113,18 +1239,20 @@ def policy_edit(request, policy_id):
         is_local = False
         policy = None
 
-    # If not a local policy, try to get from DataHub
+    # If not a local policy, try to get from cached DataHub data
     if not is_local:
         client = get_datahub_client_from_request(request)
-        if not client or not client.test_connection():
-            messages.warning(
+        # We can show DataHub policies even if connection is down (using cached data)
+        # Only warn about connection when trying to save changes
+        connected = client and client.test_connection()
+        if not connected:
+            messages.info(
                 request,
-                "Not connected to DataHub. Please check your connection settings.",
+                "DataHub connection unavailable. You can view the policy but changes cannot be saved to DataHub.",
             )
-            return redirect("policies")
 
         try:
-            policy_data = client.get_policy(policy_id)
+            policy_data = get_policy_from_cache(policy_id)
             if not policy_data:
                 messages.error(request, f"Policy with ID {policy_id} not found")
                 return redirect("policies")
@@ -1184,7 +1312,7 @@ def policy_edit(request, policy_id):
                         "state": form.cleaned_data["policy_state"],
                     }
 
-                    # Handle JSON fields
+                    # Handle JSON fields with transformation for DataHub compatibility
                     try:
                         resources = json.loads(
                             form.cleaned_data.get("policy_resources", "[]")
@@ -1196,9 +1324,10 @@ def policy_edit(request, policy_id):
                             form.cleaned_data.get("policy_actors", "{}")
                         )
 
-                        policy_data["resources"] = resources
-                        policy_data["privileges"] = privileges
-                        policy_data["actors"] = actors
+                        # Transform data to DataHub GraphQL format
+                        policy_data["resources"] = transform_resources_for_datahub(resources)
+                        policy_data["privileges"] = transform_privileges_for_datahub(privileges)
+                        policy_data["actors"] = transform_actors_for_datahub(actors)
                     except Exception as e:
                         messages.error(request, f"Invalid JSON format: {str(e)}")
                         return render(
@@ -1213,9 +1342,35 @@ def policy_edit(request, policy_id):
                             },
                         )
 
+                    # Check connection before updating DataHub
+                    if not client or not client.test_connection():
+                        messages.error(
+                            request, 
+                            "Cannot save policy changes: Not connected to DataHub. Please check your connection settings."
+                        )
+                        return render(
+                            request,
+                            "policies/edit.html",
+                            {
+                                "title": "Edit Policy",
+                                "form": form,
+                                "policy": policy_data,
+                                "is_local": is_local,
+                                "environments": Environment.objects.all(),
+                                # Provide JSON data for the template editors (with safe fallbacks)
+                                "policy_resources_json": json.dumps(policy_data.get("resources", []), indent=2),
+                                "policy_privileges_json": json.dumps(policy_data.get("privileges", []), indent=2),
+                                "policy_actors_json": json.dumps(policy_data.get("actors", {}), indent=2),
+                            },
+                        )
+                    
                     # Update the policy in DataHub
                     result = client.update_policy(policy_id, policy_data)
                     if result:
+                        # Invalidate policies cache to refresh the list
+                        from utils.datahub_utils import invalidate_policies_cache
+                        invalidate_policies_cache()
+                        
                         messages.success(
                             request,
                             f"Policy '{policy_data['name']}' updated successfully",
@@ -1276,6 +1431,13 @@ def policy_edit(request, policy_id):
             "policy": policy or policy_data,
             "is_local": is_local,
             "environments": Environment.objects.all(),
+            # Provide JSON data for the template editors (with safe fallbacks)
+            "policy_resources_json": (policy.resources_json if is_local and policy else 
+                                    json.dumps(policy_data.get("resources", []), indent=2) if not is_local and policy_data else "[]"),
+            "policy_privileges_json": (policy.privileges_json if is_local and policy else 
+                                     json.dumps(policy_data.get("privileges", []), indent=2) if not is_local and policy_data else "[]"),
+            "policy_actors_json": (policy.actors_json if is_local and policy else 
+                                 json.dumps(policy_data.get("actors", {}), indent=2) if not is_local and policy_data else "{}"),
         },
     )
 
@@ -1356,13 +1518,18 @@ def policy_delete(request, policy_id):
 
 def policy_download(request, policy_id):
     """Download a policy as JSON."""
+    
+    # Get current connection to ensure proper connection context
+    current_connection = get_current_connection(request)
+    logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+    
     client = get_datahub_client_from_request(request)
     if not client or not client.test_connection():
         messages.error(request, "Not connected to DataHub")
         return redirect("policies")
 
-    # Get the policy
-    policy_data = client.get_policy(policy_id)
+    # Get the policy from cached data
+    policy_data = get_policy_from_cache(policy_id)
     if not policy_data:
         messages.error(request, f"Policy {policy_id} not found")
         return redirect("policies")
@@ -1382,20 +1549,18 @@ def policy_download(request, policy_id):
 
 def policy_detail(request, policy_id):
     """Display policy details."""
+    
+    # Get current connection to ensure proper connection context
+    current_connection = get_current_connection(request)
+    logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+    
     client = get_datahub_client_from_request(request)
     policy = None
 
     if client and client.test_connection():
         try:
-            # First try to get policy by ID directly
-            policy = client.get_policy(policy_id)
-
-            # If not found, try to get policy by URN (in case policy_id is actually a URN)
-            if not policy and policy_id.startswith("urn:"):
-                parts = policy_id.split(":")
-                if len(parts) >= 4:
-                    actual_policy_id = parts[3]
-                    policy = client.get_policy(actual_policy_id)
+            # Get policy from cached data (handles both ID and URN formats)
+            policy = get_policy_from_cache(policy_id)
 
             if not policy:
                 messages.error(request, f"Policy with ID '{policy_id}' not found")
@@ -2027,6 +2192,16 @@ def generate_test_logs():
 def policy_view(request, policy_id):
     """View a specific policy."""
     policy = None
+    
+    # Initialize JSON variables to prevent NameError
+    policy_json = "{}"
+    resources_json = "[]"
+    privileges_json = "[]"
+    actors_json = "{}"
+
+    # Get current connection to ensure proper connection context
+    current_connection = get_current_connection(request)
+    logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
 
     # First try to fetch from local database
     try:
@@ -2048,39 +2223,35 @@ def policy_view(request, policy_id):
 
         # If not found locally, try to fetch from DataHub
         client = get_datahub_client_from_request(request)
-    if client and client.test_connection():
-        try:
-            # First try to fetch by ID directly
-            policy = client.get_policy(policy_id)
+        if client and client.test_connection():
+            try:
+                # Get policy from cached data (handles both ID and URN formats)
+                policy = get_policy_from_cache(policy_id)
 
-            # If not found, try with URN format
-            if not policy and not policy_id.startswith("urn:"):
-                policy = client.get_policy(f"urn:li:policy:{policy_id}")
+                if policy:
+                    # Ensure the policy has an ID
+                    if not policy.get("id"):
+                        if policy.get("urn"):
+                            parts = policy.get("urn").split(":")
+                            if len(parts) >= 4:
+                                policy["id"] = parts[3]
+                        else:
+                            # If no ID or URN is available, use the policy_id from the request
+                            policy["id"] = policy_id
 
-            if policy:
-                # Ensure the policy has an ID
-                if not policy.get("id"):
-                    if policy.get("urn"):
-                        parts = policy.get("urn").split(":")
-                        if len(parts) >= 4:
-                            policy["id"] = parts[3]
-                    else:
-                        # If no ID or URN is available, use the policy_id from the request
-                        policy["id"] = policy_id
+                    # Format JSON fields for display
+                    policy_json = json.dumps(policy, indent=2)
+                    resources_json = json.dumps(policy.get("resources", []), indent=2)
+                    privileges_json = json.dumps(policy.get("privileges", []), indent=2)
+                    actors_json = json.dumps(policy.get("actors", {}), indent=2)
+                else:
+                    messages.error(request, f"Policy with ID {policy_id} not found")
 
-                # Format JSON fields for display
-                policy_json = json.dumps(policy, indent=2)
-                resources_json = json.dumps(policy.get("resources", []), indent=2)
-                privileges_json = json.dumps(policy.get("privileges", []), indent=2)
-                actors_json = json.dumps(policy.get("actors", {}), indent=2)
-            else:
-                messages.error(request, f"Policy with ID {policy_id} not found")
-
-        except Exception as e:
-            messages.error(request, f"Error retrieving policy: {str(e)}")
-            logger.error(f"Error retrieving policy: {str(e)}")
-    else:
-        messages.warning(request, "Not connected to DataHub")
+            except Exception as e:
+                messages.error(request, f"Error retrieving policy: {str(e)}")
+                logger.error(f"Error retrieving policy: {str(e)}")
+        else:
+            messages.warning(request, "Not connected to DataHub")
 
     if not policy:
         # If policy was not found in either place, redirect to policies list
@@ -5179,12 +5350,8 @@ def policy_push_github(request, policy_id):
         datahub_policy = None
 
         try:
-            # Try with the direct ID
-            datahub_policy = client.get_policy(policy_id)
-
-            # If not found, try with URN format
-            if not datahub_policy and not policy_id.startswith("urn:"):
-                datahub_policy = client.get_policy(f"urn:li:policy:{policy_id}")
+            # Get policy from cached data (handles both ID and URN formats)
+            datahub_policy = get_policy_from_cache(policy_id)
 
             if not datahub_policy:
                 logger.error(f"Policy with ID '{policy_id}' not found in DataHub")
@@ -5218,6 +5385,17 @@ def policy_push_github(request, policy_id):
         else:
             environment = Environment.get_default()
             logger.info(f"No environment specified, using default: {environment.name}")
+
+        # Prepare the common policy properties with transformation for DataHub compatibility
+        base_policy_data = {
+            "name": policy.name,
+            "description": policy.description or "",
+            "type": policy.type,
+            "state": policy.state,
+            "resources": transform_resources_for_datahub(json.loads(policy.resources) if policy.resources else []),
+            "privileges": transform_privileges_for_datahub(json.loads(policy.privileges) if policy.privileges else []),
+            "actors": transform_actors_for_datahub(json.loads(policy.actors) if policy.actors else {}),
+        }
 
         # Convert the DataHub policy to a Django model instance for Git integration
         policy = Policy(
@@ -5962,6 +6140,11 @@ def github_create_environment(request):
 @require_POST
 def policy_deploy(request, policy_id):
     """Deploy a local policy to DataHub."""
+    
+    # Get current connection to ensure proper connection context
+    current_connection = get_current_connection(request)
+    logger.debug(f"Using connection: {current_connection.name if current_connection else 'None'}")
+    
     # Get the policy from the database
     policy = get_object_or_404(Policy, id=policy_id)
 
@@ -5974,22 +6157,22 @@ def policy_deploy(request, policy_id):
         return redirect("policies")
 
     try:
-        # Check if policy exists on DataHub first
+        # Check if policy exists on DataHub first using cached data
         existing_policy = None
         try:
-            existing_policy = client.get_policy(policy.id)
+            existing_policy = get_policy_from_cache(policy.id)
         except Exception as e:
             logger.warning(f"Error checking if policy exists: {str(e)}")
 
-        # Prepare the common policy properties
+        # Prepare the common policy properties with transformation for DataHub compatibility
         base_policy_data = {
             "name": policy.name,
             "description": policy.description or "",
             "type": policy.type,
             "state": policy.state,
-            "resources": json.loads(policy.resources) if policy.resources else [],
-            "privileges": json.loads(policy.privileges) if policy.privileges else [],
-            "actors": json.loads(policy.actors) if policy.actors else {},
+            "resources": transform_resources_for_datahub(json.loads(policy.resources) if policy.resources else []),
+            "privileges": transform_privileges_for_datahub(json.loads(policy.privileges) if policy.privileges else []),
+            "actors": transform_actors_for_datahub(json.loads(policy.actors) if policy.actors else {}),
         }
 
         if existing_policy:
@@ -6001,6 +6184,10 @@ def policy_deploy(request, policy_id):
             result = client.update_policy(policy.id, datahub_policy)
 
             if result:
+                # Invalidate policies cache to refresh the list
+                from utils.datahub_utils import invalidate_policies_cache
+                invalidate_policies_cache()
+                
                 messages.success(
                     request, f"Policy '{policy.name}' updated successfully on DataHub"
                 )
@@ -6030,6 +6217,10 @@ def policy_deploy(request, policy_id):
                 result = client.create_policy(datahub_policy)
 
             if result:
+                # Invalidate policies cache to refresh the list
+                from utils.datahub_utils import invalidate_policies_cache
+                invalidate_policies_cache()
+                
                 messages.success(
                     request, f"Policy '{policy.name}' created successfully on DataHub"
                 )
@@ -6551,6 +6742,65 @@ def get_current_connection(request):
         
     except Exception:
         return None
+
+
+def get_policy_from_cache(policy_id):
+    """
+    Get a policy from cached policies data instead of making individual API calls.
+    
+    Args:
+        policy_id (str): Policy ID or URN to find
+        
+    Returns:
+        dict: Policy data or None if not found
+    """
+    try:
+        from utils.datahub_utils import get_cached_policies
+        
+        # Get all cached policies
+        cached_policies = get_cached_policies()
+        if not cached_policies:
+            logger.warning("No cached policies available")
+            return None
+            
+        # Normalize the policy_id for comparison
+        normalized_id = policy_id
+        if policy_id.startswith("urn:li:dataHubPolicy:"):
+            # Extract ID from URN
+            normalized_id = policy_id.split(":")[-1]
+        elif policy_id.startswith("urn:li:policy:"):
+            # Extract ID from legacy URN format
+            normalized_id = policy_id.split(":")[-1]
+            
+        # Search for the policy by ID or URN
+        for policy in cached_policies:
+            # Ensure this policy has an id field (extract from URN if missing)
+            if not policy.get("id") and policy.get("urn"):
+                policy["id"] = policy["urn"].split(":")[-1]
+            
+            # Check direct ID match
+            if policy.get("id") == normalized_id or policy.get("id") == policy_id:
+                logger.debug(f"Found policy {policy_id} in cache by ID")
+                return policy
+                
+            # Check URN match
+            if policy.get("urn") == policy_id:
+                logger.debug(f"Found policy {policy_id} in cache by URN")
+                return policy
+                
+            # Check if policy URN ends with our ID
+            policy_urn = policy.get("urn", "")
+            if policy_urn and policy_urn.endswith(f":{normalized_id}"):
+                logger.debug(f"Found policy {policy_id} in cache by URN suffix")
+                return policy
+                
+        logger.warning(f"Policy {policy_id} not found in cached policies")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error getting policy from cache: {str(e)}")
+        return None
+
 
 
 

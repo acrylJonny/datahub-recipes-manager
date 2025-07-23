@@ -13,15 +13,7 @@
         </div>
     </div>
 
-    {% if not request.session.datahub_connected %}
-        <div class="alert alert-warning" role="alert">
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            Not connected to DataHub. Please check your connection settings.
-            <a href="{% url 'settings' %}" class="btn btn-sm btn-warning ms-2">
-                <i class="fas fa-cog"></i> Settings
-            </a>
-        </div>
-    {% endif %}
+    {# Connection warning removed - handled by view logic with cached data support #}
     
     {% if messages %}
         {% for message in messages %}
@@ -92,7 +84,7 @@
                             <i class="fas fa-info-circle" data-bs-toggle="tooltip" title="JSON array of resource specifications"></i>
                         </label>
                         <div id="policy-resources-editor" class="json-editor mb-2"></div>
-                        <textarea id="policy-resources" name="resources" class="d-none" required>{{ policy.resources_json }}</textarea>
+                        <textarea id="policy-resources" name="resources" class="d-none" required>{{ policy_resources_json }}</textarea>
                         <div id="resources-validation-message" class="invalid-feedback"></div>
                     </div>
                     <div class="col-md-4">
@@ -101,7 +93,7 @@
                             <i class="fas fa-info-circle" data-bs-toggle="tooltip" title="JSON array of privilege specifications"></i>
                         </label>
                         <div id="policy-privileges-editor" class="json-editor mb-2"></div>
-                        <textarea id="policy-privileges" name="privileges" class="d-none" required>{{ policy.privileges_json }}</textarea>
+                        <textarea id="policy-privileges" name="privileges" class="d-none" required>{{ policy_privileges_json }}</textarea>
                         <div id="privileges-validation-message" class="invalid-feedback"></div>
                     </div>
                     <div class="col-md-4">
@@ -110,7 +102,7 @@
                             <i class="fas fa-info-circle" data-bs-toggle="tooltip" title="JSON array of actor specifications"></i>
                         </label>
                         <div id="policy-actors-editor" class="json-editor mb-2"></div>
-                        <textarea id="policy-actors" name="actors" class="d-none" required>{{ policy.actors_json }}</textarea>
+                        <textarea id="policy-actors" name="actors" class="d-none" required>{{ policy_actors_json }}</textarea>
                         <div id="actors-validation-message" class="invalid-feedback"></div>
                     </div>
                 </div>
