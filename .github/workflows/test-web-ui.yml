@@ -1,0 +1,361 @@
+name: Web UI Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'web_ui/**'
+      - 'utils/**'
+      - 'metadata_manager/**'
+      - 'services/**'
+      - '.github/workflows/test-web-ui.yml'
+      - 'requirements*.txt'
+      - 'pytest.ini'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'web_ui/**'
+      - 'utils/**'
+      - 'metadata_manager/**'
+      - 'services/**'
+      - '.github/workflows/test-web-ui.yml'
+      - 'requirements*.txt'
+      - 'pytest.ini'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, '3.10', 3.11]
+        django-version: [4.2, 5.0]
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: test_webui
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_webui
+      DJANGO_SETTINGS_MODULE: web_ui.settings
+      SECRET_KEY: test-secret-key-for-ci
+      DEBUG: True
+      BROWSER: chrome
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Set up Chrome and ChromeDriver
+      uses: browser-actions/setup-chrome@latest
+      with:
+        chrome-version: stable
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y postgresql-client
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install Django==${{ matrix.django-version }}
+        pip install -r requirements-dev.txt
+        pip install pytest-cov pytest-django pytest-benchmark selenium pytest-xvfb
+        pip install beautifulsoup4 factory-boy pytest-mock
+    
+    - name: Set up database
+      run: |
+        cd web_ui
+        python manage.py migrate --settings=web_ui.settings
+    
+    - name: Check Django configuration
+      run: |
+        cd web_ui
+        python manage.py check --settings=web_ui.settings
+    
+    - name: Run Django migrations check
+      run: |
+        cd web_ui
+        python manage.py makemigrations --check --dry-run --settings=web_ui.settings
+    
+    - name: Collect static files
+      run: |
+        cd web_ui
+        python manage.py collectstatic --noinput --settings=web_ui.settings
+    
+    - name: Run unit tests - Models
+      run: |
+        cd web_ui
+        python -m pytest tests/unit/test_models.py -v \
+          --cov=web_ui.web_ui.models \
+          --cov-report=xml:coverage-models.xml \
+          --junit-xml=results-models.xml
+    
+    - name: Run unit tests - Views
+      run: |
+        cd web_ui
+        python -m pytest tests/unit/test_views.py -v \
+          --cov=web_ui.web_ui.views \
+          --cov=web_ui.views \
+          --cov-report=xml:coverage-views.xml \
+          --junit-xml=results-views.xml
+    
+    - name: Run unit tests - Dashboard
+      run: |
+        cd web_ui
+        python -m pytest tests/unit/apps/test_dashboard.py -v \
+          --cov=web_ui.web_ui.views \
+          --cov=web_ui.views \
+          --cov-report=xml:coverage-dashboard.xml \
+          --junit-xml=results-dashboard.xml
+    
+    - name: Run unit tests - Policies
+      run: |
+        cd web_ui
+        python -m pytest tests/unit/apps/test_policies.py -v \
+          --cov=web_ui.policy_manager \
+          --cov=web_ui.web_ui.views \
+          --cov-report=xml:coverage-policies.xml \
+          --junit-xml=results-policies.xml
+    
+    - name: Run unit tests - Environments
+      run: |
+        cd web_ui
+        python -m pytest tests/unit/apps/test_environments.py -v \
+          --cov=web_ui.environments \
+          --cov=web_ui.web_ui.views \
+          --cov-report=xml:coverage-environments.xml \
+          --junit-xml=results-environments.xml
+    
+    - name: Run unit tests - Logs
+      run: |
+        cd web_ui
+        python -m pytest tests/unit/apps/test_logs.py -v \
+          --cov=web_ui.web_ui.log_handlers \
+          --cov=web_ui.web_ui.views \
+          --cov-report=xml:coverage-logs.xml \
+          --junit-xml=results-logs.xml
+    
+    - name: Run unit tests - Git Repository
+      run: |
+        cd web_ui
+        python -m pytest tests/unit/apps/test_git_repository.py -v \
+          --cov=web_ui.services \
+          --cov=web_ui.web_ui.views \
+          --cov-report=xml:coverage-git.xml \
+          --junit-xml=results-git.xml
+    
+    - name: Run frontend tests - Templates
+      run: |
+        cd web_ui
+        python -m pytest tests/frontend/test_templates.py -v \
+          --cov=web_ui.templatetags \
+          --cov-report=xml:coverage-templates.xml \
+          --junit-xml=results-templates.xml
+    
+    - name: Run frontend tests - JavaScript (Selenium)
+      run: |
+        cd web_ui
+        python -m pytest tests/frontend/test_javascript.py -v -m selenium \
+          --junit-xml=results-javascript.xml
+      env:
+        DISPLAY: :99
+    
+    - name: Run integration tests
+      run: |
+        cd web_ui
+        python -m pytest tests/integration/ -v \
+          --cov=web_ui \
+          --cov-report=xml:coverage-integration.xml \
+          --junit-xml=results-integration.xml
+    
+    - name: Run all tests with comprehensive coverage
+      run: |
+        cd web_ui
+        python -m pytest tests/ -v \
+          --cov=web_ui \
+          --cov-report=xml:coverage-total.xml \
+          --cov-report=html:htmlcov \
+          --junit-xml=results-all.xml \
+          --tb=short \
+          --ignore=tests/frontend/test_javascript.py
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./web_ui/coverage-total.xml
+        flags: webui
+        name: codecov-umbrella
+        fail_ci_if_error: true
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.python-version }}-${{ matrix.django-version }}
+        path: |
+          web_ui/results-*.xml
+          web_ui/htmlcov/
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install linting dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black isort flake8 mypy bandit safety
+    
+    - name: Run Black (code formatting)
+      run: |
+        cd web_ui
+        black --check --diff .
+    
+    - name: Run isort (import sorting)
+      run: |
+        cd web_ui
+        isort --check-only --diff .
+    
+    - name: Run flake8 (style guide)
+      run: |
+        cd web_ui
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Run mypy (type checking)
+      run: |
+        cd web_ui
+        mypy . --ignore-missing-imports --show-error-codes
+    
+    - name: Run bandit (security linting)
+      run: |
+        cd web_ui
+        bandit -r . -f json -o bandit-report.json || true
+        bandit -r . --skip B101,B601
+    
+    - name: Run safety (dependency vulnerability check)
+      run: |
+        cd web_ui
+        pip freeze | safety check --stdin --json --output safety-report.json || true
+        pip freeze | safety check --stdin
+    
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          web_ui/bandit-report.json
+          web_ui/safety-report.json
+
+  performance:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: test_webui
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_webui
+      DJANGO_SETTINGS_MODULE: web_ui.settings
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install Django==4.2
+        pip install -r requirements-dev.txt
+        pip install pytest-benchmark pytest-django
+    
+    - name: Set up database
+      run: |
+        cd web_ui
+        python manage.py migrate --settings=web_ui.settings
+    
+    - name: Run performance tests
+      run: |
+        cd web_ui
+        python -m pytest tests/ -v -m performance \
+          --benchmark-json=benchmark-results.json \
+          --benchmark-compare-fail=mean:10% \
+          --benchmark-histogram=histogram
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: benchmark-results
+        path: |
+          web_ui/benchmark-results.json
+          web_ui/histogram.svg
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [test, lint, performance]
+    if: always()
+    
+    steps:
+    - name: Notify on success
+      if: needs.test.result == 'success' && needs.lint.result == 'success'
+      run: |
+        echo "✅ All tests passed successfully!"
+        echo "Test results: ${{ needs.test.result }}"
+        echo "Lint results: ${{ needs.lint.result }}"
+        echo "Performance results: ${{ needs.performance.result }}"
+    
+    - name: Notify on failure
+      if: needs.test.result == 'failure' || needs.lint.result == 'failure'
+      run: |
+        echo "❌ Tests failed!"
+        echo "Test results: ${{ needs.test.result }}"
+        echo "Lint results: ${{ needs.lint.result }}"
+        echo "Performance results: ${{ needs.performance.result }}"
+        exit 1 
