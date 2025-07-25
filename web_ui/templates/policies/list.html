@@ -629,5 +629,24 @@
         window.loadPoliciesData = loadPoliciesData;
         window.refreshPolicies = refreshPolicies;
     });
+
+    // Create a global function to handle connection changes (called from base template)
+    window.switchConnectionCache = function(newConnectionId) {
+        console.log('Connection switched to:', newConnectionId, '- reloading policies data...');
+        
+        // Show loading state
+        const loadingDiv = document.getElementById('policies-loading');
+        const contentDiv = document.getElementById('policies-content');
+        const emptyDiv = document.getElementById('policies-empty');
+        const errorDiv = document.getElementById('policies-error');
+        
+        if (loadingDiv) loadingDiv.style.display = 'block';
+        if (contentDiv) contentDiv.style.display = 'none';
+        if (emptyDiv) emptyDiv.style.display = 'none';
+        if (errorDiv) errorDiv.style.display = 'none';
+        
+        // Reload policies data for the new connection
+        loadPoliciesData();
+    };
 </script>
 {% endblock %} 

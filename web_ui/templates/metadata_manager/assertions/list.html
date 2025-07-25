@@ -39,6 +39,33 @@
         background-color: #f8f9fa !important;
     }
     
+    /* Improved table spacing and text wrapping */
+    .table td {
+        vertical-align: top;
+        padding: 0.75rem 0.5rem;
+    }
+    
+    .table .text-wrap {
+        line-height: 1.4;
+        word-break: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
+    }
+    
+    .table code.text-wrap {
+        background-color: #f8f9fa;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+    }
+    
+    /* Better responsive table */
+    @media (max-width: 1200px) {
+        .table .text-wrap {
+            max-width: none !important;
+        }
+    }
+    
     /* Bulk actions styling - matching tags page exactly */
     .bulk-actions-bar {
         display: none;
@@ -98,74 +125,80 @@
         min-width: 200px;
     }
 
-    /* Table column width constraints - matching new column order */
+    /* Better responsive table column constraints */
+    .table {
+        table-layout: fixed;
+        width: 100%;
+        min-width: 1100px; /* Adequate width for action buttons */
+    }
+    
     .table th:nth-child(1), .table td:nth-child(1) { /* Checkbox */
-        width: 40px;
-        max-width: 40px;
+        width: 3%;
+        min-width: 35px;
     }
     
     .table th:nth-child(2), .table td:nth-child(2) { /* Name */
-        max-width: 200px;
-        min-width: 150px;
+        width: 6%;
+        min-width: 40px;
     }
     
     .table th:nth-child(3), .table td:nth-child(3) { /* Assertee URN */
-        max-width: 160px;
-        min-width: 100px;
+        width: 10%;
+        min-width: 70px;
     }
     
     .table th:nth-child(4), .table td:nth-child(4) { /* Type */
-        width: 120px;
-        max-width: 120px;
+        width: 7%;
+        min-width: 60px;
     }
     
     .table th:nth-child(5), .table td:nth-child(5) { /* Logic */
-        max-width: 150px;
-        min-width: 100px;
+        width: 6%;
+        min-width: 50px;
     }
     
     .table th:nth-child(6), .table td:nth-child(6) { /* Status */
-        width: 130px;
-        max-width: 130px;
+        width: 9%;
+        min-width: 60px;
         text-align: center;
     }
     
     .table th:nth-child(7), .table td:nth-child(7) { /* Parameters */
-        max-width: 150px;
-        min-width: 100px;
+        width: 6%;
+        min-width: 40px;
     }
     
     .table th:nth-child(8), .table td:nth-child(8) { /* Schedule */
-        width: 100px;
-        max-width: 100px;
+        width: 7%;
+        min-width: 50px;
     }
     
     .table th:nth-child(9), .table td:nth-child(9) { /* Tags */
-        width: 100px;
-        max-width: 100px;
+        width: 4%;
+        min-width: 40px;
         text-align: center;
     }
     
     .table th:nth-child(10), .table td:nth-child(10) { /* Source */
-        width: 80px;
-        max-width: 80px;
+        width: 4%;
+        min-width: 40px;
         text-align: center;
     }
     
     .table th:nth-child(11), .table td:nth-child(11) { /* URN */
-        max-width: 120px;
-        min-width: 80px;
+        width: 8%;
+        min-width: 50px;
     }
     
     .table th:nth-child(12), .table td:nth-child(12) { /* Sync Status */
-        width: 120px;
-        max-width: 120px;
+        width: 6%;
+        min-width: 60px;
         text-align: center;
     }
     
     .table th:nth-child(13), .table td:nth-child(13) { /* Actions */
-        width: 200px;
-        max-width: 200px;
+        width: 12%;
+        min-width: 80px;
         text-align: left;
     }
     
@@ -1457,21 +1490,21 @@ function generateTableHTML(items, tabType) {
             <table class="table table-hover table-striped mb-0">
                 <thead>
                     <tr>
-                        <th class="checkbox-column" width="3%">
+                        <th class="checkbox-column">
                             <input type="checkbox" class="form-check-input select-all-table" data-tab="${tabType}">
                         </th>
-                        <th class="sortable-header" data-sort="name" width="10%">Name</th>
-                        <th class="sortable-header" data-sort="asserteeUrn" width="12%">Assertee URN</th>
-                        <th class="sortable-header" data-sort="type" width="8%">Type</th>
-                        <th width="10%">Logic</th>
-                        <th class="sortable-header" data-sort="status" width="10%">Status</th>
-                        <th class="sortable-header" data-sort="parameters" width="10%">Parameters</th>
-                        <th width="8%">Schedule</th>
-                        <th class="sortable-header" data-sort="tags" width="7.5%">Tags</th>
-                        <th width="5%">Source</th>
-                        <th class="sortable-header" data-sort="urn" width="6.5%">URN</th>
-                        ${showSyncStatus ? '<th width="6%">Sync Status</th>' : ''}
-                        <th width="10%">Actions</th>
+                        <th class="sortable-header" data-sort="name">Name</th>
+                        <th class="sortable-header" data-sort="asserteeUrn">Assertee URN</th>
+                        <th class="sortable-header" data-sort="type">Type</th>
+                        <th>Logic</th>
+                        <th class="sortable-header" data-sort="status">Status</th>
+                        <th class="sortable-header" data-sort="parameters">Parameters</th>
+                        <th>Schedule</th>
+                        <th class="sortable-header" data-sort="tags">Tags</th>
+                        <th>Source</th>
+                        <th class="sortable-header" data-sort="urn">URN</th>
+                        ${showSyncStatus ? '<th>Sync Status</th>' : ''}
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1652,27 +1685,27 @@ function renderAssertionRow(assertion, tabType) {
                 <input type="checkbox" class="form-check-input assertion-checkbox" id="${checkboxId}" data-tab="${tabType}">
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 200px;" title="${escapeHtml(assertion.name || '')}">${escapeHtml(truncateText(assertion.name || '', 60))}</div>
+                <div class="text-wrap" style="max-width: 250px; word-wrap: break-word;" title="${escapeHtml(assertion.name || '')}">${escapeHtml(assertion.name || '')}</div>
             </td>
             <td>
                 ${asserteeUrn ? `
-                    <code class="small text-truncate d-block" style="max-width: 160px;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(truncateUrn(asserteeUrn, 30))}</code>
+                    <code class="small text-wrap d-block" style="max-width: 200px; word-wrap: break-word; white-space: pre-wrap;" title="${escapeHtml(asserteeUrn)}">${escapeHtml(asserteeUrn)}</code>
                 ` : `<span class="text-muted">-</span>`}
             </td>
             <td>
                 <span class="badge bg-primary small">${assertionType}</span>
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 150px;">${logic}</div>
+                <div class="text-wrap" style="max-width: 250px; word-wrap: break-word; white-space: pre-wrap;">${logic}</div>
             </td>
             <td>
                 ${status}
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 150px;">${parameters}</div>
+                <div class="text-wrap" style="max-width: 200px; word-wrap: break-word; white-space: pre-wrap;">${parameters}</div>
             </td>
             <td>
-                <div class="text-wrap" style="max-width: 100px;">${schedule}</div>
+                <div class="text-wrap" style="max-width: 150px; word-wrap: break-word; white-space: pre-wrap;">${schedule}</div>
             </td>
             <td>
                 ${tagsDisplay}
@@ -1681,7 +1714,7 @@ function renderAssertionRow(assertion, tabType) {
                 ${sourceDisplay}
             </td>
             <td>
-                <code class="small text-truncate d-block" style="max-width: 120px;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(truncateUrn(assertion.urn || '', 30))}</code>
+                <code class="small text-wrap d-block" style="max-width: 200px; word-wrap: break-word; white-space: pre-wrap;" title="${escapeHtml(assertion.urn || '')}">${escapeHtml(assertion.urn || '')}</code>
             </td>
             ${tabType === 'synced' ? `
             <td>
@@ -4684,9 +4717,28 @@ function initializeTooltips() {
         font-size: 1.2rem !important;
     }
     
-    /* Ensure table has horizontal scrolling */
+    /* Enhanced table scrolling and container */
     .table-responsive {
         overflow-x: auto;
+        max-width: 100%;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+    
+    /* Ensure table content doesn't get cut off */
+    .table-responsive .table {
+        margin-bottom: 0;
+    }
+    
+    /* Better text wrapping for long content */
+    .table td {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
+    }
+    
+    /* Prevent text from overflowing in small columns */
+    .table td .text-truncate {
         max-width: 100%;
     }
     

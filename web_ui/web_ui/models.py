@@ -488,7 +488,8 @@ class Connection(models.Model):
                 timeout=self.timeout
             )
             
-            if client.test_connection():
+            # Use comprehensive test that validates authentication
+            if client.test_connection_with_permissions():
                 self.connection_status = 'connected'
                 self.error_message = None
                 self.last_tested = timezone.now()
@@ -496,7 +497,7 @@ class Connection(models.Model):
                 return True
             else:
                 self.connection_status = 'failed'
-                self.error_message = "Connection test failed"
+                self.error_message = "Connection test failed - check URL and token permissions"
                 self.last_tested = timezone.now()
                 self.save(update_fields=['connection_status', 'error_message', 'last_tested'])
                 return False

@@ -578,5 +578,24 @@
             }
         }
     });
+
+    // Create a global function to handle connection changes (called from base template)
+    window.switchConnectionCache = function(newConnectionId) {
+        console.log('Connection switched to:', newConnectionId, '- reloading recipes data...');
+        
+        // Show loading state
+        const loadingDiv = document.getElementById('recipes-loading');
+        const contentDiv = document.getElementById('recipes-content');
+        const emptyDiv = document.getElementById('recipes-empty');
+        const errorDiv = document.getElementById('recipes-error');
+        
+        if (loadingDiv) loadingDiv.style.display = 'block';
+        if (contentDiv) contentDiv.style.display = 'none';
+        if (emptyDiv) emptyDiv.style.display = 'none';
+        if (errorDiv) errorDiv.style.display = 'none';
+        
+        // Reload recipes data for the new connection
+        loadRecipesData();
+    };
 </script>
 {% endblock %} 

@@ -142,7 +142,7 @@ def dashboard_data(request):
                 try:
                     from utils.datahub_utils import get_cached_policies
                     
-                    all_policies = get_cached_policies()
+                    all_policies = get_cached_policies(request=request)
                     if all_policies:
                         # Process policies to extract IDs from URNs if needed
                         valid_policies = []
@@ -367,7 +367,7 @@ def recipes_data(request):
         try:
             from utils.datahub_utils import get_cached_recipes
             
-            recipes_list = get_cached_recipes(force_refresh=force_refresh)
+            recipes_list = get_cached_recipes(force_refresh=force_refresh, request=request)
 
             # Process each recipe to format schedule and status
             for recipe in recipes_list:
@@ -398,21 +398,15 @@ def recipes_data(request):
                 # Add is_active property for consistency with dashboard
                 recipe["is_active"] = bool(recipe.get("schedule"))
 
-            # Sort by name
-            recipes_list.sort(key=lambda x: x.get("name", "").lower())
         except Exception as e:
-            logger.error(f"Error fetching recipes: {str(e)}")
-            return JsonResponse({
-                "success": False,
-                "error": str(e),
-                "connected": connected,
-                "recipes": []
-            })
+            logger.error(f"Error fetching recipes: {str(e)}", exc_info=True)
+            recipes_list = []
     
     return JsonResponse({
         "success": True,
         "connected": connected,
-        "recipes": recipes_list
+        "recipes": recipes_list,
+        "count": len(recipes_list)
     })
 
 
@@ -948,7 +942,7 @@ def policies_data(request):
         if connected:
             from utils.datahub_utils import get_cached_policies
             
-            server_policies = get_cached_policies(force_refresh=force_refresh)
+            server_policies = get_cached_policies(force_refresh=force_refresh, request=request)
 
             # Format policy data for display
             for policy in server_policies:
@@ -6713,6 +6707,10 @@ def api_switch_connection(request):
         # Store the selected connection in session
         request.session['current_connection_id'] = str(connection.id)
         
+        # Clear cached data for the old connection to prevent cross-contamination
+        from utils.datahub_utils import clear_connection_cache
+        clear_connection_cache()  # Clear all connection caches to be safe
+        
         return JsonResponse({
             'success': True,
             'connection_name': connection.name,
@@ -6758,7 +6756,7 @@ def get_policy_from_cache(policy_id):
         from utils.datahub_utils import get_cached_policies
         
         # Get all cached policies
-        cached_policies = get_cached_policies()
+        cached_policies = get_cached_policies(request=request)
         if not cached_policies:
             logger.warning("No cached policies available")
             return None
@@ -6800,6 +6798,48 @@ def get_policy_from_cache(policy_id):
     except Exception as e:
         logger.error(f"Error getting policy from cache: {str(e)}")
         return None
+
+
+@require_http_methods(["POST"])
+def test_all_connections(request):
+    """Test all active connections and return results."""
+    try:
+        from web_ui.models import Connection
+        from django.core.management import call_command
+        from io import StringIO
+        import sys
+        
+        # Capture the output of the management command
+        out = StringIO()
+        call_command('test_connections', '--force', stdout=out)
+        output = out.getvalue()
+        
+        # Get updated connection statuses
+        connections = Connection.objects.filter(is_active=True)
+        
+        results = []
+        for connection in connections:
+            results.append({
+                'id': connection.id,
+                'name': connection.name,
+                'status': connection.connection_status,
+                'error_message': connection.error_message,
+                'last_tested': connection.last_tested.isoformat() if connection.last_tested else None,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'results': results,
+            'output': output,
+            'timestamp': timezone.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error testing connections: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
 
 
 

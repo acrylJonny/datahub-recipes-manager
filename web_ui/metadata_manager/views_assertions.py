@@ -877,65 +877,100 @@ def get_remote_assertions_data(request):
                 logger.debug(f"Fetched {len(remote_assertions_data)} remote assertions")
 
                 for assertion_result in remote_assertions_data:
-                    assertion_data = assertion_result.get("entity", {})
-                    if assertion_data:
+                    try:
+                        # Safely extract entity data
+                        assertion_data = assertion_result.get("entity", {}) if assertion_result and isinstance(assertion_result, dict) else {}
+                        if not assertion_data:
+                            logger.debug("Skipping assertion with no entity data")
+                            continue
+                            
                         assertion_urn = assertion_data.get("urn")
-                        if assertion_urn:
-                            # Extract basic properties
-                            info = assertion_data.get("info", {})
+                        if not assertion_urn:
+                            logger.debug("Skipping assertion with no URN")
+                            continue
                             
-                            enhanced_assertion = {
-                                "urn": assertion_urn,
-                                "name": info.get("description", assertion_urn.split(":")[-1]),  # Use description as name or fallback to URN part
-                                "description": info.get("description", ""),
-                                "type": assertion_data.get("type", "Unknown"),
-                                "sync_status": "REMOTE_ONLY",
-                                "sync_status_display": "Remote Only",
-                                
-                                # Extract ownership data
-                                "ownership": assertion_data.get("ownership"),
-                                "owners_count": 0,
-                                "owner_names": [],
-                                
-                                # Extract relationships data  
-                                "relationships": assertion_data.get("relationships"),
-                                "relationships_count": 0,
-                                
-                                # Extract assertion-specific data
-                                "entity_urn": info.get("entity", {}).get("urn") if info.get("entity") else None,
-                                "source": info.get("source", {}),
-                                "last_updated": assertion_data.get("lastUpdated"),
-                                
-                                # Store raw data
-                                "raw_data": assertion_data
-                            }
+                        # Extract basic properties
+                        info = assertion_data.get("info", {})
+                        
+                        enhanced_assertion = {
+                            "urn": assertion_urn,
+                            "name": info.get("description", assertion_urn.split(":")[-1]),  # Use description as name or fallback to URN part
+                            "description": info.get("description", ""),
+                            "type": assertion_data.get("type", "Unknown"),
+                            "sync_status": "REMOTE_ONLY",
+                            "sync_status_display": "Remote Only",
                             
-                            # Process ownership information
-                            if enhanced_assertion["ownership"] and enhanced_assertion["ownership"].get("owners"):
-                                owners = enhanced_assertion["ownership"]["owners"]
+                            # Extract ownership data
+                            "ownership": assertion_data.get("ownership"),
+                            "owners_count": 0,
+                            "owner_names": [],
+                            
+                            # Extract relationships data  
+                            "relationships": assertion_data.get("relationships"),
+                            "relationships_count": 0,
+                            
+                            # Extract assertion-specific data with comprehensive NoneType protection
+                            "entity_urn": _extract_entity_urn_safely(info),
+                            "source": _extract_source_safely(info),
+                            "last_updated": _extract_last_updated_safely(assertion_data),
+                            
+                            # Store raw data
+                            "raw_data": assertion_data
+                        }
+                        
+                        # Process ownership information safely
+                        ownership = enhanced_assertion.get("ownership")
+                        if ownership and isinstance(ownership, dict):
+                            owners = ownership.get("owners", [])
+                            if owners and isinstance(owners, list):
                                 enhanced_assertion["owners_count"] = len(owners)
                                 
                                 # Extract owner names for display
                                 owner_names = []
                                 for owner_info in owners:
-                                    owner = owner_info.get("owner", {})
-                                    if owner.get("properties"):
-                                        name = (
-                                            owner["properties"].get("displayName") or
-                                            owner.get("username") or
-                                            owner.get("name") or
-                                            "Unknown"
-                                        )
-                                    else:
-                                        name = owner.get("username") or owner.get("name") or "Unknown"
-                                    owner_names.append(name)
+                                    if owner_info and isinstance(owner_info, dict):
+                                        owner = owner_info.get("owner", {})
+                                        if owner and isinstance(owner, dict):
+                                            properties = owner.get("properties", {})
+                                            if properties and isinstance(properties, dict):
+                                                display_name = properties.get("displayName")
+                                                name = (
+                                                    display_name or
+                                                    owner.get("username") or
+                                                    owner.get("name") or
+                                                    "Unknown"
+                                                )
+                                            else:
+                                                name = owner.get("username") or owner.get("name") or "Unknown"
+                                            owner_names.append(name)
                                 enhanced_assertion["owner_names"] = owner_names
+                        
+                        # Process relationships information safely
+                        relationships_data = enhanced_assertion.get("relationships")
+                        if relationships_data and isinstance(relationships_data, dict):
+                            relationships = relationships_data.get("relationships", [])
+                            if relationships and isinstance(relationships, list):
+                                enhanced_assertion["relationships_count"] = len(relationships)
+                            else:
+                                enhanced_assertion["relationships_count"] = 0
+                        else:
+                            enhanced_assertion["relationships_count"] = 0
+                        
+                        enhanced_remote_assertions[assertion_urn] = enhanced_assertion
                             
-                            # Process relationships information
-                            if enhanced_assertion["relationships"] and enhanced_assertion["relationships"].get("relationships"):
-                                enhanced_assertion["relationships_count"] = len(enhanced_assertion["relationships"]["relationships"])
-                            
-                            enhanced_remote_assertions[assertion_urn] = enhanced_assertion
+                    except Exception as e:
+                        # Log the specific assertion that caused the error
+                        problem_urn = "unknown"
+                        try:
+                            if assertion_result and isinstance(assertion_result, dict):
+                                entity = assertion_result.get("entity", {})
+                                if entity and isinstance(entity, dict):
+                                    problem_urn = entity.get("urn", "unknown")
+                        except:
+                            pass
+                        logger.error(f"Error processing remote assertion {problem_urn}: {str(e)}")
+                        logger.debug(f"Problematic assertion data: {assertion_result}")
+                        continue
 
             # Extract assertion URNs that exist locally and map them
             local_assertion_urns = {}  # Map urn -> local assertion  
@@ -995,23 +1030,33 @@ def get_remote_assertions_data(request):
                             "updated_at": assertion.updated_at.isoformat() if assertion.updated_at else None,
                         }
 
-                        # Extract owner names for display from stored ownership data
-                        ownership_data = getattr(assertion, 'ownership_data', None)
-                        if ownership_data and ownership_data.get("owners"):
-                            owner_names = []
-                            for owner_info in ownership_data["owners"]:
-                                owner = owner_info.get("owner", {})
-                                if owner.get("properties"):
-                                    name = (
-                                        owner["properties"].get("displayName") or
-                                        owner.get("username") or
-                                        owner.get("name") or
-                                        "Unknown"
-                                    )
-                                else:
-                                    name = owner.get("username") or owner.get("name") or "Unknown"
-                                owner_names.append(name)
-                            local_assertion_data["owner_names"] = owner_names
+                        # Extract owner names for display from stored ownership data - with comprehensive protection
+                        try:
+                            ownership_data = getattr(assertion, 'ownership_data', None)
+                            if ownership_data and isinstance(ownership_data, dict):
+                                owners = ownership_data.get("owners", [])
+                                if owners and isinstance(owners, list):
+                                    owner_names = []
+                                    for owner_info in owners:
+                                        if owner_info and isinstance(owner_info, dict):
+                                            owner = owner_info.get("owner", {})
+                                            if owner and isinstance(owner, dict):
+                                                properties = owner.get("properties", {})
+                                                if properties and isinstance(properties, dict):
+                                                    display_name = properties.get("displayName")
+                                                    name = (
+                                                        display_name or
+                                                        owner.get("username") or
+                                                        owner.get("name") or
+                                                        "Unknown"
+                                                    )
+                                                else:
+                                                    name = owner.get("username") or owner.get("name") or "Unknown"
+                                                owner_names.append(name)
+                                    local_assertion_data["owner_names"] = owner_names
+                        except Exception as e:
+                            logger.warning(f"Error extracting owner names for assertion {assertion.name}: {str(e)}")
+                            local_assertion_data["owner_names"] = []
 
                         # Determine connection context for this assertion
                         connection_context = "none"  # Default
@@ -1306,52 +1351,67 @@ def sync_assertion_to_local(request):
         if assertion_type.startswith("$"):
             assertion_type = "SQL"  # Safe fallback
         
-        # Extract additional comprehensive data from assertion
-        run_events_data = assertion_data.get("runEvents", {})
-        monitor_data = assertion_data.get("monitor", {})
-        tags_data = assertion_data.get("tags", {})
+        # Extract additional comprehensive data from assertion - with comprehensive NoneType protection
+        run_events_data = assertion_data.get("runEvents", {}) if assertion_data.get("runEvents") else {}
+        monitor_data = assertion_data.get("monitor", {}) if assertion_data.get("monitor") else {}
+        tags_data = assertion_data.get("tags", {}) if assertion_data.get("tags") else {}
         
-        # Extract schedule information from monitor data
+        # Extract schedule information from monitor data - with deep nested protection
         schedule_info = None
         if monitor_data and isinstance(monitor_data, dict):
-            schedule_info = monitor_data.get("schedule", {})
+            monitor_info = monitor_data.get("info", {})
+            if monitor_info and isinstance(monitor_info, dict):
+                assertion_monitor = monitor_info.get("assertionMonitor", {})
+                if assertion_monitor and isinstance(assertion_monitor, dict):
+                    assertions = assertion_monitor.get("assertions", [])
+                    if assertions and isinstance(assertions, list) and len(assertions) > 0:
+                        first_assertion = assertions[0]
+                        if first_assertion and isinstance(first_assertion, dict):
+                            schedule_info = first_assertion.get("schedule", {})
         
-        # Extract latest run status from run events
+        # Extract latest run status from run events - with comprehensive NoneType protection
         latest_run_status = None
         if run_events_data and isinstance(run_events_data, dict):
             run_events = run_events_data.get("runEvents", [])
-            if run_events and len(run_events) > 0:
+            if run_events and isinstance(run_events, list) and len(run_events) > 0:
                 latest_run = run_events[0]  # Assume first is most recent
-                latest_run_status = latest_run.get("result", {}).get("type")
+                if latest_run and isinstance(latest_run, dict):
+                    result = latest_run.get("result")
+                    if result and isinstance(result, dict):
+                        latest_run_status = result.get("type")
         
         logger.debug(f"Extracted comprehensive data for {assertion_urn}: type={assertion_type}, "
                    f"schedule={bool(schedule_info)}, latest_status={latest_run_status}, "
                    f"run_events={len(run_events_data.get('runEvents', []) if run_events_data else [])}, "
                    f"tags={len(tags_data.get('tags', []) if tags_data else [])}")
         
-        # Extract platform information
+        # Extract platform information - with NoneType protection
         platform_name = None
         platform_data = assertion_data.get("platform")
         if platform_data and isinstance(platform_data, dict):
             platform_name = platform_data.get("name")
         
-        # Extract ownership data and count
+        # Extract ownership data and count - with comprehensive protection
         ownership_data = assertion_data.get("ownership")
         owners_count = 0
-        if ownership_data and isinstance(ownership_data, dict) and ownership_data.get("owners"):
-            try:
-                owners_count = len(ownership_data["owners"])
-            except (TypeError, KeyError):
-                owners_count = 0
+        if ownership_data and isinstance(ownership_data, dict):
+            owners = ownership_data.get("owners")
+            if owners and isinstance(owners, list):
+                try:
+                    owners_count = len(owners)
+                except (TypeError, AttributeError):
+                    owners_count = 0
         
-        # Extract relationships data and count
+        # Extract relationships data and count - with comprehensive protection
         relationships_data = assertion_data.get("relationships")
         relationships_count = 0
-        if relationships_data and isinstance(relationships_data, dict) and relationships_data.get("relationships"):
-            try:
-                relationships_count = len(relationships_data["relationships"])
-            except (TypeError, KeyError):
-                relationships_count = 0
+        if relationships_data and isinstance(relationships_data, dict):
+            relationships = relationships_data.get("relationships")
+            if relationships and isinstance(relationships, list):
+                try:
+                    relationships_count = len(relationships)
+                except (TypeError, AttributeError):
+                    relationships_count = 0
         
         # Generate deterministic URN for local storage
         safe_name = assertion_name.lower().replace(' ', '_').replace('-', '_')
@@ -1710,18 +1770,21 @@ def resync_assertion(request, assertion_id):
         assertion.external_url = info.get("externalUrl") if isinstance(info, dict) else None
         assertion.removed = removed
         
-        # Extract comprehensive data like in sync_assertion_to_local
-        run_events_data = assertion_data.get("runEvents", {})
-        monitor_data = assertion_data.get("monitor", {})
-        tags_data = assertion_data.get("tags", {})
+        # Extract comprehensive data like in sync_assertion_to_local - with comprehensive NoneType protection
+        run_events_data = assertion_data.get("runEvents", {}) if assertion_data.get("runEvents") else {}
+        monitor_data = assertion_data.get("monitor", {}) if assertion_data.get("monitor") else {}
+        tags_data = assertion_data.get("tags", {}) if assertion_data.get("tags") else {}
         
-        # Extract latest run status from run events
+        # Extract latest run status from run events - with comprehensive NoneType protection
         latest_run_status = None
         if run_events_data and isinstance(run_events_data, dict):
             run_events = run_events_data.get("runEvents", [])
-            if run_events and len(run_events) > 0:
+            if run_events and isinstance(run_events, list) and len(run_events) > 0:
                 latest_run = run_events[0]  # Assume first is most recent
-                latest_run_status = latest_run.get("result", {}).get("type")
+                if latest_run and isinstance(latest_run, dict):
+                    result = latest_run.get("result")
+                    if result and isinstance(result, dict):
+                        latest_run_status = result.get("type")
         
         # Update comprehensive data with all extracted information
         assertion.info_data = info
@@ -2766,3 +2829,65 @@ class AssertionRemoteAddToStagedChangesView(View):
         except Exception as e:
             logger.error(f"Error adding remote assertion to staged changes: {str(e)}")
             return JsonResponse({"error": str(e)}, status=500)
+
+def _extract_entity_urn_safely(info):
+    """Safely extract entity URN from various assertion types"""
+    if not info or not isinstance(info, dict):
+        return None
+        
+    # Try different assertion types
+    assertion_types = [
+        'freshnessAssertion', 'volumeAssertion', 'sqlAssertion', 
+        'fieldAssertion', 'datasetAssertion', 'schemaAssertion', 'customAssertion'
+    ]
+    
+    for assertion_type in assertion_types:
+        assertion_data = info.get(assertion_type)
+        if assertion_data and isinstance(assertion_data, dict):
+            entity_urn = assertion_data.get("entityUrn")
+            if entity_urn:
+                return entity_urn
+            # Also try datasetUrn for dataset assertions
+            dataset_urn = assertion_data.get("datasetUrn")
+            if dataset_urn:
+                return dataset_urn
+    
+    return None
+
+
+def _extract_source_safely(info):
+    """Safely extract source information from assertion info"""
+    if not info or not isinstance(info, dict):
+        return {}
+        
+    source = info.get("source")
+    if not source or not isinstance(source, dict):
+        return {}
+        
+    # Extract source data safely
+    source_data = {
+        "type": source.get("type"),
+    }
+    
+    # Extract created information safely  
+    created = source.get("created")
+    if created and isinstance(created, dict):
+        source_data["created"] = {
+            "actor": created.get("actor")
+        }
+        
+    return source_data
+
+
+def _extract_last_updated_safely(assertion_data):
+    """Safely extract lastUpdated information from assertion data"""
+    if not assertion_data or not isinstance(assertion_data, dict):
+        return None
+        
+    info = assertion_data.get("info")
+    if info and isinstance(info, dict):
+        last_updated = info.get("lastUpdated")
+        if last_updated and isinstance(last_updated, dict):
+            return last_updated.get("actor")
+            
+    return assertion_data.get("lastUpdated")

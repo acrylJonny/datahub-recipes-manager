@@ -619,6 +619,10 @@ class GlossaryListView(View):
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
             
+            # Get current connection to set on deployed items
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
             # Track success/failure counts
             success_count = 0
             failed_count = 0
@@ -628,7 +632,7 @@ class GlossaryListView(View):
                 try:
                     node = GlossaryNode.objects.get(id=node_id)
                     if node.can_deploy:
-                        success = node.deploy_to_datahub(client)
+                        success = node.deploy_to_datahub(client, connection=current_connection)
                         if success:
                             success_count += 1
                         else:
@@ -644,7 +648,7 @@ class GlossaryListView(View):
                 try:
                     term = GlossaryTerm.objects.get(id=term_id)
                     if hasattr(term, "can_deploy") and term.can_deploy:
-                        success = term.deploy_to_datahub(client)
+                        success = term.deploy_to_datahub(client, connection=current_connection)
                         if success:
                             success_count += 1
                         else:
@@ -681,6 +685,10 @@ class GlossaryListView(View):
                 messages.error(request, "Could not connect to DataHub")
                 return redirect("metadata_manager:glossary_list")
             
+            # Get current connection to set on deployed items
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
             # Get all local-only or modified nodes and terms
             nodes = GlossaryNode.objects.filter(
                 sync_status__in=["LOCAL_ONLY", "MODIFIED"]
@@ -701,7 +709,7 @@ class GlossaryListView(View):
             for node in nodes:
                 try:
                     if node.can_deploy:
-                        success = node.deploy_to_datahub(client)
+                        success = node.deploy_to_datahub(client, connection=current_connection)
                         if success:
                             success_count += 1
                         else:
@@ -714,7 +722,7 @@ class GlossaryListView(View):
             for term in terms:
                 try:
                     if hasattr(term, "can_deploy") and term.can_deploy:
-                        success = term.deploy_to_datahub(client)
+                        success = term.deploy_to_datahub(client, connection=current_connection)
                         if success:
                             success_count += 1
                         else:
@@ -1379,8 +1387,12 @@ class GlossaryNodeDeployView(View):
                     "error": "Could not connect to DataHub"
                 })
             
+            # Get current connection to set on deployed node
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
             # Deploy the node
-            success = node.deploy_to_datahub(client)
+            success = node.deploy_to_datahub(client, connection=current_connection)
             if success:
                 return JsonResponse({
                     "success": True,
@@ -1619,8 +1631,12 @@ class GlossaryTermDeployView(View):
                     "error": "Could not connect to DataHub"
                 })
             
+            # Get current connection to set on deployed term
+            from web_ui.views import get_current_connection
+            current_connection = get_current_connection(request)
+            
             # Deploy the term
-            success = term.deploy_to_datahub(client)
+            success = term.deploy_to_datahub(client, connection=current_connection)
             if success:
                 return JsonResponse({
                     "success": True,
@@ -1826,67 +1842,78 @@ def get_remote_glossary_data(request):
                 "relationships": None,
             }
             
-            if remote_match:
-                # Check if item needs status update
-                local_description = local_node.description or ""
-                remote_description = remote_match.get("properties", {}).get("description", "")
-                
-                # Update sync status based on comparison
-                if local_description != remote_description:
-                    if local_node.sync_status != "MODIFIED":
-                        local_node.sync_status = "MODIFIED"
-                        local_node.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated node {local_node.name} status to MODIFIED")
+            # Categorize based on sync_status AND remote match
+            # If sync_status is SYNCED or MODIFIED, treat as synced even if no remote match found (handles DataHub indexing delays)
+            if remote_match or local_node.sync_status in ["SYNCED", "MODIFIED"]:
+                if remote_match:
+                    # Check if item needs status update when we have remote data
+                    local_description = local_node.description or ""
+                    remote_description = remote_match.get("properties", {}).get("description", "")
+                    
+                    # Update sync status based on comparison
+                    if local_description != remote_description:
+                        if local_node.sync_status != "MODIFIED":
+                            local_node.sync_status = "MODIFIED"
+                            local_node.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated node {local_node.name} status to MODIFIED")
+                    else:
+                        if local_node.sync_status != "SYNCED":
+                            local_node.sync_status = "SYNCED" 
+                            local_node.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated node {local_node.name} status to SYNCED")
+                    
+                    # Extract comprehensive data from remote (now includes structured properties)
+                    ownership_data = remote_match.get("owners", []) or []  # New format has processed owners
+                    relationships_data = remote_match.get("relationships", []) or []  # New format has processed relationships
+                    structured_properties = remote_match.get("structuredProperties", []) or []
+                    custom_properties = remote_match.get("customProperties", []) or []
+                    properties = remote_match.get("properties", {}) or {}
+                    
+                    # Sync ownership data to local database if it exists
+                    if ownership_data and ownership_data != local_node.ownership_data:
+                        local_node.ownership_data = ownership_data
+                        local_node.save(update_fields=["ownership_data"])
+                        logger.debug(f"Updated node {local_node.name} ownership data")
+                    
+                    # Sync relationships data to local database if it exists
+                    if relationships_data and relationships_data != local_node.relationships_data:
+                        local_node.relationships_data = relationships_data
+                        local_node.save(update_fields=["relationships_data"])
+                        logger.debug(f"Updated node {local_node.name} relationships data")
+                    
+                    # Process the comprehensive data
+                    processed_data = {
+                        "owners_count": len(ownership_data),
+                        "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
+                        "relationships_count": len(relationships_data),
+                        "custom_properties_count": len(custom_properties),
+                        "structured_properties_count": len(structured_properties),
+                        "custom_properties": custom_properties,
+                        "structured_properties": structured_properties
+                    }
+                    
+                    # Update local item data with comprehensive remote information
+                    local_item_data.update({
+                        "sync_status": local_node.sync_status,
+                        "sync_status_display": local_node.get_sync_status_display(),
+                        "owners_count": processed_data["owners_count"],
+                        "owner_names": processed_data["owner_names"],
+                        "relationships_count": processed_data["relationships_count"],
+                        "custom_properties_count": processed_data["custom_properties_count"],
+                        "structured_properties_count": processed_data["structured_properties_count"],
+                        "ownership": ownership_data,
+                        "relationships": relationships_data,
+                        "structured_properties": structured_properties,
+                        "custom_properties": custom_properties,
+                    })
                 else:
-                    if local_node.sync_status != "SYNCED":
-                        local_node.sync_status = "SYNCED" 
-                        local_node.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated node {local_node.name} status to SYNCED")
-                
-                # Extract comprehensive data from remote (now includes structured properties)
-                ownership_data = remote_match.get("owners", []) or []  # New format has processed owners
-                relationships_data = remote_match.get("relationships", []) or []  # New format has processed relationships
-                structured_properties = remote_match.get("structuredProperties", []) or []
-                custom_properties = remote_match.get("customProperties", []) or []
-                properties = remote_match.get("properties", {}) or {}
-                
-                # Sync ownership data to local database if it exists
-                if ownership_data and ownership_data != local_node.ownership_data:
-                    local_node.ownership_data = ownership_data
-                    local_node.save(update_fields=["ownership_data"])
-                    logger.debug(f"Updated node {local_node.name} ownership data")
-                
-                # Sync relationships data to local database if it exists
-                if relationships_data and relationships_data != local_node.relationships_data:
-                    local_node.relationships_data = relationships_data
-                    local_node.save(update_fields=["relationships_data"])
-                    logger.debug(f"Updated node {local_node.name} relationships data")
-                
-                # Process the comprehensive data
-                processed_data = {
-                    "owners_count": len(ownership_data),
-                    "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
-                    "relationships_count": len(relationships_data),
-                    "custom_properties_count": len(custom_properties),
-                    "structured_properties_count": len(structured_properties),
-                    "custom_properties": custom_properties,
-                    "structured_properties": structured_properties
-                }
-                
-                # Update local item data with comprehensive remote information
-                local_item_data.update({
-                    "sync_status": local_node.sync_status,
-                    "sync_status_display": local_node.get_sync_status_display(),
-                    "owners_count": processed_data["owners_count"],
-                    "owner_names": processed_data["owner_names"],
-                    "relationships_count": processed_data["relationships_count"],
-                    "custom_properties_count": processed_data["custom_properties_count"],
-                    "structured_properties_count": processed_data["structured_properties_count"],
-                    "ownership": ownership_data,
-                    "relationships": relationships_data,
-                    "structured_properties": structured_properties,
-                    "custom_properties": custom_properties,
-                })
+                    # No remote match but item is SYNCED/MODIFIED - this handles DataHub indexing delays
+                    # Don't update sync status, keep existing database value
+                    logger.debug(f"Node {local_node.name} is {local_node.sync_status} but no remote match found (likely DataHub indexing delay)")
+                    local_item_data.update({
+                        "sync_status": local_node.sync_status,
+                        "sync_status_display": local_node.get_sync_status_display(),
+                    })
                 
                 synced_items.append({
                     "local": local_item_data,
@@ -1894,14 +1921,8 @@ def get_remote_glossary_data(request):
                     "combined": local_item_data  # Enhanced data for display
                 })
             else:
-                # Ensure local-only items have correct status
-                if local_node.sync_status != "LOCAL_ONLY":
-                    local_node.sync_status = "LOCAL_ONLY"
-                    local_node.save(update_fields=["sync_status"])
-                    logger.debug(f"Updated node {local_node.name} status to LOCAL_ONLY")
-                
-                local_item_data["sync_status"] = "LOCAL_ONLY"
-                local_item_data["sync_status_display"] = "Local Only"
+                # Only items that are actually LOCAL_ONLY in the database should be treated as local-only
+                # Don't override the database sync_status here
                 local_only_items.append(local_item_data)
         
         # Process local terms and match with remote
@@ -1934,74 +1955,85 @@ def get_remote_glossary_data(request):
                 "relationships": None,
             }
             
-            if remote_match:
-                # Check if item needs status update
-                local_description = local_term.description or ""
-                remote_description = remote_match.get("properties", {}).get("description", "")
-                
-                # Update sync status based on comparison
-                if local_description != remote_description:
-                    if local_term.sync_status != "MODIFIED":
-                        local_term.sync_status = "MODIFIED"
-                        local_term.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated term {local_term.name} status to MODIFIED")
+            # Categorize based on sync_status AND remote match
+            # If sync_status is SYNCED or MODIFIED, treat as synced even if no remote match found (handles DataHub indexing delays)
+            if remote_match or local_term.sync_status in ["SYNCED", "MODIFIED"]:
+                if remote_match:
+                    # Check if item needs status update when we have remote data
+                    local_description = local_term.description or ""
+                    remote_description = remote_match.get("properties", {}).get("description", "")
+                    
+                    # Update sync status based on comparison
+                    if local_description != remote_description:
+                        if local_term.sync_status != "MODIFIED":
+                            local_term.sync_status = "MODIFIED"
+                            local_term.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated term {local_term.name} status to MODIFIED")
+                    else:
+                        if local_term.sync_status != "SYNCED":
+                            local_term.sync_status = "SYNCED" 
+                            local_term.save(update_fields=["sync_status"])
+                            logger.debug(f"Updated term {local_term.name} status to SYNCED")
+                    
+                    # Extract comprehensive data from remote (now includes structured properties)
+                    ownership_data = remote_match.get("owners", []) or []  # New format has processed owners
+                    relationships_data = remote_match.get("relationships", []) or []  # New format has processed relationships
+                    structured_properties = remote_match.get("structuredProperties", []) or []
+                    custom_properties = remote_match.get("customProperties", []) or []
+                    properties = remote_match.get("properties", {}) or {}
+                    
+                    # Extract domain information for terms - use the processed domain data from comprehensive query
+                    domain_info = remote_match.get("domain", {}) or {}
+                    domain_urn = domain_info.get("urn") if domain_info else None
+                    domain_name = domain_info.get("name") if domain_info else None
+                    
+                    # Sync ownership data to local database if it exists
+                    if ownership_data and ownership_data != local_term.ownership_data:
+                        local_term.ownership_data = ownership_data
+                        local_term.save(update_fields=["ownership_data"])
+                        logger.debug(f"Updated term {local_term.name} ownership data")
+                    
+                    # Sync relationships data to local database if it exists
+                    if relationships_data and relationships_data != local_term.relationships_data:
+                        local_term.relationships_data = relationships_data
+                        local_term.save(update_fields=["relationships_data"])
+                        logger.debug(f"Updated term {local_term.name} relationships data")
+                    
+                    # Process the comprehensive data
+                    processed_data = {
+                        "owners_count": len(ownership_data),
+                        "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
+                        "relationships_count": len(relationships_data),
+                        "custom_properties_count": len(custom_properties),
+                        "structured_properties_count": len(structured_properties),
+                        "custom_properties": custom_properties,
+                        "structured_properties": structured_properties
+                    }
+                    
+                    # Update local item data with comprehensive remote information
+                    local_item_data.update({
+                        "sync_status": local_term.sync_status,
+                        "sync_status_display": local_term.get_sync_status_display(),
+                        "domain_urn": domain_urn,
+                        "domain_name": domain_name,
+                        "owners_count": processed_data["owners_count"],
+                        "owner_names": processed_data["owner_names"],
+                        "relationships_count": processed_data["relationships_count"],
+                        "custom_properties_count": processed_data["custom_properties_count"],
+                        "structured_properties_count": processed_data["structured_properties_count"],
+                        "ownership": ownership_data,
+                        "relationships": relationships_data,
+                        "structured_properties": structured_properties,
+                        "custom_properties": custom_properties,
+                    })
                 else:
-                    if local_term.sync_status != "SYNCED":
-                        local_term.sync_status = "SYNCED" 
-                        local_term.save(update_fields=["sync_status"])
-                        logger.debug(f"Updated term {local_term.name} status to SYNCED")
-                
-                # Extract comprehensive data from remote (now includes structured properties)
-                ownership_data = remote_match.get("owners", []) or []  # New format has processed owners
-                relationships_data = remote_match.get("relationships", []) or []  # New format has processed relationships
-                structured_properties = remote_match.get("structuredProperties", []) or []
-                custom_properties = remote_match.get("customProperties", []) or []
-                properties = remote_match.get("properties", {}) or {}
-                
-                # Extract domain information for terms - use the processed domain data from comprehensive query
-                domain_info = remote_match.get("domain", {}) or {}
-                domain_urn = domain_info.get("urn") if domain_info else None
-                domain_name = domain_info.get("name") if domain_info else None
-                
-                # Sync ownership data to local database if it exists
-                if ownership_data and ownership_data != local_term.ownership_data:
-                    local_term.ownership_data = ownership_data
-                    local_term.save(update_fields=["ownership_data"])
-                    logger.debug(f"Updated term {local_term.name} ownership data")
-                
-                # Sync relationships data to local database if it exists
-                if relationships_data and relationships_data != local_term.relationships_data:
-                    local_term.relationships_data = relationships_data
-                    local_term.save(update_fields=["relationships_data"])
-                    logger.debug(f"Updated term {local_term.name} relationships data")
-                
-                # Process the comprehensive data
-                processed_data = {
-                    "owners_count": len(ownership_data),
-                    "owner_names": [owner.get("name", "Unknown") for owner in ownership_data if owner],
-                    "relationships_count": len(relationships_data),
-                    "custom_properties_count": len(custom_properties),
-                    "structured_properties_count": len(structured_properties),
-                    "custom_properties": custom_properties,
-                    "structured_properties": structured_properties
-                }
-                
-                # Update local item data with comprehensive remote information
-                local_item_data.update({
-                    "sync_status": local_term.sync_status,
-                    "sync_status_display": local_term.get_sync_status_display(),
-                    "domain_urn": domain_urn,
-                    "domain_name": domain_name,
-                    "owners_count": processed_data["owners_count"],
-                    "owner_names": processed_data["owner_names"],
-                    "relationships_count": processed_data["relationships_count"],
-                    "custom_properties_count": processed_data["custom_properties_count"],
-                    "structured_properties_count": processed_data["structured_properties_count"],
-                    "ownership": ownership_data,
-                    "relationships": relationships_data,
-                    "structured_properties": structured_properties,
-                    "custom_properties": custom_properties,
-                })
+                    # No remote match but item is SYNCED/MODIFIED - this handles DataHub indexing delays
+                    # Don't update sync status, keep existing database value
+                    logger.debug(f"Term {local_term.name} is {local_term.sync_status} but no remote match found (likely DataHub indexing delay)")
+                    local_item_data.update({
+                        "sync_status": local_term.sync_status,
+                        "sync_status_display": local_term.get_sync_status_display(),
+                    })
                 
                 synced_items.append({
                     "local": local_item_data,
@@ -2009,14 +2041,8 @@ def get_remote_glossary_data(request):
                     "combined": local_item_data  # Enhanced data for display
                 })
             else:
-                # Ensure local-only items have correct status
-                if local_term.sync_status != "LOCAL_ONLY":
-                    local_term.sync_status = "LOCAL_ONLY"
-                    local_term.save(update_fields=["sync_status"])
-                    logger.debug(f"Updated term {local_term.name} status to LOCAL_ONLY")
-                
-                local_item_data["sync_status"] = "LOCAL_ONLY"
-                local_item_data["sync_status_display"] = "Local Only"
+                # Only items that are actually LOCAL_ONLY in the database should be treated as local-only
+                # Don't override the database sync_status here
                 local_only_items.append(local_item_data)
         
         # Find remote-only nodes

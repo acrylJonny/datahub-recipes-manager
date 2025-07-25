@@ -59,14 +59,38 @@
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1>DataHub Connections</h1>
+                <h1 class="h2">DataHub Connections</h1>
                 <div>
-                    <a href="{% url 'connection_create' %}" class="btn btn-primary">
+                    <button type="button" class="btn btn-outline-info" id="test-all-btn">
+                        <i class="fas fa-plug"></i> Test All Connections
+                    </button>
+                    <a href="{% url 'connection_create' %}" class="btn btn-primary ms-2">
                         <i class="fas fa-plus"></i> Add Connection
                     </a>
-                    <a href="{% url 'settings' %}" class="btn btn-secondary">
-                        <i class="fas fa-cog"></i> Settings
-                    </a>
+                </div>
+            </div>
+
+            <!-- Test Results Modal -->
+            <div class="modal fade" id="testResultsModal" tabindex="-1" aria-labelledby="testResultsModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="testResultsModalLabel">Connection Test Results</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="test-results-loading" class="text-center py-3" style="display: none;">
+                                <i class="fas fa-spinner fa-spin fa-2x text-primary mb-3"></i>
+                                <p>Testing all connections...</p>
+                            </div>
+                            <div id="test-results-content">
+                                <!-- Results will be populated here -->
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -203,5 +227,97 @@ function switchConnection(connectionId, connectionName) {
         alert('Error switching connection');
     });
 }
+
+    // Test all connections functionality
+    document.getElementById('test-all-btn').addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('testResultsModal'));
+        const loadingDiv = document.getElementById('test-results-loading');
+        const contentDiv = document.getElementById('test-results-content');
+        
+        // Show modal and loading state
+        modal.show();
+        loadingDiv.style.display = 'block';
+        contentDiv.innerHTML = '';
+        
+        // Test all connections
+        fetch('{% url "test_all_connections" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            loadingDiv.style.display = 'none';
+            
+            if (data.success) {
+                let html = '<div class="mb-3">';
+                html += `<small class="text-muted">Tested at: ${new Date(data.timestamp).toLocaleString()}</small>`;
+                html += '</div>';
+                
+                // Show results for each connection
+                data.results.forEach(result => {
+                    const statusClass = result.status === 'connected' ? 'success' : 'danger';
+                    const statusIcon = result.status === 'connected' ? 'check-circle' : 'exclamation-triangle';
+                    
+                    html += `
+                        <div class="card mb-2">
+                            <div class="card-body py-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>${result.name}</strong>
+                                        <span class="badge bg-${statusClass} ms-2">
+                                            <i class="fas fa-${statusIcon} me-1"></i>
+                                            ${result.status === 'connected' ? 'Connected' : 'Failed'}
+                                        </span>
+                                    </div>
+                                    <small class="text-muted">
+                                        ${result.last_tested ? new Date(result.last_tested).toLocaleString() : 'Never tested'}
+                                    </small>
+                                </div>
+                                ${result.error_message ? `<div class="text-danger mt-1"><small>${result.error_message}</small></div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                contentDiv.innerHTML = html;
+                
+                // Refresh the page to show updated statuses
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+                
+            } else {
+                contentDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Error testing connections: ${data.error}
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            loadingDiv.style.display = 'none';
+            contentDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Network error: ${error.message}
+                </div>
+            `;
+        });
+    });
+
+    function getCsrfToken() {
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            const [name, value] = cookie.trim().split('=');
+            if (name === 'csrftoken') {
+                return value;
+            }
+        }
+        return null;
+    }
 </script>
 {% endblock %} 

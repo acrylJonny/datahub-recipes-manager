@@ -1180,6 +1180,35 @@ function renderGlossaryRow(item, tabType, level = 0, hasChildren = false) {
     `;
 }
 
+function shouldShowDataHubViewButton(itemData, tabType) {
+    const urn = itemData.urn || '';
+    const connectionContext = itemData.connection_context || 'none';
+    const hasRemoteMatch = itemData.has_remote_match || false;
+    
+    // Don't show for local URNs or empty URNs
+    if (!urn || urn.includes('local:')) {
+        return false;
+    }
+    
+    // Show for remote-only items (they definitely exist in DataHub)
+    if (tabType === 'remote') {
+        return true;
+    }
+    
+    // For synced tab: show only if item belongs to current connection AND has remote match
+    if (tabType === 'synced') {
+        return connectionContext === 'current' && hasRemoteMatch;
+    }
+    
+    // For local tab: don't show View in DataHub button
+    // These items either don't exist in DataHub or belong to different connections
+    if (tabType === 'local') {
+        return false;
+    }
+    
+    return false;
+}
+
 function getActionButtons(item, tabType) {
     const hasDataHubConnection = true; // This should come from the template context
     let actionButtons = '';
@@ -1192,8 +1221,8 @@ function getActionButtons(item, tabType) {
         </button>
     `;
     
-    // 2. DataHub link (if item has URN and is not local-only) - SECOND like in tags
-    if (item.urn && !item.urn.includes('local:') && glossaryData.datahub_url) {
+    // 2. DataHub link (only for synced and remote items) - SECOND like in tags
+    if (shouldShowDataHubViewButton(item, tabType) && glossaryData.datahub_url) {
         const entityType = determineEntityType(item);
         const datahubUrl = getDataHubUrl(item.urn, entityType);
         actionButtons += `

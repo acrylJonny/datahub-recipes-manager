@@ -209,27 +209,33 @@ def test_datahub_connection_with_permissions():
         return False, None
 
 
-def get_cached_policies(force_refresh=False):
+def get_cached_policies(force_refresh=False, request=None):
     """
     Get policies from cache or fetch from DataHub if not cached or expired.
     
     Args:
         force_refresh (bool): If True, bypass cache and fetch fresh data
+        request (HttpRequest, optional): Request object to get connection context
         
     Returns:
         list: List of policies
     """
-    cache_key = "datahub_policies"
+    # Get connection-specific cache key
+    connection_id = "default"
+    if request and hasattr(request, 'session') and 'current_connection_id' in request.session:
+        connection_id = request.session['current_connection_id']
+    
+    cache_key = f"datahub_policies_{connection_id}"
     
     if not force_refresh:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
-            logger.debug("Retrieved policies from cache")
+            logger.debug(f"Retrieved policies from cache for connection {connection_id}")
             return cached_data
     
     # Fetch fresh data from DataHub
-    logger.info("Fetching policies from DataHub")
-    client = get_datahub_client()
+    logger.info(f"Fetching policies from DataHub for connection {connection_id}")
+    client = get_datahub_client(request=request)
     
     if not client:
         logger.error("Could not get DataHub client for policies")
@@ -237,9 +243,9 @@ def get_cached_policies(force_refresh=False):
         
     try:
         policies = client.list_policies()
-        # Cache the data
+        # Cache the data with connection-specific key
         cache.set(cache_key, policies, CACHE_TIMEOUT)
-        logger.info(f"Cached {len(policies)} policies for {CACHE_TIMEOUT} seconds")
+        logger.info(f"Cached {len(policies)} policies for connection {connection_id} for {CACHE_TIMEOUT} seconds")
         return policies
     except Exception as e:
         logger.error(f"Error fetching policies: {str(e)}")
@@ -256,27 +262,33 @@ def invalidate_policies_cache():
     logger.info("Invalidated policies cache")
 
 
-def get_cached_recipes(force_refresh=False):
+def get_cached_recipes(force_refresh=False, request=None):
     """
     Get recipes (ingestion sources) from cache or fetch from DataHub if not cached or expired.
     
     Args:
         force_refresh (bool): If True, bypass cache and fetch fresh data
+        request (HttpRequest, optional): Request object to get connection context
         
     Returns:
         list: List of ingestion sources
     """
-    cache_key = "datahub_recipes"
+    # Get connection-specific cache key
+    connection_id = "default"
+    if request and hasattr(request, 'session') and 'current_connection_id' in request.session:
+        connection_id = request.session['current_connection_id']
+    
+    cache_key = f"datahub_recipes_{connection_id}"
     
     if not force_refresh:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
-            logger.debug("Retrieved recipes from cache")
+            logger.debug(f"Retrieved recipes from cache for connection {connection_id}")
             return cached_data
     
     # Fetch fresh data from DataHub
-    logger.info("Fetching recipes from DataHub")
-    client = get_datahub_client()
+    logger.info(f"Fetching recipes from DataHub for connection {connection_id}")
+    client = get_datahub_client(request=request)
     
     if not client:
         logger.error("Could not get DataHub client for recipes")
@@ -284,9 +296,9 @@ def get_cached_recipes(force_refresh=False):
         
     try:
         recipes = client.list_ingestion_sources()
-        # Cache the data
+        # Cache the data with connection-specific key
         cache.set(cache_key, recipes, CACHE_TIMEOUT)
-        logger.info(f"Cached {len(recipes)} recipes for {CACHE_TIMEOUT} seconds")
+        logger.info(f"Cached {len(recipes)} recipes for connection {connection_id} for {CACHE_TIMEOUT} seconds")
         return recipes
     except Exception as e:
         logger.error(f"Error fetching recipes: {str(e)}")
@@ -297,3 +309,54 @@ def invalidate_recipes_cache():
     """Invalidate the recipes cache.""" 
     cache.delete("datahub_recipes")
     logger.info("Invalidated recipes cache")
+
+
+def clear_connection_cache(connection_id=None):
+    """
+    Clear cached data for a specific connection.
+    
+    Args:
+        connection_id (str, optional): ID of the connection to clear cache for.
+                                     If None, clears cache for all connections.
+    """
+    if connection_id:
+        # Clear cache for specific connection
+        cache_keys = [
+            f"datahub_policies_{connection_id}",
+            f"datahub_recipes_{connection_id}",
+        ]
+        for key in cache_keys:
+            cache.delete(key)
+            logger.debug(f"Cleared cache key: {key}")
+    else:
+        # Clear all connection-specific caches by trying common patterns
+        # Since we can't easily enumerate all keys, clear known patterns
+        try:
+            # Try to clear cache for common connection IDs (not perfect but better than nothing)
+            from web_ui.models import Connection
+            connections = Connection.objects.filter(is_active=True)
+            
+            cleared_count = 0
+            for connection in connections:
+                conn_id = str(connection.id)
+                cache_keys = [
+                    f"datahub_policies_{conn_id}",
+                    f"datahub_recipes_{conn_id}",
+                ]
+                for key in cache_keys:
+                    if cache.delete(key):
+                        cleared_count += 1
+                        
+            # Also clear the default connection cache
+            default_keys = [
+                "datahub_policies_default",
+                "datahub_recipes_default",
+            ]
+            for key in default_keys:
+                if cache.delete(key):
+                    cleared_count += 1
+                    
+            logger.debug(f"Cleared {cleared_count} connection-specific cache keys")
+            
+        except Exception as e:
+            logger.warning(f"Could not clear all connection caches: {str(e)}")

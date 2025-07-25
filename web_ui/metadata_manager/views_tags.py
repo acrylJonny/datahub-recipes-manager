@@ -24,7 +24,7 @@ sys.path.append(
 from utils.urn_utils import get_full_urn_from_name, generate_mutated_urn, get_mutation_config_for_environment
 from utils.datahub_utils import get_datahub_client, test_datahub_connection, get_datahub_client_from_request
 from utils.data_sanitizer import sanitize_api_response
-from web_ui.models import GitSettings, Environment
+from web_ui.models import GitSettings, Environment, GitIntegration
 from .models import Tag
 
 logger = logging.getLogger(__name__)
@@ -697,7 +697,8 @@ class TagDetailView(View):
                 return JsonResponse({"success": False, "error": error_msg}, status=400)
             
             messages.error(request, error_msg)
-            return redirect("metadata_manager:tag_detail", tag_id=tag.id)
+            # Use tag_id from parameters instead of tag.id since tag might not be defined
+            return redirect("metadata_manager:tag_detail", tag_id=tag_id)
 
     def delete(self, request, tag_id):
         """Delete a tag"""

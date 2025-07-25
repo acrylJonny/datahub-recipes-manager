@@ -232,7 +232,7 @@ class GlossaryNode(BaseMetadataModel):
         
         return node
 
-    def deploy_to_datahub(self, client):
+    def deploy_to_datahub(self, client, connection=None):
         """Deploy this glossary node to DataHub"""
         try:
             # Prepare node data for deployment
@@ -252,13 +252,23 @@ class GlossaryNode(BaseMetadataModel):
                 node_data["ownership"] = {"owners": self.ownership_data}
             
             # Deploy using the client
-            success = client.import_glossary_node(node_data)
+            result_urn = client.import_glossary_node(node_data)
             
-            if success:
-                # Update sync status
+            if result_urn:
+                # Update with returned URN and sync status
                 from django.utils import timezone
+                self.urn = result_urn  # Store the DataHub URN
                 self.sync_status = "SYNCED"
                 self.last_synced = timezone.now()
+                
+                # Set connection if provided
+                if connection:
+                    self.connection = connection
+                
+                # Extract datahub_id from URN
+                if result_urn and ':' in result_urn:
+                    self.datahub_id = result_urn.split(':')[-1]
+                
                 self.save()
                 return True
             
@@ -403,7 +413,7 @@ class GlossaryTerm(BaseMetadataModel):
         
         return term
 
-    def deploy_to_datahub(self, client):
+    def deploy_to_datahub(self, client, connection=None):
         """Deploy this glossary term to DataHub"""
         try:
             # Prepare term data for deployment
@@ -427,13 +437,23 @@ class GlossaryTerm(BaseMetadataModel):
                 term_data["ownership"] = {"owners": self.ownership_data}
             
             # Deploy using the client
-            success = client.import_glossary_term(term_data)
+            result_urn = client.import_glossary_term(term_data)
             
-            if success:
-                # Update sync status
+            if result_urn:
+                # Update with returned URN and sync status
                 from django.utils import timezone
+                self.urn = result_urn  # Store the DataHub URN
                 self.sync_status = "SYNCED"
                 self.last_synced = timezone.now()
+                
+                # Set connection if provided
+                if connection:
+                    self.connection = connection
+                
+                # Extract datahub_id from URN
+                if result_urn and ':' in result_urn:
+                    self.datahub_id = result_urn.split(':')[-1]
+                
                 self.save()
                 return True
             

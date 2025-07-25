@@ -147,6 +147,7 @@ urlpatterns = [
     path("connections/create/", web_ui_views.connection_create, name="connection_create"),
     path("connections/<int:connection_id>/edit/", web_ui_views.connection_edit, name="connection_edit"),
     path("connections/<int:connection_id>/delete/", web_ui_views.connection_delete, name="connection_delete"),
+    path("connections/test-all/", web_ui_views.test_all_connections, name="test_all_connections"),
     path("connections/<int:connection_id>/test/", web_ui_views.connection_test, name="connection_test"),
     path("connections/<int:connection_id>/set-default/", web_ui_views.connection_set_default, name="connection_set_default"),
     path("api/switch-connection/", web_ui_views.api_switch_connection, name="api_switch_connection"),

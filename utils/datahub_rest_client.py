@@ -218,40 +218,67 @@ class DataHubRestClient:
 
     def test_connection_with_permissions(self) -> bool:
         """
-        Test connection to DataHub with comprehensive permission testing
-        (includes fetching policies and recipes)
+        Test connection to DataHub with authentication and permission validation.
+        Uses a simple tags query which should always work if authenticated properly.
 
         Returns:
-            True if connection successful with full permissions, False otherwise
+            True if connection successful with valid authentication, False otherwise
         """
         try:
             # First test basic connection
             if not self.test_connection():
                 return False
 
-            # Try to list recipes to check permissions  
+            # Test authentication with a simple GraphQL query for tags
+            # This is more reliable than list_policies/list_ingestion_sources 
+            # which can return empty lists even on auth failures
             try:
-                sources = self.list_ingestion_sources()
-                if not isinstance(sources, list):
-                    logger.error(
-                        "Failed to list ingestion sources: Invalid response format"
-                    )
+                graphql_query = """
+                query TestAuth($input: SearchAcrossEntitiesInput!) {
+                  searchAcrossEntities(input: $input) {
+                    total
+                  }
+                }
+                """
+                
+                variables = {
+                    "input": {
+                        "types": ["TAG"],
+                        "query": "*",
+                        "start": 0,
+                        "count": 1,
+                        "filters": [],
+                    }
+                }
+                
+                result = self.execute_graphql(graphql_query, variables)
+                
+                # Check for GraphQL errors or missing data
+                if not result:
+                    logger.error("No response from GraphQL query")
                     return False
+                    
+                if "errors" in result:
+                    logger.error(f"GraphQL errors in auth test: {result['errors']}")
+                    return False
+                    
+                if "data" not in result:
+                    logger.error("No data in GraphQL response")
+                    return False
+                    
+                if "searchAcrossEntities" not in result["data"]:
+                    logger.error("Missing searchAcrossEntities in response")
+                    return False
+                    
+                # If we get here, the query succeeded and we have proper authentication
+                total = result["data"]["searchAcrossEntities"].get("total", 0)
+                self.logger.debug(f"Authentication test successful - found {total} tags")
+                return True
+                
             except Exception as e:
-                logger.error(f"Failed to list ingestion sources: {str(e)}")
+                logger.error(f"Authentication test failed: {str(e)}")
                 return False
 
-            # Try to list policies to check permissions
-            try:
-                policies = self.list_policies()
-                if not isinstance(policies, list):
-                    logger.error("Failed to list policies: Invalid response format")
-                    return False
-            except Exception as e:
-                logger.error(f"Failed to list policies: {str(e)}")
-                return False
-
-            return True
         except Exception as e:
             logger.error(f"Error testing connection with permissions: {str(e)}")
             return False
@@ -10178,11 +10205,16 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
         self.logger.info(f"Importing glossary node: {node_data.get('properties', {}).get('name', 'Unknown')}")
         
         try:
-            # Extract data from nested structure
-            properties = node_data.get('properties', {})
-            name = properties.get('name')
-            description = properties.get('description', '')
-            urn = node_data.get('urn')
+            # Extract data from nested structure (support both formats)
+            if 'properties' in node_data:
+                # Model format: {"properties": {"name": "...", "description": "..."}, "parentNode": {"urn": "..."}}
+                properties = node_data.get('properties', {})
+                name = properties.get('name')
+                description = properties.get('description', '')
+            else:
+                # Direct format: {"name": "...", "description": "..."}
+                name = node_data.get('name')
+                description = node_data.get('description', '')
             
             if not name:
                 self.logger.error("Glossary node name is required")
@@ -10193,41 +10225,37 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
                 "input": {
                     "name": name,
                     "description": description,
+                    "parentNode": None,  # Default to None
                 }
             }
             
-            # Add URN if provided
-            if urn:
-                variables["input"]["urn"] = urn
-            
-            # Add parent node if exists
+            # Add parent node URN if exists (support both formats)
             parent_node = node_data.get('parentNode')
-            if parent_node and parent_node.get('urn'):
-                variables["input"]["parentNode"] = parent_node.get('urn')
-            
-            # Add ownership if exists
-            ownership = node_data.get('ownership')
-            if ownership and ownership.get('owners'):
-                variables["input"]["ownership"] = ownership
+            if parent_node:
+                if isinstance(parent_node, dict) and parent_node.get('urn'):
+                    # Model format: {"urn": "..."}
+                    variables["input"]["parentNode"] = parent_node.get('urn')
+                elif isinstance(parent_node, str):
+                    # Direct format: "urn:li:glossaryNode:..."
+                    variables["input"]["parentNode"] = parent_node
             
             # Execute GraphQL mutation
             mutation = """
-            mutation createGlossaryNode($input: CreateGlossaryNodeInput!) {
-                createGlossaryNode(input: $input) {
-                    urn
-                }
+            mutation createGlossaryNode($input: CreateGlossaryEntityInput!) {
+                createGlossaryNode(input: $input)
             }
             """
             
-            result = self._execute_graphql_query(mutation, variables)
+            result = self._execute_graphql(mutation, variables)
             
-            if result and 'data' in result and 'createGlossaryNode' in result['data']:
-                created_urn = result['data']['createGlossaryNode']['urn']
-                self.logger.info(f"Successfully created glossary node: {created_urn}")
-                return created_urn
-            else:
-                self.logger.error(f"Failed to create glossary node: {result}")
-                return None
+            if result and 'createGlossaryNode' in result:
+                created_urn = result['createGlossaryNode']
+                if created_urn:
+                    self.logger.info(f"Successfully created glossary node: {created_urn}")
+                    return created_urn
+            
+            self.logger.error(f"Failed to create glossary node: {result}")
+            return None
                 
         except Exception as e:
             self.logger.error(f"Error importing glossary node: {str(e)}")
@@ -10244,40 +10272,59 @@ query GetEntitiesWithBrowsePathsForSearch($input: SearchAcrossEntitiesInput!) {
             URN of the created/updated term if successful, None otherwise
         """
         try:
-            term_id = term_data.get('id') or term_data.get('qualified_name')
-            if not term_id:
-                self.logger.error("Term data must contain 'id' or 'qualified_name'")
+            # Extract data from nested structure (support both formats)
+            if 'properties' in term_data:
+                # Model format: {"properties": {"name": "...", "description": "..."}, "parentNode": {"urn": "..."}}
+                properties = term_data.get('properties', {})
+                name = properties.get('name')
+                description = properties.get('description', '')
+            else:
+                # Direct format: {"name": "...", "description": "..."}
+                name = term_data.get('name')
+                description = term_data.get('description', '')
+            
+            if not name:
+                self.logger.error("Glossary term name is required")
                 return None
-                
-            term_urn = f"urn:li:glossaryTerm:{term_id}"
             
             mutation = """
-            mutation createGlossaryTerm($input: CreateGlossaryTermInput!) {
+            mutation createGlossaryTerm($input: CreateGlossaryEntityInput!) {
                 createGlossaryTerm(input: $input)
             }
             """
             
             variables = {
                 "input": {
-                    "id": term_id,
-                    "name": term_data.get('name', term_id),
-                    "description": term_data.get('description', ''),
-                    "parentNode": term_data.get('parent_node_urn')
+                    "name": name,
+                    "description": description,
+                    "parentNode": None  # Default to None
                 }
             }
             
-            result = self.execute_graphql(mutation, variables)
+            # Add parent node URN if exists (support both formats)
+            parent_node = term_data.get('parentNode')
+            if parent_node:
+                if isinstance(parent_node, dict) and parent_node.get('urn'):
+                    # Model format: {"urn": "..."}
+                    variables["input"]["parentNode"] = parent_node.get('urn')
+                elif isinstance(parent_node, str):
+                    # Direct format: "urn:li:glossaryNode:..."
+                    variables["input"]["parentNode"] = parent_node
             
-            if result and "data" in result and "createGlossaryTerm" in result["data"]:
-                created_urn = result["data"]["createGlossaryTerm"]
+            # Also support legacy format
+            parent_node_urn = term_data.get('parent_node_urn')
+            if parent_node_urn and not variables["input"]["parentNode"]:
+                variables["input"]["parentNode"] = parent_node_urn
+            
+            result = self._execute_graphql(mutation, variables)
+            
+            if result and "createGlossaryTerm" in result:
+                created_urn = result["createGlossaryTerm"]
                 if created_urn:
                     self.logger.info(f"Successfully imported glossary term: {created_urn}")
                     return created_urn
             
-            if result and "errors" in result:
-                error_messages = [e.get("message", "") for e in result.get("errors", [])]
-                self.logger.error(f"GraphQL errors when importing glossary term: {', '.join(error_messages)}")
-            
+            self.logger.error(f"Failed to create glossary term: {result}")
             return None
             
         except Exception as e:
