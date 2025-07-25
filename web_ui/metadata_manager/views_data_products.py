@@ -298,7 +298,6 @@ def create_local_data_product(request, data_product_data):
             external_url=external_url,
             domain_urn=domain_urn,
             entity_urns=entity_urns,
-            entities_count=len(entity_urns),
             sync_status="LOCAL_ONLY",
         )
         
@@ -703,7 +702,6 @@ class DataProductDetailView(View):
             data_product.external_url = external_url if external_url else None
             data_product.domain_urn = domain_urn if domain_urn else None
             data_product.entity_urns = entity_urns
-            data_product.entities_count = len(entity_urns)
             
             # Mark as modified if it was previously synced
             if data_product.sync_status == "SYNCED":
@@ -1085,10 +1083,12 @@ def resync_data_product(request, data_product_id):
         data_product.structured_properties_data = product_data.get('structuredProperties')
         data_product.institutional_memory_data = product_data.get('institutionalMemory')
         
-        # Update entity count if entities data is available
+        # Update entity URNs if entities data is available
         entities_data = product_data.get('entities', {})
-        if entities_data and entities_data.get('total'):
-            data_product.entities_count = entities_data['total']
+        if entities_data and entities_data.get('searchResults'):
+            # Extract entity URNs from search results
+            entity_urns = [result.get('entity', {}).get('urn') for result in entities_data.get('searchResults', []) if result.get('entity', {}).get('urn')]
+            data_product.entity_urns = entity_urns
         
         data_product.save()
         
@@ -1340,7 +1340,6 @@ def edit_data_product(request, data_product_id):
             data_product.external_url = external_url if external_url else None
             data_product.domain_urn = domain_urn if domain_urn else None
             data_product.entity_urns = entity_urns
-            data_product.entities_count = len(entity_urns)
             
             # Update sync status if it was synced before
             if data_product.sync_status == "SYNCED":
@@ -1419,7 +1418,6 @@ def create_local_data_product_comprehensive(request):
             external_url=external_url if external_url else None,
             domain_urn=domain_urn if domain_urn else None,
             entity_urns=entity_urns,
-            entities_count=len(entity_urns),
             sync_status="LOCAL_ONLY",  # Mark as local-only
             connection=current_connection  # Set connection context
         )
@@ -1611,7 +1609,7 @@ def add_data_product_to_staged_changes(request, data_product_id):
             "external_url": data_product.external_url,
             "domain_urn": data_product.domain_urn,
             "entity_urns": data_product.entity_urns or [],
-            "entities_count": data_product.entities_count,
+            "entities_count": len(data_product.entity_urns or []),
             "sync_status": data_product.sync_status,
             # Add extracted metadata for MCP creation
             "custom_properties": custom_properties,

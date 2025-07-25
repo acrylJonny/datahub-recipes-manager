@@ -3311,9 +3311,13 @@ function populateOwnersSelect(select) {
                 
                 // Build cache map
                 allDomains.forEach(domain => {
-                    if (domain.urn) {
-                        const name = domain.properties?.name || domain.name || '';
-                        domainsCache.set(domain.urn, name);
+                    // Handle the nested domain structure (local/remote/combined)
+                    const domainData = domain.combined || domain.local || domain.remote || domain;
+                    if (domainData && domainData.urn) {
+                        const name = domainData.properties?.name || domainData.name || '';
+                        if (name) {
+                            domainsCache.set(domainData.urn, name);
+                        }
                     }
                 });
                 
