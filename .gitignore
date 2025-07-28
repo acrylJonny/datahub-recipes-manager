@@ -68,3 +68,41 @@ db.*
 
 # venv
 .venv/*
+
+# JavaScript/Node.js (for testing infrastructure)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Test coverage reports
+coverage/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+.hypothesis/
+.pytest_cache/
+pytest_cache/
+
+# Jest testing
+web_ui/coverage/
+web_ui/.nyc_output
+
+# Test result files
+results-*.xml
+benchmark-results.json
+histogram/
+
+# Selenium test artifacts
+web_ui/tests/screenshots/
+web_ui/tests/downloads/
+geckodriver.log
+chromedriver.log
+
+# Test databases (keep test data but ignore dynamic DBs)
+test_*.db
+test_*.sqlite3
+web_ui/test_*.db
+web_ui/test_*.sqlite3

@@ -184,6 +184,9 @@ jobs:
       env:
         DISPLAY: :99
     
+    # Note: Comprehensive Selenium E2E tests are now in the dedicated 'test-e2e-selenium.yml' workflow
+    # This section focuses on fast unit and API tests for rapid feedback
+    
     - name: Run integration tests
       run: |
         cd web_ui
@@ -192,7 +195,7 @@ jobs:
           --cov-report=xml:coverage-integration.xml \
           --junit-xml=results-integration.xml
     
-    - name: Run all tests with comprehensive coverage
+    - name: Run all tests with comprehensive coverage (fast tests only)
       run: |
         cd web_ui
         python -m pytest tests/ -v \
@@ -201,7 +204,8 @@ jobs:
           --cov-report=html:htmlcov \
           --junit-xml=results-all.xml \
           --tb=short \
-          --ignore=tests/frontend/test_javascript.py
+          --ignore=tests/frontend/test_javascript.py \
+          --ignore=tests/frontend/test_metadata_selenium.py
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -327,6 +331,8 @@ jobs:
           --benchmark-json=benchmark-results.json \
           --benchmark-compare-fail=mean:10% \
           --benchmark-histogram=histogram
+    
+    # Performance tests are now included in the dedicated 'test-e2e-selenium.yml' workflow
     
     - name: Upload benchmark results
       uses: actions/upload-artifact@v3
