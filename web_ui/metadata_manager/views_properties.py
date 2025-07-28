@@ -821,8 +821,10 @@ class PropertyDetailView(View):
 
     def get(self, request, property_id):
         """Display property details"""
+        # Let 404 exceptions bubble up naturally
+        property = get_object_or_404(StructuredProperty, id=property_id)
+        
         try:
-            property = get_object_or_404(StructuredProperty, id=property_id)
 
             # Initialize context with property data
             context = {

@@ -93,11 +93,11 @@ class AssertionListView(View):
             
             if not name:
                 messages.error(request, "Assertion name is required")
-                return redirect("assertion_list")
+                return redirect("metadata_manager:assertion_list")
             
             if not assertion_type:
                 messages.error(request, "Assertion type is required")
-                return redirect("assertion_list")
+                return redirect("metadata_manager:assertion_list")
             
             # Initialize config based on assertion type
             config = {}
@@ -109,7 +109,7 @@ class AssertionListView(View):
                         request,
                         "Please select a domain for the domain existence assertion",
                     )
-                    return redirect("assertion_list")
+                    return redirect("metadata_manager:assertion_list")
                 
                 try:
                     domain = Domain.objects.get(id=domain_id)
@@ -120,7 +120,7 @@ class AssertionListView(View):
                     }
                 except Domain.DoesNotExist:
                     messages.error(request, "Domain not found")
-                    return redirect("assertion_list")
+                    return redirect("metadata_manager:assertion_list")
 
             elif assertion_type == "sql":
                 sql_query = request.POST.get("sql_query")
@@ -128,7 +128,7 @@ class AssertionListView(View):
                 
                 if not sql_query:
                     messages.error(request, "SQL query is required")
-                    return redirect("assertion_list")
+                    return redirect("metadata_manager:assertion_list")
                 
                 config = {"query": sql_query, "expected_result": expected_result}
             
@@ -137,7 +137,7 @@ class AssertionListView(View):
                 
                 if not tag_name:
                     messages.error(request, "Tag name is required")
-                    return redirect("assertion_list")
+                    return redirect("metadata_manager:assertion_list")
                 
                 config = {"tag_name": tag_name}
             
@@ -146,7 +146,7 @@ class AssertionListView(View):
                 
                 if not term_name:
                     messages.error(request, "Glossary term name is required")
-                    return redirect("assertion_list")
+                    return redirect("metadata_manager:assertion_list")
                 
                 config = {"term_name": term_name}
             
@@ -156,11 +156,11 @@ class AssertionListView(View):
             )
             
             messages.success(request, f"Assertion '{name}' created successfully")
-            return redirect("assertion_list")
+            return redirect("metadata_manager:assertion_list")
         except Exception as e:
             logger.error(f"Error creating assertion: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("assertion_list")
+            return redirect("metadata_manager:assertion_list")
 
 
 class AssertionDetailView(View):
@@ -186,7 +186,7 @@ class AssertionDetailView(View):
         except Exception as e:
             logger.error(f"Error in assertion detail view: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("assertion_list")
+            return redirect("metadata_manager:assertion_list")
 
 
 class AssertionRunView(View):
@@ -251,7 +251,7 @@ class AssertionRunView(View):
         except Exception as e:
             logger.error(f"Error running assertion: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("assertion_list")
+            return redirect("metadata_manager:assertion_list")
     
     def run_domain_exists_assertion(self, assertion, client):
         """Run a domain_exists assertion"""
@@ -405,11 +405,11 @@ class AssertionDeleteView(View):
             messages.success(
                 request, f"Assertion '{assertion_name}' deleted successfully"
             )
-            return redirect("assertion_list")
+            return redirect("metadata_manager:assertion_list")
         except Exception as e:
             logger.error(f"Error deleting assertion: {str(e)}")
             messages.error(request, f"An error occurred: {str(e)}")
-            return redirect("assertion_list")
+            return redirect("metadata_manager:assertion_list")
 
 
 class AssertionListView(View):
@@ -486,9 +486,10 @@ class AssertionDetailView(View):
     
     def get(self, request, assertion_id):
         """Display assertion details"""
+        # Let 404 exceptions bubble up naturally
+        assertion = get_object_or_404(Assertion, id=assertion_id)
+        
         try:
-            assertion = get_object_or_404(Assertion, id=assertion_id)
-            
             # Get previous results
             results = AssertionResult.objects.filter(assertion=assertion).order_by(
                 "-run_at"
@@ -2891,3 +2892,90 @@ def _extract_last_updated_safely(assertion_data):
             return last_updated.get("actor")
             
     return assertion_data.get("lastUpdated")
+
+
+@require_http_methods(["POST"])
+def pull_assertions(request):
+    """Pull assertions from DataHub and sync to local database"""
+    try:
+        from django.utils import timezone
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        
+        logger.info("Starting assertion pull operation")
+        
+        # Test DataHub connection
+        connected, client = test_datahub_connection(request)
+        if not connected:
+            messages.error(request, "No connection to DataHub available")
+            return redirect("metadata_manager:assertion_list")
+        
+        # Get assertions from DataHub
+        result = client.get_assertions(start=0, count=1000, query="*")
+        
+        if not result.get("success", False):
+            error_msg = result.get("error", "Failed to retrieve assertions from DataHub")
+            logger.error(f"Error pulling assertions: {error_msg}")
+            messages.error(request, f"Error pulling assertions: {error_msg}")
+            return redirect("metadata_manager:assertion_list")
+        
+        # Process and sync assertions
+        assertions_data = result["data"].get("searchResults", [])
+        synced_count = 0
+        
+        for assertion_result in assertions_data:
+            try:
+                assertion_data = assertion_result.get("entity", {})
+                if assertion_data and assertion_data.get("urn"):
+                    # Use existing sync logic (simplified)
+                    assertion_urn = assertion_data.get("urn")
+                    info = assertion_data.get("info", {})
+                    
+                    # Create or update local assertion
+                    assertion, created = Assertion.objects.get_or_create(
+                        urn=assertion_urn,
+                        defaults={
+                            'name': info.get("description", assertion_urn.split(":")[-1]),
+                            'description': info.get("description", ""),
+                            'assertion_type': assertion_data.get("type", "UNKNOWN"),
+                            'sync_status': 'SYNCED',
+                            'last_synced': timezone.now(),
+                            'info_data': info,
+                            'ownership_data': assertion_data.get("ownership"),
+                            'relationships_data': assertion_data.get("relationships"),
+                            'run_events_data': assertion_data.get("runEvents"),
+                            'tags_data': assertion_data.get("tags"),
+                            'monitor_data': assertion_data.get("monitor"),
+                        }
+                    )
+                    
+                    if not created:
+                        # Update existing assertion
+                        assertion.name = info.get("description", assertion_urn.split(":")[-1])
+                        assertion.description = info.get("description", "")
+                        assertion.assertion_type = assertion_data.get("type", "UNKNOWN")
+                        assertion.sync_status = 'SYNCED'
+                        assertion.last_synced = timezone.now()
+                        assertion.info_data = info
+                        assertion.ownership_data = assertion_data.get("ownership")
+                        assertion.relationships_data = assertion_data.get("relationships")
+                        assertion.run_events_data = assertion_data.get("runEvents")
+                        assertion.tags_data = assertion_data.get("tags")
+                        assertion.monitor_data = assertion_data.get("monitor")
+                        assertion.save()
+                    
+                    synced_count += 1
+                    
+            except Exception as e:
+                logger.error(f"Error syncing assertion {assertion_result.get('entity', {}).get('urn', 'unknown')}: {str(e)}")
+                continue
+        
+        messages.success(request, f"Successfully pulled {synced_count} assertions from DataHub")
+        logger.info(f"Assertion pull completed: {synced_count} assertions synced")
+        
+        return redirect("metadata_manager:assertion_list")
+        
+    except Exception as e:
+        logger.error(f"Error in pull_assertions: {str(e)}")
+        messages.error(request, f"Error pulling assertions: {str(e)}")
+        return redirect("metadata_manager:assertion_list")

@@ -466,8 +466,10 @@ class TagDetailView(View):
 
     def get(self, request, tag_id):
         """Display tag details"""
+        # Let 404 exceptions bubble up naturally
+        tag = get_object_or_404(Tag, id=tag_id)
+        
         try:
-            tag = get_object_or_404(Tag, id=tag_id)
 
             # Initialize context with tag data
             context = {

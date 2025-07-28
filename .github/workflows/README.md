@@ -8,6 +8,8 @@ This directory contains GitHub Actions workflows for managing DataHub metadata a
 - **`deploy.yml`** - Deploys the web UI application to production
 - **`ci.yml`** - Continuous integration tests and validation
 - **`test-integration.yml`** - Integration tests for DataHub connectivity
+- **`test-web-ui.yml`** - Fast web UI unit tests and API integration tests
+- **`test-e2e-selenium.yml`** - Comprehensive end-to-end Selenium tests for metadata manager UI
 
 ### Recipe Management
 - **`run-recipe.yml`** - Execute DataHub ingestion recipes
@@ -148,6 +150,62 @@ MCP files contain MetaChange Proposals in JSON format:
   }
 ]
 ```
+
+## 🧪 Testing Workflows
+
+### Testing Strategy
+Our testing infrastructure follows the **testing pyramid** approach with three complementary layers:
+
+#### `test-web-ui.yml` - Fast Unit & API Tests
+- **Purpose:** Rapid feedback for developers and PR validation
+- **Duration:** ~2-5 minutes
+- **Triggers:** Every push and PR
+- **Tests:**
+  - JavaScript unit tests (Jest)
+  - Python API integration tests
+  - Django model and view tests
+- **Coverage:** Code logic, API endpoints, data processing
+
+#### `test-e2e-selenium.yml` - Comprehensive E2E Tests
+- **Purpose:** End-to-end user workflow validation
+- **Duration:** ~15-30 minutes
+- **Triggers:** 
+  - Push to `main`/`develop` branches
+  - PRs modifying UI templates/static files
+  - Manual dispatch with custom options
+- **Tests:**
+  - Real browser automation (Chrome/Firefox)
+  - Complete user workflows (create/edit/delete)
+  - Cross-page integration scenarios
+  - Performance benchmarking
+- **Coverage:** Full user journeys, JavaScript functionality, UI interactions
+
+#### `test-integration.yml` - DataHub Integration Tests
+- **Purpose:** Validate DataHub connectivity and API integration
+- **Duration:** ~5-10 minutes (when DataHub is available)
+- **Triggers:** Backend code changes, manual dispatch
+- **Tests:** GraphQL queries, metadata ingestion, authentication
+
+### Manual Testing
+```bash
+# Run all test types locally:
+
+# 1. Fast unit tests
+cd web_ui && npm test                    # JavaScript tests
+python manage.py test tests.unit        # API tests
+
+# 2. Selenium E2E tests
+python manage.py test tests.frontend.test_metadata_selenium
+
+# 3. Integration tests
+./test/run_all_tests.sh
+```
+
+### Test Artifacts
+- **Screenshots:** Selenium failure screenshots uploaded for debugging
+- **Coverage Reports:** Code coverage HTML reports and XML
+- **Performance Data:** Benchmark results and timing histograms
+- **Test Logs:** Detailed execution logs for troubleshooting
 
 ## 🔍 Monitoring & Debugging
 
