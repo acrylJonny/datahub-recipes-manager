@@ -53,7 +53,6 @@ urlpatterns = [
     path(
         "entities/<str:urn>/schema/", views.get_entity_schema, name="get_entity_schema"
     ),
-    path("sync/", views.sync_metadata, name="sync_metadata"),
     path("config/datahub-url/", views.get_datahub_url_config, name="get_datahub_url_config"),
     path("structured-properties/", views.get_structured_properties, name="get_structured_properties"),
     path("entities/editable/export-with-mutations/", views.export_entities_with_mutations, name="export_entities_with_mutations"),
@@ -603,6 +602,11 @@ urlpatterns = [
         name="get_remote_assertions_data",
     ),
     path(
+        "assertions/pull/",
+        views_assertions.pull_assertions,
+        name="assertion_pull",
+    ),
+    path(
         "assertions/create/",
         views_assertions.create_datahub_assertion,
         name="assertion_create",
@@ -731,7 +735,7 @@ urlpatterns = [
         views_tests.TestPushToDataHubView.as_view(),
         name="test_push_to_datahub"
     ),
-    # Sync
+    # Sync  
     path("sync/", views_sync.SyncConfigListView.as_view(), name="sync_config_list"),
     path(
         "sync/create/",

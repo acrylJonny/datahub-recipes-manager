@@ -1253,8 +1253,10 @@ class GlossaryNodeCreateView(View):
 
 class GlossaryNodeDetailView(View):
     def get(self, request, node_id):
+        # Let 404 exceptions bubble up naturally
+        node = get_object_or_404(GlossaryNode, id=node_id)
+        
         try:
-            node = get_object_or_404(GlossaryNode, id=node_id)
             # Get all nodes for parent selection (excluding self to prevent circular references)
             nodes = GlossaryNode.objects.exclude(id=node_id).order_by("name")
             context = {
@@ -1497,8 +1499,10 @@ class GlossaryTermCreateView(View):
 
 class GlossaryTermDetailView(View):
     def get(self, request, term_id):
+        # Let 404 exceptions bubble up naturally
+        term = get_object_or_404(GlossaryTerm, id=term_id)
+        
         try:
-            term = get_object_or_404(GlossaryTerm, id=term_id)
             # Get all nodes for parent selection
             nodes = GlossaryNode.objects.all().order_by("name")
             # Get all domains for domain selection
@@ -3129,6 +3133,9 @@ class GlossaryRemoteAddToStagedChangesView(View):
         except Exception as e:
             logger.error(f"Error adding remote glossary item to staged changes: {str(e)}")
             return JsonResponse({"error": str(e)}, status=500)
+
+
+
 
 
 

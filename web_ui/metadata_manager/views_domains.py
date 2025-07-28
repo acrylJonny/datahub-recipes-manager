@@ -171,8 +171,10 @@ class DomainDetailView(View):
     
     def get(self, request, domain_id):
         """Display domain details"""
+        # Let 404 exceptions bubble up naturally
+        domain = get_object_or_404(Domain, id=domain_id)
+        
         try:
-            domain = get_object_or_404(Domain, id=domain_id)
             
             # Initialize context with domain data
             context = {

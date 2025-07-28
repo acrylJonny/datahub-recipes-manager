@@ -21,8 +21,21 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",  # Django REST Framework
+    "drf_spectacular",  # OpenAPI 3.0 schema generation
     # Project apps for testing
     "web_ui",
+    "policy_manager",
+    "script_runner",
+    "template_manager",
+    "test_runner",
+    "metadata_manager",
+    "env_vars",
+    "environments",
+    "policies",
+    "recipe_instances",
+    "github",
+    "metadata_sync",
     "tests",
 ]
 
