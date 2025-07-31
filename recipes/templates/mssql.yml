@@ -41,7 +41,7 @@ source:
       include_field_max_value: ${INCLUDE_FIELD_MAX_VALUE}
       include_field_mean_value: ${INCLUDE_FIELD_MEAN_VALUE}
       include_field_median_value: ${INCLUDE_FIELD_MEDIAN_VALUE}
-      INCLUDE_FIELD_STDDEV_VALUE: ${INCLUDE_FIELD_STD_DEV}
+      include_field_stddev_value: ${INCLUDE_FIELD_STDDEV_VALUE}
       include_field_quantiles: ${INCLUDE_FIELD_QUANTILES}
       include_field_distinct_value_frequencies: ${INCLUDE_FIELD_DISTINCT_VALUE_FREQUENCIES}
       include_field_histogram: ${INCLUDE_FIELD_HISTOGRAM}
